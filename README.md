@@ -1,142 +1,89 @@
-# LibreOffice
-[![Coverity Scan Build Status](https://scan.coverity.com/projects/211/badge.svg)](https://scan.coverity.com/projects/211) [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/307/badge)](https://www.bestpractices.dev/projects/307) [![Translation status](https://weblate.documentfoundation.org/widgets/libo_ui-master/-/svg-badge.svg)](https://weblate.documentfoundation.org/engage/libo_ui-master/?utm_source=widget)
+# UniSaaS.UniCORE.LibreOffice
 
-<img align="right" width="150" src="https://opensource.org/wp-content/uploads/2009/06/OSIApproved.svg">
+**SCAFFOLD-ANCHOR repository — initial scaffold 2026-06-04.**
 
-LibreOffice is an integrated office suite based on copyleft licenses
-and compatible with most document formats and standards. Libreoffice
-is backed by The Document Foundation, which represents a large
-independent community of enterprises, developers and other volunteers
-moved by the common goal of bringing to the market the best software
-for personal productivity. LibreOffice is open source, and free to
-download, use and distribute.
+Full scaffolding, upstream-fork integration, and source-code work all pending a fresh dedicated kickoff arc. This initial commit exists to lock the repository's identity, licence position, and place in the UniCORE Sanity Check fleet so the work cannot be forgotten.
 
-A quick overview of the LibreOffice code structure.
+Author: **Bryan Fred, Unitek Systems Limited, Bedford, United Kingdom.**
+First commit: **2026-06-04 17:45 UTC.**
 
-## Overview
+---
 
-You can develop for LibreOffice in one of two ways, one
-recommended and one much less so. First the somewhat less recommended
-way: it is possible to use the SDK to develop an extension,
-for which you can read the [API docs](https://api.libreoffice.org/)
-and [Developers Guide](https://wiki.documentfoundation.org/Documentation/DevGuide).
-This re-uses the (extremely generic) UNO APIs that are also used by
-macro scripting in StarBasic.
+## What this repository is
 
-The best way to add a generally useful feature to LibreOffice
-is to work on the code base however. Overall this way makes it easier
-to compile and build your code, it avoids any arbitrary limitations of
-our scripting APIs, and in general is far more simple and intuitive -
-if you are a reasonably able C++ programmer.
+`bryanunitek/UniSaaS.UniCORE.LibreOffice` is the **LibreOffice** family member: SaaS-deployment-shape public gift surface. Documentation today; source code at certification.
 
-## The Build Chain and Runtime Baselines
+**Family purpose:** Open-source office suite — document conversion (PDF from Word/Excel) for UniCORE.Law billing output.
 
-These are the current minimal operating system and compiler versions to
-run and compile LibreOffice, also used by the TDF builds:
+**Deployment shape:** This is the **SaaS-shape** member of the family. It tracks the same upstream codebase as [`UniCORE.LibreOffice`](https://github.com/bryanunitek/UniCORE.LibreOffice) (on-prem shape) but carries SaaS-specific configuration, multi-tenant isolation patterns, and cloud-native deployment artefacts.
 
-* Windows:
-    * Runtime: Windows 10
-    * Build: [wsl-as-helper](https://wiki.documentfoundation.org/Development/BuildingOnWSLWindows) + Visual Studio 2022
-* macOS:
-    * Runtime: 11
-    * Build: 13 or later + Xcode 14.3 or later (using latest version available for a given version of macOS)
-* Linux:
-    * Runtime: RHEL 9 or CentOS 9 and comparable
-    * Build: either GCC 13; or Clang 18 with libstdc++ 11
-* iOS (only for LibreOfficeKit):
-    * Runtime: 14.5 (only support for newer i devices == 64 bit)
-    * Build: Xcode 12.5 and iPhone SDK 14.5
-* Android:
-    * Build: NDK 27 and SDK 30.0.3
-* Emscripten / WASM:
-    * Runtime: a browser with SharedMemory support (threads + atomics)
-    * Build: Qt 5.15 with Qt supported Emscripten 1.39.8
-    * See [README.wasm](static/README.wasm.md)
+---
 
-Java is required for building many parts of LibreOffice. In TDF Wiki article
-[Development/Java](https://wiki.documentfoundation.org/Development/Java), the
-exact modules that depend on Java are listed.
+## Upstream
 
-The baseline for Java is Java Development Kit (JDK) Version 17 or later.
+- **Upstream project:** https://github.com/LibreOffice/core
+- **Upstream licence:** MPL-2.0
+- **Our relationship:** Fork-and-extend. Upstream codebase is consumed verbatim under its original licence; our additions sit on top under CC BY 4.0.
 
-The baseline for Python is version 3.11. It follows the version available
-in SUSE Linux Enterprise Desktop and the Maintenance Support version of
-Red Hat Enterprise Linux.
+The merge discipline that governs how this repository absorbs upstream changes is documented in [`UPSTREAM-MERGE-DISCIPLINE.md`](UPSTREAM-MERGE-DISCIPLINE.md).
 
-If you want to use Clang with the LibreOffice compiler plugins, the minimal
-version of Clang is 18. Since Xcode doesn't provide the compiler plugin
-headers, you have to compile your own Clang to use them on macOS.
+---
 
-You can find the TDF configure switches in the `distro-configs/` directory.
+## Platforms
 
-To setup your initial build environment on Windows and macOS, we provide
-the LibreOffice Development Environment
-([LODE](https://wiki.documentfoundation.org/Development/lode)) scripts.
+Windows · Linux · macOS · iOS · Android
 
-For more information see the build instructions for your platform in the
-[TDF wiki](https://wiki.documentfoundation.org/Development/How_to_build).
+---
 
-## The Important Bits of Code
+## Family — the four-repo pattern
 
-Each module should have a `README.md` file inside it which has some
-degree of documentation for that module; patches are most welcome to
-improve those. We have those turned into a web page here:
+UniCORE.LibreOffice is published as a **four-repo family**:
 
-<https://docs.libreoffice.org/>
+- `bryanunitek/UniCORE.LibreOffice` — public on-prem-deployment-shape gift surface
+- `bryanunitek/UniSaaS.UniCORE.LibreOffice` — public SaaS-deployment-shape gift surface ← **this repo**
+- `bryanunitek/UniCORE.LibreOffice-Claw` (private) — on-prem-shape working repository
+- `bryanunitek/UniSaaS.UniCORE.LibreOffice-Claw` (private) — SaaS-shape working repository
 
-However, there are two hundred modules, many of them of only
-peripheral interest for a specialist audience. So - where is the
-good stuff, the code that is most useful. Here is a quick overview of
-the most important ones:
+---
 
-Module    | Description
-----------|-------------------------------------------------
-[sal/](sal)             | this provides a simple System Abstraction Layer
-[tools/](tools)         | this provides basic internal types: `Rectangle`, `Color` etc.
-[vcl/](vcl)             | this is the widget toolkit library and one rendering abstraction
-[framework/](framework) | UNO framework, responsible for building toolbars, menus, status bars, and the chrome around the document using widgets from VCL, and XML descriptions from `/uiconfig/` files
-[sfx2/](sfx2)           | legacy core framework used by Writer/Calc/Draw: document model / load/save / signals for actions etc.
-[svx/](svx)             | drawing model related helper code, including much of Draw/Impress
+## Status
 
-Then applications
+**SCAFFOLD-ANCHOR** as of 2026-06-04. See [`STATUS.md`](STATUS.md) for the full status breakdown.
 
-Module    | Description
-----------|-------------------------------------------------
-[desktop/](desktop)  | this is where the `main()` for the application lives, init / bootstrap. the name dates back to an ancient StarOffice that also drew a desktop
-[sw/](sw/)           | Writer
-[sc/](sc/)           | Calc
-[sd/](sd/)           | Draw / Impress
+---
 
-There are several other libraries that are helpful from a graphical perspective:
+## Files in this scaffold commit
 
-Module    | Description
-----------|-------------------------------------------------
-[basegfx/](basegfx)  | algorithms and data-types for graphics as used in the canvas
-[canvas/](canvas)   | new (UNO) canvas rendering model with various backends
-[cppcanvas/](cppcanvas) | C++ helper classes for using the UNO canvas
-[drawinglayer/](drawinglayer) | View code to render drawable objects and break them down into primitives we can render more easily.
+- [`README.md`](README.md) — this file
+- [`LICENSE.md`](LICENSE.md) — UniCORE additions licence
+- [`STATUS.md`](STATUS.md) — scaffold-anchor status
+- [`UPSTREAM-MERGE-DISCIPLINE.md`](UPSTREAM-MERGE-DISCIPLINE.md) — canonical merge discipline
+- [`AI-AUTHORSHIP.md`](AI-AUTHORSHIP.md) — AI authorship disclosure
 
-## Rules for #include Directives (C/C++)
+---
 
-Use the `"..."` form if and only if the included file is found next to the
-including file. Otherwise, use the `<...>` form. (For further details, see the
-mail [Re: C[++]: Normalizing include syntax ("" vs
-<>)](https://lists.freedesktop.org/archives/libreoffice/2017-November/078778.html).)
+## Related repositories — UniCORE programme
 
-The UNO API include files should consistently use double quotes, for the
-benefit of external users of this API.
+**Foundation triad (gift, public, CC BY 4.0):**
+- [`UniVERSE`](https://github.com/bryanunitek/UniVERSE) — programme
+- [`TrueAI`](https://github.com/bryanunitek/TrueAI) — Foundation (Nine Invariants)
+- [`UniCORE-AI`](https://github.com/bryanunitek/UniCORE-AI) — reference architecture (12 Levels)
 
-`loplugin:includeform (compilerplugins/clang/includeform.cxx)` enforces these rules.
+**Implementation reference (deployment-shape pair):**
+- [`UniCORE`](https://github.com/bryanunitek/UniCORE) — on-prem-shape
+- [`UniSaaS.UniCORE`](https://github.com/bryanunitek/UniSaaS.UniCORE) — SaaS-shape
 
+**Substrate-services layer (deployment-shape pair):**
+- [`UniCORE.GVB`](https://github.com/bryanunitek/UniCORE.GVB) — on-prem-shape
+- [`UniSaaS.UniCORE.GVB`](https://github.com/bryanunitek/UniSaaS.UniCORE.GVB) — SaaS-shape
 
-## Finding Out More
+---
 
-Beyond this, you can read the `README.md` files, send us patches, ask
-on the mailing list libreoffice@lists.freedesktop.org (no subscription
-required) or poke people on IRC `#libreoffice-dev` on irc.libera.chat -
-we're a friendly and generally helpful mob. We know the code can be
-hard to get into at first, and so there are no silly questions.
+## Contact
 
-## SAST Tools
+- **Public discussion:** [GitHub Discussions](https://github.com/bryanunitek/UniSaaS.UniCORE.LibreOffice/discussions)
+- **Private contact / connection request:** [LinkedIn — Bryan Fred](https://www.linkedin.com/in/bryan-fred-02209753/)
 
-[PVS-Studio](https://pvs-studio.com/en/pvs-studio/?utm_source=website&utm_medium=github&utm_campaign=open_source) - static analyzer for C, C++, C#, and Java code.
+---
+
+*Author: Bryan Fred, Unitek Systems Limited, Bedford, United Kingdom. Public. Given, not sold. Irrevocable.*
