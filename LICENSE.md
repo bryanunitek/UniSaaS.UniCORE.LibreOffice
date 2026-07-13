@@ -27,7 +27,7 @@ This repository will, once forked, contain an **upstream open-source codebase** 
 - **UniCORE-authored files** carry a `Copyright (c) Bryan Fred, Unitek Systems Limited` header and are governed by THIS file.
 - **Composite works** that combine both must respect both licences. CC BY 4.0 is compatible with MPL-2.0 for this purpose.
 
-For the operational discipline that maintains this boundary across upstream merges, see [`UPSTREAM-MERGE-DISCIPLINE.md`](UPSTREAM-MERGE-DISCIPLINE.md).
+For the operational discipline that maintains this boundary across upstream merges, see [`UPSTREAM-MERGE-DISCIPLINE.md`](https://git.unitek-systems.com/UniCORE/UniSaaS.UniCORE.LibreOffice/src/branch/main/UPSTREAM-MERGE-DISCIPLINE.md) (mirror: [GitHub](https://github.com/bryanunitek/UniSaaS.UniCORE.LibreOffice/blob/main/UPSTREAM-MERGE-DISCIPLINE.md)).
 
 ---
 

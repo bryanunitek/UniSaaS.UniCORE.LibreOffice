@@ -51,7 +51,7 @@ run and compile LibreOffice, also used by the TDF builds:
 * Emscripten / WASM:
     * Runtime: a browser with SharedMemory support (threads + atomics)
     * Build: Qt 5.15 with Qt supported Emscripten 1.39.8
-    * See [README.wasm](static/README.wasm.md)
+    * See [README.wasm](https://git.unitek-systems.com/UniCORE/UniSaaS.UniCORE.LibreOffice/src/branch/main/static/README.wasm.md) (mirror: [GitHub](https://github.com/bryanunitek/UniSaaS.UniCORE.LibreOffice/blob/main/static/README.wasm.md))
 
 Java is required for building many parts of LibreOffice. In TDF Wiki article
 [Development/Java](https://wiki.documentfoundation.org/Development/Java), the
