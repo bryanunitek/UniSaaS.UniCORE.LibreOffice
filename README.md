@@ -15,7 +15,7 @@ First commit: **2026-06-04 17:45 UTC.**
 
 **Family purpose:** Open-source office suite — document conversion (PDF from Word/Excel) for UniCORE.Law billing output.
 
-**Deployment shape:** This is the **SaaS-shape** member of the family. It tracks the same upstream codebase as [`UniCORE.LibreOffice`](https://github.com/bryanunitek/UniCORE.LibreOffice) (on-prem shape) but carries SaaS-specific configuration, multi-tenant isolation patterns, and cloud-native deployment artefacts.
+**Deployment shape:** This is the **SaaS-shape** member of the family. It tracks the same upstream codebase as [`UniCORE.LibreOffice`](https://git.unitek-systems.com/UniCORE/UniCORE.LibreOffice) (mirror: [GitHub](https://github.com/bryanunitek/UniCORE.LibreOffice)) (on-prem shape) but carries SaaS-specific configuration, multi-tenant isolation patterns, and cloud-native deployment artefacts.
 
 ---
 
@@ -65,17 +65,17 @@ UniCORE.LibreOffice is published as a **four-repo family**:
 ## Related repositories — UniCORE programme
 
 **Foundation triad (gift, public, CC BY 4.0):**
-- [`UniVERSE`](https://github.com/bryanunitek/UniVERSE) — programme
-- [`TrueAI`](https://github.com/bryanunitek/TrueAI) — Foundation (Nine Invariants)
-- [`UniCORE-AI`](https://github.com/bryanunitek/UniCORE-AI) — reference architecture (12 Levels)
+- [`UniVERSE`](https://git.unitek-systems.com/UniCORE/UniVERSE) (mirror: [GitHub](https://github.com/bryanunitek/UniVERSE)) — programme
+- [`TrueAI`](https://git.unitek-systems.com/UniCORE/TrueAI) (mirror: [GitHub](https://github.com/bryanunitek/TrueAI)) — Foundation (Nine Invariants)
+- [`UniCORE-AI`](https://git.unitek-systems.com/UniCORE/UniCORE-AI) (mirror: [GitHub](https://github.com/bryanunitek/UniCORE-AI)) — reference architecture (12 Levels)
 
 **Implementation reference (deployment-shape pair):**
-- [`UniCORE`](https://github.com/bryanunitek/UniCORE) — on-prem-shape
-- [`UniSaaS.UniCORE`](https://github.com/bryanunitek/UniSaaS.UniCORE) — SaaS-shape
+- [`UniCORE`](https://git.unitek-systems.com/UniCORE/UniCORE) (mirror: [GitHub](https://github.com/bryanunitek/UniCORE)) — on-prem-shape
+- [`UniSaaS.UniCORE`](https://git.unitek-systems.com/UniCORE/UniSaaS.UniCORE) (mirror: [GitHub](https://github.com/bryanunitek/UniSaaS.UniCORE)) — SaaS-shape
 
 **Substrate-services layer (deployment-shape pair):**
-- [`UniCORE.GVB`](https://github.com/bryanunitek/UniCORE.GVB) — on-prem-shape
-- [`UniSaaS.UniCORE.GVB`](https://github.com/bryanunitek/UniSaaS.UniCORE.GVB) — SaaS-shape
+- [`UniCORE.GVB`](https://git.unitek-systems.com/UniCORE/UniCORE.GVB) (mirror: [GitHub](https://github.com/bryanunitek/UniCORE.GVB)) — on-prem-shape
+- [`UniSaaS.UniCORE.GVB`](https://git.unitek-systems.com/UniCORE/UniSaaS.UniCORE.GVB) (mirror: [GitHub](https://github.com/bryanunitek/UniSaaS.UniCORE.GVB)) — SaaS-shape
 
 ---
 

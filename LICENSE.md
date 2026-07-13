@@ -33,7 +33,7 @@ For the operational discipline that maintains this boundary across upstream merg
 
 ## Irrevocability
 
-This gift is **irrevocable**. See [`IRREVOCABLE-LICENCE-DECLARATION.md`](IRREVOCABLE-LICENCE-DECLARATION.md) in the parent gift-surface repository [`UniCORE`](https://github.com/bryanunitek/UniCORE) for the canonical statement of irrevocability.
+This gift is **irrevocable**. See [`IRREVOCABLE-LICENCE-DECLARATION.md`](IRREVOCABLE-LICENCE-DECLARATION.md) in the parent gift-surface repository [`UniCORE`](https://git.unitek-systems.com/UniCORE/UniCORE) (mirror: [GitHub](https://github.com/bryanunitek/UniCORE)) for the canonical statement of irrevocability.
 
 ---
 
