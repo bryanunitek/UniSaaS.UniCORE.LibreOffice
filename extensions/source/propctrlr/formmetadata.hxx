@@ -69,7 +69,7 @@ protected:
     virtual ~DefaultEnumRepresentation() override;
 
 protected:
-    // IPropertyEnumRepresentation implementqation
+    // IPropertyEnumRepresentation implementation
     virtual std::vector<OUString> getDescriptions() const override;
     virtual void getValueFromDescription(const OUString& _rDescription,
                                          css::uno::Any& _out_rValue) const override;
@@ -94,7 +94,7 @@ private:
 #define PROP_FLAG_ENUM 0x00000020
 // the property is an enum property starting with 1 (note that this includes PROP_FLAG_ENUM)
 #define PROP_FLAG_ENUM_ONE 0x00000060
-// the property is "composeable", i.e. an intersection of property sets should expose it, if all elements do
+// the property is "composable", i.e. an intersection of property sets should expose it, if all elements do
 #define PROP_FLAG_COMPOSEABLE 0x00000080
 // the property is experimental, i.e. should not appear in the UI,
 // unless experimental properties are enabled by a configuration option

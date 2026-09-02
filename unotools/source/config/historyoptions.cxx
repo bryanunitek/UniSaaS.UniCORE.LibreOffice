@@ -402,7 +402,7 @@ void TogglePinItem(EHistoryType eHistory, const OUString& sURL)
             uno::Reference<container::XNameContainer> xOrderList;
             xListAccess->getByName(s_sOrderList) >>= xOrderList;
 
-            // Shift item to the beginning of the document list if is not pinned now
+            // Shift item to the beginning of the document list if it is not pinned now
             if (bIsItemPinned)
                 MoveItemToUnpinned(xCfg, xOrderList, xItemList, sURL);
             else
@@ -523,7 +523,7 @@ static void MoveItemToUnpinned(const uno::Reference<container::XNameAccess>& xCf
 {
     uno::Reference<beans::XPropertySet> xSet;
     const sal_Int32 nLength = xOrderList->getElementNames().getLength();
-    // Search for item in the ordered list list
+    // Search for item in the ordered list
     for (sal_Int32 i = 0; i < nLength; i++)
     {
         OUString aItem;

@@ -54,6 +54,9 @@ protected:
 
     void exportToPDFWithUnoCommands(const OUString& rRange);
 
+    void exportWholeDocumentToPDF(const std::initializer_list<css::beans::PropertyValue>& filterData
+                                  = {});
+
     bool hasTextInPdf(const char* sText, bool& bFound);
 
     void setFont(ScFieldEditEngine& rEE, sal_Int32 nStart, sal_Int32 nEnd,
@@ -166,6 +169,21 @@ void ScPDFExportTest::exportToPDFWithUnoCommands(const OUString& rRange)
     dispatchCommand(mxComponent, u".uno:ExportToPDF"_ustr, aDescriptor);
 }
 
+void ScPDFExportTest::exportWholeDocumentToPDF(
+    const std::initializer_list<css::beans::PropertyValue>& filterData)
+{
+    // Passing no "Selection" leaves the export covering every sheet of the document.
+    uno::Sequence<beans::PropertyValue> aDescriptor{
+        comphelper::makePropertyValue(u"FilterName"_ustr, u"calc_pdf_Export"_ustr),
+        comphelper::makePropertyValue(u"URL"_ustr, maTempFile.GetURL()),
+        comphelper::makePropertyValue(u"FilterData"_ustr,
+                                      comphelper::containerToSequence(filterData))
+    };
+
+    uno::Reference<css::frame::XStorable> xStorable(mxComponent, UNO_QUERY_THROW);
+    xStorable->storeToURL(maTempFile.GetURL(), aDescriptor);
+}
+
 void ScPDFExportTest::setFont(ScFieldEditEngine& rEE, sal_Int32 nStart, sal_Int32 nEnd,
                               const OUString& rFontName)
 {
@@ -186,6 +204,55 @@ CPPUNIT_TEST_FIXTURE(ScPDFExportTest, testMediaShapeScreen_Tdf159094)
 
     // Without the fix, this test would crash on export media file to pdf
     exportToPDF(xModel, aRange);
+}
+
+CPPUNIT_TEST_FIXTURE(ScPDFExportTest, testHiddenSheetsWithPrintRange)
+{
+    std::shared_ptr<vcl::pdf::PDFium> pPDFium = vcl::pdf::PDFiumLibrary::get();
+    if (!pPDFium)
+        return;
+
+    // Two of the four sheets are hidden, and every sheet carries a print range.
+    loadFromFile(u"hiddenSheetsWithPrintRange.fods");
+
+    exportWholeDocumentToPDF();
+
+    // Only the two visible sheets reach the PDF, one page each.
+    // Without the fix the hidden sheets were exported too, giving 4 pages.
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    CPPUNIT_ASSERT_EQUAL(2, pPdfDocument->getPageCount());
+
+    std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(0);
+    CPPUNIT_ASSERT_EQUAL(u"Visible1"_ustr,
+                         pPdfPage->getObject(0)->getText(pPdfPage->getTextPage()));
+
+    pPdfPage = pPdfDocument->openPage(1);
+    CPPUNIT_ASSERT_EQUAL(u"Visible2"_ustr,
+                         pPdfPage->getObject(0)->getText(pPdfPage->getTextPage()));
+}
+
+CPPUNIT_TEST_FIXTURE(ScPDFExportTest, testSinglePagesWithHiddenSheets)
+{
+    std::shared_ptr<vcl::pdf::PDFium> pPDFium = vcl::pdf::PDFiumLibrary::get();
+    if (!pPDFium)
+        return;
+
+    loadFromFile(u"hiddenSheetsWithPrintRange.fods");
+
+    exportWholeDocumentToPDF({ comphelper::makePropertyValue(u"SinglePageSheets"_ustr, true) });
+
+    // One page per visible sheet, in sheet order.
+    // Without the fix the hidden sheets were exported too, giving 4 pages.
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    CPPUNIT_ASSERT_EQUAL(2, pPdfDocument->getPageCount());
+
+    std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(0);
+    CPPUNIT_ASSERT_EQUAL(u"Visible sheet one"_ustr,
+                         pPdfPage->getObject(0)->getText(pPdfPage->getTextPage()));
+
+    pPdfPage = pPdfDocument->openPage(1);
+    CPPUNIT_ASSERT_EQUAL(u"Visible sheet two"_ustr,
+                         pPdfPage->getObject(0)->getText(pPdfPage->getTextPage()));
 }
 
 CPPUNIT_TEST_FIXTURE(ScPDFExportTest, testPopupRectangleSize_Tdf162955)
@@ -247,7 +314,7 @@ CPPUNIT_TEST_FIXTURE(ScPDFExportTest, testExportRange_Tdf120161)
         ScDocument& rDoc = xDocSh->GetDocument();
         for (unsigned int r = 0; r < 1; ++r)
             for (unsigned int c = 0; c < 14; ++c)
-                rDoc.SetValue(ScAddress(c, r, 0), (r + 1) * (c + 1));
+                rDoc.SetValue(c, r, 0, (r + 1) * (c + 1));
 
         // set "Text" to H1 cell with "DejaVuSans" font
         ScFieldEditEngine& rEE = rDoc.GetEditEngine();
@@ -307,7 +374,7 @@ CPPUNIT_TEST_FIXTURE(ScPDFExportTest, testExportFitToPage_Tdf103516)
         ScDocument& rDoc = xDocSh->GetDocument();
         for (unsigned int r = 0; r < 80; ++r)
             for (unsigned int c = 0; c < 12; ++c)
-                rDoc.SetValue(ScAddress(c, r, 0), (r + 1) * (c + 1));
+                rDoc.SetValue(c, r, 0, (r + 1) * (c + 1));
     }
 
     // A1:G50: 2-page export
@@ -870,7 +937,7 @@ CPPUNIT_TEST_FIXTURE(ScPDFExportTest, testTdf78897)
     // Without the fix in place, this test would have failed with
     // - Expected:  11.00 11.00
     // - Actual  :  11.00 ###
-    CPPUNIT_ASSERT_EQUAL(u" 11.00 11.00"_ustr, aActualText);
+    CPPUNIT_ASSERT_EQUAL(u" 11.00 11.00 "_ustr, aActualText);
 }
 
 // just needs to not crash on export to pdf

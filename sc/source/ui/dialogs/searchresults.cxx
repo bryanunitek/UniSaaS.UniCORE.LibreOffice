@@ -41,7 +41,7 @@ SearchResultsDlg::SearchResultsDlg(SfxBindings* _pBindings, weld::Window* pParen
     };
     mxList->set_column_fixed_widths(aWidths);
     mxList->connect_selection_changed(LINK(this, SearchResultsDlg, ListSelectHdl));
-    mxList->connect_column_clicked(LINK(this, SearchResultsDlg, HeaderBarClick));
+    mxList->connect_column_header_clicked(LINK(this, SearchResultsDlg, HeaderBarClick));
 }
 
 SearchResultsDlg::~SearchResultsDlg()
@@ -233,6 +233,10 @@ IMPL_LINK_NOARG(SearchResultsDlg, ListSelectHdl, weld::ItemView&, void)
         pScViewShell->SetCursor(aPos.Col(), aPos.Row());
         pScViewShell->AlignToCursor(aPos.Col(), aPos.Row(), SC_FOLLOW_JUMP);
     }
+
+    // unselect single entry to allow the user to re-select it
+    if (mxList->n_children() == 1)
+        mxList->unselect_all();
 }
 
 IMPL_STATIC_LINK( SearchResultsDlg, OnShowToggled, weld::Toggleable&, rButton, void )
@@ -245,10 +249,10 @@ IMPL_STATIC_LINK( SearchResultsDlg, OnShowToggled, weld::Toggleable&, rButton, v
     }
 }
 
-SearchResultsDlgWrapper::SearchResultsDlgWrapper(
-    vcl::Window* _pParent, sal_uInt16 nId, SfxBindings* pBindings, SfxChildWinInfo* /*pInfo*/)
+SearchResultsDlgWrapper::SearchResultsDlgWrapper(vcl::Window* _pParent, sal_uInt16 nId,
+                                                 SfxBindings& rBindings, SfxChildWinInfo& /*rInfo*/)
     : SfxChildWindow(_pParent, nId)
-    , m_xDialog(std::make_shared<SearchResultsDlg>(pBindings, _pParent->GetFrameWeld()))
+    , m_xDialog(std::make_shared<SearchResultsDlg>(&rBindings, _pParent->GetFrameWeld()))
 {
     SetController(m_xDialog);
 }

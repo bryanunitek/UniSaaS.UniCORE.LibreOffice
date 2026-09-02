@@ -1033,6 +1033,9 @@ void DomainMapper_Impl::PushSdt()
     // Offset so the cursor is not adjusted as we import the SDT's content.
     bool bStart = !xCursor->goLeft(1, /*bExpand=*/false);
     m_xSdtStarts.push({bStart, OUString(), xCursor->getStart()});
+
+    // It is captured while the SDT's content run is imported and consumed in PopSdt().
+    m_pSdtHelper->SetPlaceholderCharStyle(OUString());
 }
 
 const std::stack<BookmarkInsertPosition>& DomainMapper_Impl::GetSdtStarts() const
@@ -1124,11 +1127,31 @@ void DomainMapper_Impl::PopSdt()
         // the encoded data instead of the image.
         xCursor->setString(*oData);
 
-        // Such value is always a plain text string, remove the char style of the placeholder.
-        uno::Reference<beans::XPropertyState> xPropertyState(xCursor, uno::UNO_QUERY);
-        if (xPropertyState.is())
+        // tdf#147258: When a placeholder was being shown, its char style is just the
+        // placeholder styling and must not persist once the real value is shown.
+
+        // But when the value is formatted via a genuine char style (e.g. bold),
+        // that formatting is meaningful and Word keeps it, so only reset the
+        // char style in the placeholder case.
+        uno::Reference<beans::XPropertySet> xCursorProps(xCursor, uno::UNO_QUERY);
+        if (m_pSdtHelper->GetShowingPlcHdr())
         {
-            xPropertyState->setPropertyToDefault(u"CharStyleName"_ustr);
+            uno::Reference<beans::XPropertyState> xPropertyState(xCursor, uno::UNO_QUERY);
+            if (xPropertyState.is())
+            {
+                xPropertyState->setPropertyToDefault(u"CharStyleName"_ustr);
+            }
+        }
+        else if (!m_pSdtHelper->GetPlaceholderCharStyle().isEmpty() && xCursorProps.is())
+        {
+            OUString sCurrentCharStyle;
+            xCursorProps->getPropertyValue(u"CharStyleName"_ustr) >>= sCurrentCharStyle;
+            // Apply the run's char style explicitly so we keeps the intended formatting.
+            if (sCurrentCharStyle.isEmpty())
+            {
+                xCursorProps->setPropertyValue(
+                    u"CharStyleName"_ustr, uno::Any(m_pSdtHelper->GetPlaceholderCharStyle()));
+            }
         }
     }
 
@@ -1684,6 +1707,10 @@ void DomainMapper_Impl::deferBreak( BreakType deferredBreakType)
         m_StreamStateStack.top().nLineBreaksDeferred++;
         break;
     case COLUMN_BREAK:
+        // See SwWW8ImplReader::ReadChar(): column breaks should be ignored inside tables.
+        if (m_StreamStateStack.top().nTableDepth && !IsRTFImport())
+            return;
+
         m_StreamStateStack.top().bIsColumnBreakDeferred = true;
     break;
     case PAGE_BREAK:
@@ -2264,6 +2291,12 @@ void DomainMapper_Impl::finishParagraph( const ParagraphPropertyMapPtr& pParaCon
             }
         }
     }
+
+    // Now that this paragraph is really being finished (it is not a discarded
+    // header/footer and not a conditional field paragraph deferred above), decide
+    // inline vs display text mode for any formulas it contains. Done here while its
+    // content flag (bParaChanged) is still valid, i.e. before it is reset below.
+    finalizeParagraphFormulas();
 
 #ifdef DBG_UTIL
     TagLogger::getInstance().startElement("finishParagraph");
@@ -3822,10 +3855,48 @@ void DomainMapper_Impl::appendStarMath( const Value& val )
         // mimic the treatment of graphics here... it seems anchoring as character
         // gives a better ( visually ) result
         appendTextContent(xStarMath, uno::Sequence<beans::PropertyValue>());
+
+        // The size set above assumes display style. Remember the formula so that
+        // finalizeParagraphFormulas() can switch it to text mode (and re-fetch its
+        // size) if the finished paragraph turns out to hold more than just it.
+        m_StreamStateStack.top().aParagraphFormulas.emplace_back(xStarMath, xInterface);
     }
     catch( const uno::Exception& )
     {
         TOOLS_WARN_EXCEPTION( "writerfilter", "in creation of StarMath object" );
+    }
+}
+
+void DomainMapper_Impl::finalizeParagraphFormulas()
+{
+    auto aFormulas(std::move(m_StreamStateStack.top().aParagraphFormulas));
+    if (aFormulas.empty())
+        return;
+
+    // A formula that is the paragraph's only content is a display equation and
+    // keeps its full size; if the paragraph has any other content (text, a shape,
+    // a second formula, ...) the formula is inline and is drawn in text mode, with
+    // reduced fraction numerators/denominators and script-style limits.
+    const bool bInline = m_StreamStateStack.top().bParaChanged || aFormulas.size() > 1;
+    for (const auto& [xObject, xComponent] : aFormulas)
+    {
+        try
+        {
+            if (uno::Reference<beans::XPropertySet> xComponentProps{ xComponent, uno::UNO_QUERY })
+                xComponentProps->setPropertyValue(u"IsTextMode"_ustr, uno::Any(bInline));
+            if (auto* pFormula = dynamic_cast<oox::FormulaImExportBase*>(xComponent.get()))
+            {
+                const Size aSize(pFormula->getFormulaSize());
+                xObject->setPropertyValue(getPropertyName(PROP_WIDTH),
+                                          uno::Any(sal_Int32(aSize.Width())));
+                xObject->setPropertyValue(getPropertyName(PROP_HEIGHT),
+                                          uno::Any(sal_Int32(aSize.Height())));
+            }
+        }
+        catch (const uno::Exception&)
+        {
+            TOOLS_WARN_EXCEPTION("writerfilter", "in finalizing StarMath object");
+        }
     }
 }
 
@@ -4135,7 +4206,10 @@ void DomainMapper_Impl::PushPageHeaderFooter(PagePartType ePagePartType, PageTyp
                 pSectionContext->m_bHadLeftHeader = true;
             }
             else
+            {
                 pSectionContext->m_bLeftFooter = true;
+                pSectionContext->m_bHadLeftFooter = true;
+            }
 
             prepareHeaderFooterContent(xPageStyle, ePagePartType, ePropTextLeft, bEvenAndOdd);
         }
@@ -4147,7 +4221,10 @@ void DomainMapper_Impl::PushPageHeaderFooter(PagePartType ePagePartType, PageTyp
                 pSectionContext->m_bHadFirstHeader = true;
             }
             else
+            {
                 pSectionContext->m_bFirstFooter = true;
+                pSectionContext->m_bHadFirstFooter = true;
+            }
 
             prepareHeaderFooterContent(xPageStyle, ePagePartType, ePropTextFirst, true);
         }
@@ -4159,7 +4236,10 @@ void DomainMapper_Impl::PushPageHeaderFooter(PagePartType ePagePartType, PageTyp
                 pSectionContext->m_bHadRightHeader = true;
             }
             else
+            {
                 pSectionContext->m_bRightFooter = true;
+                pSectionContext->m_bHadRightFooter = true;
+            }
 
             prepareHeaderFooterContent(xPageStyle, ePagePartType, ePropTextRight, true);
         }
@@ -5958,7 +6038,20 @@ void DomainMapper_Impl::SetNumberFormat( const OUString& rCommand,
     aUSLocale.Country = "US";
 
     lang::Locale aCurrentLocale;
-    GetAnyProperty(PROP_CHAR_LOCALE, GetTopContext()) >>= aCurrentLocale;
+    // tdf#146973 the date is formatted in the language of the field's own run, kept here
+    // by AppendFieldCommand(); an RTL or CJK run only sets the language of its script
+    const PropertyMapPtr& rFieldProps = GetTopFieldContext()->getProperties();
+    for (const PropertyIds eId :
+         { PROP_CHAR_LOCALE, PROP_CHAR_LOCALE_COMPLEX, PROP_CHAR_LOCALE_ASIAN })
+    {
+        if (std::optional<PropertyMap::Property> oProperty = rFieldProps->getProperty(eId))
+        {
+            oProperty->second >>= aCurrentLocale;
+            break;
+        }
+    }
+    if (aCurrentLocale.Language.isEmpty())
+        GetAnyProperty(PROP_CHAR_LOCALE, GetTopContext()) >>= aCurrentLocale;
 
     if (sFormatString.isEmpty())
     {
@@ -10052,7 +10145,8 @@ void DomainMapper_Impl::ApplySettingsTable()
     {
         rtl::Reference< SwXTextDefaults > xTextDefaults(m_xTextDocument->createTextDefaults());
         sal_Int32 nDefTab = m_pSettingsTable->GetDefaultTabStop();
-        xTextDefaults->setPropertyValue( getPropertyName( PROP_TAB_STOP_DISTANCE ), uno::Any(nDefTab) );
+        const uno::Any aDefTab(nDefTab ? nDefTab : sal_Int32(1)); // zero is invalid in LO
+        xTextDefaults->setPropertyValue(getPropertyName(PROP_TAB_STOP_DISTANCE), aDefTab);
         if (m_pSettingsTable->GetLinkStyles())
         {
             // If linked styles are enabled, set paragraph defaults from Word's default template

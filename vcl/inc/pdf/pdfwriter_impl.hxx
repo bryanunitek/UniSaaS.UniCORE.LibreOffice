@@ -283,7 +283,6 @@ class GlyphEmit
     std::vector<ColorLayer>         m_aColorLayers;
     font::RawFontData               m_aColorBitmap;
     tools::Rectangle                m_aRect;
-    basegfx::B2DPolyPolygon         m_aOutline;
 
 public:
     GlyphEmit() : m_nSubsetGlyphID(0), m_nGlyphWidth(0)
@@ -309,9 +308,6 @@ public:
         rRect = m_aRect;
         return m_aColorBitmap;
     }
-
-    void setOutline(const basegfx::B2DPolyPolygon& rOutline) { m_aOutline = rOutline; }
-    const basegfx::B2DPolyPolygon& getOutline() const { return m_aOutline; }
 
     void addCode( sal_Ucs i_cCode )
     {
@@ -818,9 +814,16 @@ private:
     std::map<const vcl::font::PhysicalFontFace*, FontSubset> m_aType3Fonts;
     sal_Int32                           m_nNextFID;
 
+    /// Compressed bitmap cache
+    struct PDFBmpCacheEntry
+    {
+        bool m_bTrueColor;
+        std::shared_ptr<SvMemoryStream> m_pStream;
+        AlphaMask m_aAlphaMask;
+    };
+
     /// Cache some most recent bitmaps we've exported, in case we encounter them again..
-    o3tl::lru_map<BitmapChecksum,
-                  std::shared_ptr<SvMemoryStream>> m_aPDFBmpCache;
+    o3tl::lru_map<BitmapChecksum, std::optional<PDFBmpCacheEntry>> m_aPDFBmpCache;
 
     sal_Int32                           m_nCurrentPage;
 
@@ -887,6 +890,10 @@ private:
 
     void disableStreamEncryption() override;
 
+    /** Number of bytes that nDataSize bytes of input data occupy, taking
+        into account encryption overhead. */
+    sal_uInt64 calculateStreamSize(sal_uInt64 nDataSize) const override;
+
     /* */
     void enableStringEncryption( sal_Int32 nObject );
 
@@ -948,10 +955,14 @@ private:
     /* writes a type3 font object and appends it to the font id mapping, or returns false in case of failure */
     bool emitType3Font(const vcl::font::PhysicalFontFace*, const FontSubset&, std::map<sal_Int32, sal_Int32>&);
     /* writes a font descriptor and returns its object id (or 0) */
-    sal_Int32 emitFontDescriptor(const vcl::font::PhysicalFontFace*, FontSubsetInfo const &, sal_Int32 nSubsetID, sal_Int32 nStream);
+    sal_Int32 emitFontDescriptor(const vcl::font::PhysicalFontFace*, FontSubsetInfo const &, sal_Int32 nSubsetID, sal_Int32 nStream, sal_Int32 nCIDSet);
     /* writes a ToUnicode cmap, returns the corresponding stream object */
     sal_Int32 createToUnicodeCMap( sal_uInt8 const * pEncoding, const std::vector<sal_Ucs>& CodeUnits, const sal_Int32* pCodeUnitsPerGlyph,
                                    const sal_Int32* pEncToUnicodeIndex, uint32_t nGlyphs );
+    /* writes the code to CID CMap for composite CFF fonts, returns the stream object id (or 0 in case of failure) */
+    sal_Int32 emitCIDCMap(sal_Int32 nSubsetID, sal_uInt32 nGlyphs);
+    /* writes the CIDSet of a composite subset, returns the stream object id (or 0 if not wanted) */
+    sal_Int32 emitCIDSet(sal_uInt32 nGlyphs);
 
     /* get resource dict object number */
     sal_Int32 getResourceDictObj()

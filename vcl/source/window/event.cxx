@@ -257,7 +257,7 @@ void Window::CallEventListeners( VclEventId nEvent, void* pData )
         for ( const Link<VclWindowEvent&,void>& rLink : aCopy )
         {
             if (!bIgnoreDisposed && xWindow->isDisposed()) break;
-            // check this hasn't been removed in some re-enterancy scenario fdo#47368
+            // check this hasn't been removed in some re-entrancy scenario fdo#47368
             if( rWindowImpl.maEventListenersDeleted.find(rLink) == rWindowImpl.maEventListenersDeleted.end() )
                 rLink.Call( aEvent );
         }
@@ -294,7 +294,7 @@ void Window::CallEventListeners( VclEventId nEvent, void* pData )
             {
                 if (!bIgnoreDisposed && xWindow->isDisposed())
                     return;
-                // Check this hasn't been removed in some re-enterancy scenario fdo#47368.
+                // Check this hasn't been removed in some re-entrancy scenario fdo#47368.
                 if( rWindowImpl.maChildEventListenersDeleted.find(rLink) == rWindowImpl.maChildEventListenersDeleted.end() )
                     rLink.Call( aEvent );
             }
@@ -528,7 +528,7 @@ void Window::ImplCallResize()
     Resize();
 
     // #88419# Most classes don't call the base class in Resize() and Move(),
-    // => Call ImpleResize/Move instead of Resize/Move directly...
+    // => Call ImplResize/Move instead of Resize/Move directly...
     CallEventListeners( VclEventId::WindowResize );
 }
 

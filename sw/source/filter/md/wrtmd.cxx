@@ -94,7 +94,8 @@ struct SwMDImageInfo
     }
 };
 
-// This struct contains a state of the properties that we output. The integers represent "level"
+// This struct contains the state of the properties that we output and the state of being in a
+// code block, so we know when to skip escaping characters. The integers represent the "level"
 // of a given feature. Positive values mean applied status; zero means cleared status. Sometimes
 // values may be negative: e.g., when a node started, and some redline continues from a previous
 // node, aRedlineChanges would be empty initially; and when the end of the continued redline is
@@ -106,6 +107,7 @@ struct FormattingStatus
     int nUnderlineChange = 0;
     int nWeightChange = 0;
     int nCodeChange = 0;
+    bool bCodeBlock = false;
     std::unordered_map<OUString, int> aHyperlinkChanges;
     std::unordered_map<const SwRangeRedline*, int> aRedlineChanges;
     std::set<SwMDImageInfo> aImages;
@@ -365,7 +367,9 @@ FormattingStatus CalculateFormattingChange(SwMDWriter& rWrt, NodePositions& posi
 bool ShouldCloseIt(int prev, int curr) { return prev != curr && prev >= 0 && curr <= 0; }
 bool ShouldOpenIt(int prev, int curr) { return prev != curr && prev <= 0 && curr > 0; }
 
-void OutEscapedChars(SwMDWriter& rWrt, std::u16string_view chars);
+void OutEscapedChars(SwMDWriter& rWrt, std::u16string_view chars,
+                     std::optional<std::reference_wrapper<FormattingStatus>> current
+                     = std::nullopt);
 
 void OutMarkdown_SwMDImageInfo(const SwMDImageInfo& rImageInfo, SwMDWriter& rWrt)
 {
@@ -376,7 +380,8 @@ void OutMarkdown_SwMDImageInfo(const SwMDImageInfo& rImageInfo, SwMDWriter& rWrt
     }
 
     rWrt.Strm().WriteUnicodeOrByteText(u"![");
-    OutEscapedChars(rWrt, rImageInfo.aDescription);
+    // tdf#171037 Descriptions might have newlines, but Markdown doesn't allow them in alt texts
+    OutEscapedChars(rWrt, rImageInfo.aDescription.replaceAll("\n", " "));
     rWrt.Strm().WriteUnicodeOrByteText(u"](");
     rWrt.Strm().WriteUnicodeOrByteText(rImageInfo.aURL);
 
@@ -411,7 +416,7 @@ void OutFormattingChange(SwMDWriter& rWrt, NodePositions& positions, sal_Int32 p
 
     // TODO/FIXME: the closing characters must be right-flanking
 
-    if (ShouldCloseIt(current.nCodeChange, result.nCodeChange))
+    if (!current.bCodeBlock && ShouldCloseIt(current.nCodeChange, result.nCodeChange))
     {
         rWrt.Strm().WriteUnicodeOrByteText(u"`");
     }
@@ -553,7 +558,7 @@ void OutFormattingChange(SwMDWriter& rWrt, NodePositions& positions, sal_Int32 p
         }
     }
 
-    if (ShouldOpenIt(current.nCodeChange, result.nCodeChange))
+    if (!current.bCodeBlock && ShouldOpenIt(current.nCodeChange, result.nCodeChange))
     {
         rWrt.Strm().WriteUnicodeOrByteText(u"`");
     }
@@ -574,8 +579,17 @@ void OutFormattingChange(SwMDWriter& rWrt, NodePositions& positions, sal_Int32 p
     current = std::move(result);
 }
 
-void OutEscapedChars(SwMDWriter& rWrt, std::u16string_view chars)
+void OutEscapedChars(SwMDWriter& rWrt, std::u16string_view chars,
+                     std::optional<std::reference_wrapper<FormattingStatus>> current)
 {
+    // <https://spec.commonmark.org/0.31.2/#backslash-escapes> backslash escapes do not work in code blocks and code spans
+    if (current.has_value()
+        && (current.value().get().nCodeChange || current.value().get().bCodeBlock))
+    {
+        rWrt.Strm().WriteUnicodeOrByteText(chars);
+        return;
+    }
+
     for (size_t pos = 0; pos < chars.size();)
     {
         size_t oldpos = pos;
@@ -739,6 +753,7 @@ void OutMarkdown_SwTextNode(SwMDWriter& rWrt, const SwTextNode& rNode, bool bFir
             }
         }
 
+        FormattingStatus currentStatus;
         if (pFormatColl && pFormatColl->GetPoolFormatId() == SwPoolFormatId::COLL_HTML_PRE)
         {
             // Before the first paragraph of a code block, see
@@ -749,6 +764,7 @@ void OutMarkdown_SwTextNode(SwMDWriter& rWrt, const SwTextNode& rNode, bool bFir
             {
                 rWrt.Strm().WriteUnicodeOrByteText(u"```" SAL_NEWLINE_STRING);
             }
+            currentStatus.bCodeBlock = true;
         }
 
         sal_Int32 nStrPos = rWrt.m_pCurrentPam->GetPoint()->GetContentIndex();
@@ -839,7 +855,6 @@ void OutMarkdown_SwTextNode(SwMDWriter& rWrt, const SwTextNode& rNode, bool bFir
             positions.flys.add(aFly.m_nAnchorContentOffset, aFly.m_pFrameFormat);
         }
 
-        FormattingStatus currentStatus;
         while (nStrPos < nEnd)
         {
             // 1. Output attributes
@@ -852,7 +867,8 @@ void OutMarkdown_SwTextNode(SwMDWriter& rWrt, const SwTextNode& rNode, bool bFir
             // content.
             if (!rWrt.GetTaskListItems())
             {
-                OutEscapedChars(rWrt, rNodeText.subView(nStrPos, nEndOfChunk - nStrPos));
+                OutEscapedChars(rWrt, rNodeText.subView(nStrPos, nEndOfChunk - nStrPos),
+                                currentStatus);
             }
             nStrPos = nEndOfChunk;
         }
@@ -868,6 +884,7 @@ void OutMarkdown_SwTextNode(SwMDWriter& rWrt, const SwTextNode& rNode, bool bFir
             if (!pNextColl || pNextColl->GetPoolFormatId() != SwPoolFormatId::COLL_HTML_PRE)
             {
                 rWrt.Strm().WriteUnicodeOrByteText(u"" SAL_NEWLINE_STRING "```");
+                currentStatus.bCodeBlock = false;
             }
         }
     }
@@ -930,6 +947,8 @@ void OutMarkdown_SwTableNode(SwMDWriter& rWrt, const SwTableNode& rTableNode)
         {
             const SwTableBox* pBox = pLine->GetTabBoxes()[nBox];
             const SwStartNode* pStart = pBox->GetSttNd();
+            if (!pStart)
+                continue;
             SwNodeOffset nCellStartIndex = pStart->GetIndex() + 1;
             SwMDCellInfo& rStartInfo = aTableInfo.aCellInfos[nCellStartIndex];
             const SwEndNode* pEnd = pStart->EndOfSectionNode();

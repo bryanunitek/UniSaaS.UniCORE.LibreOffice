@@ -291,7 +291,7 @@ static void lcl_translateTwips(const OutputDevice& rParent, OutputDevice& rChild
         return;
 
     // Set map mode, so that callback payloads will contain absolute coordinates instead of relative ones.
-    Point aOffset(rChild.GetOutOffXPixel() - rParent.GetOutOffXPixel(), rChild.GetOutOffYPixel() - rParent.GetOutOffYPixel());
+    Point aOffset(rChild.GetDeviceOriginX() - rParent.GetDeviceOriginX(), rChild.GetDeviceOriginY() - rParent.GetDeviceOriginY());
     if (!rChild.IsMapModeEnabled())
     {
         MapMode aMapMode(rChild.GetMapMode());
@@ -330,8 +330,8 @@ void ImpEditView::lokSelectionCallback(const std::optional<tools::PolyPolygon> &
 
     if (pParent && pParent->GetLOKWindowId() != 0)
     {
-        const tools::Long nX = mpOutputWindow->GetOutOffXPixel() - pParent->GetOutOffXPixel();
-        const tools::Long nY = mpOutputWindow->GetOutOffYPixel() - pParent->GetOutOffYPixel();
+        const tools::Long nX = mpOutputWindow->GetDeviceOriginX() - pParent->GetDeviceOriginX();
+        const tools::Long nY = mpOutputWindow->GetDeviceOriginY() - pParent->GetDeviceOriginY();
 
         std::vector<tools::Rectangle> aRectangles;
         aRegion.GetRegionRectangles(aRectangles);
@@ -361,8 +361,8 @@ void ImpEditView::lokSelectionCallback(const std::optional<tools::PolyPolygon> &
             // on top of us to use its offset.
             vcl::Window* parent = mpOutputWindow->GetParent();
             while (parent &&
-                    parent->GetOutOffXPixel() == mpOutputWindow->GetOutOffXPixel() &&
-                    parent->GetOutOffYPixel() == mpOutputWindow->GetOutOffYPixel())
+                    parent->GetDeviceOriginX() == mpOutputWindow->GetDeviceOriginX() &&
+                    parent->GetDeviceOriginY() == mpOutputWindow->GetDeviceOriginY())
             {
                 parent = parent->GetParent();
             }
@@ -895,11 +895,11 @@ void ImpEditView::InvalidateAtWindow(const tools::Rectangle& rRect)
         // be used to visualize the active edit text in an OverlayObject
         pCallbacks->EditViewInvalidate(mbNegativeX ? lcl_negateRectX(rRect) : rRect);
     }
-    else
+    else if (mpOutputWindow && !mpOutputWindow->isDisposed())
     {
         // classic mode: invalidate and trigger full repaint
         // of the changed area
-        GetWindow()->Invalidate(mbNegativeX ? lcl_negateRectX(rRect) : rRect);
+        mpOutputWindow->Invalidate(mbNegativeX ? lcl_negateRectX(rRect) : rRect);
     }
 }
 
@@ -1333,7 +1333,15 @@ void ImpEditView::ShowCursor( bool bGotoCursor, bool bForceVisCursor )
     if (getImpEditEngine().IsInUndo())
         return;
 
-    if (mpOutputWindow && mpOutputWindow->GetCursor() != GetCursor())
+    // In multi-view LOK sessions a secondary view's window can be disposed
+    // while the EditView is still registered in the EditEngine.  Without
+    // EditViewCallbacks the rest of this function relies on GetOutputDevice()
+    // which dereferences the window's mpWindowImpl — null after dispose.
+    if (!getEditViewCallbacks() && (!mpOutputWindow || mpOutputWindow->isDisposed()))
+        return;
+
+    if (mpOutputWindow && !mpOutputWindow->isDisposed()
+        && mpOutputWindow->GetCursor() != GetCursor())
         mpOutputWindow->SetCursor(GetCursor());
 
     EditPaM aPaM(maEditSelection.Max());
@@ -1601,7 +1609,7 @@ Pair ImpEditView::Scroll( tools::Long ndX, tools::Long ndY, ScrollRangeCheck nRa
     if ( aNewVisArea.Left() < 0 )
         aNewVisArea.Move( -aNewVisArea.Left(), 0 );
 
-    // The difference must be alignt on pixel (due to scroll!)
+    // The difference must be aligned on pixel (due to scroll!)
     tools::Long nDiffX = !IsVertical() ? ( GetVisDocLeft() - aNewVisArea.Left() ) : (IsTopToBottom() ? -( GetVisDocTop() - aNewVisArea.Top() ) : (GetVisDocTop() - aNewVisArea.Top()));
     tools::Long nDiffY = !IsVertical() ? ( GetVisDocTop() - aNewVisArea.Top() ) : (IsTopToBottom() ? (GetVisDocLeft() - aNewVisArea.Left()) : -(GetVisDocTop() - aNewVisArea.Top()));
 

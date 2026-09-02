@@ -64,12 +64,13 @@ void SvxContourDlgItem::StateChangedAtToolBoxControl( sal_uInt16 nSID, SfxItemSt
 }
 
 SvxContourDlgChildWindow::SvxContourDlgChildWindow(vcl::Window* _pParent, sal_uInt16 nId,
-                                                   SfxBindings* pBindings, SfxChildWinInfo const * pInfo)
+                                                   SfxBindings& rBindings,
+                                                   const SfxChildWinInfo& rInfo)
     : SfxChildWindow( _pParent, nId )
 {
-    SetController(std::make_shared<SvxContourDlg>(pBindings, this, _pParent->GetFrameWeld()));
+    SetController(std::make_shared<SvxContourDlg>(&rBindings, this, _pParent->GetFrameWeld()));
     SvxContourDlg* pDlg = static_cast<SvxContourDlg*>(GetController().get());
-    pDlg->Initialize( pInfo );
+    pDlg->Initialize(rInfo);
 }
 
 SvxContourDlg::SvxContourDlg(SfxBindings* _pBindings, SfxChildWindow* pCW,
@@ -644,10 +645,17 @@ IMPL_LINK( SvxSuperContourDlg, PipetteClickHdl, ContourWindow&, rWnd, void )
             const auto nPercentage = o3tl::sanitizing_cast<sal_uInt16>(m_xMtfTolerance->get_value(FieldUnit::PERCENT));
             const auto nTol = nPercentage * 255 / 100;
 
-            AlphaMask aMask = aGraphic.GetBitmap().CreateColorBitmap().CreateAlphaMask( rColor, nTol );
-
-            if( aGraphic.IsTransparent() )
-                aMask.AlphaCombineOr( aGraphic.GetBitmap().CreateAlphaMask() );
+            Bitmap aBmp(aGraphic.GetBitmap());
+            AlphaMask aMask;
+            if (aBmp.HasAlpha())
+            {
+                std::tie(aBmp, aMask) = aBmp.SplitIntoColorAndAlpha();
+                aMask.AlphaCombineOr(aBmp.CreateAlphaMask(rColor, nTol));
+            }
+            else
+            {
+                aMask = aBmp.CreateAlphaMask(rColor, nTol);
+            }
 
             if( !aMask.IsEmpty() )
             {
@@ -658,7 +666,6 @@ IMPL_LINK( SvxSuperContourDlg, PipetteClickHdl, ContourWindow&, rWnd, void )
 
                 aRedoGraphic = Graphic();
                 aUndoGraphic = aGraphic;
-                Bitmap aBmp = aGraphic.GetBitmap().CreateColorBitmap();
                 aGraphic = Graphic( Bitmap( aBmp, aMask ) );
                 mnGrfChanged++;
 

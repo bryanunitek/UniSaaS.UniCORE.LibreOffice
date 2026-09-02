@@ -241,9 +241,9 @@ CPPUNIT_TEST_FIXTURE(Test, testExportingCodeSpan)
     SwDoc* pDoc = pDocShell->GetDoc();
     IDocumentStylePoolAccess& rIDSPA = pDoc->getIDocumentStylePoolAccess();
     SwWrtShell* pWrtShell = pDocShell->GetWrtShell();
-    pWrtShell->Insert(u"A B C"_ustr);
+    pWrtShell->Insert(u"A B_B C"_ustr);
     pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/false, 2, /*bBasicCall=*/false);
-    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 1, /*bBasicCall=*/false);
+    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 3, /*bBasicCall=*/false);
     SwView& rView = pWrtShell->GetView();
     SwTextFormatColl* pColl = rIDSPA.GetTextCollFromPool(SwPoolFormatId::COLL_HTML_PRE);
     SfxItemSet aSet(
@@ -257,10 +257,10 @@ CPPUNIT_TEST_FIXTURE(Test, testExportingCodeSpan)
     // Then make sure the format of B is exported:
     std::string aActual = TempFileToString();
     // Without the accompanying fix in place, this test would have failed with:
-    // - Expected: A `B` C
-    // - Actual  : A B C
+    // - Expected: A `B_B` C
+    // - Actual  : A B_B C
     // i.e. the code formatting was lost.
-    std::string aExpected("A `B` C" SAL_NEWLINE_STRING);
+    std::string aExpected("A `B_B` C" SAL_NEWLINE_STRING);
     CPPUNIT_ASSERT_EQUAL(aExpected, aActual);
 }
 
@@ -330,7 +330,7 @@ CPPUNIT_TEST_FIXTURE(Test, testExportingImage)
     SwFlyFrameFormat* pFlyFormat
         = rIDCO.InsertGraphic(*pCursor, aGraphicURL, OUString(), &aGraphic, &aFrameSet,
                               /*pGrfAttrSet=*/nullptr, /*SwFrameFormat=*/nullptr);
-    pFlyFormat->SetObjDescription(u"mydesc"_ustr);
+    pFlyFormat->SetObjDescription(u"mydesc\nsecondpart"_ustr);
     pWrtShell->Insert(u" B"_ustr);
 
     // When saving that to markdown:
@@ -338,9 +338,9 @@ CPPUNIT_TEST_FIXTURE(Test, testExportingImage)
 
     // Then make sure the image is exported:
     std::string aActual = TempFileToString();
-    std::string aExpected("A ![mydesc](./test.png) B" SAL_NEWLINE_STRING);
+    std::string aExpected("A ![mydesc secondpart](./test.png) B" SAL_NEWLINE_STRING);
     // Without the accompanying fix in place, this test would have failed with:
-    // - Expected: A ![mydesc](./test.png) B
+    // - Expected: A ![mydesc secondpart](./test.png) B
     // - Actual  : A  B
     // i.e. the image was lost.
     CPPUNIT_ASSERT_EQUAL(aExpected, aActual);
@@ -459,14 +459,14 @@ CPPUNIT_TEST_FIXTURE(Test, testCodeBlockMdExport)
     SwWrtShell* pWrtShell = pDocShell->GetWrtShell();
     pWrtShell->Insert(u"A"_ustr);
     pWrtShell->SplitNode();
-    pWrtShell->Insert(u"B"_ustr);
+    pWrtShell->Insert(u"B_B"_ustr);
     SwCursor* pCursor = pWrtShell->GetCursor();
     SwDoc* pDoc = pDocShell->GetDoc();
     IDocumentStylePoolAccess& rIDSPA = pDoc->getIDocumentStylePoolAccess();
     SwTextFormatColl* pColl = rIDSPA.GetTextCollFromPool(SwPoolFormatId::COLL_HTML_PRE);
     pDoc->SetTextFormatColl(*pCursor, pColl);
     pWrtShell->SplitNode();
-    pWrtShell->Insert(u"C"_ustr);
+    pWrtShell->Insert(u"C_C"_ustr);
     pWrtShell->SplitNode();
     pWrtShell->Insert(u"D"_ustr);
     pColl = rIDSPA.GetTextCollFromPool(SwPoolFormatId::COLL_STANDARD);
@@ -482,16 +482,16 @@ CPPUNIT_TEST_FIXTURE(Test, testCodeBlockMdExport)
         "A" SAL_NEWLINE_STRING
         SAL_NEWLINE_STRING
         "```" SAL_NEWLINE_STRING
-        "B" SAL_NEWLINE_STRING
+        "B_B" SAL_NEWLINE_STRING
         SAL_NEWLINE_STRING
-        "C" SAL_NEWLINE_STRING
+        "C_C" SAL_NEWLINE_STRING
         "```" SAL_NEWLINE_STRING
         SAL_NEWLINE_STRING
         "D" SAL_NEWLINE_STRING
         // clang-format on
     );
     // Without the accompanying fix in place, this test would have failed with:
-    // - Actual  : A\nB\nC\nD\n
+    // - Actual  : A\nB_B\nC_C\nD\n
     // i.e. the code block formatting was lost.
     CPPUNIT_ASSERT_EQUAL(aExpected, aActual);
 }
@@ -1044,6 +1044,74 @@ CPPUNIT_TEST_FIXTURE(Test, testPaste)
     CPPUNIT_ASSERT_EQUAL(aABottom, aList2Bottom);
 }
 
+CPPUNIT_TEST_FIXTURE(Test, testListPaste)
+{
+    // Given a document with 4 paragraphs (Before, List A, List B, After), where
+    // "List A" and "List B" are list items:
+    createSwDoc("paste-list.docx");
+
+    // When pasting a markdown list at the END of the 2nd paragraph:
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    pWrtShell->SttEndDoc(/*bStt=*/true);
+    pWrtShell->Down(/*bSelect=*/false);
+    pWrtShell->MovePara(GoCurrPara, fnParaEnd);
+    rtl::Reference<TransferDataContainer> xTransferable(new TransferDataContainer);
+    xTransferable->CopyString(SotClipboardFormatId::MARKDOWN, u"- List 1\n- List 2"_ustr);
+    TransferableDataHelper aHelper(xTransferable);
+    SwTransferable::PasteFormat(*pWrtShell, aHelper, SotClipboardFormatId::MARKDOWN);
+
+    // Then make sure the existing "List A" list item isn't joined with the first pasted "List 1"
+    // list item: paragraph 2 should stay "List A", and the new paragraph 3 should be "List 1":
+    // Without the accompanying fix in place, this test would have failed with:
+    // - Expected: List A
+    // - Actual  : List AList 1
+    // i.e. pasting a list item at the end of a list item joined the two.
+    CPPUNIT_ASSERT_EQUAL(u"List A"_ustr, getParagraph(2)->getString());
+    CPPUNIT_ASSERT_EQUAL(u"List 1"_ustr, getParagraph(3)->getString());
+
+    // And make sure the pasted list doesn't leave a trailing empty bullet
+    // between "List 2" and the pre-existing "List B" list item:
+    // Without the accompanying fix in place, this test would have failed with:
+    // - Expected: List 2
+    // - Actual  :
+    // i.e. paragraph 4 was an empty.
+    CPPUNIT_ASSERT_EQUAL(u"List 2"_ustr, getParagraph(4)->getString());
+    CPPUNIT_ASSERT_EQUAL(u"List B"_ustr, getParagraph(5)->getString());
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testListEndPaste)
+{
+    // Given a document with 4 paragraphs (Before, List A, List B, After), where
+    // "List A" and "List B" are list items:
+    createSwDoc("paste-list-end.docx");
+
+    // When pasting a markdown list at the end of the 3rd paragraph:
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    pWrtShell->SttEndDoc(/*bStt=*/true);
+    pWrtShell->Down(/*bSelect=*/false);
+    pWrtShell->Down(/*bSelect=*/false);
+    pWrtShell->MovePara(GoCurrPara, fnParaEnd);
+    rtl::Reference<TransferDataContainer> xTransferable(new TransferDataContainer);
+    xTransferable->CopyString(SotClipboardFormatId::MARKDOWN, u"- List 1\n- List 2"_ustr);
+    TransferableDataHelper aHelper(xTransferable);
+    SwTransferable::PasteFormat(*pWrtShell, aHelper, SotClipboardFormatId::MARKDOWN);
+
+    // Then make sure the two pasted list items have their bullet / are counted:
+    pWrtShell->SttEndDoc(/*bStt=*/true);
+    pWrtShell->Down(/*bSelect=*/false);
+    pWrtShell->Down(/*bSelect=*/false);
+    pWrtShell->Down(/*bSelect=*/false);
+    SwTextNode* pList1 = pWrtShell->GetCursor()->GetPointNode().GetTextNode();
+    CPPUNIT_ASSERT(pList1);
+    CPPUNIT_ASSERT(!pList1->GetSwAttrSet().GetItemIfSet(RES_PARATR_LIST_ISCOUNTED, false));
+    pWrtShell->Down(/*bSelect=*/false);
+    SwTextNode* pList2 = pWrtShell->GetCursor()->GetPointNode().GetTextNode();
+    CPPUNIT_ASSERT(pList2);
+    // Without the accompanying fix in place, this test would have failed, the
+    // last pasted list item was missing its bullet.
+    CPPUNIT_ASSERT(!pList2->GetSwAttrSet().GetItemIfSet(RES_PARATR_LIST_ISCOUNTED, false));
+}
+
 CPPUNIT_TEST_FIXTURE(Test, testCTLPaste)
 {
     createSwDoc();
@@ -1058,6 +1126,49 @@ CPPUNIT_TEST_FIXTURE(Test, testCTLPaste)
     // - Expected: שלום
     // - Actual  : some gibberish value at beginning + ?픅?
     CPPUNIT_ASSERT_EQUAL(u"שלום"_ustr, getParagraph(1)->getString());
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf172833CodeBlock)
+{
+    createSwDoc("tdf172833-code-block.fodt");
+
+    save(TestFilter::MD);
+    std::string aActual = TempFileToString();
+    std::string aExpected(
+        // clang-format off
+        "This is not code." SAL_NEWLINE_STRING
+        SAL_NEWLINE_STRING
+        "```" SAL_NEWLINE_STRING
+        "This is code." SAL_NEWLINE_STRING
+        SAL_NEWLINE_STRING
+        "This is more code." SAL_NEWLINE_STRING
+        "```" SAL_NEWLINE_STRING
+        SAL_NEWLINE_STRING
+        "This is not code." SAL_NEWLINE_STRING
+        // clang-format on
+    );
+
+    // Without the accompanying fix in place, this test would have failed with:
+    // - Expected: This is not code.
+    //
+    // ```
+    // This is code.
+    //
+    // This is more code.
+    // ```
+    //
+    // This is not code.
+    //
+    // - Actual  : This is not code.
+    //
+    // ```
+    // `This is code.`
+    //
+    // `This is more code.`
+    // ```
+    //
+    // This is not code.
+    CPPUNIT_ASSERT_EQUAL(aExpected, aActual);
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

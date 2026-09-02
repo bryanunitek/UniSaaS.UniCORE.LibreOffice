@@ -39,7 +39,6 @@
 
 using namespace ::com::sun::star;
 using namespace ::com::sun::star::uno;
-using namespace ::com::sun::star::drawing::framework;
 
 namespace {
     const sal_Int32 gnVerticalGap (10);
@@ -448,10 +447,6 @@ void SAL_CALL PresenterSlideSorter::windowHidden (const lang::EventObject&)
 
 void SAL_CALL PresenterSlideSorter::windowPaint (const css::awt::PaintEvent& rEvent)
 {
-    // Deactivated views must not be painted.
-    if ( ! mbIsPresenterViewActive)
-        return;
-
     Paint(rEvent.UpdateRect);
 
     Reference<rendering::XSpriteCanvas> xSpriteCanvas (mxCanvas, UNO_QUERY);
@@ -671,6 +666,9 @@ void PresenterSlideSorter::UpdateLayout()
     mpLayout->Update(aUpperBox, GetSlideAspectRatio());
     mpLayout->SetupVisibleArea();
     mpLayout->UpdateScrollBars();
+
+    if (mnCurrentSlideIndex >= 0)
+        ScrollSlideIntoView(mnCurrentSlideIndex);
 
     // Tell the preview cache about some of the values.
     mxPreviewCache->setPreviewSize(mpLayout->maPreviewSize);

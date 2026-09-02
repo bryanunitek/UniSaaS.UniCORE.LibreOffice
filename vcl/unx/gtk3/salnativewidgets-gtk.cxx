@@ -22,7 +22,7 @@
 #include <vcl/CairoFormats.hxx>
 #include <vcl/decoview.hxx>
 #include <vcl/settings.hxx>
-#include <unx/fontmanager.hxx>
+#include <unx/font/fontmanager.hxx>
 #include <o3tl/string_view.hxx>
 #include <scrollbarvalue.hxx>
 
@@ -2271,7 +2271,7 @@ vcl::Font pango_to_vcl(const PangoFontDescription* font, const css::lang::Locale
 #endif
 
     // match font to e.g. resolve "Sans"
-    bool bFound = psp::PrintFontManager::get().matchFont(aDFA, rLocale);
+    bool bFound = FontConfigManager::matchFont(aDFA, rLocale);
 
 #if OSL_DEBUG_LEVEL > 1
     SAL_INFO("vcl.gtk3", "font match "
@@ -2479,13 +2479,6 @@ bool GtkSalGraphics::updateSettings(AllSettings& rSettings)
         else
             aShadowColor.DecreaseLuminance(64);
         aStyleSet.SetShadowColor(aShadowColor);
-
-        ::Color aDisabledColor(aBackFieldColor);
-        if (aBackFieldColor.GetLuminance() > aBackColor.GetLuminance())
-            aDisabledColor.IncreaseLuminance(8);
-        else
-            aDisabledColor.DecreaseLuminance(8);
-        aStyleSet.SetDisableColor(aDisabledColor);
 
         aContextState.restore();
 #if !GTK_CHECK_VERSION(4, 0, 0)

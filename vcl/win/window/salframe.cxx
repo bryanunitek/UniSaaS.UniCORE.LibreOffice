@@ -1158,7 +1158,7 @@ void WinSalFrame::SetExtendedFrameStyle( SalExtStyle )
 void WinSalFrame::Show( bool bVisible, bool bNoActivate )
 {
     // Post this Message to the window, because this only works
-    // in the thread of the window, which has create this window.
+    // in the thread of the window, which has created this window.
     // We post this message to avoid deadlocks
     if ( GetSalData()->mnAppThreadId != GetCurrentThreadId() )
     {
@@ -1523,13 +1523,12 @@ void WinSalFrame::GetWorkArea( AbsoluteScreenPixelRectangle &rRect )
     rRect.SetBottom( aRect.bottom-1 );
 }
 
-void WinSalFrame::GetClientSize( tools::Long& rWidth, tools::Long& rHeight )
+Size WinSalFrame::GetClientSize()
 {
-    rWidth  = maGeometry.width();
-    rHeight = maGeometry.height();
+    return maGeometry.size();
 }
 
-void WinSalFrame::SetWindowState(const vcl::WindowData* pState)
+void WinSalFrame::SetWindowState(const vcl::WindowData& rState)
 {
     // Check if the window fits into the screen, in case the screen
     // resolution changed
@@ -1565,24 +1564,24 @@ void WinSalFrame::SetWindowState(const vcl::WindowData* pState)
     tools::Long nRightDeco = abs( aWinRect.right - aRect2.right );
 
     // adjust window position/size to fit the screen
-    if ( !(pState->mask() & vcl::WindowDataMask::Pos) )
+    if (!(rState.mask() & vcl::WindowDataMask::Pos))
         nPosSize |= SWP_NOMOVE;
-    if ( !(pState->mask() & vcl::WindowDataMask::Size) )
+    if (!(rState.mask() & vcl::WindowDataMask::Size))
         nPosSize |= SWP_NOSIZE;
-    if ( pState->mask() & vcl::WindowDataMask::X )
-        nX = static_cast<int>(pState->x()) - nLeftDeco;
+    if (rState.mask() & vcl::WindowDataMask::X)
+        nX = static_cast<int>(rState.x()) - nLeftDeco;
     else
         nX = aWinRect.left;
-    if ( pState->mask() & vcl::WindowDataMask::Y )
-        nY = static_cast<int>(pState->y()) - nTopDeco;
+    if (rState.mask() & vcl::WindowDataMask::Y)
+        nY = static_cast<int>(rState.y()) - nTopDeco;
     else
         nY = aWinRect.top;
-    if ( pState->mask() & vcl::WindowDataMask::Width )
-        nWidth = static_cast<int>(pState->width()) + nLeftDeco + nRightDeco;
+    if (rState.mask() & vcl::WindowDataMask::Width)
+        nWidth = static_cast<int>(rState.width()) + nLeftDeco + nRightDeco;
     else
         nWidth = aWinRect.right-aWinRect.left;
-    if ( pState->mask() & vcl::WindowDataMask::Height )
-        nHeight = static_cast<int>(pState->height()) + nTopDeco + nBottomDeco;
+    if (rState.mask() & vcl::WindowDataMask::Height)
+        nHeight = static_cast<int>(rState.height()) + nTopDeco + nBottomDeco;
     else
         nHeight = aWinRect.bottom-aWinRect.top;
 
@@ -1616,32 +1615,32 @@ void WinSalFrame::SetWindowState(const vcl::WindowData* pState)
     {
         aPlacement.showCmd = SW_HIDE;
 
-        if (mbOverwriteState && (pState->mask() & vcl::WindowDataMask::State))
+        if (mbOverwriteState && (rState.mask() & vcl::WindowDataMask::State))
         {
-            if (pState->state() & vcl::WindowState::Minimized)
+            if (rState.state() & vcl::WindowState::Minimized)
                 mnShowState = SW_SHOWMINIMIZED;
-            else if (pState->state() & vcl::WindowState::Maximized)
+            else if (rState.state() & vcl::WindowState::Maximized)
             {
                 mnShowState = SW_SHOWMAXIMIZED;
                 bUpdateHiddenFramePos = true;
             }
-            else if (pState->state() & vcl::WindowState::Normal)
+            else if (rState.state() & vcl::WindowState::Normal)
                 mnShowState = SW_SHOWNORMAL;
         }
     }
     else
     {
-        if ( pState->mask() & vcl::WindowDataMask::State )
+        if (rState.mask() & vcl::WindowDataMask::State)
         {
-            if ( pState->state() & vcl::WindowState::Minimized )
+            if (rState.state() & vcl::WindowState::Minimized)
             {
-                if ( pState->state() & vcl::WindowState::Maximized )
+                if (rState.state() & vcl::WindowState::Maximized)
                     aPlacement.flags |= WPF_RESTORETOMAXIMIZED;
                 aPlacement.showCmd = SW_SHOWMINIMIZED;
             }
-            else if ( pState->state() & vcl::WindowState::Maximized )
+            else if (rState.state() & vcl::WindowState::Maximized)
                 aPlacement.showCmd = SW_SHOWMAXIMIZED;
-            else if ( pState->state() & vcl::WindowState::Normal )
+            else if (rState.state() & vcl::WindowState::Normal)
                 aPlacement.showCmd = SW_RESTORE;
         }
     }
@@ -1686,12 +1685,13 @@ void WinSalFrame::SetWindowState(const vcl::WindowData* pState)
         mbDefPos = false; // window was positioned
 }
 
-bool WinSalFrame::GetWindowState(vcl::WindowData* pState)
+vcl::WindowData WinSalFrame::GetWindowState()
 {
-    pState->setPosSize(maGeometry.posSize());
-    pState->setState(m_eState);
-    pState->setMask(vcl::WindowDataMask::PosSizeState);
-    return true;
+    vcl::WindowData aState;
+    aState.setPosSize(maGeometry.posSize());
+    aState.setState(m_eState);
+    aState.setMask(vcl::WindowDataMask::PosSizeState);
+    return aState;
 }
 
 void WinSalFrame::SetScreenNumber( unsigned int nNewScreen )
@@ -1937,7 +1937,7 @@ void WinSalFrame::ToTop( SalFrameToTop nFlags )
 {
     nFlags &= ~SalFrameToTop::GrabFocus;   // this flag is not needed on win32
     // Post this Message to the window, because this only works
-    // in the thread of the window, which has create this window.
+    // in the thread of the window, which has created this window.
     // We post this message to avoid deadlocks
     if ( GetSalData()->mnAppThreadId != GetCurrentThreadId() )
     {
@@ -2078,8 +2078,8 @@ void WinSalFrame::SetPointer( PointerStyle ePointerStyle )
 
 void WinSalFrame::CaptureMouse( bool bCapture )
 {
-    // Send this Message to the window, because CaptureMouse() only work
-    // in the thread of the window, which has create this window
+    // Send this Message to the window, because CaptureMouse() only works
+    // in the thread of the window, which has created this window
     int nMsg;
     if ( bCapture )
         nMsg = SAL_MSG_CAPTUREMOUSE;
@@ -2137,7 +2137,7 @@ static void ImplSalFrameSetInputContext( HWND hWnd, const SalInputContext* pCont
             {
                 LOGFONTW aLogFont;
                 ImplGetLogFontFromFontSelect(pContext->mpFont->GetFontSelectPattern(),
-                                             nullptr, aLogFont, true);
+                                             *pContext->mpFont->GetFontFace(), aLogFont, true);
 
                 // tdf#147299: To enable vertical input mode, Windows IMEs check the face
                 // name string for a leading '@'.
@@ -3602,7 +3602,7 @@ static bool HandleAltNumPadCode(HWND hWnd, UINT nMsg, WPARAM wParam, LPARAM lPar
             if (state.wait_WM_CHAR && MapVirtualKeyW(LOBYTE(keyFlags), MAPVK_VSC_TO_VK) == VK_MENU)
             {
                 state.clear();
-                // Ignore it - it is synthetized (incorrect, truncated) character from system
+                // Ignore it - it is synthesized (incorrect, truncated) character from system
                 return true;
             }
 

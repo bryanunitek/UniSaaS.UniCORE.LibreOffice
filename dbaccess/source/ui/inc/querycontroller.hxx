@@ -61,6 +61,10 @@ namespace dbaui
         css::uno::Reference< css::sdbcx::XAlterView >         m_xAlterView;
 
         OUString        m_sStatement;           // contains the current sql statement
+        OUString
+            m_sStatementWithComments; // original SQL with comments, saved when entering Design view
+        OUString
+            m_sStatementCanonical; // parseNodeToStr of the parse tree when entering Design view
         OUString        m_sUpdateCatalogName;   // catalog for update data
         OUString        m_sUpdateSchemaName;    // schema for update data
         mutable OUString
@@ -74,6 +78,8 @@ namespace dbaui
         bool            m_bGraphicalDesign; // are we in the graphical design mode (sal_True) or in the text design (sal_False)?
         bool            m_bDistinct;        // true when you want "select distinct" otherwise false
         bool            m_bEscapeProcessing;// is true when we shouldn't parse the statement
+        bool            m_bLastEditedInSqlView = false; //true if the query was last saved in SQL view
+        bool            m_bFormatWarningAlreadyShown = false; // true if the destructive-format warning was already shown
 
 
         /** returns the container of queries, views, or command definitions, depending on what object type
@@ -187,13 +193,19 @@ namespace dbaui
         virtual void reset() override;
         virtual void impl_initialize(const ::comphelper::NamedValueCollection& rArguments) override;
 
-        void    impl_reset( const bool i_bIgnoreQuerySettings = false );
+        void    impl_reset( const bool i_bIgnoreQuerySettings = false, const bool i_bIsInitialLoad = false );
         /// tells the user that we needed to switch to SQL view automatically
         void    impl_showAutoSQLViewError( const css::uno::Any& _rErrorDetails );
 
         /** switches to the graphical or SQL view mode, as determined by m_bGraphicalDesign
         */
         void    impl_setViewMode( ::dbtools::SQLExceptionInfo* _pErrorInfo );
+
+        /** Re-syncs m_sStatementCanonical with what the Design view actually generates
+            after its columns are fully populated. Must be called after forceInitialView()
+            or impl_setViewMode() when entering graphical design mode.
+        */
+        void impl_resyncStatementCanonical();
 
         /// sets m_sStatement, and notifies our respective property change listeners
         void    setStatement_fireEvent( const OUString& _rNewStatement, bool _bFireStatementChange = true );
@@ -206,6 +218,7 @@ namespace dbaui
 
     private:
         DECL_LINK( OnExecuteAddTable, void*, void );
+        DECL_LINK( OnDecideCommentsHandling, void*, void );
 
     private:
         using OQueryController_PBase::getFastPropertyValue;

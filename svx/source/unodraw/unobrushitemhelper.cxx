@@ -19,6 +19,9 @@
 
 #include <sal/config.h>
 
+#include <sfx2/docfile.hxx>
+#include <sfx2/objsh.hxx>
+
 #include <algorithm>
 
 #include <osl/diagnose.h>
@@ -37,7 +40,16 @@
 
 using namespace com::sun::star;
 
-void setSvxBrushItemAsFillAttributesToTargetSet(const SvxBrushItem& rBrush, SfxItemSet& rToSet)
+OUString getActiveDocumentLinkReferer()
+{
+    SfxObjectShell* pShell = SfxObjectShell::Current();
+    if (pShell != nullptr && pShell->HasName())
+        return pShell->GetMedium()->GetName();
+    return OUString();
+}
+
+void setSvxBrushItemAsFillAttributesToTargetSet(const SvxBrushItem& rBrush, SfxItemSet& rToSet,
+                                               OUString const& rReferer)
 {
     // Clear all items from the DrawingLayer FillStyle range (if we have any). All
     // items that need to be set will be set as hard attributes
@@ -55,7 +67,7 @@ void setSvxBrushItemAsFillAttributesToTargetSet(const SvxBrushItem& rBrush, SfxI
         rToSet.Put(XFillStyleItem(drawing::FillStyle_BITMAP));
 
         // set graphic (if available)
-        const Graphic* pGraphic = rBrush.GetGraphic();
+        const Graphic* pGraphic = rBrush.GetGraphic(rReferer);
 
         if(pGraphic)
         {
@@ -183,7 +195,7 @@ static std::unique_ptr<SvxBrushItem> getSvxBrushItemForSolid(const SfxItemSet& r
     {
         // #i125189# nFillTransparence is in range [0..100] and needs to be in [0..254] unsigned
         // It is necessary to use the maximum of 0xfe for transparence for the SvxBrushItem
-        // since the oxff value is used for special purposes (like no fill and derive from parent)
+        // since the 0xff value is used for special purposes (like no fill and derive from parent)
         const sal_uInt8 aTargetTrans(std::min(sal_uInt8(0xfe), static_cast< sal_uInt8 >((nFillTransparence * 254) / 100)));
 
         aFillColor.SetAlpha(255 - aTargetTrans);
@@ -242,7 +254,7 @@ std::unique_ptr<SvxBrushItem> getSvxBrushItemFromSourceSet(const SfxItemSet& rSo
             {
                 // #i125189# nFillTransparence is in range [0..100] and needs to be in [0..254] unsigned
                 // It is necessary to use the maximum of 0xfe for transparence for the SvxBrushItem
-                // since the oxff value is used for special purposes (like no fill and derive from parent)
+                // since the 0xff value is used for special purposes (like no fill and derive from parent)
                 const sal_uInt8 aTargetTrans(std::min(sal_uInt8(0xfe), static_cast< sal_uInt8 >((nFillTransparence * 254) / 100)));
 
                 aMixedColor.SetAlpha(255 - aTargetTrans);
@@ -276,7 +288,7 @@ std::unique_ptr<SvxBrushItem> getSvxBrushItemFromSourceSet(const SfxItemSet& rSo
 
                 // #i125189# nFillTransparence is in range [0..100] and needs to be in [0..254] unsigned
                 // It is necessary to use the maximum of 0xfe for transparence for the SvxBrushItem
-                // since the oxff value is used for special purposes (like no fill and derive from parent)
+                // since the 0xff value is used for special purposes (like no fill and derive from parent)
                 const sal_uInt8 aTargetTrans(std::min(sal_uInt8(0xfe), static_cast< sal_uInt8 >((nFillTransparence * 254) / 100)));
 
                 aHatchColor.SetAlpha(255 - aTargetTrans);

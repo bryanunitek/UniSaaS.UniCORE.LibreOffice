@@ -190,6 +190,28 @@ findAnnotations(const std::unique_ptr<vcl::pdf::PDFiumPage>& pPage, basegfx::B2D
                 rPDFGraphicAnnotation.maDateTime = aDateTime;
                 rPDFGraphicAnnotation.meSubType = eSubtype;
                 rPDFGraphicAnnotation.maColor = aColor;
+                rPDFGraphicAnnotation.mnFlags = pAnnotation->getFlags();
+                rPDFGraphicAnnotation.mnPdfiumIndex = nAnnotation;
+
+                if (pAnnotation->hasKey(vcl::pdf::constDictionaryKey_InReplyTo))
+                {
+                    // PDF spec requires /IRT parent and child to live on the same page, so we
+                    // only query the current page here. A malformed cross-page /IRT returns -1.
+                    auto pParent = pAnnotation->getLinked(vcl::pdf::constDictionaryKey_InReplyTo);
+                    if (pParent)
+                        rPDFGraphicAnnotation.mnParentPdfiumIndex
+                            = pPage->getAnnotationIndex(pParent);
+                }
+
+                if (pAnnotation->hasKey(vcl::pdf::constDictionaryKey_ReplyType))
+                    rPDFGraphicAnnotation.maReplyType
+                        = pAnnotation->getString(vcl::pdf::constDictionaryKey_ReplyType);
+                if (pAnnotation->hasKey(vcl::pdf::constDictionaryKey_State))
+                    rPDFGraphicAnnotation.maState
+                        = pAnnotation->getString(vcl::pdf::constDictionaryKey_State);
+                if (pAnnotation->hasKey(vcl::pdf::constDictionaryKey_StateModel))
+                    rPDFGraphicAnnotation.maStateModel
+                        = pAnnotation->getString(vcl::pdf::constDictionaryKey_StateModel);
 
                 if (eSubtype == vcl::pdf::PDFAnnotationSubType::Polygon)
                 {
@@ -370,12 +392,16 @@ findLinks(const std::unique_ptr<vcl::pdf::PDFiumPage>& pPage,
 
 } // end anonymous namespace
 
-size_t ImportPDFUnloaded(SvStream& rStream, std::vector<PDFGraphicResult>& rGraphics)
+size_t
+ImportPDFUnloaded(SvStream& rStream, std::vector<PDFGraphicResult>& rGraphics,
+                  const css::uno::Reference<css::task::XInteractionHandler>& xInteractionHandler,
+                  const OUString& rPassword)
 {
     bool bEncrypted;
 
     // Save the original PDF stream for later use.
-    BinaryDataContainer aDataContainer = vcl::pdf::createBinaryDataContainer(rStream, bEncrypted);
+    BinaryDataContainer aDataContainer
+        = vcl::pdf::createBinaryDataContainer(rStream, bEncrypted, xInteractionHandler, rPassword);
     if (aDataContainer.isEmpty())
         return 0;
 
@@ -435,11 +461,14 @@ size_t ImportPDFUnloaded(SvStream& rStream, std::vector<PDFGraphicResult>& rGrap
     return rGraphics.size();
 }
 
-size_t ImportPDFUnloaded(const OUString& rURL, std::vector<PDFGraphicResult>& rGraphics)
+size_t
+ImportPDFUnloaded(const OUString& rURL, std::vector<PDFGraphicResult>& rGraphics,
+                  const css::uno::Reference<css::task::XInteractionHandler>& xInteractionHandler,
+                  const OUString& rPassword)
 {
     std::unique_ptr<SvStream> xStream(
         ::utl::UcbStreamHelper::CreateStream(rURL, StreamMode::READ | StreamMode::SHARE_DENYNONE));
-    return ImportPDFUnloaded(*xStream, rGraphics);
+    return ImportPDFUnloaded(*xStream, rGraphics, xInteractionHandler, rPassword);
 }
 }
 

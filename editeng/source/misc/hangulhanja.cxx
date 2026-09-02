@@ -593,8 +593,8 @@ namespace editeng
                 {   // found asian text
 
                     // determine if it's Hangul
-                    CharClass aCharClassificaton( m_xContext, LanguageTag( m_aSourceLocale) );
-                    css::i18n::UnicodeScript nScript = aCharClassificaton.getScript( m_sCurrentPortion, sal::static_int_cast< sal_uInt16 >(nNextAsianScript) );
+                    CharClass aCharClassification( m_xContext, LanguageTag( m_aSourceLocale) );
+                    css::i18n::UnicodeScript nScript = aCharClassification.getScript( m_sCurrentPortion, sal::static_int_cast< sal_uInt16 >(nNextAsianScript) );
                     if  (   ( UnicodeScript_kHangulJamo == nScript )
                         ||  ( UnicodeScript_kHangulCompatibilityJamo == nScript )
                         ||  ( UnicodeScript_kHangulSyllable == nScript )
@@ -743,7 +743,7 @@ namespace editeng
         //
         // aOffsets is needed in ReplaceUnit below in order to find out
         // exactly which characters are really changed in order to keep as much
-        // from attributation for the text as possible.
+        // from attribution for the text as possible.
         Sequence< sal_Int32 > aOffsets;
         if (m_eConvType == HHC::eConvSimplifiedTraditional && m_xConverter.is())
         {

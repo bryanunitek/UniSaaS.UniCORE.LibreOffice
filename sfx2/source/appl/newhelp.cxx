@@ -70,10 +70,10 @@
 #include <com/sun/star/view/XSelectionSupplier.hpp>
 #include <com/sun/star/view/XViewSettingsSupplier.hpp>
 #include <unotools/historyoptions.hxx>
-#include <unotools/viewoptions.hxx>
 #include <tools/urlobj.hxx>
 #include <svtools/imagemgr.hxx>
 #include <svtools/miscopt.hxx>
+#include <svtools/viewoptions.hxx>
 #include <utility>
 #include <vcl/commandevent.hxx>
 #include <vcl/event.hxx>
@@ -467,7 +467,7 @@ IMPL_LINK_NOARG(IndexTabPage_Impl, TreeChangeHdl, weld::ItemView&, void)
     m_xIndexEntry->set_text(m_xIndexList->get_selected_text());
 }
 
-IMPL_LINK_NOARG(IndexTabPage_Impl, EntryChangeHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(IndexTabPage_Impl, EntryChangeHdl, weld::TextWidget&, void)
 {
     switch (nLastCharCode)
     {

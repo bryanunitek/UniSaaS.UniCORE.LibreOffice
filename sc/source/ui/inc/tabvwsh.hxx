@@ -244,7 +244,7 @@ protected:
     virtual void    QueryObjAreaPixel( tools::Rectangle& rRect ) const override;
 
     virtual OUString GetSelectionText( bool bWholeWord = false, bool bOnlyASample = false ) override;
-    virtual bool     HasSelection( bool bText = true ) const override;
+    virtual bool HasSelection(bool bMustHaveText) const override;
 
     virtual void    WriteUserData(OUString &, bool bBrowse = false) override;
     virtual void    ReadUserData(const OUString &, bool bBrowse = false) override;
@@ -392,9 +392,9 @@ public:
 
     SAL_RET_MAYBENULL SC_DLLPUBLIC static ScTabViewShell* GetActiveViewShell();
 
-    std::shared_ptr<SfxModelessDialogController> CreateRefDialogController(SfxBindings* pB, SfxChildWindow* pCW,
-                                                    SfxChildWinInfo* pInfo,
-                                                    weld::Window* pParent, sal_uInt16 nSlotId);
+    std::shared_ptr<SfxModelessDialogController>
+    CreateRefDialogController(SfxBindings& rBindings, SfxChildWindow* pCW, SfxChildWinInfo& rInfo,
+                              weld::Window* pParent, sal_uInt16 nSlotId);
 
     void            UpdateOleZoom();
 

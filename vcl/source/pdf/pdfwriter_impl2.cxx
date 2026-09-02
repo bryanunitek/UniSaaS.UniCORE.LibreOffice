@@ -177,22 +177,27 @@ void PDFWriterImpl::implWriteBitmapEx( const Point& i_rPoint, const Size& i_rSiz
     auto   pStrm=std::make_shared<SvMemoryStream>();
     AlphaMask aAlphaMask;
 
+    const std::optional<BitmapChecksum> aBmpChecksum
+        = bUseJPGCompression ? std::optional(aBitmap.GetChecksum()) : std::nullopt;
+
     bool bTrueColorJPG = true;
     if ( bUseJPGCompression )
     {
-        // TODO this checks could be done much earlier, saving us
-        // from trying conversion & stores before...
-        if ( !aBitmap.HasAlpha() )
+        const auto aCacheEntry = m_aPDFBmpCache.find(*aBmpChecksum);
+        if (aCacheEntry != m_aPDFBmpCache.end())
         {
-            const auto aCacheEntry=m_aPDFBmpCache.find(
-                aBitmap.GetChecksum());
-            if ( aCacheEntry != m_aPDFBmpCache.end() )
+            const std::optional<PDFBmpCacheEntry>& rEntry = aCacheEntry->second;
+            if (rEntry)
             {
-                m_rOuterFace.DrawJPGBitmap( *aCacheEntry->second, true, aSizePixel,
-                                            tools::Rectangle( aPoint, aSize ), aAlphaMask, i_Graphic );
-                return;
+                m_rOuterFace.DrawJPGBitmap(*rEntry->m_pStream, rEntry->m_bTrueColor, aSizePixel,
+                                           tools::Rectangle(aPoint, aSize), rEntry->m_aAlphaMask,
+                                           i_Graphic);
             }
+            else
+                m_rOuterFace.DrawBitmap(aPoint, aSize, aBitmap, i_Graphic);
+            return;
         }
+
         sal_uInt32 nZippedFileSize = 0; // sj: we will calculate the filesize of a zipped bitmap
         if ( !bIsJpeg )                 // to determine if jpeg compression is useful
         {
@@ -202,9 +207,10 @@ void PDFWriterImpl::implWriteBitmapEx( const Point& i_rPoint, const Size& i_rSiz
             WriteDIBBitmapEx(aBitmap, aTemp); // is capable of zlib stream compression
             nZippedFileSize = aTemp.TellEnd();
         }
+        Bitmap aColor(aBitmap);
         if ( aBitmap.HasAlpha() )
-            aAlphaMask = aBitmap.CreateAlphaMask();
-        Graphic aGraphic(aBitmap.CreateColorBitmap());
+            std::tie(aColor, aAlphaMask) = aBitmap.SplitIntoColorAndAlpha();
+        Graphic aGraphic(aColor);
 
         Sequence< PropertyValue > aFilterData{
             comphelper::makePropertyValue(u"Quality"_ustr, sal_Int32(i_rContext.m_nJPEGQuality)),
@@ -229,6 +235,7 @@ void PDFWriterImpl::implWriteBitmapEx( const Point& i_rPoint, const Size& i_rSiz
             if ( !bIsJpeg && xSeekable->getLength() > nZippedFileSize )
             {
                 bUseJPGCompression = false;
+                m_aPDFBmpCache.insert({ *aBmpChecksum, std::nullopt });
             }
             else
             {
@@ -256,12 +263,8 @@ void PDFWriterImpl::implWriteBitmapEx( const Point& i_rPoint, const Size& i_rSiz
     if ( bUseJPGCompression )
     {
         m_rOuterFace.DrawJPGBitmap( *pStrm, bTrueColorJPG, aSizePixel, tools::Rectangle( aPoint, aSize ), aAlphaMask, i_Graphic );
-        if (!aBitmap.HasAlpha() && bTrueColorJPG)
-        {
-            // Cache last jpeg export
-            m_aPDFBmpCache.insert(
-                {aBitmap.GetChecksum(), pStrm});
-        }
+        m_aPDFBmpCache.insert(
+            { *aBmpChecksum, PDFBmpCacheEntry{ bTrueColorJPG, std::move(pStrm), aAlphaMask } });
     }
     else
     {
@@ -452,7 +455,7 @@ void PDFWriterImpl::playMetafile( const GDIMetaFile& i_rMtf, vcl::PDFExtOutDevDa
                     {
                         const Size aDstSizeTwip( pDummyVDev->PixelToLogic(pDummyVDev->LogicToPixel(rSize), MapMode(MapUnit::MapTwip)) );
 
-                        // i#115962# Always use at least 300 DPI for bitmap conversion of transparence gradients,
+                        // i#115962# Always use at least 300 DPI for bitmap conversion of transparency gradients,
                         // else the quality is not acceptable (see bugdoc as example)
                         sal_Int32 nMaxBmpDPI(300);
 
@@ -523,7 +526,7 @@ void PDFWriterImpl::playMetafile( const GDIMetaFile& i_rMtf, vcl::PDFExtOutDevDa
                                 xVDev.disposeAndClear();
 
                                 Graphic aGraphic = i_pOutDevData ? i_pOutDevData->GetCurrentGraphic() : Graphic();
-                                implWriteBitmapEx( rPos, rSize, Bitmap(aPaint.CreateColorBitmap(), aAlpha ), aGraphic, pDummyVDev, i_rContext );
+                                implWriteBitmapEx( rPos, rSize, Bitmap(aPaint, aAlpha), aGraphic, pDummyVDev, i_rContext );
                             }
                         }
                     }
@@ -1006,7 +1009,7 @@ void PDFWriterImpl::playMetafile( const GDIMetaFile& i_rMtf, vcl::PDFExtOutDevDa
                 case MetaActionType::RASTEROP:
                 case MetaActionType::REFPOINT:
                 {
-                    // !!! >>> we don't want to support this actions
+                    // !!! >>> we don't want to support these actions
                 }
                 break;
 
@@ -1041,6 +1044,16 @@ void PDFWriterImpl::disableStreamEncryption()
 {
     if (m_pPDFEncryptor)
         m_pPDFEncryptor->disableStreamEncryption();
+}
+
+sal_uInt64 PDFWriterImpl::calculateStreamSize(sal_uInt64 const nDataSize) const
+{
+    if (!m_aContext.Encryption.canEncrypt() || !m_pPDFEncryptor)
+    {
+        return nDataSize;
+    }
+
+    return m_pPDFEncryptor->calculateSizeIncludingHeader(nDataSize);
 }
 
 void PDFWriterImpl::enableStringEncryption(sal_Int32 nObject)

@@ -13,7 +13,7 @@
 
 #include <svtools/svtdllapi.h>
 
-namespace com :: sun :: star :: uno { template <typename > class Reference; }
+namespace com::sun::star::uno { template <typename > class Reference; }
 
 namespace weld { class Window; }
 namespace com::sun::star::uno {
@@ -59,6 +59,9 @@ enum RestartReason {
     // For the Calculation settings changes to take effect,
     // %PRODUCTNAME must be restarted:
     RESTART_REASON_CALCULATION,
+    // For the High Contrast setting change to take effect,
+    // %PRODUCTNAME must be restarted:
+    RESTART_REASON_HIGH_CONTRAST,
     // No particular reason:
     RESTART_REASON_NONE
 };

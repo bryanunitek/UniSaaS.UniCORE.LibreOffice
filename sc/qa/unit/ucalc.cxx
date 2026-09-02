@@ -1971,13 +1971,12 @@ CPPUNIT_TEST_FIXTURE(Test, testNamedRange)
     CPPUNIT_ASSERT_MESSAGE("Failed to insert range names.", bSuccess);
     m_pDoc->SetRangeName(std::move(pNames));
 
-    ScRangeName* pNewRanges = m_pDoc->GetRangeName();
-    CPPUNIT_ASSERT(pNewRanges);
+    ScRangeName& rNewRanges = m_pDoc->GetRangeName();
 
     // Make sure the index lookup does the right thing.
     for (const auto& rName : aNames)
     {
-        const ScRangeData* p = pNewRanges->findByIndex(rName.mnIndex);
+        const ScRangeData* p = rNewRanges.findByIndex(rName.mnIndex);
         CPPUNIT_ASSERT_MESSAGE("lookup of range name by index failed.", p);
         OUString aName = p->GetName();
         CPPUNIT_ASSERT_MESSAGE("wrong range name is retrieved.", aName.equalsAscii(rName.mpName));
@@ -1991,12 +1990,12 @@ CPPUNIT_TEST_FIXTURE(Test, testNamedRange)
     ASSERT_DOUBLES_EQUAL_MESSAGE ("calculation failed", 1.0, result);
 
     // Test copy-ability of range names.
-    std::unique_ptr<ScRangeName> pCopiedRanges(new ScRangeName(*pNewRanges));
+    std::unique_ptr<ScRangeName> pCopiedRanges(new ScRangeName(rNewRanges));
     m_pDoc->SetRangeName(std::move(pCopiedRanges));
     // Make sure the index lookup still works.
     for (const auto& rName : aNames)
     {
-        const ScRangeData* p = m_pDoc->GetRangeName()->findByIndex(rName.mnIndex);
+        const ScRangeData* p = m_pDoc->GetRangeName().findByIndex(rName.mnIndex);
         CPPUNIT_ASSERT_MESSAGE("lookup of range name by index failed with the copied instance.", p);
         OUString aName = p->GetName();
         CPPUNIT_ASSERT_MESSAGE("wrong range name is retrieved with the copied instance.", aName.equalsAscii(rName.mpName));
@@ -2008,10 +2007,10 @@ CPPUNIT_TEST_FIXTURE(Test, testNamedRange)
     ScRangeData* pLocal3 = new ScRangeData( *m_pDoc, u"local3"_ustr, u"Sheet1.$A$1"_ustr);
     ScRangeData* pLocal4 = new ScRangeData( *m_pDoc, u"local4"_ustr, u"$A$1"_ustr); // implicit relative sheet reference
     std::unique_ptr<ScRangeName> pLocalRangeName1(new ScRangeName);
-    pLocalRangeName1->insert(pLocal1);
-    pLocalRangeName1->insert(pLocal2);
-    pLocalRangeName1->insert(pLocal3);
-    pLocalRangeName1->insert(pLocal4);
+    pLocalRangeName1->insert(std::unique_ptr<ScRangeData>(pLocal1));
+    pLocalRangeName1->insert(std::unique_ptr<ScRangeData>(pLocal2));
+    pLocalRangeName1->insert(std::unique_ptr<ScRangeData>(pLocal3));
+    pLocalRangeName1->insert(std::unique_ptr<ScRangeData>(pLocal4));
     m_pDoc->SetRangeName(0, std::move(pLocalRangeName1));
 
     CPPUNIT_ASSERT_MESSAGE ("failed to insert sheet", m_pDoc->InsertTab (1, u"Sheet2"_ustr));
@@ -2028,6 +2027,43 @@ CPPUNIT_TEST_FIXTURE(Test, testNamedRange)
     m_pDoc->DeleteTab(1);
     m_pDoc->SetRangeName(0,nullptr); // Delete the names.
     m_pDoc->SetRangeName(nullptr); // Delete the names.
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testNamedRangeRedefinedKeepsTheSameEntry)
+{
+    CPPUNIT_ASSERT(m_pDoc->InsertTab(0, u"Sheet1"_ustr));
+
+    ScRangeName& rNames = m_pDoc->GetRangeName();
+
+    // the xls import assigns the index itself before it hands the name over
+    std::unique_ptr<ScRangeData> pFirst(
+        new ScRangeData(*m_pDoc, u"MyRange"_ustr, u"$Sheet1.$A$1:$A$10"_ustr));
+    pFirst->SetIndex(4);
+    ScRangeData* pInserted = rNames.insert(std::move(pFirst));
+    CPPUNIT_ASSERT(pInserted);
+
+    // a second definition of the same name arrives, under a different index
+    std::unique_ptr<ScRangeData> pSecond(
+        new ScRangeData(*m_pDoc, u"MyRange"_ustr, u"$Sheet1.$B$1:$B$20"_ustr));
+    pSecond->SetIndex(7);
+    ScRangeData* pSurvivor = rNames.insert(std::move(pSecond));
+
+    // a pointer taken from the first insert still addresses the live entry
+    CPPUNIT_ASSERT_EQUAL(pInserted, pSurvivor);
+    CPPUNIT_ASSERT_EQUAL(size_t(1), rNames.size());
+
+    // and that entry holds the later definition
+    ScRange aRange;
+    CPPUNIT_ASSERT(pSurvivor->IsReference(aRange));
+    CPPUNIT_ASSERT_EQUAL(ScRange(1, 0, 0, 1, 19, 0), aRange);
+
+    // the later index reaches the entry, the earlier one reaches nothing
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(7), pSurvivor->GetIndex());
+    CPPUNIT_ASSERT_EQUAL(pSurvivor, rNames.findByIndex(7));
+    CPPUNIT_ASSERT(!rNames.findByIndex(4));
+
+    m_pDoc->SetRangeName(nullptr);
     m_pDoc->DeleteTab(0);
 }
 
@@ -2816,6 +2852,7 @@ CPPUNIT_TEST_FIXTURE(Test, testFunctionLists)
         "ISNONTEXT",
         "ISNUMBER",
         "ISODD",
+        "ISOMITTED",
         "ISREF",
         "ISTEXT",
         "N",
@@ -2919,15 +2956,21 @@ CPPUNIT_TEST_FIXTURE(Test, testFunctionLists)
     };
 
     const char* aArray[] = {
+        "BYCOL",
+        "BYROW",
         "FOURIER",
         "FREQUENCY",
         "GROWTH",
         "LINEST",
         "LOGEST",
+        "MAKEARRAY",
+        "MAP",
         "MDETERM",
         "MINVERSE",
         "MMULT",
         "MUNIT",
+        "REDUCE",
+        "SCAN",
         "SEQUENCE",
         "SUMPRODUCT",
         "SUMX2MY2",
@@ -3113,6 +3156,7 @@ CPPUNIT_TEST_FIXTURE(Test, testFunctionLists)
         "HYPERLINK",
         "INDEX",
         "INDIRECT",
+        "LAMBDA",
         "LET",
         "LOOKUP",
         "MATCH",
@@ -3140,6 +3184,7 @@ CPPUNIT_TEST_FIXTURE(Test, testFunctionLists)
 
     const char* aText[] = {
         "ARABIC",
+        "ARRAYTOTEXT",
         "ASC",
         "BAHTTEXT",
         "BASE",
@@ -4220,8 +4265,8 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf98642)
     ScRangeData* pName2 = new ScRangeData( *m_pDoc, u"name2"_ustr, u"$Sheet1.$A$1"_ustr);
 
     std::unique_ptr<ScRangeName> pGlobalRangeName(new ScRangeName());
-    pGlobalRangeName->insert(pName1);
-    pGlobalRangeName->insert(pName2);
+    pGlobalRangeName->insert(std::unique_ptr<ScRangeData>(pName1));
+    pGlobalRangeName->insert(std::unique_ptr<ScRangeData>(pName2));
     m_pDoc->SetRangeName(std::move(pGlobalRangeName));
 
     m_pDoc->SetString(1, 0, 0, u"=name1"_ustr);
@@ -6344,6 +6389,29 @@ CPPUNIT_TEST_FIXTURE(Test, testFormulaToValue)
     m_pDoc->SetValue(ScAddress(1,5,0), 11);
     CPPUNIT_ASSERT_EQUAL(20.0, m_pDoc->GetValue(ScAddress(2,4,0)));
     CPPUNIT_ASSERT_EQUAL(22.0, m_pDoc->GetValue(ScAddress(2,5,0)));
+
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testFormulaToValueUninterpreted)
+{
+    sc::AutoCalcSwitch aACSwitch(*m_pDoc, true);
+
+    m_pDoc->InsertTab(0, u"Test"_ustr);
+
+    // Nothing reads the cell after entry, so its result is not computed yet
+    m_pDoc->SetString(ScAddress(0, 0, 0), u"=1+1"_ustr);
+    const ScFormulaCell* pFC = m_pDoc->GetFormulaCell(ScAddress(0, 0, 0));
+    CPPUNIT_ASSERT(pFC);
+    CPPUNIT_ASSERT(pFC->GetDirty());
+
+    m_xDocShell->GetDocFunc().ConvertFormulaToValue(ScRange(ScAddress(0, 0, 0)), false);
+
+    // Without the fix in place, this test would have failed with
+    // - Expected: 2
+    // - Actual  : 0
+    CPPUNIT_ASSERT_EQUAL(CELLTYPE_VALUE, m_pDoc->GetCellType(ScAddress(0, 0, 0)));
+    CPPUNIT_ASSERT_EQUAL(2.0, m_pDoc->GetValue(ScAddress(0, 0, 0)));
 
     m_pDoc->DeleteTab(0);
 }

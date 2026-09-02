@@ -1464,6 +1464,33 @@ void XMLShapeExport::ImpExportQRCode(const uno::Reference<drawing::XShape>& xSha
                                             true);
 }
 
+void XMLShapeExport::ImpExportGraphicClipPoly(const uno::Reference<drawing::XShape>& xShape)
+{
+    auto xPropSet = xShape.query<beans::XPropertySet>();
+    if (!xPropSet)
+        return;
+    auto xInfo = xPropSet->getPropertySetInfo();
+    if (!xInfo || !xInfo->hasPropertyByName(u"GraphicClipPolyPolygon"_ustr))
+        return;
+
+    drawing::PolyPolygonBezierCoords aCoords;
+    xPropSet->getPropertyValue(u"GraphicClipPolyPolygon"_ustr) >>= aCoords;
+    if (aCoords.Coordinates.getLength() == 0)
+        return;
+
+    const basegfx::B2DPolyPolygon aPolyPolygon(
+        basegfx::utils::UnoPolyPolygonBezierCoordsToB2DPolyPolygon(aCoords));
+    if (!aPolyPolygon.count())
+        return;
+
+    // Shape-local coordinates in 1/100 mm: svg:d here carries neither a unit nor a viewBox.
+    const OUString aPath(basegfx::utils::exportToSvgD(aPolyPolygon, true /*relative*/,
+                                                      false /*quadratic*/,
+                                                      true /*relativeNextPointCompatible*/));
+    mrExport.AddAttribute(XML_NAMESPACE_SVG, XML_D, aPath);
+    SvXMLElementExport aElement(mrExport, XML_NAMESPACE_LO_EXT, XML_GRAPHIC_CLIP_POLY, true, true);
+}
+
 void XMLShapeExport::ExportGraphicDefaults()
 {
     rtl::Reference<XMLStyleExport> aStEx(new XMLStyleExport(mrExport, mrExport.GetAutoStylePool().get()));
@@ -1707,6 +1734,29 @@ bool XMLShapeExport::ImpExportPresentationAttributes( const uno::Reference< bean
             xPropSet->getPropertyValue(u"IsPlaceholderDependent"_ustr) >>= bTemp;
             if(!bTemp)
                 mrExport.AddAttribute(XML_NAMESPACE_PRESENTATION, XML_USER_TRANSFORMED, XML_TRUE);
+        }
+
+        // The class above is the outline one, since an outliner object represents a placeholder
+        // holding text. ODF cannot say it waits for a picture, so that travels as an extension.
+        if (xPropSetInfo.is() && xPropSetInfo->hasPropertyByName(u"PlaceholderShapeType"_ustr)
+            && (mrExport.getSaneDefaultVersion() & SvtSaveOptions::ODFSVER_EXTENDED))
+        {
+            OUString aPlaceholderType;
+            xPropSet->getPropertyValue(u"PlaceholderShapeType"_ustr) >>= aPlaceholderType;
+            if (aPlaceholderType == u"com.sun.star.presentation.GraphicObjectShape"
+                && rClass != GetXMLToken(XML_GRAPHIC))
+                mrExport.AddAttribute(XML_NAMESPACE_LO_EXT, XML_PLACEHOLDER_CLASS, XML_GRAPHIC);
+        }
+
+        // ODF has no representation for the prompt an empty placeholder shows, so an authored one
+        // travels as an extension; otherwise a reload replaces it with our own localized default.
+        if (xPropSetInfo.is() && xPropSetInfo->hasPropertyByName(u"CustomPromptText"_ustr)
+            && (mrExport.getSaneDefaultVersion() & SvtSaveOptions::ODFSVER_EXTENDED))
+        {
+            OUString aPrompt;
+            xPropSet->getPropertyValue(u"CustomPromptText"_ustr) >>= aPrompt;
+            if (!aPrompt.isEmpty())
+                mrExport.AddAttribute(XML_NAMESPACE_LO_EXT, XML_PLACEHOLDER_PROMPT, aPrompt);
         }
     }
 
@@ -2583,18 +2633,32 @@ void XMLShapeExport::ImpExportGraphicObjectShape(
 
             SvXMLElementExport aElement(mrExport, XML_NAMESPACE_DRAW, XML_IMAGE, true, true);
 
-            // optional office:binary-data
+            // draw:image needs either xlink:href or office:binary-data to be complete.
             if (xGraphic.is())
             {
                 mrExport.AddEmbeddedXGraphicAsBase64(xGraphic);
+            }
+            else
+            {
+                SvXMLElementExport aBin(mrExport, XML_NAMESPACE_OFFICE, XML_BINARY_DATA, true,
+                                        true);
             }
             if (!bIsEmptyPresObj)
                 ImpExportText(xShape);
         }
 
+        // SVG has been in ODF long enough that current readers handle it,
+        // so the PNG fallback is no longer worth carrying. ODF 1.4 is the
+        // cautious cutoff: from 1.4 onwards we drop the fallback, older
+        // targets still get it.
+        const bool bSkipSvgFallback
+            = sOutMimeType == "image/svg+xml"
+              && GetExport().getSaneDefaultVersion() >= SvtSaveOptions::ODFSVER_014;
+
         //Resolves: fdo#62461 put preferred image first above, followed by
         //fallback here
         if (!bIsEmptyPresObj
+            && !bSkipSvgFallback
             && officecfg::Office::Common::Save::Graphic::AddReplacementImages::get())
         {
             uno::Reference<graphic::XGraphic> xReplacementGraphic;
@@ -2646,6 +2710,7 @@ void XMLShapeExport::ImpExportGraphicObjectShape(
     {
         ImpExportSignatureLine(xShape);
         ImpExportQRCode(xShape);
+        ImpExportGraphicClipPoly(xShape);
     }
 }
 

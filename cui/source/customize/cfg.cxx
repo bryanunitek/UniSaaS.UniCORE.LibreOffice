@@ -56,10 +56,8 @@
 
 #include <acccfg.hxx>
 #include <cfg.hxx>
-#include <CustomNotebookbarGenerator.hxx>
 #include <SvxMenuConfigPage.hxx>
 #include <SvxToolbarConfigPage.hxx>
-#include <SvxNotebookbarConfigPage.hxx>
 #include <SvxConfigPageHelper.hxx>
 #include "eventdlg.hxx"
 #include <dialmgr.hxx>
@@ -187,13 +185,7 @@ static std::unique_ptr<SfxTabPage> CreateKeyboardConfigPage( weld::Container* pP
 {
        return std::make_unique<SfxAcceleratorConfigPage>(pPage, pController, *rSet);
 }
-/*
-static std::unique_ptr<SfxTabPage> CreateSvxNotebookbarConfigPage(weld::Container* pPage, weld::DialogController* pController,
-                                                         const SfxItemSet* rSet)
-{
-    return std::make_unique<SvxNotebookbarConfigPage>(pPage, pController, *rSet);
-}
-*/
+
 static std::unique_ptr<SfxTabPage> CreateSvxToolbarConfigPage( weld::Container* pPage, weld::DialogController* pController, const SfxItemSet* rSet )
 {
     return std::make_unique<SvxToolbarConfigPage>(pPage, pController, *rSet);
@@ -220,9 +212,6 @@ SvxConfigDialog::SvxConfigDialog(weld::Window * pParent, const SfxItemSet* pInSe
                RID_L + RID_TAB_MENUS.sIconName);
     AddTabPage(u"toolbars"_ustr, TabResId(RID_TAB_TOOLBARS.aLabel), CreateSvxToolbarConfigPage,
                RID_L + RID_TAB_TOOLBARS.sIconName);
-    // adding labels to the NB categories for tdf#166641 breaks the customization
-//    AddTabPage(u"notebookbar"_ustr, TabResId(RID_TAB_NOTEBOOKBARS.aLabel),
-//               CreateSvxNotebookbarConfigPage, RID_L + RID_TAB_NOTEBOOKBARS.sIconName);
     AddTabPage(u"contextmenus"_ustr, TabResId(RID_TAB_CONTEXTMENUS.aLabel),
                CreateSvxContextMenuConfigPage, RID_L + RID_TAB_CONTEXTMENUS.sIconName);
     AddTabPage(u"keyboard"_ustr, TabResId(RID_TAB_KEYBOARD.aLabel), CreateKeyboardConfigPage,
@@ -258,13 +247,6 @@ void SvxConfigDialog::ActivatePage(const OUString& rPage)
 void SvxConfigDialog::SetFrame(const css::uno::Reference<css::frame::XFrame>& xFrame)
 {
     m_xFrame = xFrame;
-    OUString aModuleId = SvxConfigPage::GetFrameWithDefaultAndIdentify(m_xFrame);
-
-    if (aModuleId != "com.sun.star.text.TextDocument" &&
-        aModuleId != "com.sun.star.sheet.SpreadsheetDocument" &&
-        aModuleId != "com.sun.star.presentation.PresentationDocument" &&
-        aModuleId != "com.sun.star.drawing.DrawingDocument")
-        RemoveTabPage(u"notebookbar"_ustr);
 }
 
 void SvxConfigDialog::PageCreated(const OUString &rId, SfxTabPage& rPage)
@@ -952,7 +934,7 @@ SvxMenuEntriesListBox::SvxMenuEntriesListBox(std::unique_ptr<weld::TreeView> xCo
     , m_xDropDown(m_xControl->create_virtual_device())
     , m_pPage(pPg)
 {
-    m_xControl->enable_toggle_buttons(weld::ColumnToggleType::Check);
+    m_xControl->enable_toggle_buttons();
     CreateDropDown();
     m_xControl->connect_key_press(LINK(this, SvxMenuEntriesListBox, KeyInputHdl));
     m_xControl->connect_query_tooltip(LINK(this, SvxMenuEntriesListBox, QueryTooltip));
@@ -1035,8 +1017,6 @@ SvxConfigPage::SvxConfigPage(weld::Container* pPage, weld::DialogController* pCo
     , m_xAddCommandButton(m_xBuilder->weld_button(u"add"_ustr))
     , m_xRemoveCommandButton(m_xBuilder->weld_button(u"remove"_ustr))
 {
-    CustomNotebookbarGenerator::getFileNameAndAppName(m_sAppName, m_sFileName);
-
     m_xTopLevelListBox->connect_changed(LINK(this, SvxConfigPage, SelectElementHdl));
 
     weld::TreeView& rTreeView = m_xFunctions->get_widget();
@@ -1333,9 +1313,9 @@ OUString SvxConfigPage::GetScriptURL() const
     SfxGroupInfo_Impl *pData = weld::fromId<SfxGroupInfo_Impl*>(m_xFunctions->get_selected_id());
     if (pData)
     {
-        if  (   ( pData->nKind == SfxCfgKind::FUNCTION_SLOT ) ||
-                ( pData->nKind == SfxCfgKind::FUNCTION_SCRIPT ) ||
-                ( pData->nKind == SfxCfgKind::GROUP_STYLES )    )
+        if  (   ( pData->getKind() == SfxCfgKind::FUNCTION_SLOT ) ||
+                ( pData->getKind() == SfxCfgKind::FUNCTION_SCRIPT ) ||
+                ( pData->getKind() == SfxCfgKind::GROUP_STYLES )    )
         {
             result = pData->sCommand;
         }
@@ -1703,7 +1683,7 @@ IMPL_LINK_NOARG(SvxConfigPage, ImplUpdateDataHdl, Timer*, void)
     SelectFunctionHdl(m_xFunctions->get_widget());
 }
 
-IMPL_LINK_NOARG(SvxConfigPage, SearchUpdateHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(SvxConfigPage, SearchUpdateHdl, weld::TextWidget&, void)
 {
     m_aUpdateDataTimer.Start();
 }
@@ -1864,7 +1844,7 @@ SvxMainMenuOrganizerDialog::~SvxMainMenuOrganizerDialog()
 {
 }
 
-IMPL_LINK_NOARG(SvxMainMenuOrganizerDialog, ModifyHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(SvxMainMenuOrganizerDialog, ModifyHdl, weld::TextWidget&, void)
 {
     // if the Edit control is empty do not change the name
     if (m_xMenuNameEdit->get_text().isEmpty())

@@ -73,7 +73,7 @@ void FocusManager::MoveFocus (FocusMoveDirection eDirection)
             const sal_Int32 nCandidate (mnPageIndex - nColumnCount);
             if (nCandidate >= 0)
             {
-                // Move the focus the previous row.
+                // Move the focus to the previous row.
                 mnPageIndex = nCandidate;
             }
         }
@@ -175,7 +175,7 @@ void FocusManager::HideFocusIndicator (const model::SharedPageDescriptor& rpDesc
     {
         mrSlideSorter.GetView().SetState(rpDescriptor, model::PageDescriptor::ST_Focused, false);
 
-        // Hide focus should also fire the focus event, Currently, only accessibility add the focus listener
+        // Hiding focus should also fire the focus event. Currently, only accessibility adds the focus listener
         NotifyFocusChangeListeners();
     }
 }
@@ -220,7 +220,7 @@ void FocusManager::NotifyFocusChangeListeners() const
     // Create a copy of the listener list to be safe when that is modified.
     ::std::vector<Link<LinkParamNone*,void>> aListeners (maFocusChangeListeners);
 
-    // Tell the selection change listeners that the selection has changed.
+    // Tell the focus change listeners that the focus has changed.
     for (const auto& rListener : aListeners)
     {
         rListener.Call(nullptr);

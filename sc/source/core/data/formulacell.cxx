@@ -54,6 +54,8 @@
 #include <comphelper/threadpool.hxx>
 #include <editeng/editobj.hxx>
 #include <formula/errorcodes.hxx>
+#include <formula/FormulaCompiler.hxx>
+#include <formula/token.hxx>
 #include <svl/intitem.hxx>
 #include <svl/numformat.hxx>
 #include <formulagroup.hxx>
@@ -482,6 +484,28 @@ void adjustDBRange(formula::FormulaToken* pToken, ScDocument& rNewDoc, const ScD
     ScDBData* pNewDBData = aNewNamedDBs.findByUpperName(aDBName);
     if (!pNewDBData)
     {
+        // No matching table in the destination. For a clipboard paste leave it
+        // unresolved (index 0 -> #REF!): a fully-covered table is already
+        // recreated at the paste position before the cells arrive, so a miss
+        // here means only part of the table was copied, and fabricating one
+        // would register a misplaced, header-less table. Like the OOXML format,
+        // a partial copy makes no table. For any other clone - undo/redo
+        // restore, transpose - keep materialising the table so the reference
+        // still resolves, as those paths always expected the table to exist.
+        // TODO: the OOXML format keeps the paste case working with a
+        // cross-document external table reference ('source.xlsx'#Table1[Col]).
+        // We have no external structured references yet, so the value becomes
+        // #REF! instead.
+        if (rOldDoc.IsClipboard())
+        {
+            if (eOpCode == ocDBArea)
+                static_cast<FormulaIndexToken*>(pToken)->SetIndex(0);
+            else if (eOpCode == ocTableRef)
+                static_cast<ScTableRefToken*>(pToken)->SetIndex(0);
+            else
+                assert(false);
+            return;
+        }
         pNewDBData = new ScDBData(*pDBData);
         bool ins = aNewNamedDBs.insert(std::unique_ptr<ScDBData>(pNewDBData));
         assert(ins); (void)ins;
@@ -814,6 +838,9 @@ ScFormulaCell::ScFormulaCell(const ScFormulaCell& rCell, ScDocument& rDoc, const
     mbIsExtRef(false),
     mbSeenInPath(false),
     mbFreeFlying(false),
+    mbDynamicArrayMaster(rCell.mbDynamicArrayMaster),
+    // A clone is not freshly typed, so the flag drops on copy.
+    mbAutoDynamicArrayEligible(false),
     cMatrixFlag ( rCell.cMatrixFlag ),
     nSeenInIteration(0),
     nFormatType( rCell.nFormatType ),
@@ -1029,7 +1056,9 @@ OUString ScFormulaCell::GetFormula( const FormulaGrammar::Grammar eGrammar, ScIn
     }
 
     buffer.insert( 0, '=');
-    if( cMatrixFlag != ScMatrixMode::NONE )
+    // Dynamic-array masters read back as plain formulas in the formula
+    // bar. Static array masters still get the {} wrapping.
+    if (cMatrixFlag != ScMatrixMode::NONE && !mbDynamicArrayMaster)
     {
         buffer.insert( 0, '{');
         buffer.append( '}');
@@ -1087,7 +1116,9 @@ OUString ScFormulaCell::GetFormula( sc::CompileFormulaContext& rCxt, ScInterpret
     }
 
     aBuf.insert( 0, '=');
-    if( cMatrixFlag != ScMatrixMode::NONE )
+    // Dynamic-array masters read back as plain formulas in the formula
+    // bar. Static array masters still get the {} wrapping.
+    if (cMatrixFlag != ScMatrixMode::NONE && !mbDynamicArrayMaster)
     {
         aBuf.insert( 0, '{');
         aBuf.append( '}');
@@ -1389,6 +1420,12 @@ void ScFormulaCell::CompileXML( sc::CompileFormulaContext& rCxt, ScProgress& rPr
     //  (for external links warning, CompileXML is called at the end of loading XML file)
     rDocument.CheckLinkFormulaNeedingCheck(*pCode);
 
+    // Plain non-array cells whose RPN intends an array result get the @
+    // implicit-intersection marker baked in here, so the round trip
+    // preserves their single-value intent without leaning on a runtime
+    // flag.
+    ResolveImplicitIntersection();
+
     //volatile cells must be added here for import
     if( !pCode->IsRecalcModeNormal() || pCode->IsRecalcModeForced())
     {
@@ -1463,7 +1500,7 @@ void ScFormulaCell::CalcAfterLoad( sc::CompileFormulaContext& rCxt, bool bStartL
         // for each F9
         bDirty = true;
     }
-    // No SetDirty yet, as no all Listeners are known yet (only in SetDirtyAfterLoad)
+    // No SetDirty yet, as not all Listeners are known yet (only in SetDirtyAfterLoad)
 }
 
 bool ScFormulaCell::MarkUsedExternalReferences()
@@ -1536,6 +1573,150 @@ private:
             mCell->GetDocument().GetRecursionHelper().CleanTemporaryGroupCells();
     }
 };
+
+// True when the RPN top is the @ implicit-intersection operator.
+bool rpnTopIsImplicitIntersection(const ScTokenArray& rCode)
+{
+    const sal_uInt16 nRpnLength = rCode.GetCodeLen();
+    if (nRpnLength == 0)
+        return false;
+    const formula::FormulaToken* pTop = rCode.GetCode()[nRpnLength - 1];
+    return pTop && pTop->GetOpCode() == ocSingleValue;
+}
+
+// Bottom-up RPN walk that decides whether the formula intends to produce
+// an array. A push of a range or inline matrix is an array on the stack.
+// Binary and unary operators preserve array-ness through any operand. A
+// function known to return a matrix (UNIQUE, TRANSPOSE, MMULT ...) pushes
+// an array, every other function reduces to a scalar. Returns false if
+// the walk cannot decide: jump commands, arity mismatch, null tokens.
+bool intendsArrayResultInRange(formula::FormulaToken* const* pRpn,
+                               sal_uInt16 nStart, sal_uInt16 nEnd)
+{
+    std::vector<bool> aStackIsArray;
+    for (sal_uInt16 i = nStart; i < nEnd; ++i)
+    {
+        const formula::FormulaToken* p = pRpn[i];
+        if (!p)
+            return false;
+        const OpCode eOp = p->GetOpCode();
+        if (eOp == ocPush)
+        {
+            const formula::StackVar eType = p->GetType();
+            aStackIsArray.push_back(eType == formula::svDoubleRef
+                                    || eType == formula::svMatrix);
+            continue;
+        }
+        // Jump commands expose their branches through a
+        // FormulaJumpToken. Branches k=1..nJumpCount-1 hold the
+        // result expressions: IF carries THEN and ELSE, CHOOSE
+        // carries the alternatives, LET carries the bindings and
+        // the body. The token is array-intent if any branch is.
+        if (eOp == ocIf || eOp == ocIfError || eOp == ocIfNA
+            || eOp == ocChoose || eOp == ocLet)
+        {
+            if (aStackIsArray.empty())
+                return false;
+            aStackIsArray.pop_back();
+            const auto* pJumpTok = static_cast<const formula::FormulaJumpToken*>(p);
+            const short* pJump = pJumpTok->GetJump();
+            const short nJumpCount = pJump[0];
+            bool bAnyBranchArray = false;
+            for (short nBranch = 1; nBranch < nJumpCount && !bAnyBranchArray; ++nBranch)
+            {
+                const sal_uInt16 nBranchStart = pJump[nBranch] + 1;
+                const sal_uInt16 nBranchEnd = pJump[nBranch + 1];
+                if (nBranchEnd <= nBranchStart || nBranchEnd > nEnd)
+                    continue;
+                if (intendsArrayResultInRange(pRpn, nBranchStart, nBranchEnd))
+                    bAnyBranchArray = true;
+            }
+            aStackIsArray.push_back(bAnyBranchArray);
+            i = pJump[nJumpCount];
+            continue;
+        }
+        // Any other jump command stays an unknown shape.
+        if (formula::FormulaCompiler::IsOpCodeJumpCommand(eOp))
+            return false;
+        const sal_uInt8 nParameters = p->GetParamCount();
+        if (nParameters > aStackIsArray.size())
+            return false;
+        bool bAnyArrayArgument = false;
+        for (sal_uInt8 j = 0; j < nParameters; ++j)
+        {
+            if (aStackIsArray.back())
+                bAnyArrayArgument = true;
+            aStackIsArray.pop_back();
+        }
+        bool bResultArray = false;
+        if (eOp == ocSingleValue)
+            // The @ implicit-intersection operator extracts the upper-
+            // left scalar from its operand. The result is scalar even
+            // when the operand was an array.
+            bResultArray = false;
+        else if (eOp == ocSpill)
+            // The # spilled-range operator expands its operand to the
+            // whole spill range. The result is an array whatever the
+            // operand shape was.
+            bResultArray = true;
+        else if (formula::FormulaCompiler::IsMatrixFunction(eOp) || p->IsInForceArray())
+            bResultArray = true;
+        else if (eOp == ocRange || eOp == ocUnion || eOp == ocIntersect)
+            // The ODFF parser keeps A:B style range constructors as
+            // their own opcodes instead of folding them into a single
+            // svDoubleRef push. The result is always a multi-cell
+            // reference, so the array flag flows through.
+            bResultArray = true;
+        else if (ocStartBinaryOperators <= eOp && eOp < ocStopBinaryOperators
+                 && eOp != ocAnd && eOp != ocOr)
+            // ocAnd and ocOr share the binary-operator opcode range but
+            // reduce their arguments to a scalar boolean. Treat them as
+            // function-form reducers, not elementwise operators.
+            bResultArray = bAnyArrayArgument;
+        else if (ocStartUnaryOperators <= eOp && eOp < ocStopUnaryOperators)
+            bResultArray = bAnyArrayArgument;
+        aStackIsArray.push_back(bResultArray);
+    }
+    return !aStackIsArray.empty() && aStackIsArray.back();
+}
+
+bool rpnIntendsArrayResult(const ScTokenArray& rCode)
+{
+    const sal_uInt16 nRpnLength = rCode.GetCodeLen();
+    if (nRpnLength == 0)
+        return false;
+    return intendsArrayResultInRange(rCode.GetCode(), 0, nRpnLength);
+}
+
+// Prepend @ to a token array. The parse array gets it at index 0 (a
+// prefix operator in the formula text). The RPN gets it at the end
+// (where ocSingleValue belongs in postfix).
+void prependImplicitIntersection(ScTokenArray& rCode)
+{
+    // A cloned or compiled array is already at its final size and cannot grow, so build fresh parse
+    // and RPN buffers with the extra token in place and install them directly:
+    formula::FormulaToken* pSingleValue = new formula::FormulaByteToken(ocSingleValue);
+
+    // For the parse buffer, the new token is a prefix operator, so it is prepended at index 0:
+    const sal_uInt16 parseLength = rCode.GetLen();
+    formula::FormulaToken** pParse = rCode.GetArray();
+    std::vector<formula::FormulaToken *> newParse(parseLength + 1);
+    newParse[0] = pSingleValue;
+    for (sal_uInt16 i = 0; i < parseLength; ++i)
+        newParse[i + 1] = pParse[i];
+    pSingleValue->IncRef();
+    rCode.CreateNewCodeArrayFromData(newParse.data(), parseLength + 1);
+
+    // For the RPN buffer, ocSingleValue belongs at the end in postfix order:
+    const sal_uInt16 nRpnLength = rCode.GetCodeLen();
+    formula::FormulaToken** pRpn = rCode.GetCode();
+    std::vector<formula::FormulaToken*> aNewRpn(nRpnLength + 1);
+    for (sal_uInt16 i = 0; i < nRpnLength; ++i)
+        aNewRpn[i] = pRpn[i];
+    aNewRpn[nRpnLength] = pSingleValue;
+    pSingleValue->IncRef();
+    rCode.CreateNewRPNArrayFromData(aNewRpn.data(), nRpnLength + 1);
+}
 
 } // namespace
 
@@ -1703,7 +1884,7 @@ bool ScFormulaCell::Interpret(SCROW nStartOffset, SCROW nEndOffset)
                     // Mark older cells dirty again, in case they converted
                     // without accounting for all remaining cells in the circle
                     // that weren't touched so far, e.g. conditional. Restore
-                    // backupped result.
+                    // backed-up result.
                     sal_uInt16 nIteration = rRecursionHelper.GetIteration();
                     for (ScFormulaRecursionList::const_iterator aIter(
                                 aOldStart); aIter !=
@@ -1962,6 +2143,28 @@ void ScFormulaCell::InterpretTail( ScInterpreterContext& rContext, ScInterpretTa
 
     if( pCode->GetCodeLen() )
     {
+        // A freshly UI-typed formula promotes to a dynamic-array master
+        // at interpret entry when the RPN says it intends to produce an
+        // array. Matrix mode has to be set before the interpreter runs
+        // so the array result is kept. Loaded and macro-created cells
+        // leave the flag false so legacy formulas keep their old
+        // result. An @ at the top suppresses promotion. Grouped cells
+        // stay single-cell so the group is not broken.
+        if (mbAutoDynamicArrayEligible
+            && cMatrixFlag == ScMatrixMode::NONE
+            && !pCode->IsHyperLink()
+            && !mxGroup)
+        {
+            if (!rpnTopIsImplicitIntersection(*pCode)
+                && rpnIntendsArrayResult(*pCode))
+            {
+                cMatrixFlag = ScMatrixMode::Formula;
+                SetMatColsRows(1, 1);
+                mbDynamicArrayMaster = true;
+            }
+            mbAutoDynamicArrayEligible = false;
+        }
+
         std::unique_ptr<ScInterpreter> pScopedInterpreter;
         ScInterpreter* pInterpreter;
         if (rContext.pInterpreter)
@@ -2316,15 +2519,16 @@ void ScFormulaCell::InterpretTail( ScInterpreterContext& rContext, ScInterpretTa
                 bool bSpillBlocked = false;
                 // Auto resize fires for matrix formulas whose result wants
                 // more cells than declared, in two situations:
-                //  - the formula uses a dynamic array function.
+                //  - the cell is a dynamic-array master.
                 //  - the cell is currently in spill state. Re-checking lets
                 //    the matrix auto expand the next time the user clears
                 //    the blocking cell.
-                // Conventional matrix formulas where the user explicitly
-                // picked the range fall outside both cases - their declared
-                // dimensions are intentional.
+                // Static array masters where the user explicitly picked the
+                // range fall outside both - their declared dimensions are
+                // intentional.
                 const bool bShouldCheckSpill
-                    = pCode->HasDynamicArrayFunction() || rDocument.IsFormulaSpilled(aPos);
+                    = mbDynamicArrayMaster
+                      || rDocument.IsFormulaSpilled(aPos);
                 if (bShouldCheckSpill && nDeclCols > 0 && nDeclRows > 0
                     && (o3tl::make_unsigned(nDeclCols) < nResCols
                         || o3tl::make_unsigned(nDeclRows) < nResRows))
@@ -2522,6 +2726,52 @@ void ScFormulaCell::HandleStuffAfterParallelCalculation(ScInterpreter* pInterpre
 void ScFormulaCell::SetCompile( bool bVal )
 {
     bCompile = bVal;
+}
+
+void ScFormulaCell::SetDynamicArrayMaster(bool bDynamic)
+{
+    // A formula with @ on top of its RPN opts out of dynamic-array
+    // spilling: the operator collapses any array operand to a single
+    // value, so there is nothing to spill. XLSX still emits the cm="1"
+    // marker on such cells, so reject the request rather than letting
+    // the spill check fire against a 1x1 declared matrix.
+    if (bDynamic && pCode && rpnTopIsImplicitIntersection(*pCode))
+        return;
+    mbDynamicArrayMaster = bDynamic;
+    // A plain single-cell formula that opts into the dynamic-array flag
+    // becomes a 1x1 matrix master so the first interpret can expand it
+    // through the auto-resize gate.
+    if (bDynamic && cMatrixFlag == ScMatrixMode::NONE)
+    {
+        cMatrixFlag = ScMatrixMode::Formula;
+        SetMatColsRows(1, 1);
+    }
+}
+
+void ScFormulaCell::ResolveImplicitIntersection(ScTokenArray& rCode, ScDocument& rDoc,
+                                                const ScAddress& rPos)
+{
+    if (rCode.IsHyperLink() || rCode.GetLen() == 0)
+        return;
+    if (rCode.GetCodeLen() == 0)
+    {
+        // Parse has tokens but RPN was not built yet. Build it so the
+        // walk has post-fix order to inspect. Keep multi-cell range
+        // tokens unfolded so the array-intent walk can see them.
+        ScCompiler aComp(rDoc, rPos, rCode, formula::FormulaGrammar::GRAM_DEFAULT, false, false);
+        aComp.CompileTokenArray();
+    }
+    if (rpnTopIsImplicitIntersection(rCode))
+        return;
+    if (rpnIntendsArrayResult(rCode))
+        prependImplicitIntersection(rCode);
+}
+
+void ScFormulaCell::ResolveImplicitIntersection()
+{
+    if (!pCode || cMatrixFlag != ScMatrixMode::NONE || mxGroup)
+        return;
+    ResolveImplicitIntersection(*pCode, rDocument, aPos);
 }
 
 void ScFormulaCell::SetMatColsRows( SCCOL nCols, SCROW nRows )
@@ -2928,6 +3178,18 @@ bool ScFormulaCell::IsValueNoError() const
     return aResult.IsValueNoError();
 }
 
+bool ScFormulaCell::IsString()
+{
+    MaybeInterpret();
+    return aResult.IsString();
+}
+
+bool ScFormulaCell::IsCallable()
+{
+    MaybeInterpret();
+    return aResult.IsCallable();
+}
+
 double ScFormulaCell::GetValue()
 {
     MaybeInterpret();
@@ -2938,6 +3200,18 @@ const svl::SharedString & ScFormulaCell::GetString()
 {
     MaybeInterpret();
     return GetRawString();
+}
+
+formula::FormulaCallableRef ScFormulaCell::GetCallable()
+{
+    MaybeInterpret();
+    return GetRawCallable();
+}
+
+formula::FormulaTokenRef ScFormulaCell::CloneResultToken()
+{
+    MaybeInterpret();
+    return CloneRawResultToken();
 }
 
 double ScFormulaCell::GetRawValue() const
@@ -2951,10 +3225,36 @@ double ScFormulaCell::GetRawValue() const
 const svl::SharedString & ScFormulaCell::GetRawString() const
 {
     if ((pCode->GetCodeError() == FormulaError::NONE) &&
-            aResult.GetResultError() == FormulaError::NONE)
+        aResult.GetResultError() == FormulaError::NONE)
         return aResult.GetString();
 
     return svl::SharedString::getEmptyString();
+}
+
+formula::FormulaCallableRef ScFormulaCell::GetRawCallable() const
+{
+    if ((pCode->GetCodeError() == FormulaError::NONE) &&
+        aResult.GetResultError() == FormulaError::NONE)
+        return aResult.GetCallable();
+
+    return nullptr;
+}
+
+formula::FormulaConstTokenRef ScFormulaCell::GetRawResultToken() const
+{
+    if ((pCode->GetCodeError() == FormulaError::NONE) &&
+        aResult.GetResultError() == FormulaError::NONE)
+        return aResult.GetToken();
+
+    return nullptr;
+}
+
+formula::FormulaTokenRef ScFormulaCell::CloneRawResultToken() const
+{
+    if (pCode->GetCodeError() != FormulaError::NONE)
+        return new formula::FormulaErrorToken(pCode->GetCodeError());
+    else
+        return aResult.CloneToken();
 }
 
 const ScMatrix* ScFormulaCell::GetMatrix()
@@ -4622,7 +4922,7 @@ struct ScDependantsCalculator
     // Because Lookup will extend the Result Vector under certain circumstances listed at:
     // https://wiki.documentfoundation.org/Documentation/Calc_Functions/LOOKUP
     // then if the Lookup has a Result Vector only accept the Lookup for parallelization
-    // of the Result Vector has the same dimensions as the Search Vector.
+    // if the Result Vector has the same dimensions as the Search Vector.
     bool LookupResultVectorMismatch(sal_Int32 nTokenIdx)
     {
         if (nTokenIdx >= 3)
@@ -4684,7 +4984,7 @@ struct ScDependantsCalculator
             {
                 // The dependency evaluator evaluates all arguments of IF/IFS/SWITCH irrespective
                 // of the result of the condition expression.
-                // This is a perf problem if we *don't* intent on recalc'ing all dirty cells
+                // This is a perf problem if we *don't* intend on recalc'ing all dirty cells
                 // in the document. So let's disable threading and stop dependency evaluation if
                 // the call did not originate from ScDocShell::DoRecalc()/ScDocShell::DoHardRecalc()
                 // for formulae with IF/IFS/SWITCH
@@ -4705,6 +5005,17 @@ struct ScDependantsCalculator
                 // a range from its arguments, and only examining the individual args doesn't capture the
                 // true range of dependencies
                 SAL_WARN("sc.core.formulacell", "dynamic range, dropping as candidate for parallelizing");
+                return false;
+            }
+
+            if ((p->GetOpCode() == ocSumIf || p->GetOpCode() == ocAverageIf) && p->GetParamCount() >= 3)
+            {
+                // With a separate sum range these functions grow it to the criteria range's shape
+                // when it is smaller, and read cells beyond the sum range's own reference. Those
+                // extra cells are not named by any reference token, so examining the arguments alone
+                // does not capture the true range of dependencies. The two argument form sums the
+                // criteria range itself and stays a candidate for parallelizing.
+                SAL_WARN("sc.core.formulacell", "conditional sum range extension, dropping as candidate for parallelizing");
                 return false;
             }
 

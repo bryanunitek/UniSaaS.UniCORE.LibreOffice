@@ -30,8 +30,7 @@
 
 // MasterPasswordCreateDialog---------------------------------------------------
 
-
-IMPL_LINK_NOARG(MasterPasswordCreateDialog, EditHdl_Impl, weld::Entry&, void)
+IMPL_LINK_NOARG(MasterPasswordCreateDialog, EditHdl_Impl, weld::TextWidget&, void)
 {
     OUString aPasswordText = m_xEDMasterPasswordCrt->get_text();
     m_xOKBtn->set_sensitive(aPasswordText.getLength() >= 1);
@@ -58,7 +57,7 @@ IMPL_LINK_NOARG(MasterPasswordCreateDialog, OKHdl_Impl, weld::Button&, void)
         return;
     }
 
-    // compare both passwords and show message box if there are not equal!!
+    // compare both passwords and show message box if they are not equal!!
     if (m_xEDMasterPasswordCrt->get_text() == m_xEDMasterPasswordRepeat->get_text())
         m_xDialog->response(RET_OK);
     else

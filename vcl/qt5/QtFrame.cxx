@@ -220,6 +220,7 @@ QWindow* QtFrame::windowHandle() const
         case Platform::Wayland:
         case Platform::Windows:
         case Platform::Xcb:
+        case Platform::Mac:
             pChild->setAttribute(Qt::WA_NativeWindow);
             break;
         case Platform::Other:
@@ -496,10 +497,10 @@ void QtFrame::SetPosSize(tools::Long nX, tools::Long nY, tools::Long nWidth, too
     asChild()->move(round(nX / devicePixelRatioF()), round(nY / devicePixelRatioF()));
 }
 
-void QtFrame::GetClientSize(tools::Long& rWidth, tools::Long& rHeight)
+Size QtFrame::GetClientSize()
 {
-    rWidth = round(m_pQWidget->width() * devicePixelRatioF());
-    rHeight = round(m_pQWidget->height() * devicePixelRatioF());
+    return Size(round(m_pQWidget->width() * devicePixelRatioF()),
+                round(m_pQWidget->height() * devicePixelRatioF()));
 }
 
 SalFrameGeometry QtFrame::GetUnmirroredGeometry() const
@@ -562,16 +563,16 @@ void QtFrame::SetModal(bool bModal)
     });
 }
 
-void QtFrame::SetWindowState(const vcl::WindowData* pState)
+void QtFrame::SetWindowState(const vcl::WindowData& rState)
 {
     QtInstance& rQtInstance = GetQtInstance();
     if (!rQtInstance.IsMainThread())
     {
-        rQtInstance.RunInMainThread([this, pState]() { SetWindowState(pState); });
+        rQtInstance.RunInMainThread([this, rState]() { SetWindowState(rState); });
         return;
     }
 
-    if (!isWindow() || !pState || isChild(true, false))
+    if (!isWindow() || isChild(true, false))
         return;
 
     const vcl::WindowDataMask nMaxGeometryMask
@@ -579,57 +580,58 @@ void QtFrame::SetWindowState(const vcl::WindowData* pState)
           | vcl::WindowDataMask::MaximizedY | vcl::WindowDataMask::MaximizedWidth
           | vcl::WindowDataMask::MaximizedHeight;
 
-    if ((pState->mask() & vcl::WindowDataMask::State)
-        && (pState->state() & vcl::WindowState::Maximized) && !isMaximized()
-        && (pState->mask() & nMaxGeometryMask) == nMaxGeometryMask)
+    if ((rState.mask() & vcl::WindowDataMask::State)
+        && (rState.state() & vcl::WindowState::Maximized) && !isMaximized()
+        && (rState.mask() & nMaxGeometryMask) == nMaxGeometryMask)
     {
         const qreal fRatio = devicePixelRatioF();
         QWidget* const pChild = asChild();
-        pChild->resize(ceil(pState->width() / fRatio), ceil(pState->height() / fRatio));
-        pChild->move(ceil(pState->x() / fRatio), ceil(pState->y() / fRatio));
+        pChild->resize(ceil(rState.width() / fRatio), ceil(rState.height() / fRatio));
+        pChild->move(ceil(rState.x() / fRatio), ceil(rState.y() / fRatio));
         SetWindowStateImpl(Qt::WindowMaximized);
     }
-    else if (pState->mask() & vcl::WindowDataMask::PosSize)
+    else if (rState.mask() & vcl::WindowDataMask::PosSize)
     {
         sal_uInt16 nPosSizeFlags = 0;
-        if (pState->mask() & vcl::WindowDataMask::X)
+        if (rState.mask() & vcl::WindowDataMask::X)
             nPosSizeFlags |= SAL_FRAME_POSSIZE_X;
-        if (pState->mask() & vcl::WindowDataMask::Y)
+        if (rState.mask() & vcl::WindowDataMask::Y)
             nPosSizeFlags |= SAL_FRAME_POSSIZE_Y;
-        if (pState->mask() & vcl::WindowDataMask::Width)
+        if (rState.mask() & vcl::WindowDataMask::Width)
             nPosSizeFlags |= SAL_FRAME_POSSIZE_WIDTH;
-        if (pState->mask() & vcl::WindowDataMask::Height)
+        if (rState.mask() & vcl::WindowDataMask::Height)
             nPosSizeFlags |= SAL_FRAME_POSSIZE_HEIGHT;
-        SetPosSize(pState->x(), pState->y(), pState->width(), pState->height(), nPosSizeFlags);
+        SetPosSize(rState.x(), rState.y(), rState.width(), rState.height(), nPosSizeFlags);
     }
-    else if (pState->mask() & vcl::WindowDataMask::State && !isChild())
+    else if (rState.mask() & vcl::WindowDataMask::State && !isChild())
     {
-        if (pState->state() & vcl::WindowState::Maximized)
+        if (rState.state() & vcl::WindowState::Maximized)
             SetWindowStateImpl(Qt::WindowMaximized);
-        else if (pState->state() & vcl::WindowState::Minimized)
+        else if (rState.state() & vcl::WindowState::Minimized)
             SetWindowStateImpl(Qt::WindowMinimized);
         else
             SetWindowStateImpl(Qt::WindowNoState);
     }
 }
 
-bool QtFrame::GetWindowState(vcl::WindowData* pState)
+vcl::WindowData QtFrame::GetWindowState()
 {
-    pState->setState(vcl::WindowState::Normal);
-    pState->setMask(vcl::WindowDataMask::State);
+    vcl::WindowData aState;
+    aState.setState(vcl::WindowState::Normal);
+    aState.setMask(vcl::WindowDataMask::State);
     if (isMinimized())
-        pState->rState() |= vcl::WindowState::Minimized;
+        aState.rState() |= vcl::WindowState::Minimized;
     else if (isMaximized())
-        pState->rState() |= vcl::WindowState::Maximized;
+        aState.rState() |= vcl::WindowState::Maximized;
     else
     {
         // we want the frame position and the client area size
         QRect rect = scaledQRect({ asChild()->pos(), asChild()->size() }, devicePixelRatioF());
-        pState->setPosSize(toRectangle(rect));
-        pState->rMask() |= vcl::WindowDataMask::PosSize;
+        aState.setPosSize(toRectangle(rect));
+        aState.rMask() |= vcl::WindowDataMask::PosSize;
     }
 
-    return true;
+    return aState;
 }
 
 void QtFrame::ShowFullScreen(bool bFullScreen, sal_Int32 nScreen)
@@ -667,17 +669,12 @@ void QtFrame::ShowFullScreen(bool bFullScreen, sal_Int32 nScreen)
 
 void QtFrame::StartPresentation(bool bStart)
 {
-#if !defined __EMSCRIPTEN__
+#if defined LINUX || defined __sun || defined FREEBSD || defined OPENBSD || defined MACOSX
 #if CHECK_QT5_USING_X11
-    unsigned int nRootWindow(0);
     std::optional<Display*> aDisplay;
     if (QX11Info::isPlatformX11())
-    {
-        nRootWindow = QX11Info::appRootWindow();
         aDisplay = QX11Info::display();
-    }
-    m_SessionManagerInhibitor.inhibit(bStart, u"presentation", APPLICATION_INHIBIT_IDLE,
-                                      nRootWindow, aDisplay);
+    m_SessionManagerInhibitor.inhibit(bStart, u"presentation", APPLICATION_INHIBIT_IDLE, aDisplay);
 #else
     m_SessionManagerInhibitor.inhibit(bStart, u"presentation", APPLICATION_INHIBIT_IDLE);
 #endif
@@ -1115,11 +1112,6 @@ SalFrame::SalPointerState QtFrame::GetPointerState()
 }
 
 KeyIndicatorState QtFrame::GetIndicatorState() { return KeyIndicatorState(); }
-
-void QtFrame::SimulateKeyPress(sal_uInt16 nKeyCode)
-{
-    SAL_WARN("vcl.qt", "missing simulate keypress " << nKeyCode);
-}
 
 // don't set QWidget parents; this breaks popups on Wayland, like the LO ComboBox or ColorPicker!
 void QtFrame::SetParent(SalFrame* pNewParent) { m_pParent = static_cast<QtFrame*>(pNewParent); }

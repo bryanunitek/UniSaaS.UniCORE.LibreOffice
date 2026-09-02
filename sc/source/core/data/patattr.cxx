@@ -17,6 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <cassert>
 #include <memory>
 #include <utility>
 #include <scitems.hxx>
@@ -66,8 +67,9 @@
 #include <comphelper/lok.hxx>
 #include <tabvwsh.hxx>
 
-CellAttributeHelper::CellAttributeHelper(SfxItemPool& rSfxItemPool)
+CellAttributeHelper::CellAttributeHelper(SfxItemPool& rSfxItemPool, ScDocument* pDocument)
 : mrSfxItemPool(rSfxItemPool)
+, mpDocument(pDocument)
 , mpDefaultCellAttribute(nullptr)
 , maRegisteredCellAttributes()
 , mpLastHit(nullptr)
@@ -407,6 +409,39 @@ ScPatternAttr::ScPatternAttr(CellAttributeHelper& rHelper, const SfxItemSet* pIt
         // SfxItemState::INVALID aka IsInvalidItem, this is a precious
         // value/information e.g. in ScDocument::CreateSelectionPattern
         maLocalSfxItemSet.Put(*pItemSet, false);
+
+        // tdf#172647: store fonts by their typographic names
+        ScDocument* pConvDoc = rHelper.GetDocument();
+        const TypedWhichId<SvxFontItem> aFontIds[3] = { ATTR_FONT, ATTR_CJK_FONT, ATTR_CTL_FONT };
+        const TypedWhichId<SvxWeightItem> aWeightIds[3]
+            = { ATTR_FONT_WEIGHT, ATTR_CJK_FONT_WEIGHT, ATTR_CTL_FONT_WEIGHT };
+        const TypedWhichId<SvxPostureItem> aPostureIds[3]
+            = { ATTR_FONT_POSTURE, ATTR_CJK_FONT_POSTURE, ATTR_CTL_FONT_POSTURE };
+        OutputDevice* pRefDev = nullptr;
+        for (int i = 0; pConvDoc && i < 3; ++i)
+        {
+            const SvxFontItem* pFont = maLocalSfxItemSet.GetItemIfSet(aFontIds[i], false);
+            if (!pFont)
+                continue;
+            if (!pRefDev)
+            {
+                pRefDev = pConvDoc->GetRefDevice(true);
+                if (!pRefDev)
+                    break;
+            }
+            FontWeight eWeight = WEIGHT_DONTKNOW;
+            if (const SvxWeightItem* pWeight = maLocalSfxItemSet.GetItemIfSet(aWeightIds[i], false))
+                eWeight = pWeight->GetWeight();
+            FontItalic eItalic = ITALIC_DONTKNOW;
+            if (const SvxPostureItem* pPosture = maLocalSfxItemSet.GetItemIfSet(aPostureIds[i], false))
+                eItalic = pPosture->GetPosture();
+
+            SvxFontItem aFont(*pFont);
+            aFont.makeTypographic(*pRefDev, eWeight, WIDTH_DONTKNOW, eItalic);
+            if (aFont.GetFamilyName() != pFont->GetFamilyName()
+                || aFont.GetStyleName() != pFont->GetStyleName())
+                maLocalSfxItemSet.Put(aFont);
+        }
     }
 }
 
@@ -467,6 +502,7 @@ bool ScPatternAttr::operator==(const ScPatternAttr& rCmp) const
 
 void ScPatternAttr::CalcHashCode() const
 {
+    assert(!ScGlobal::bThreadedGroupCalcInProgress);
     size_t nHash = 0;
     if (const OUString* pName = GetStyleName())
         nHash = pName->hashCode();
@@ -1538,7 +1574,10 @@ CellAttributeHolder ScPatternAttr::MigrateToDocument( ScDocument* pDestDoc, ScDo
 bool ScPatternAttr::IsVisible() const
 {
     if (!mxVisible.has_value())
+    {
+        assert(!ScGlobal::bThreadedGroupCalcInProgress);
         mxVisible = CalcVisible();
+    }
     return *mxVisible;
 }
 
@@ -1702,14 +1741,22 @@ bool ScPatternAttr::HasValidNumberFormat() const
 sal_uInt32 ScPatternAttr::GetNumberFormatKey() const
 {
     if (!mxNumberFormatKey.has_value())
+    {
+        if (ScGlobal::bThreadedGroupCalcInProgress)
+            return getNumberFormatKey(GetItemSet());
         mxNumberFormatKey = getNumberFormatKey(GetItemSet());
+    }
     return *mxNumberFormatKey;
 }
 
 LanguageType ScPatternAttr::GetLanguageType() const
 {
     if (!mxLanguageType.has_value())
+    {
+        if (ScGlobal::bThreadedGroupCalcInProgress)
+            return getLanguageType(GetItemSet());
         mxLanguageType = getLanguageType(GetItemSet());
+    }
     return *mxLanguageType;
 }
 

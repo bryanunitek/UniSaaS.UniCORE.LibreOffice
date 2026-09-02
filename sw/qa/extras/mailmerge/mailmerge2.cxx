@@ -209,7 +209,7 @@ DECLARE_SHELL_MAILMERGE_TEST(exportDirectToPDF_shell, "linked-with-condition.odt
 
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(0);
     CPPUNIT_ASSERT(pPdfPage);
-    CPPUNIT_ASSERT_EQUAL(4, pPdfPage->getObjectCount());
+    CPPUNIT_ASSERT_EQUAL(5, pPdfPage->getObjectCount());
 }
 
 DECLARE_SHELL_MAILMERGE_TEST(testTdf121168, "section_ps.odt", "4_v01.ods", "Tabelle1")
@@ -395,7 +395,7 @@ DECLARE_MAILMERGE_TEST(testGrabBag, "grabbagtest.docx", "onecell.xlsx", "Sheet1"
     uno::Reference<text::XTextDocument> xTextDocument(mxComponent, uno::UNO_QUERY);
     uno::Reference<beans::XPropertySet> xTextDocumentPropertySet(xTextDocument, uno::UNO_QUERY);
     xTextDocumentPropertySet->getPropertyValue(u"InteropGrabBag"_ustr) >>= aInteropGrabBag;
-    CPPUNIT_ASSERT_EQUAL(sal_Int32(12), aInteropGrabBag.getLength());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(13), aInteropGrabBag.getLength());
 
     // check table border - comes from table style "Tabellenraster"
     uno::Reference<text::XTextTable> const xTable(getParagraphOrTable(1, xTextDocument->getText()), uno::UNO_QUERY_THROW);

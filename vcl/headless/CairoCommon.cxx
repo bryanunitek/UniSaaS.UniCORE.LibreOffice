@@ -1766,9 +1766,9 @@ void CairoCommon::drawMask(const SalTwoRect& rTR, const SalBitmap& rSalBitmap, C
                            bool bAntiAlias)
 {
     /** creates an image from the given rectangle, replacing all black pixels
-     *  with nMaskColor and make all other full transparent */
+     *  with nMaskColor and making all others fully transparent */
     // MM02 here decided *against* using buffered BitmapHelper
-    // because the data gets somehow 'unmuliplied'. This may also be
+    // because the data gets somehow 'unmultiplied'. This may also be
     // done just once, but I am not sure if this is safe to do.
     // So for now dispense re-using data here.
     BitmapHelper aSurface(rSalBitmap, true); // The mask is argb32
@@ -1789,10 +1789,10 @@ void CairoCommon::drawMask(const SalTwoRect& rTR, const SalBitmap& rSalBitmap, C
             // and that is the same multiplied or un-multiplied.
             if (data[SVP_CAIRO_RED] == 0 && data[SVP_CAIRO_GREEN] == 0 && data[SVP_CAIRO_BLUE] == 0)
             {
-                data[0] = nMaskColor.GetBlue();
-                data[1] = nMaskColor.GetGreen();
-                data[2] = nMaskColor.GetRed();
-                data[3] = 0xff;
+                data[SVP_CAIRO_RED] = nMaskColor.GetRed();
+                data[SVP_CAIRO_GREEN] = nMaskColor.GetGreen();
+                data[SVP_CAIRO_BLUE] = nMaskColor.GetBlue();
+                data[SVP_CAIRO_ALPHA] = 0xff;
             }
             else
             {

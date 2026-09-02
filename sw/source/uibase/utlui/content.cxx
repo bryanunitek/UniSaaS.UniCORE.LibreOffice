@@ -138,10 +138,15 @@
 
 #include <sfx2/passwd.hxx>
 #include <svl/PasswordHelper.hxx>
+#include <frozen/bits/defines.h>
+#include <frozen/bits/elsa_std.h>
+#include <frozen/unordered_map.h>
 
 #include <officecfg/Office/Common.hxx>
 
 #include <txttxmrk.hxx>
+
+#include <IDocumentUndoRedo.hxx>
 
 #define CTYPE_CNT   0
 #define CTYPE_CTT   1
@@ -3319,8 +3324,36 @@ IMPL_LINK(SwContentTree, EditedEntryHdl, const weld::TreeView::IterColText&, rIt
         break;
         case ContentTypeId::INDEX:
         {
-            rtl::Reference<SwXDocumentIndexes> xIdxAcc = xModel->getSwDocumentIndexes();
-            xNameAccess = xIdxAcc;
+            m_bEditing = false;
+            SwTOXBaseContent* pTOXBaseContent = static_cast<SwTOXBaseContent*>(pCnt);
+            if (const SwTOXBase* pTOXBase = pTOXBaseContent->GetTOXBase())
+            {
+                // based on code from SwTOXMgr::UpdateOrInsertTOX
+                SwDoc* pDoc = m_pActiveShell->GetDoc();
+
+                if (pDoc->GetIDocumentUndoRedo().DoesUndo())
+                {
+                    pDoc->GetIDocumentUndoRedo().StartUndo(SwUndoId::TOXCHANGE, nullptr);
+                }
+
+                SwTOXBase* pTOX = const_cast<SwTOXBase*>(pTOXBase);
+                SwTOXBase* pNewTOX = new SwTOXBase(*pTOX);
+                pNewTOX->SetTitle(sNewName);
+                m_pActiveShell->GetDoc()->ChangeTOX(*pTOX, *pNewTOX);
+
+                pTOX->DisableKeepExpression();
+                m_pActiveShell->UpdateTableOf(*pTOX);
+                pTOX->EnableKeepExpression();
+
+                if (pDoc->GetIDocumentUndoRedo().DoesUndo())
+                {
+                    pDoc->GetIDocumentUndoRedo().EndUndo(SwUndoId::TOXCHANGE, nullptr);
+                }
+
+                return true;
+            }
+
+            return false;
         }
         break;
         case ContentTypeId::DRAWOBJECT:
@@ -3364,7 +3397,7 @@ IMPL_LINK(SwContentTree, EditedEntryHdl, const weld::TreeView::IterColText&, rIt
     }
     else if (ContentTypeId::TABLE == nType)
     {
-        sForbiddenChars = " .<>";
+        sForbiddenChars = ".<>";
     }
 
     if (!sForbiddenChars.isEmpty())
@@ -6339,27 +6372,28 @@ void SwContentTree::ExecuteContextMenuAction(const OUString& rSelectedPopupEntry
     }
 
     {
-        std::map<OUString, ContentTypeId> mPopupEntryToContentTypeId
+        static auto constexpr mPopupEntryToContentTypeId = frozen::make_unordered_map<std::u16string_view, ContentTypeId>(
         {
-            {"tabletracking", ContentTypeId::TABLE},
-            {"frametracking", ContentTypeId::FRAME},
-            {"imagetracking", ContentTypeId::GRAPHIC},
-            {"oleobjecttracking", ContentTypeId::OLE},
-            {"bookmarktracking", ContentTypeId::BOOKMARK},
-            {"sectiontracking", ContentTypeId::REGION},
-            {"hyperlinktracking", ContentTypeId::URLFIELD},
-            {"referencetracking", ContentTypeId::REFERENCE},
-            {"indextracking", ContentTypeId::INDEX},
-            {"commenttracking", ContentTypeId::POSTIT},
-            {"drawingobjecttracking", ContentTypeId::DRAWOBJECT},
-            {"fieldtracking", ContentTypeId::TEXTFIELD},
-            {"footnotetracking", ContentTypeId::FOOTNOTE},
-            {"endnotetracking", ContentTypeId::ENDNOTE}
-        };
+            {u"tabletracking", ContentTypeId::TABLE},
+            {u"frametracking", ContentTypeId::FRAME},
+            {u"imagetracking", ContentTypeId::GRAPHIC},
+            {u"oleobjecttracking", ContentTypeId::OLE},
+            {u"bookmarktracking", ContentTypeId::BOOKMARK},
+            {u"sectiontracking", ContentTypeId::REGION},
+            {u"hyperlinktracking", ContentTypeId::URLFIELD},
+            {u"referencetracking", ContentTypeId::REFERENCE},
+            {u"indextracking", ContentTypeId::INDEX},
+            {u"commenttracking", ContentTypeId::POSTIT},
+            {u"drawingobjecttracking", ContentTypeId::DRAWOBJECT},
+            {u"fieldtracking", ContentTypeId::TEXTFIELD},
+            {u"footnotetracking", ContentTypeId::FOOTNOTE},
+            {u"endnotetracking", ContentTypeId::ENDNOTE}
+        });
 
-        if (mPopupEntryToContentTypeId.count(rSelectedPopupEntry))
+        auto it = mPopupEntryToContentTypeId.find(rSelectedPopupEntry);
+        if (it != mPopupEntryToContentTypeId.end())
         {
-            ContentTypeId eCntTypeId = mPopupEntryToContentTypeId[rSelectedPopupEntry];
+            ContentTypeId eCntTypeId = it->second;
             SetContentTypeTracking(eCntTypeId, !mTrackContentType[eCntTypeId]);
             return;
         }
@@ -7709,35 +7743,48 @@ void SwContentTree::OverlayObject(std::vector<basegfx::B2DRange>&& aRanges)
 
 void SwContentTree::BringCommentToAttention(sal_uInt16 nCommentId)
 {
+    assert(nCommentId != 0 && "nCommentId is 0, which is not a valid comment Id");
+    if (nCommentId == 0)
+    {
+        SAL_WARN("sw.ui", "nCommentId is 0, which is not a valid comment Id");
+        return;
+    }
+
     std::unique_ptr<weld::TreeIter> xIter(m_xTreeView->make_iterator());
     if (!m_xTreeView->get_iter_first(*xIter))
         return;
     do
     {
         SwContentType* pCntType = weld::fromId<SwContentType*>(m_xTreeView->get_id(*xIter));
-        if (pCntType && pCntType->GetType() == ContentTypeId::POSTIT)
+        if (!pCntType || pCntType->GetType() != ContentTypeId::POSTIT)
         {
-            m_xTreeView->set_cursor(*xIter);
-            m_xTreeView->select(*xIter);
-            m_xTreeView->expand_row(*xIter);
-            UpdateContentFunctionsToolbar();
+            m_xTreeView->collapse_row(*xIter);
+            continue;
+        }
 
-            for (bool bChild = m_xTreeView->iter_children(*xIter); bChild; bChild = m_xTreeView->iter_next(*xIter))
+        m_xTreeView->set_cursor(*xIter);
+        m_xTreeView->select(*xIter);
+        m_xTreeView->expand_row(*xIter);
+        UpdateContentFunctionsToolbar();
+
+        const int nBaseDepth = m_xTreeView->get_iter_depth(*xIter);
+        for (bool bChild = m_xTreeView->iter_children(*xIter); bChild; bChild = m_xTreeView->iter_next(*xIter))
+        {
+            // iter_next() doesn't stop when starting node's descendants are exhausted -> leave
+            if (m_xTreeView->get_iter_depth(*xIter) <= nBaseDepth)
+                break;
+
+            if (const SwPostItContent* pPostIt = weld::fromId<SwPostItContent*>(m_xTreeView->get_id(*xIter)))
             {
-                if (const SwPostItContent* pPostIt = weld::fromId<SwPostItContent*>(m_xTreeView->get_id(*xIter)))
+                const SwPostItField* pPostItField = pPostIt->GetPostItField();
+                if (pPostItField && nCommentId == pPostItField->GetPostItId())
                 {
-                    if (nCommentId == pPostIt->GetPostItField()->GetPostItId())
-                    {
-                        GotoContent(weld::fromId<SwContent*>(m_xTreeView->get_id(*xIter)));
-                        m_xTreeView->grab_focus();
-                        break;
-                    }
+                    GotoContent(weld::fromId<SwContent*>(m_xTreeView->get_id(*xIter)));
+                    m_xTreeView->grab_focus();
+                    return;
                 }
             }
-            break;
         }
-        else
-            m_xTreeView->collapse_row(*xIter);
 
     } while (m_xTreeView->iter_next_sibling(*xIter));
 }

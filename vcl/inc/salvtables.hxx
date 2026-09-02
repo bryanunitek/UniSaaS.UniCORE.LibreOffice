@@ -69,6 +69,8 @@
 #include <vcl/toolkit/svlbitm.hxx>
 #include <vcl/weld/IconView.hxx>
 #include <o3tl/sorted_vector.hxx>
+
+#include "SvLBoxButton.hxx"
 #include "calendar.hxx"
 #include "colorpicker.hxx"
 #include "iconview.hxx"
@@ -495,9 +497,9 @@ public:
 
     virtual void present() override;
 
-    virtual void set_window_state(const OUString& rStr) override;
+    virtual void set_window_state(const vcl::WindowData& rState) override;
 
-    virtual OUString get_window_state(vcl::WindowDataMask nMask) const override;
+    virtual vcl::WindowData get_window_state(vcl::WindowDataMask nMask) const override;
 
     virtual SystemEnvData get_system_data() const override;
 
@@ -964,7 +966,7 @@ public:
 
     virtual void set_entry_message_type(weld::EntryMessageType /*eType*/) override;
 
-    virtual void set_entry_text(const OUString& /*rText*/) override;
+    virtual void do_set_entry_text(const OUString& /*rText*/) override;
 
     virtual void select_entry_region(int /*nStartPos*/, int /*nEndPos*/) override;
 
@@ -1037,7 +1039,7 @@ public:
 
     virtual void insert_separator(int pos, const OUString& /*rId*/) override;
 
-    virtual void set_entry_text(const OUString& rText) override;
+    virtual void do_set_entry_text(const OUString& rText) override;
 
     virtual void set_entry_width_chars(int nChars) override;
 
@@ -1572,13 +1574,15 @@ protected:
 
     int to_external_model(int col) const;
 
+    SvTreeListEntry& InsertDummyEntry(SvTreeListEntry* pParent);
+
     bool IsDummyEntry(SvTreeListEntry* pEntry) const;
 
     SvTreeListEntry* GetPlaceHolderChild(const SvTreeListEntry* pEntry) const;
 
     static void set_font_color(SvTreeListEntry* pEntry, const Color& rColor);
 
-    void AddStringItem(SvTreeListEntry* pEntry, const OUString& rStr, int nCol);
+    void AddStringItem(SvTreeListEntry& rEntry, const OUString& rStr, int nCol);
 
     void do_insert(const weld::TreeIter* pParent, int pos, const OUString* pStr,
                    const OUString* pId, const OUString* pIconName,
@@ -1589,14 +1593,12 @@ protected:
 
     void InvalidateModelEntry(SvTreeListEntry* pEntry);
 
-    void do_set_toggle(SvTreeListEntry& rEntry, TriState eState, int col);
+    void set_toggle(SvTreeListEntry& rEntry, TriState eState, int col);
 
     static TriState do_get_toggle(SvTreeListEntry* pEntry, int col);
     static bool do_get_sensitive(SvTreeListEntry* pEntry, int col);
 
     TriState get_toggle(SvTreeListEntry* pEntry, int col) const;
-
-    void set_toggle(SvTreeListEntry& rEntry, TriState eState, int col);
 
     bool get_text_emphasis(SvTreeListEntry* pEntry, int col) const;
 
@@ -1656,14 +1658,12 @@ public:
 
     virtual void swap(int pos1, int pos2) override;
 
-    virtual int iter_n_children(const weld::TreeIter& rIter) const override;
+    virtual int do_iter_n_children(const weld::TreeIter& rIter) const override;
 
     using SalInstanceItemView::do_set_cursor;
     virtual void do_set_cursor(int pos) override;
 
     virtual std::vector<int> get_selected_rows() const override;
-
-    OUString get_text(SvTreeListEntry* pEntry, int col) const;
 
     void set_text(SvTreeListEntry& rEntry, const OUString& rText, int col);
 
@@ -1679,9 +1679,11 @@ public:
 
     virtual TriState get_toggle(const weld::TreeIter& rIter, int col = -1) const override;
 
-    virtual void enable_toggle_buttons(weld::ColumnToggleType eType) override;
+    virtual void enable_toggle_buttons() override;
 
-    virtual void set_toggle(const weld::TreeIter& rIter, TriState eState, int col = -1) override;
+    virtual void set_toggle_button_type(weld::ColumnToggleType eType) override;
+
+    virtual void do_set_toggle(const weld::TreeIter& rIter, TriState eState, int col = -1) override;
 
     virtual void set_clicks_to_toggle(int nToggleBehavior) override;
 
@@ -1702,7 +1704,7 @@ public:
 
     virtual void end_editing() override;
 
-    void set_image(SvTreeListEntry* pEntry, const Image& rImage, int col);
+    void set_image(const weld::TreeIter& rIter, const Image& rImage, int col);
 
     virtual void set_image(const weld::TreeIter& rIter, const OUString& rImage,
                            int col = -1) override;
@@ -2152,6 +2154,7 @@ private:
 
     DECL_LINK(UpDownHdl, SpinField&, void);
     DECL_LINK(LoseFocusHdl, Control&, void);
+    DECL_LINK(ActivateHdl, Edit&, bool);
 
 public:
     SalInstanceFormattedSpinButton(FormattedField* pButton, SalInstanceBuilder* pBuilder,
@@ -2159,7 +2162,7 @@ public:
 
     virtual void do_set_text(const OUString& rText) override;
 
-    virtual void connect_changed(const Link<weld::Entry&, void>& rLink) override;
+    virtual void connect_changed(const Link<weld::TextWidget&, void>& rLink) override;
 
     virtual void connect_focus_out(const Link<weld::Widget&, void>& rLink) override;
 

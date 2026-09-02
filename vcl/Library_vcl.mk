@@ -101,6 +101,7 @@ $(eval $(call gb_Library_use_externals,vcl,\
     lcms2 \
     libeot \
     libjpeg \
+    libjxl \
     libpng \
     libtiff \
     libwebp \
@@ -318,6 +319,7 @@ $(eval $(call gb_Library_add_exception_objects,vcl,\
     vcl/source/text/mnemonic \
     vcl/source/text/TextLayoutCache \
     vcl/source/text/textlayout \
+    vcl/source/treelist/SvLBoxButton \
     vcl/source/treelist/SvHeaderTabListBox \
     vcl/source/treelist/headbar \
     vcl/source/treelist/iconview \
@@ -464,6 +466,7 @@ $(eval $(call gb_Library_add_exception_objects,vcl,\
     vcl/source/app/i18nhelp \
     vcl/source/app/idle \
     vcl/source/app/lok \
+    vcl/source/app/salframe \
     vcl/source/app/salinst \
     vcl/source/app/salplug \
     vcl/source/app/salusereventlist \
@@ -540,6 +543,7 @@ $(eval $(call gb_Library_add_exception_objects,vcl,\
     vcl/source/filter/jpeg/JpegReader \
     vcl/source/filter/jpeg/JpegWriter \
     vcl/source/filter/jpeg/JpegTransform \
+    vcl/source/filter/jxl/reader \
     vcl/source/filter/svm/SvmConverter \
     vcl/source/filter/svm/SvmReader \
     vcl/source/filter/svm/SvmWriter \
@@ -570,7 +574,6 @@ $(eval $(call gb_Library_add_exception_objects,vcl,\
     vcl/source/font/FontVariation \
     vcl/source/font/EOTConverter \
     vcl/source/font/TrueTypeFont \
-    vcl/source/fontsubset/cff \
     vcl/source/pdf/COSWriter \
     vcl/source/pdf/EncryptionHashTransporter \
     vcl/source/pdf/ExternalPDFStreams \
@@ -606,7 +609,6 @@ $(eval $(call gb_Library_add_exception_objects,vcl,\
     vcl/source/weld/Dialog \
     vcl/source/weld/DialogController \
     vcl/source/weld/DoubleNumericFormatter \
-    vcl/source/weld/Entry \
     vcl/source/weld/EntryFormatter \
     vcl/source/weld/EntryTreeView \
     vcl/source/weld/IconView \
@@ -661,18 +663,19 @@ vcl_headless_code= \
     vcl/unx/generic/app/gendisp \
     vcl/unx/generic/app/geninst \
 
-vcl_headless_freetype_code=\
+vcl_headless_generic_code=\
     vcl/headless/svpprn \
     vcl/headless/svptext \
     vcl/unx/generic/app/gendata \
     vcl/unx/generic/gdi/cairotextrender \
-    vcl/unx/generic/gdi/freetypetextrender \
-    vcl/unx/generic/glyphs/freetype_glyphcache \
-    vcl/unx/generic/glyphs/glyphcache \
-    vcl/unx/generic/fontmanager/fontsubst \
-    vcl/unx/generic/fontmanager/fontconfig \
-    vcl/unx/generic/fontmanager/fontmanager \
-    vcl/unx/generic/fontmanager/helper \
+    vcl/unx/generic/gdi/generictextrender \
+    vcl/unx/generic/font/GenericFont \
+    vcl/unx/generic/font/GenericFontFace \
+    vcl/unx/generic/font/GenericFontList \
+    vcl/unx/generic/font/fontsubst \
+    vcl/unx/generic/font/fontconfig \
+    vcl/unx/generic/font/fontmanager \
+    vcl/unx/generic/print/helper \
     vcl/unx/generic/print/genpspgraphics \
     vcl/unx/generic/print/genprnpsp \
     vcl/unx/generic/print/prtsetup \
@@ -752,7 +755,7 @@ $(eval $(call gb_Library_add_exception_objects,vcl,\
             vcl/null/printerinfomanager \
         ) \
         $(vcl_headless_code) \
-        $(vcl_headless_freetype_code) \
+        $(vcl_headless_generic_code) \
     ) \
     vcl/source/pdf/$(if $(filter PDFIUM,$(BUILD_TYPE)),,Dummy)PDFiumLibrary \
 ))
@@ -764,7 +767,6 @@ $(eval $(call gb_Library_use_externals,vcl,\
         $(if $(ENABLE_CPDB),cpdb) \
         $(if $(ENABLE_CUPS),cups) \
         fontconfig \
-        freetype \
     ) \
     $(if $(filter PDFIUM,$(BUILD_TYPE)),pdfium) \
     $(if $(filter AFDKO,$(BUILD_TYPE)),afdko libxml2) \

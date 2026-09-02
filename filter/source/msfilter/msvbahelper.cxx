@@ -73,7 +73,7 @@ OUString extractMacroName( std::u16string_view rMacroUrl )
 
 static std::u16string_view trimMacroName( std::u16string_view rMacroName )
 {
-    // the name may contain whitespaces and may be enclosed in apostrophs
+    // the name may contain whitespaces and may be enclosed in apostrophes
     std::u16string_view aMacroName = o3tl::trim(rMacroName);
     size_t nMacroLen = aMacroName.size();
     if( (nMacroLen >= 2) && (aMacroName[ 0 ] == '\'') && (aMacroName[ nMacroLen - 1 ] == '\'') )
@@ -204,7 +204,7 @@ static bool hasMacro(SfxObjectShell const* pShell, const OUString& sLibrary, OUS
     if (!pBasic)
         return false;
 
-    if (!sMod.isEmpty()) // we wish to find the macro is a specific module
+    if (!sMod.isEmpty()) // we wish to find the macro in a specific module
     {
         SbModule* pModule = pBasic->FindModule(sMod);
         if (!pModule)
@@ -316,7 +316,7 @@ MacroResolvedInfo resolveVBAMacro( SfxObjectShell* pShell, const OUString& Macro
     if( !pShell )
         return MacroResolvedInfo();
 
-    // the name may be enclosed in apostrophs
+    // the name may be enclosed in apostrophes
     std::u16string_view aMacroName = trimMacroName( MacroName );
 
     // parse the macro name
@@ -579,7 +579,7 @@ OUString SAL_CALL VBAMacroResolver::resolveVBAMacroToScriptURL( const OUString& 
     if( !mpObjShell )
         throw uno::RuntimeException();
 
-    // the name may be enclosed in apostrophs
+    // the name may be enclosed in apostrophes
     OUString aMacroName( trimMacroName( rVBAMacroName ) );
     if( aMacroName.isEmpty() )
         throw lang::IllegalArgumentException();

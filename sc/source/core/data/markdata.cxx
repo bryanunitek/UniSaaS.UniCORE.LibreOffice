@@ -286,7 +286,7 @@ bool ScMarkData::IsCellMarked( SCCOL nCol, SCROW nRow, bool bNoSimple ) const
 
 bool ScMarkData::IsColumnMarked( SCCOL nCol ) const
 {
-    //  bMarkIsNeg meanwhile also for columns heads
+    //  bMarkIsNeg meanwhile also for column heads
     //TODO: GetMarkColumnRanges for completely marked column
 
     if ( bMarked && !bMarkIsNeg &&
@@ -318,13 +318,15 @@ bool ScMarkData::IsRowMarked( SCROW nRow ) const
 
 void ScMarkData::MarkFromRangeList( const ScRangeList& rList, bool bReset )
 {
+    size_t nCount = rList.size();
     if (bReset)
     {
-        maTabMarked.clear();
+        // tdf#152327 - preserve current tab selection when replacement selection is empty
+        if (nCount > 0)
+            maTabMarked.clear();
         ResetMark();
     }
 
-    size_t nCount = rList.size();
     if ( nCount == 1 && !bMarked && !bMultiMarked )
     {
         const ScRange& rRange = rList[ 0 ];

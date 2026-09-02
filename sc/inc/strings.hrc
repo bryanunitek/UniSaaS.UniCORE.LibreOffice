@@ -55,7 +55,6 @@
 #define SCSTR_APDTABLE                              NC_("SCSTR_APDTABLE", "Append Sheet")
 #define SCSTR_RENAMETAB                             NC_("SCSTR_RENAMETAB", "Rename Sheet")
 #define SCSTR_SET_TAB_BG_COLOR                      NC_("SCSTR_SET_TAB_BG_COLOR", "Tab Color")
-#define SCSTR_NO_TAB_BG_COLOR                       NC_("SCSTR_NO_TAB_BG_COLOR", "Default")
 #define SCSTR_RENAMEOBJECT                          NC_("SCSTR_RENAMEOBJECT", "Name Object")
 #define STR_INSERTGRAPHIC                           NC_("STR_INSERTGRAPHIC", "Insert Image")
 #define SCSTR_TOTAL                                 NNC_("SCSTR_TOTAL", "One result found", "%1 results found")
@@ -79,8 +78,21 @@
 #define SCSTR_VALID_RANGE                           NC_("SCSTR_VALID_RANGE", "~Source")
 #define SCSTR_VALID_LIST                            NC_("SCSTR_VALID_LIST", "~Entries")
 // for dialogues:
-#define SCSTR_CHARSET_USER                          NC_("SCSTR_CHARSET_USER", "System")
-#define SCSTR_COLUMN_USER                           NC_("SCSTR_COLUMN_USER", "Standard;Text;Date (DMY);Date (MDY);Date (YMD);US English;Hide")
+#define SCSTR_ENCODING_USER                         NC_("SCSTR_ENCODING_USER", "System")
+// A type in the dropdown box for the column type in the CSV import dialog
+#define SCSTR_COLUMN_USER_STANDARD                  NC_("SCSTR_COLUMN_USER", "Standard")
+// A type in the dropdown box for the column type in the CSV import dialog
+#define SCSTR_COLUMN_USER_TEXT                      NC_("SCSTR_COLUMN_USER", "Text")
+// A type in the dropdown box for the column type in the CSV import dialog
+#define SCSTR_COLUMN_USER_DATE_DMY                  NC_("SCSTR_COLUMN_USER", "Date (DMY)")
+// A type in the dropdown box for the column type in the CSV import dialog
+#define SCSTR_COLUMN_USER_DATE_MDY                  NC_("SCSTR_COLUMN_USER", "Date (MDY)")
+// A type in the dropdown box for the column type in the CSV import dialog
+#define SCSTR_COLUMN_USER_DATE_YMD                  NC_("SCSTR_COLUMN_USER", "Date (YMD)")
+// A type in the dropdown box for the column type in the CSV import dialog
+#define SCSTR_COLUMN_USER_US_ENGLISH                NC_("SCSTR_COLUMN_USER", "US English")
+// A type in the dropdown box for the column type in the CSV import dialog. Used to skip the column.
+#define SCSTR_COLUMN_USER_SKIP                      NC_("SCSTR_COLUMN_USER", "Skip")
 #define SCSTR_FIELDSEP_TAB                          NC_("SCSTR_FIELDSEP_TAB", "Tab")
 #define SCSTR_FIELDSEP_SPACE                        NC_("SCSTR_FIELDSEP_SPACE", "space")
 #define SCSTR_UNDO_GRAFFILTER                       NC_("SCSTR_UNDO_GRAFFILTER", "Image Filter")

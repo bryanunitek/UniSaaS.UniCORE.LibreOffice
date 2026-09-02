@@ -1132,6 +1132,7 @@ category
 categoryAxis
 categoryEl
 categoryIdx
+categoryName
 ccw
 ccwIn
 ccwOut
@@ -1696,6 +1697,7 @@ dataFields
 dataId
 dataLabel
 dataLabelCallout
+dataLabelHidden
 dataLabels
 dataModel
 dataModelExt
@@ -2428,7 +2430,6 @@ followColorScheme
 followSib
 followedHyperlink
 font
-font4
 fontAlgn
 fontColor
 fontId
@@ -3952,6 +3953,7 @@ overlay
 override
 overrideClrMapping
 overwriteClear
+ownerIdx
 owners
 p
 p14
@@ -4716,6 +4718,7 @@ seriesAxis
 seriesEl
 seriesIdx
 seriesLine
+seriesName
 serverCommand
 serverField
 serverFill
@@ -5689,6 +5692,7 @@ unboundColumnsRight
 uncheckedState
 undOvr
 underDot
+underflow
 underlineTabInNumList
 underscore
 undo
@@ -5704,6 +5708,7 @@ uniqueName
 uniqueParent
 uniqueTag
 uniqueValues
+unit
 units
 unitsLabel
 unknown

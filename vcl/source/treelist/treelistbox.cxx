@@ -44,6 +44,8 @@
 #include <vcl/toolkit/svlbitm.hxx>
 #include <vcl/toolkit/treelistentry.hxx>
 #include <vcl/toolkit/viewdataentry.hxx>
+
+#include <SvLBoxButton.hxx>
 #include <accel.hxx>
 #include <svimpbox.hxx>
 #include <window.h>
@@ -331,9 +333,9 @@ SvLBoxItem::~SvLBoxItem()
 {
 }
 
-int SvLBoxItem::GetWidth(const SvTreeListBox& rView, const SvTreeListEntry* pEntry) const
+int SvLBoxItem::GetWidth(const SvTreeListBox& rView, const SvTreeListEntry& rEntry) const
 {
-    const SvViewDataItem& rViewData = rView.GetViewDataItem(pEntry, *this);
+    const SvViewDataItem& rViewData = rView.GetViewDataItem(rEntry, *this);
     int nWidth = rViewData.mnWidth;
     if (nWidth == -1)
     {
@@ -343,16 +345,16 @@ int SvLBoxItem::GetWidth(const SvTreeListBox& rView, const SvTreeListEntry* pEnt
     return nWidth;
 }
 
-int SvLBoxItem::GetHeight(const SvTreeListBox& rView, const SvTreeListEntry* pEntry) const
+int SvLBoxItem::GetHeight(const SvTreeListBox& rView, const SvTreeListEntry& rEntry) const
 {
-    const SvViewDataItem& rViewData = rView.GetViewDataItem(pEntry, *this);
+    const SvViewDataItem& rViewData = rView.GetViewDataItem(rEntry, *this);
     return rViewData.mnHeight;
 }
 
-int SvLBoxItem::GetWidth(const SvTreeListBox& rView, const SvViewDataEntry* pData,
+int SvLBoxItem::GetWidth(const SvTreeListBox& rView, const SvViewDataEntry& rData,
                          sal_uInt16 nItemPos) const
 {
-    const SvViewDataItem& rIData = pData->GetItem(nItemPos);
+    const SvViewDataItem& rIData = rData.GetItem(nItemPos);
     int nWidth = rIData.mnWidth;
     if (nWidth == -1)
     {
@@ -362,9 +364,9 @@ int SvLBoxItem::GetWidth(const SvTreeListBox& rView, const SvViewDataEntry* pDat
     return nWidth;
 }
 
-int SvLBoxItem::GetHeight(const SvViewDataEntry* pData, sal_uInt16 nItemPos)
+int SvLBoxItem::GetHeight(const SvViewDataEntry& rData, sal_uInt16 nItemPos)
 {
-    const SvViewDataItem& rIData = pData->GetItem(nItemPos);
+    const SvViewDataItem& rIData = rData.GetItem(nItemPos);
     return rIData.mnHeight;
 }
 
@@ -394,7 +396,6 @@ SvTreeListBox::SvTreeListBox(vcl::Window* pParent, WinBits nWinStyle) :
     m_nSelectionCount(0),
     m_bVisPositionsValid(false),
     mpImpl(new SvTreeListBoxImpl(*this)),
-    mbContextBmpExpanded(false),
     mbQuickSearch(false),
     mbActivateOnSingleClick(false),
     mbCustomEntryRenderer(false),
@@ -439,7 +440,6 @@ SvTreeListBox::SvTreeListBox(vcl::Window* pParent, WinBits nWinStyle) :
     m_nEntryHeightOffs = SV_ENTRYHEIGHTOFFS_PIXEL;
     m_pImpl.reset(new SvImpLBox(*this, *m_pModel, GetStyle()));
 
-    mbContextBmpExpanded = true;
     m_nContextBmpWidthMax = 0;
 
     SetFont( GetFont() );
@@ -456,23 +456,26 @@ SvTreeListBox::SvTreeListBox(vcl::Window* pParent, WinBits nWinStyle) :
 
 void SvTreeListBox::Clear()
 {
-    if (m_pModel)
-        m_pModel->Clear(); // Model calls SvTreeListBox::ModelHasCleared()
+    if (!m_pModel)
+        return;
+
+    CancelTextEditing();
+    Reset();
+    ModelHasCleared(); // sic! for compatibility reasons!
+    m_pModel->Clear();
+
+    if (IsUpdateMode())
+        PaintImmediately();
 }
 
-IMPL_LINK(SvTreeListBox, CloneHdl_Impl, SvTreeListEntry&, rEntry, SvTreeListEntry*)
+IMPL_STATIC_LINK(SvTreeListBox, CloneHdl_Impl, SvTreeListEntry&, rEntry, SvTreeListEntry*)
 {
     return CloneEntry(rEntry);
 }
 
-void SvTreeListBox::Insert(SvTreeListEntry* pEntry, SvTreeListEntry* pParent, sal_uInt32 nPos)
+void SvTreeListBox::Insert(SvTreeListEntry* pEntry, sal_uInt32 nPos, SvTreeListEntry* pParent)
 {
-    m_pModel->Insert(pEntry, pParent, nPos);
-}
-
-void SvTreeListBox::Insert(SvTreeListEntry* pEntry, sal_uInt32 nRootPos)
-{
-    m_pModel->Insert(pEntry, nRootPos);
+    m_pModel->Insert(pEntry, nPos, pParent);
 }
 
 bool SvTreeListBox::ExpandingHdl()
@@ -499,6 +502,8 @@ bool SvTreeListBox::DoubleClickHdl()
 {
     return !m_aDoubleClickHdl.IsSet() || m_aDoubleClickHdl.Call(this);
 }
+
+void SvTreeListBox::ModelChangedHdl() { m_aModelChangedHdl.Call(this); }
 
 bool SvTreeListBox::CheckDragAndDropMode( SvTreeListBox const * pSource, sal_Int8 nAction )
 {
@@ -582,21 +587,18 @@ sal_uInt32 SvTreeListBox::GetSelectionCount() const { return m_nSelectionCount; 
 
 bool SvTreeListBox::HasViewData() const { return m_DataTable.size() > 1; } // There's always a ROOT
 
-void SvTreeListBox::ExpandListEntry(SvTreeListEntry* pEntry)
+void SvTreeListBox::ExpandListEntry(SvTreeListEntry& rEntry)
 {
-    assert(pEntry && "Expand:View/Entry?");
-    SvViewDataEntry* pViewData = GetViewData(pEntry);
-    if (!pViewData)
+    SvViewDataEntry& rViewData = GetViewData(&rEntry);
+
+    if (rViewData.IsExpanded())
         return;
 
-    if (pViewData->IsExpanded())
-        return;
-
-    DBG_ASSERT(!pEntry->m_Children.empty(),
+    DBG_ASSERT(!rEntry.m_Children.empty(),
                "SvTreeList::Expand: We expected to have child entries.");
 
-    pViewData->SetExpanded(true);
-    SvTreeListEntry* pParent = pEntry->pParent;
+    rViewData.SetExpanded(true);
+    SvTreeListEntry* pParent = rEntry.pParent;
     // if parent is visible, invalidate status data
     if (IsExpanded(pParent))
     {
@@ -608,17 +610,15 @@ void SvTreeListBox::ExpandListEntry(SvTreeListEntry* pEntry)
 void SvTreeListBox::CollapseListEntry(SvTreeListEntry* pEntry)
 {
     assert(pEntry && "Collapse:View/Entry?");
-    SvViewDataEntry* pViewData = GetViewData(pEntry);
-    if (!pViewData)
-        return;
+    SvViewDataEntry& rViewData = GetViewData(pEntry);
 
-    if (!pViewData->IsExpanded())
+    if (!rViewData.IsExpanded())
         return;
 
     DBG_ASSERT(!pEntry->m_Children.empty(),
                "SvTreeList::Collapse: We expected to have child entries.");
 
-    pViewData->SetExpanded(false);
+    rViewData.SetExpanded(false);
 
     SvTreeListEntry* pParent = pEntry->pParent;
     if (IsExpanded(pParent))
@@ -632,27 +632,25 @@ bool SvTreeListBox::SelectListEntry(SvTreeListEntry* pEntry, bool bSelect)
 {
     DBG_ASSERT(pEntry, "Select:View/Entry?");
 
-    SvViewDataEntry* pViewData = GetViewData(pEntry);
-    if (!pViewData)
-        return false;
+    SvViewDataEntry& rViewData = GetViewData(pEntry);
 
     if (bSelect)
     {
-        if (pViewData->IsSelected() || !pViewData->IsSelectable())
+        if (rViewData.IsSelected() || !rViewData.IsSelectable())
             return false;
         else
         {
-            pViewData->SetSelected(true);
+            rViewData.SetSelected(true);
             m_nSelectionCount++;
         }
     }
     else
     {
-        if (!pViewData->IsSelected())
+        if (!rViewData.IsSelected())
             return false;
         else
         {
-            pViewData->SetSelected(false);
+            rViewData.SetSelected(false);
             m_nSelectionCount--;
         }
     }
@@ -697,36 +695,35 @@ void SvTreeListBox::ActionMoved()
     m_bVisPositionsValid = false;
 }
 
-void SvTreeListBox::ActionInserted(SvTreeListEntry* pEntry)
+void SvTreeListBox::ActionInserted(SvTreeListEntry& rEntry)
 {
-    DBG_ASSERT(pEntry, "Insert:No Entry");
     SvViewDataEntry aData;
-    InitViewData(&aData, pEntry);
+    InitViewData(aData, rEntry);
     std::pair<SvDataTable::iterator, bool> aSuccess
-        = m_DataTable.insert(std::make_pair(pEntry, std::move(aData)));
+        = m_DataTable.insert(std::make_pair(&rEntry, std::move(aData)));
     DBG_ASSERT(aSuccess.second, "Entry already in View");
-    if (m_nVisibleCount && m_pModel->IsEntryVisible(this, pEntry))
+    if (m_nVisibleCount && m_pModel->IsEntryVisible(*this, &rEntry))
     {
         m_nVisibleCount = 0;
         m_bVisPositionsValid = false;
     }
 }
 
-void SvTreeListBox::ActionInsertedTree(SvTreeListEntry* pEntry)
+void SvTreeListBox::ActionInsertedTree(SvTreeListEntry& rEntry)
 {
-    if (m_pModel->IsEntryVisible(this, pEntry))
+    if (m_pModel->IsEntryVisible(*this, &rEntry))
     {
         m_nVisibleCount = 0;
         m_bVisPositionsValid = false;
     }
     // iterate over entry and its children
-    SvTreeListEntry* pCurEntry = pEntry;
+    SvTreeListEntry* pCurEntry = &rEntry;
     sal_uInt16 nRefDepth = m_pModel->GetDepth(pCurEntry);
     while (pCurEntry)
     {
         DBG_ASSERT(m_DataTable.find(pCurEntry) != m_DataTable.end(), "Entry already in Table");
         SvViewDataEntry aViewData;
-        InitViewData(&aViewData, pEntry);
+        InitViewData(aViewData, rEntry);
         m_DataTable.insert(std::make_pair(pCurEntry, std::move(aViewData)));
         pCurEntry = m_pModel->Next(pCurEntry);
         if (pCurEntry && m_pModel->GetDepth(pCurEntry) <= nRefDepth)
@@ -745,19 +742,18 @@ void SvTreeListBox::RemoveViewData(SvTreeListEntry* pParent)
     }
 }
 
-void SvTreeListBox::ActionRemoving(SvTreeListEntry* pEntry)
+void SvTreeListBox::ActionRemoving(SvTreeListEntry& rEntry)
 {
-    assert(pEntry && "Remove:No Entry");
-    const auto iter = m_DataTable.find(pEntry);
+    const auto iter = m_DataTable.find(&rEntry);
     assert(iter != m_DataTable.end());
     SvViewDataEntry& rViewData = iter->second;
     sal_uInt32 nSelRemoved = 0;
     if (rViewData.IsSelected())
-        nSelRemoved = 1 + m_pModel->GetChildSelectionCount(this, pEntry);
+        nSelRemoved = 1 + m_pModel->GetChildSelectionCount(*this, &rEntry);
     m_nSelectionCount -= nSelRemoved;
     sal_uInt32 nVisibleRemoved = 0;
-    if (m_pModel->IsEntryVisible(this, pEntry))
-        nVisibleRemoved = 1 + m_pModel->GetVisibleChildCount(this, pEntry);
+    if (m_pModel->IsEntryVisible(*this, &rEntry))
+        nVisibleRemoved = 1 + m_pModel->GetVisibleChildCount(*this, &rEntry);
     if (m_nVisibleCount)
     {
 #ifdef DBG_UTIL
@@ -770,10 +766,10 @@ void SvTreeListBox::ActionRemoving(SvTreeListEntry* pEntry)
     }
     m_bVisPositionsValid = false;
 
-    m_DataTable.erase(pEntry);
-    RemoveViewData(pEntry);
+    m_DataTable.erase(&rEntry);
+    RemoveViewData(&rEntry);
 
-    SvTreeListEntry* pCurEntry = pEntry->pParent;
+    SvTreeListEntry* pCurEntry = rEntry.pParent;
     if (pCurEntry && pCurEntry != m_pModel->m_pRootItem.get() && pCurEntry->m_Children.size() == 1)
     {
         SvDataTable::iterator itr = m_DataTable.find(pCurEntry);
@@ -826,18 +822,16 @@ void SvTreeListBox::SetEntryFocus(SvTreeListEntry* pEntry, bool bFocus)
     itr->second.SetFocus(bFocus);
 }
 
-const SvViewDataEntry* SvTreeListBox::GetViewData(const SvTreeListEntry* pEntry) const
+const SvViewDataEntry& SvTreeListBox::GetViewData(const SvTreeListEntry* pEntry) const
 {
     SvDataTable::const_iterator itr = m_DataTable.find(const_cast<SvTreeListEntry*>(pEntry));
     assert(itr != m_DataTable.end() && "Entry not in model or wrong view");
-    if (itr == m_DataTable.end())
-        return nullptr;
-    return &itr->second;
+    return itr->second;
 }
 
-SvViewDataEntry* SvTreeListBox::GetViewData(SvTreeListEntry* pEntry)
+SvViewDataEntry& SvTreeListBox::GetViewData(SvTreeListEntry* pEntry)
 {
-    return const_cast<SvViewDataEntry*>(std::as_const(*this).GetViewData(pEntry));
+    return const_cast<SvViewDataEntry&>(std::as_const(*this).GetViewData(pEntry));
 }
 
 SvTreeListEntry* SvTreeListBox::FirstChild(const SvTreeListEntry* pParent) const
@@ -962,25 +956,6 @@ bool SvTreeListBox::MoveSelectionCopyFallbackPossible( SvTreeListBox* pSource, S
     return bSuccess;
 }
 
-void SvTreeListBox::RemoveSelection()
-{
-    std::vector<const SvTreeListEntry*> aList;
-    // cache selection, as the implementation deselects everything on the first
-    // remove
-    SvTreeListEntry* pEntry = FirstSelected();
-    while ( pEntry )
-    {
-        aList.push_back( pEntry );
-        if ( pEntry->HasChildren() )
-            // remove deletes all children automatically
-            SelectChildren(pEntry, false);
-        pEntry = NextSelected( pEntry );
-    }
-
-    for (auto const& elem : aList)
-        m_pModel->Remove(elem);
-}
-
 void SvTreeListBox::RemoveEntry(SvTreeListEntry const* pEntry) { m_pModel->Remove(pEntry); }
 
 void SvTreeListBox::RecalcViewData()
@@ -993,7 +968,7 @@ void SvTreeListBox::RecalcViewData()
         while ( nCurPos < nCount )
         {
             SvLBoxItem& rItem = pEntry->GetItem( nCurPos );
-            rItem.InitViewData(*this, pEntry);
+            rItem.InitViewData(*this, *pEntry);
             nCurPos++;
         }
         pEntry = Next( pEntry );
@@ -1101,25 +1076,24 @@ sal_uInt32 SvTreeListBox::GetLevelChildCount( const SvTreeListEntry* _pParent ) 
     return _pParent->m_Children.size();
 }
 
-SvViewDataEntry* SvTreeListBox::GetViewDataEntry( SvTreeListEntry const * pEntry ) const
+SvViewDataEntry& SvTreeListBox::GetViewDataEntry(const SvTreeListEntry& rEntry) const
 {
-    return const_cast<SvViewDataEntry*>(GetViewData(pEntry));
+    return const_cast<SvViewDataEntry&>(GetViewData(&rEntry));
 }
 
-SvViewDataItem& SvTreeListBox::GetViewDataItem(SvTreeListEntry const* pEntry,
+SvViewDataItem& SvTreeListBox::GetViewDataItem(const SvTreeListEntry& rEntry,
                                                const SvLBoxItem& rItem)
 {
     return const_cast<SvViewDataItem&>(
-        static_cast<const SvTreeListBox*>(this)->GetViewDataItem(pEntry, rItem));
+        static_cast<const SvTreeListBox*>(this)->GetViewDataItem(rEntry, rItem));
 }
 
-const SvViewDataItem& SvTreeListBox::GetViewDataItem(const SvTreeListEntry* pEntry,
+const SvViewDataItem& SvTreeListBox::GetViewDataItem(const SvTreeListEntry& rEntry,
                                                      const SvLBoxItem& rItem) const
 {
-    const SvViewDataEntry* pEntryData = GetViewData(pEntry);
-    assert(pEntryData && "Entry not in View");
-    sal_uInt16 nItemPos = pEntry->GetPos(rItem);
-    return pEntryData->GetItem(nItemPos);
+    const SvViewDataEntry& rEntryData = GetViewData(&rEntry);
+    sal_uInt16 nItemPos = rEntry.GetPos(rItem);
+    return rEntryData.GetItem(nItemPos);
 }
 
 OUString SvTreeListBox::GetEntryTooltip(SvTreeListEntry& rEntry) const
@@ -1131,16 +1105,16 @@ OUString SvTreeListBox::GetEntryTooltip(SvTreeListEntry& rEntry) const
     return rEntry.GetToolTip();
 }
 
-void SvTreeListBox::InitViewData( SvViewDataEntry* pData, SvTreeListEntry* pEntry )
+void SvTreeListBox::InitViewData(SvViewDataEntry& rViewData, SvTreeListEntry& rEntry)
 {
-    pData->Init(pEntry->ItemCount());
-    sal_uInt16 nCount = pEntry->ItemCount();
+    rViewData.Init(rEntry.ItemCount());
+    sal_uInt16 nCount = rEntry.ItemCount();
     sal_uInt16 nCurPos = 0;
     while( nCurPos < nCount )
     {
-        SvLBoxItem& rItem = pEntry->GetItem(nCurPos);
-        SvViewDataItem& rItemData = pData->GetItem(nCurPos);
-        rItem.InitViewData(*this, pEntry, &rItemData);
+        SvLBoxItem& rItem = rEntry.GetItem(nCurPos);
+        SvViewDataItem& rItemData = rViewData.GetItem(nCurPos);
+        rItem.InitViewData(*this, rEntry, &rItemData);
         nCurPos++;
     }
 }
@@ -1487,7 +1461,21 @@ nAction
         && (   (g_pDDTarget && (g_pDDTarget->GetModel() != GetModel()))
             || !g_pDDTarget))
     {
-        RemoveSelection();
+        std::vector<const SvTreeListEntry*> aList;
+        // cache selection, as the implementation deselects everything on the first
+        // remove
+        SvTreeListEntry* pEntry = FirstSelected();
+        while ( pEntry )
+        {
+            aList.push_back( pEntry );
+            if ( pEntry->HasChildren() )
+                // remove deletes all children automatically
+                SelectChildren(pEntry, false);
+            pEntry = NextSelected( pEntry );
+        }
+
+        for (auto const& elem : aList)
+            RemoveEntry(elem);
     }
 #endif
 
@@ -1668,13 +1656,8 @@ enum class TreeListButtonType
 
 #define TAB_STARTPOS    2
 
-// take care of GetTextOffset when doing changes
 void SvTreeListBox::SetTabs()
 {
-    // Moved to SvTreeListBox::Paint to make inplace editing work for X11 in the enhancement patch
-    // tdf#139663 Rename objects from tree view in navigator.
-    // if( IsEditingActive() )
-    //   EndEditing( true );
     m_nTreeFlags &= ~SvTreeFlags::RECALCTABS;
     m_nFocusWidth = -1;
     const WinBits nStyle( GetStyle() );
@@ -1719,12 +1702,6 @@ void SvTreeListBox::SetTabs()
     {
         case TreeListButtonType::NO_BUTTONS:
             nStartPos += nContextWidthDIV2;  // because of centering
-            AddTab( nStartPos, TABFLAGS_CONTEXTBMP );
-            nStartPos += nContextWidthDIV2;  // right edge of context bitmap
-            // only set a distance if there are bitmaps
-            if (m_nContextBmpWidthMax)
-                nStartPos += 5; // distance context bitmap to text
-            AddTab( nStartPos, TABFLAGS_TEXT );
             break;
 
         case TreeListButtonType::NODE_BUTTONS:
@@ -1732,15 +1709,6 @@ void SvTreeListBox::SetTabs()
                 nStartPos += (m_nIndent + (nNodeWidthPixel / 2));
             else
                 nStartPos += nContextWidthDIV2;
-            AddTab( nStartPos, TABFLAGS_CONTEXTBMP );
-            // add an indent if the context bitmap can't be centered without touching the expander
-            if (m_nContextBmpWidthMax > m_nIndent + (nNodeWidthPixel / 2))
-                nStartPos += m_nIndent;
-            nStartPos += nContextWidthDIV2;  // right edge of context bitmap
-            // only set a distance if there are bitmaps
-            if (m_nContextBmpWidthMax)
-                nStartPos += 5; // distance context bitmap to text
-            AddTab( nStartPos, TABFLAGS_TEXT );
             break;
 
         case TreeListButtonType::NODE_AND_CHECK_BUTTONS:
@@ -1752,12 +1720,6 @@ void SvTreeListBox::SetTabs()
             nStartPos += nCheckWidthDIV2;  // right edge of CheckButton
             nStartPos += 3;  // distance CheckButton to context bitmap
             nStartPos += nContextWidthDIV2;  // center of context bitmap
-            AddTab( nStartPos, TABFLAGS_CONTEXTBMP );
-            nStartPos += nContextWidthDIV2;  // right edge of context bitmap
-            // only set a distance if there are bitmaps
-            if (m_nContextBmpWidthMax)
-                nStartPos += 5; // distance context bitmap to text
-            AddTab( nStartPos, TABFLAGS_TEXT );
             break;
 
         case TreeListButtonType::CHECK_BUTTONS:
@@ -1766,14 +1728,22 @@ void SvTreeListBox::SetTabs()
             nStartPos += nCheckWidthDIV2;  // right edge of CheckButton
             nStartPos += 3;  // distance CheckButton to context bitmap
             nStartPos += nContextWidthDIV2;  // center of context bitmap
-            AddTab( nStartPos, TABFLAGS_CONTEXTBMP );
-            nStartPos += nContextWidthDIV2;  // right edge of context bitmap
-            // only set a distance if there are bitmaps
-            if (m_nContextBmpWidthMax)
-                nStartPos += 5; // distance context bitmap to text
-            AddTab( nStartPos, TABFLAGS_TEXT );
             break;
+        default:
+            assert(false && "Unknown TreeListButtonType");
     }
+    AddTab(nStartPos, TABFLAGS_CONTEXTBMP);
+    if (eButtonType == TreeListButtonType::NODE_BUTTONS)
+    {
+        // add an indent if the context bitmap can't be centered without touching the expander
+        if (m_nContextBmpWidthMax > m_nIndent + (nNodeWidthPixel / 2))
+            nStartPos += m_nIndent;
+    }
+    nStartPos += nContextWidthDIV2; // right edge of context bitmap
+    // only set a distance if there are bitmaps
+    if (m_nContextBmpWidthMax)
+        nStartPos += 5; // distance context bitmap to text
+    AddTab(nStartPos, TABFLAGS_TEXT);
 
     for (size_t n = 0; n < std::min(m_aTabs.size(), hiddenState.size()); ++n)
     {
@@ -1786,20 +1756,6 @@ void SvTreeListBox::SetTabs()
     m_pImpl->NotifyTabsChanged();
 }
 
-void SvTreeListBox::InitEntry(SvTreeListEntry& rEntry, const OUString& aStr,
-                              const Image& aCollEntryBmp, const Image& aExpEntryBmp)
-{
-    if (m_nTreeFlags & SvTreeFlags::CHKBTN)
-    {
-        rEntry.AddItem(std::make_unique<SvLBoxButton>(m_pCheckButtonData));
-    }
-
-    rEntry.AddItem(
-        std::make_unique<SvLBoxContextBmp>(aCollEntryBmp, aExpEntryBmp, mbContextBmpExpanded));
-
-    rEntry.AddItem(std::make_unique<SvLBoxString>(aStr));
-}
-
 OUString SvTreeListBox::GetEntryText(SvTreeListEntry* pEntry) const
 {
     assert(pEntry);
@@ -1809,81 +1765,43 @@ OUString SvTreeListBox::GetEntryText(SvTreeListEntry* pEntry) const
     return {};
 }
 
-const Image& SvTreeListBox::GetExpandedEntryBmp(const SvTreeListEntry* pEntry)
+const Image& SvTreeListBox::GetExpandedEntryBmp(const SvTreeListEntry& rEntry)
 {
-    assert(pEntry);
-    const SvLBoxContextBmp* pItem = static_cast<const SvLBoxContextBmp*>(pEntry->GetFirstItem(SvLBoxItemType::ContextBmp));
+    const SvLBoxContextBmp* pItem
+        = static_cast<const SvLBoxContextBmp*>(rEntry.GetFirstItem(SvLBoxItemType::ContextBmp));
     assert(pItem);
     return pItem->GetBitmap2( );
 }
 
-const Image& SvTreeListBox::GetCollapsedEntryBmp( const SvTreeListEntry* pEntry )
+const Image& SvTreeListBox::GetCollapsedEntryBmp(const SvTreeListEntry& rEntry)
 {
-    assert(pEntry);
-    const SvLBoxContextBmp* pItem = static_cast<const SvLBoxContextBmp*>(pEntry->GetFirstItem(SvLBoxItemType::ContextBmp));
+    const SvLBoxContextBmp* pItem
+        = static_cast<const SvLBoxContextBmp*>(rEntry.GetFirstItem(SvLBoxItemType::ContextBmp));
     assert(pItem);
     return pItem->GetBitmap1( );
 }
 
-IMPL_LINK( SvTreeListBox, CheckButtonClick, SvLBoxButtonData *, pData, void )
+void SvTreeListBox::SetEntryText(SvTreeListEntry& rEntry, const OUString& rStr)
 {
-    m_pHdlEntry = pData->GetActEntry();
-    CheckButtonHdl();
-}
-
-SvTreeListEntry* SvTreeListBox::InsertEntry(
-    const OUString& rText,
-    SvTreeListEntry* pParent,
-    bool bChildrenOnDemand, sal_uInt32 nPos,
-    OUString* pUser
-)
-{
-    m_nTreeFlags |= SvTreeFlags::MANINS;
-
-    const Image& rDefExpBmp = m_pImpl->GetDefaultEntryExpBmp();
-    const Image& rDefColBmp = m_pImpl->GetDefaultEntryColBmp();
-
-    m_aCurInsertedExpBmp = rDefExpBmp;
-    m_aCurInsertedColBmp = rDefColBmp;
-
-    SvTreeListEntry* pEntry = new SvTreeListEntry;
-    pEntry->SetUserData( pUser );
-    InitEntry(*pEntry, rText, rDefColBmp, rDefExpBmp);
-    pEntry->EnableChildrenOnDemand( bChildrenOnDemand );
-
-    if( !pParent )
-        Insert( pEntry, nPos );
-    else
-        Insert( pEntry, pParent, nPos );
-
-    m_aPrevInsertedExpBmp = rDefExpBmp;
-    m_aPrevInsertedColBmp = rDefColBmp;
-
-    m_nTreeFlags &= ~SvTreeFlags::MANINS;
-
-    return pEntry;
-}
-
-void SvTreeListBox::SetEntryText(SvTreeListEntry* pEntry, const OUString& rStr)
-{
-    SvLBoxString* pItem = static_cast<SvLBoxString*>(pEntry->GetFirstItem(SvLBoxItemType::String));
+    SvLBoxString* pItem = static_cast<SvLBoxString*>(rEntry.GetFirstItem(SvLBoxItemType::String));
     assert(pItem);
     pItem->SetText(rStr);
-    pItem->InitViewData(*this, pEntry);
-    GetModel()->InvalidateEntry( pEntry );
+    pItem->InitViewData(*this, rEntry);
+    InvalidateEntry(rEntry);
 }
 
-void SvTreeListBox::SetExpandedEntryBmp( SvTreeListEntry* pEntry, const Image& aBmp )
+void SvTreeListBox::SetExpandedEntryBmp(SvTreeListEntry& rEntry, const Image& aBmp)
 {
-    SvLBoxContextBmp* pItem = static_cast<SvLBoxContextBmp*>(pEntry->GetFirstItem(SvLBoxItemType::ContextBmp));
+    SvLBoxContextBmp* pItem
+        = static_cast<SvLBoxContextBmp*>(rEntry.GetFirstItem(SvLBoxItemType::ContextBmp));
 
     assert(pItem);
     pItem->SetBitmap2( aBmp );
 
-    ModelHasEntryInvalidated(pEntry);
-    CalcEntryHeight( pEntry );
+    ModelHasEntryInvalidated(&rEntry);
+    CalcEntryHeight(rEntry);
     Size aSize = aBmp.GetSizePixel();
-    short nWidth = m_pImpl->UpdateContextBmpWidthVector(pEntry, static_cast<short>(aSize.Width()));
+    short nWidth = m_pImpl->UpdateContextBmpWidthVector(&rEntry, static_cast<short>(aSize.Width()));
     if (nWidth > m_nContextBmpWidthMax)
     {
         m_nContextBmpWidthMax = nWidth;
@@ -1891,17 +1809,18 @@ void SvTreeListBox::SetExpandedEntryBmp( SvTreeListEntry* pEntry, const Image& a
     }
 }
 
-void SvTreeListBox::SetCollapsedEntryBmp(SvTreeListEntry* pEntry,const Image& aBmp )
+void SvTreeListBox::SetCollapsedEntryBmp(SvTreeListEntry& rEntry, const Image& aBmp)
 {
-    SvLBoxContextBmp* pItem = static_cast<SvLBoxContextBmp*>(pEntry->GetFirstItem(SvLBoxItemType::ContextBmp));
+    SvLBoxContextBmp* pItem
+        = static_cast<SvLBoxContextBmp*>(rEntry.GetFirstItem(SvLBoxItemType::ContextBmp));
 
     assert(pItem);
     pItem->SetBitmap1( aBmp );
 
-    ModelHasEntryInvalidated(pEntry);
-    CalcEntryHeight( pEntry );
+    ModelHasEntryInvalidated(&rEntry);
+    CalcEntryHeight(rEntry);
     Size aSize = aBmp.GetSizePixel();
-    short nWidth = m_pImpl->UpdateContextBmpWidthVector(pEntry, static_cast<short>(aSize.Width()));
+    short nWidth = m_pImpl->UpdateContextBmpWidthVector(&rEntry, static_cast<short>(aSize.Width()));
     if (nWidth > m_nContextBmpWidthMax)
     {
         m_nContextBmpWidthMax = nWidth;
@@ -1909,12 +1828,12 @@ void SvTreeListBox::SetCollapsedEntryBmp(SvTreeListEntry* pEntry,const Image& aB
     }
 }
 
-void SvTreeListBox::CheckBoxInserted(SvTreeListEntry* pEntry)
+void SvTreeListBox::CheckBoxInserted(SvTreeListEntry& rEntry)
 {
-    SvLBoxButton* pItem = static_cast<SvLBoxButton*>(pEntry->GetFirstItem(SvLBoxItemType::Button));
+    SvLBoxButton* pItem = static_cast<SvLBoxButton*>(rEntry.GetFirstItem(SvLBoxItemType::Button));
     if( pItem )
     {
-        auto nWidth = pItem->GetWidth(*this, pEntry);
+        auto nWidth = pItem->GetWidth(*this, rEntry);
         if( mnCheckboxItemWidth < nWidth )
         {
             mnCheckboxItemWidth = nWidth;
@@ -1923,38 +1842,36 @@ void SvTreeListBox::CheckBoxInserted(SvTreeListEntry* pEntry)
     }
 }
 
-void SvTreeListBox::ImpEntryInserted( SvTreeListEntry* pEntry )
+void SvTreeListBox::ImpEntryInserted(SvTreeListEntry& rEntry)
 {
-    SvTreeListEntry* pParent = m_pModel->GetParent(pEntry);
-    if( pParent )
+    if (SvTreeListEntry* pParent = m_pModel->GetParent(&rEntry))
     {
         SvTLEntryFlags nFlags = pParent->GetFlags();
         nFlags &= ~SvTLEntryFlags::NO_NODEBMP;
         pParent->SetFlags( nFlags );
     }
 
-    if (!((m_nTreeFlags & SvTreeFlags::MANINS) && (m_aPrevInsertedExpBmp == m_aCurInsertedExpBmp)
-          && (m_aPrevInsertedColBmp == m_aCurInsertedColBmp)))
+    if (!(m_nTreeFlags & SvTreeFlags::MANINS))
     {
-        Size aSize = GetCollapsedEntryBmp( pEntry ).GetSizePixel();
+        Size aSize = GetCollapsedEntryBmp(rEntry).GetSizePixel();
         if (aSize.Width() > m_nContextBmpWidthMax)
         {
             m_nContextBmpWidthMax = static_cast<short>(aSize.Width());
             m_nTreeFlags |= SvTreeFlags::RECALCTABS;
         }
-        aSize = GetExpandedEntryBmp( pEntry ).GetSizePixel();
+        aSize = GetExpandedEntryBmp(rEntry).GetSizePixel();
         if (aSize.Width() > m_nContextBmpWidthMax)
         {
             m_nContextBmpWidthMax = static_cast<short>(aSize.Width());
             m_nTreeFlags |= SvTreeFlags::RECALCTABS;
         }
     }
-    CalcEntryHeight( pEntry );
+    CalcEntryHeight(rEntry);
 
     if (!(m_nTreeFlags & SvTreeFlags::CHKBTN))
         return;
 
-    CheckBoxInserted(pEntry);
+    CheckBoxInserted(rEntry);
 }
 
 void SvTreeListBox::SetCheckButtonState( SvTreeListEntry* pEntry, SvButtonState eState)
@@ -1979,7 +1896,7 @@ void SvTreeListBox::SetCheckButtonState( SvTreeListEntry* pEntry, SvButtonState 
             pItem->SetStateTristate();
             break;
     }
-    InvalidateEntry( pEntry );
+    InvalidateEntry(*pEntry);
 }
 
 SvButtonState SvTreeListBox::GetCheckButtonState( SvTreeListEntry* pEntry ) const
@@ -1996,26 +1913,6 @@ SvButtonState SvTreeListBox::GetCheckButtonState( SvTreeListEntry* pEntry ) cons
     return eState;
 }
 
-bool SvTreeListBox::GetCheckButtonEnabled(SvTreeListEntry* pEntry) const
-{
-    if (pEntry && (m_nTreeFlags & SvTreeFlags::CHKBTN))
-    {
-        SvLBoxButton* pItem
-            = static_cast<SvLBoxButton*>(pEntry->GetFirstItem(SvLBoxItemType::Button));
-        if (pItem)
-            return pItem->isEnable();
-    }
-    return false;
-}
-
-void SvTreeListBox::CheckButtonHdl()
-{
-    if (m_pCheckButtonData)
-        CallEventListeners(VclEventId::CheckboxToggle,
-                           static_cast<void*>(m_pCheckButtonData->GetActEntry()));
-}
-
-
 // TODO: Currently all data is cloned so that they conform to the default tree
 // view format. Actually, the model should be used as a reference here. This
 // leads to us _not_ calling SvTreeListEntry::Clone, but only its base class
@@ -2023,23 +1920,7 @@ void SvTreeListBox::CheckButtonHdl()
 
 SvTreeListEntry* SvTreeListBox::CloneEntry(const SvTreeListEntry& rSource)
 {
-    OUString aStr;
-    Image aCollEntryBmp;
-    Image aExpEntryBmp;
-
-    const SvLBoxString* pStringItem
-        = static_cast<const SvLBoxString*>(rSource.GetFirstItem(SvLBoxItemType::String));
-    if( pStringItem )
-        aStr = pStringItem->GetText();
-    const SvLBoxContextBmp* pBmpItem
-        = static_cast<const SvLBoxContextBmp*>(rSource.GetFirstItem(SvLBoxItemType::ContextBmp));
-    if( pBmpItem )
-    {
-        aCollEntryBmp = pBmpItem->GetBitmap1( );
-        aExpEntryBmp  = pBmpItem->GetBitmap2( );
-    }
     SvTreeListEntry* pClone = new SvTreeListEntry;
-    InitEntry(*pClone, aStr, aCollEntryBmp, aExpEntryBmp);
     pClone->Clone(rSource);
     pClone->EnableChildrenOnDemand(rSource.HasChildrenOnDemand());
     pClone->SetUserData(rSource.GetUserData());
@@ -2047,61 +1928,20 @@ SvTreeListEntry* SvTreeListBox::CloneEntry(const SvTreeListEntry& rSource)
     return pClone;
 }
 
-const Image& SvTreeListBox::GetDefaultExpandedEntryBmp( ) const
-{
-    return m_pImpl->GetDefaultEntryExpBmp();
-}
-
-const Image& SvTreeListBox::GetDefaultCollapsedEntryBmp( ) const
-{
-    return m_pImpl->GetDefaultEntryColBmp();
-}
-
-void SvTreeListBox::SetDefaultExpandedEntryBmp( const Image& aBmp )
-{
-    Size aSize = aBmp.GetSizePixel();
-    if (aSize.Width() > m_nContextBmpWidthMax)
-        m_nContextBmpWidthMax = static_cast<short>(aSize.Width());
-    SetTabs();
-
-    m_pImpl->SetDefaultEntryExpBmp(aBmp);
-}
-
-void SvTreeListBox::SetDefaultCollapsedEntryBmp( const Image& aBmp )
-{
-    Size aSize = aBmp.GetSizePixel();
-    if (aSize.Width() > m_nContextBmpWidthMax)
-        m_nContextBmpWidthMax = static_cast<short>(aSize.Width());
-    SetTabs();
-
-    m_pImpl->SetDefaultEntryColBmp(aBmp);
-}
-
 void SvTreeListBox::EnableCheckButton(SvLBoxButtonData& rData)
 {
     m_pCheckButtonData = &rData;
     m_nTreeFlags |= SvTreeFlags::CHKBTN;
-    rData.SetLink( LINK(this, SvTreeListBox, CheckButtonClick));
 
     SetTabs();
     if( IsUpdateMode() )
         Invalidate();
 }
 
-const Image& SvTreeListBox::GetDefaultExpandedNodeImage( )
-{
-    return SvImpLBox::GetDefaultExpandedNodeImage( );
-}
-
-const Image& SvTreeListBox::GetDefaultCollapsedNodeImage( )
-{
-    return SvImpLBox::GetDefaultCollapsedNodeImage( );
-}
-
 void SvTreeListBox::SetNodeDefaultImages()
 {
-    SetExpandedNodeBmp(GetDefaultExpandedNodeImage());
-    SetCollapsedNodeBmp(GetDefaultCollapsedNodeImage());
+    SetExpandedNodeBmp(SvImpLBox::GetDefaultExpandedNodeImage());
+    SetCollapsedNodeBmp(SvImpLBox::GetDefaultCollapsedNodeImage());
     SetTabs();
 }
 
@@ -2137,11 +1977,7 @@ void SvTreeListBox::KeyInput( const KeyEvent& rKEvt )
     }
 }
 
-void SvTreeListBox::RequestingChildren( SvTreeListEntry* pParent )
-{
-    if( !pParent->HasChildren() )
-        InsertEntry( u"<dummy>"_ustr, pParent );
-}
+void SvTreeListBox::RequestingChildren(SvTreeListEntry&) {}
 
 void SvTreeListBox::GetFocus()
 {
@@ -2186,14 +2022,12 @@ void SvTreeListBox::ModelHasCleared()
     m_nFocusWidth = -1;
 
     m_nContextBmpWidthMax = 0;
-    SetDefaultExpandedEntryBmp( GetDefaultExpandedEntryBmp() );
-    SetDefaultCollapsedEntryBmp( GetDefaultCollapsedEntryBmp() );
 
     if (!(m_nTreeFlags & SvTreeFlags::FIXEDHEIGHT))
         m_nEntryHeight = 0;
     AdjustEntryHeight();
-    AdjustEntryHeight( GetDefaultExpandedEntryBmp() );
-    AdjustEntryHeight( GetDefaultCollapsedEntryBmp() );
+
+    ModelChangedHdl();
 }
 
 bool SvTreeListBox::PosOverBody(const Point& rPos) const
@@ -2264,15 +2098,15 @@ void SvTreeListBox::SetDragDropMode( DragDropMode nDDMode )
     m_pImpl->SetDragDropMode(nDDMode);
 }
 
-void SvTreeListBox::CalcEntryHeight( SvTreeListEntry const * pEntry )
+void SvTreeListBox::CalcEntryHeight(const SvTreeListEntry& rEntry)
 {
     short nHeightMax=0;
-    sal_uInt16 nCount = pEntry->ItemCount();
+    sal_uInt16 nCount = rEntry.ItemCount();
     sal_uInt16 nCur = 0;
-    SvViewDataEntry* pViewData = GetViewDataEntry( pEntry );
+    SvViewDataEntry& rViewData = GetViewDataEntry(rEntry);
     while( nCur < nCount )
     {
-        auto nHeight = SvLBoxItem::GetHeight(pViewData, nCur);
+        auto nHeight = SvLBoxItem::GetHeight(rViewData, nCur);
         if( nHeight > nHeightMax )
             nHeightMax = nHeight;
         nCur++;
@@ -2325,43 +2159,43 @@ void SvTreeListBox::AdjustEntryHeight()
     }
 }
 
-bool SvTreeListBox::Expand( SvTreeListEntry* pParent )
+bool SvTreeListBox::Expand(SvTreeListEntry& rParent)
 {
-    m_pHdlEntry = pParent;
+    m_pHdlEntry = &rParent;
     bool bExpanded = false;
     SvTLEntryFlags nFlags;
 
-    if( pParent->HasChildrenOnDemand() )
-        RequestingChildren( pParent );
-    bool bExpandAllowed = pParent->HasChildren() && ExpandingHdl();
+    if (rParent.HasChildrenOnDemand())
+        RequestingChildren(rParent);
+    bool bExpandAllowed = rParent.HasChildren() && ExpandingHdl();
     // double check if the expander callback ended up removing all children
-    if (pParent->HasChildren())
+    if (rParent.HasChildren())
     {
         if (bExpandAllowed)
         {
             bExpanded = true;
-            ExpandListEntry( pParent );
-            m_pImpl->EntryExpanded(pParent);
-            m_pHdlEntry = pParent;
+            ExpandListEntry(rParent);
+            m_pImpl->EntryExpanded(&rParent);
+            m_pHdlEntry = &rParent;
             ExpandedHdl();
         }
-        nFlags = pParent->GetFlags();
+        nFlags = rParent.GetFlags();
         nFlags &= ~SvTLEntryFlags::NO_NODEBMP;
         nFlags |= SvTLEntryFlags::HAD_CHILDREN;
-        pParent->SetFlags( nFlags );
+        rParent.SetFlags(nFlags);
     }
     else
     {
-        nFlags = pParent->GetFlags();
+        nFlags = rParent.GetFlags();
         nFlags |= SvTLEntryFlags::NO_NODEBMP;
-        pParent->SetFlags( nFlags );
-        GetModel()->InvalidateEntry( pParent ); // repaint
+        rParent.SetFlags(nFlags);
+        InvalidateEntry(rParent); // repaint
     }
 
     // #i92103#
     if ( bExpanded )
     {
-        CallEventListeners(VclEventId::ItemExpanded, pParent);
+        CallEventListeners(VclEventId::ItemExpanded, &rParent);
     }
 
     return bExpanded;
@@ -2434,22 +2268,26 @@ void SvTreeListBox::SelectAll( bool bSelect )
                              true); // even when using SelectionMode::Single, deselect the cursor
 }
 
-void SvTreeListBox::ModelHasInsertedTree( SvTreeListEntry* pEntry )
+void SvTreeListBox::ModelHasInsertedTree(SvTreeListEntry& rEntry)
 {
-    sal_uInt16 nRefDepth = m_pModel->GetDepth(pEntry);
-    SvTreeListEntry* pTmp = pEntry;
+    sal_uInt16 nRefDepth = m_pModel->GetDepth(&rEntry);
+    SvTreeListEntry* pTmp = &rEntry;
     do
     {
-        ImpEntryInserted( pTmp );
+        ImpEntryInserted(*pTmp);
         pTmp = Next( pTmp );
     } while (pTmp && nRefDepth < m_pModel->GetDepth(pTmp));
-    m_pImpl->TreeInserted(pEntry);
+    m_pImpl->TreeInserted(&rEntry);
+
+    ModelChangedHdl();
 }
 
-void SvTreeListBox::ModelHasInserted( SvTreeListEntry* pEntry )
+void SvTreeListBox::ModelHasInserted(SvTreeListEntry& rEntry)
 {
-    ImpEntryInserted( pEntry );
-    m_pImpl->EntryInserted(pEntry);
+    ImpEntryInserted(rEntry);
+    m_pImpl->EntryInserted(&rEntry);
+
+    ModelChangedHdl();
 }
 
 void SvTreeListBox::ModelIsMoving(SvTreeListEntry* pSource )
@@ -2460,28 +2298,32 @@ void SvTreeListBox::ModelIsMoving(SvTreeListEntry* pSource )
 void SvTreeListBox::ModelHasMoved( SvTreeListEntry* pSource )
 {
     m_pImpl->EntryMoved(pSource);
+
+    ModelChangedHdl();
 }
 
-void SvTreeListBox::ModelIsRemoving( SvTreeListEntry* pEntry )
+void SvTreeListBox::ModelIsRemoving(SvTreeListEntry& rEntry)
 {
-    if (m_pEdEntry == pEntry)
+    if (m_pEdEntry == &rEntry)
         m_pEdEntry = nullptr;
 
-    m_pImpl->RemovingEntry(pEntry);
+    m_pImpl->RemovingEntry(&rEntry);
 }
 
-void SvTreeListBox::ModelHasRemoved( SvTreeListEntry* pEntry  )
+void SvTreeListBox::ModelHasRemoved(SvTreeListEntry& rEntry)
 {
     // WARNING WARNING WARNING
     // The supplied pointer should have been deleted
     // before this call. Be careful not to use it!!!
-    if (pEntry == m_pHdlEntry)
+    if (&rEntry == m_pHdlEntry)
         m_pHdlEntry = nullptr;
 
-    if (pEntry == m_pTargetEntry)
+    if (&rEntry == m_pTargetEntry)
         m_pTargetEntry = nullptr;
 
     m_pImpl->EntryRemoved();
+
+    ModelChangedHdl();
 }
 
 void SvTreeListBox::SetCollapsedNodeBmp( const Image& rBmp)
@@ -2585,7 +2427,7 @@ void SvTreeListBox::MouseButtonUp( const MouseEvent& rMEvt )
                 if (pItemCheckBox && pItemCheckBox->isEnable() && GetItemPos(pEntry, 0).first < aPnt.X() - GetMapMode().GetOrigin().X())
                 {
                     pItemCheckBox->ClickHdl(pEntry);
-                    InvalidateEntry(pEntry);
+                    InvalidateEntry(*pEntry);
                 }
             }
         }
@@ -2649,7 +2491,7 @@ void SvTreeListBox::ModelHasEntryInvalidated( SvTreeListEntry* pEntry )
     for( sal_uInt16 nIdx = 0; nIdx < nCount; nIdx++ )
     {
         SvLBoxItem& rItem = pEntry->GetItem( nIdx );
-        rItem.InitViewData(*this, pEntry);
+        rItem.InitViewData(*this, *pEntry);
     }
 
     // repaint
@@ -2672,7 +2514,7 @@ void SvTreeListBox::EditItemText(SvTreeListEntry& rEntry, SvLBoxString& rItem,
     SvLBoxTab* pTab = GetTab(rEntry, rItem);
     DBG_ASSERT(pTab,"EditItemText:Tab not found");
 
-    auto nItemHeight(rItem.GetHeight(*this, &rEntry));
+    auto nItemHeight(rItem.GetHeight(*this, rEntry));
     Point aPos = GetEntryPosition(&rEntry);
     aPos.AdjustY((m_nEntryHeight - nItemHeight) / 2);
     aPos.setX(GetTabPos(&rEntry, pTab));
@@ -2760,7 +2602,7 @@ void SvTreeListBox::EditedText( const OUString& rStr )
         if (EditedEntry(*m_pEdEntry, *m_pEdItem, rStr))
         {
             m_pEdItem->SetText(rStr);
-            m_pModel->InvalidateEntry(m_pEdEntry);
+            InvalidateEntry(*m_pEdEntry);
         }
         if( GetSelectionCount() == 0 )
             Select(m_pEdEntry);
@@ -2836,13 +2678,9 @@ void SvTreeListBox::ImplInitStyle()
     Invalidate();
 }
 
-void SvTreeListBox::InvalidateEntry(SvTreeListEntry* pEntry)
+void SvTreeListBox::InvalidateEntry(SvTreeListEntry& rEntry)
 {
-    DBG_ASSERT(pEntry,"InvalidateEntry:No Entry");
-    if (pEntry)
-    {
-        GetModel()->InvalidateEntry(pEntry);
-    }
+    GetModel()->InvalidateEntry(rEntry);
 }
 
 void SvTreeListBox::PaintEntry1(SvTreeListEntry& rEntry, tools::Long nLine, vcl::RenderContext& rRenderContext)
@@ -2884,7 +2722,7 @@ void SvTreeListBox::PaintEntry1(SvTreeListEntry& rEntry, tools::Long nLine, vcl:
 
     Size aRectSize(0, nTempEntryHeight);
 
-    SvViewDataEntry* pViewDataEntry = GetViewDataEntry( &rEntry );
+    SvViewDataEntry& rViewDataEntry = GetViewDataEntry(rEntry);
     const bool bSeparator(rEntry.IsSeparator());
 
     const auto nMaxContextBmpWidthBeforeIndentIsNeeded
@@ -2937,8 +2775,8 @@ void SvTreeListBox::PaintEntry1(SvTreeListEntry& rEntry, tools::Long nLine, vcl:
             pImg = &m_pImpl->GetExpandedNodeBmp();
         else
             pImg = &m_pImpl->GetCollapsedNodeBmp();
-        bDefaultImage = bExpanded ? *pImg == GetDefaultExpandedNodeImage()
-                                  : *pImg == GetDefaultCollapsedNodeImage();
+        bDefaultImage = bExpanded ? *pImg == SvImpLBox::GetDefaultExpandedNodeImage()
+                                  : *pImg == SvImpLBox::GetDefaultCollapsedNodeImage();
         aImageSize = pImg->GetSizePixel();
         aImagePos.AdjustY((nTempEntryHeight - aImageSize.Height()) / 2);
     }
@@ -2947,7 +2785,7 @@ void SvTreeListBox::PaintEntry1(SvTreeListEntry& rEntry, tools::Long nLine, vcl:
 
     const size_t nItemCount = rEntry.ItemCount();
 
-    const bool bEntryHighlighted = pViewDataEntry->IsHighlighted();
+    const bool bEntryHighlighted = rViewDataEntry.IsHighlighted();
     // We need to track, if the area for the image area has selection background; otherwise,
     // the symbol may be drawn using aHighlightTextColor (usually white) on white background
     bool bImageHighlighted = false;
@@ -2964,8 +2802,8 @@ void SvTreeListBox::PaintEntry1(SvTreeListEntry& rEntry, tools::Long nLine, vcl:
         SvLBoxItem& rItem = rEntry.GetItem(nCurIndex);
 
         SvLBoxTabFlags nFlags = pTab->nFlags;
-        Size aSize(rItem.GetWidth(*this, pViewDataEntry, nCurIndex),
-                   SvLBoxItem::GetHeight(pViewDataEntry, nCurIndex));
+        Size aSize(rItem.GetWidth(*this, rViewDataEntry, nCurIndex),
+                   SvLBoxItem::GetHeight(rViewDataEntry, nCurIndex));
         tools::Long nTabPos = GetTabPos(&rEntry, pTab);
 
         tools::Long nNextTabPos;
@@ -3090,7 +2928,7 @@ void SvTreeListBox::PaintEntry1(SvTreeListEntry& rEntry, tools::Long nLine, vcl:
         // center vertically
         aEntryPos.AdjustY((nTempEntryHeight - aSize.Height()) / 2 );
 
-        rItem.Paint(aEntryPos, *this, rRenderContext, pViewDataEntry, rEntry);
+        rItem.Paint(aEntryPos, *this, rRenderContext, &rViewDataEntry, rEntry);
 
         // division line between tabs (but not if this is a separator line)
         if (!bSeparator && pNextTab && rItem.GetType() == SvLBoxItemType::String &&
@@ -3104,7 +2942,7 @@ void SvTreeListBox::PaintEntry1(SvTreeListEntry& rEntry, tools::Long nLine, vcl:
         rRenderContext.SetFillColor(aBackupColor);
     }
 
-    if (pViewDataEntry->IsDragTarget())
+    if (rViewDataEntry.IsDragTarget())
     {
         auto popIt = rRenderContext.ScopedPush();
         rRenderContext.SetLineColor(rSettings.GetDeactiveColor());
@@ -3235,7 +3073,7 @@ tools::Rectangle SvTreeListBox::GetFocusRect(const SvTreeListEntry* pEntry, tool
         if( pTab && nCurTab < pEntry->ItemCount() )
         {
             const SvLBoxItem& rItem = pEntry->GetItem( nCurTab );
-            aSize.setWidth(rItem.GetWidth(*this, pEntry));
+            aSize.setWidth(rItem.GetWidth(*this, *pEntry));
             if( !aSize.Width() )
                 aSize.setWidth( 15 );
             tools::Long nX = nTabPos; //GetTabPos( pEntry, pTab );
@@ -3335,7 +3173,7 @@ std::pair<tools::Long, tools::Long> SvTreeListBox::GetItemPos(SvTreeListEntry* p
             nNextTabPos += 50;
     }
 
-    auto nItemWidth(pItem->GetWidth(*this, pEntry));
+    auto nItemWidth(pItem->GetWidth(*this, *pEntry));
     nStart += pTab->CalcOffset(nItemWidth, nNextTabPos - nStart);
     auto nLen = nItemWidth;
     if (pNextTab)
@@ -3361,7 +3199,7 @@ tools::Long SvTreeListBox::getPreferredDimensions(std::vector<tools::Long> &rWid
         while (nCurPos < nCount)
         {
             SvLBoxItem& rItem = pEntry->GetItem( nCurPos );
-            auto nWidth = rItem.GetWidth(*this, pEntry);
+            auto nWidth = rItem.GetWidth(*this, *pEntry);
             if (nWidth)
             {
                 nWidth += SV_TAB_BORDER * 2;
@@ -3426,7 +3264,7 @@ SvLBoxItem* SvTreeListBox::GetItem(SvTreeListEntry* pEntry,tools::Long nX,SvLBox
                 nNextTabPos += 50;
         }
 
-        auto nItemWidth(pItem->GetWidth(*this, pEntry));
+        auto nItemWidth(pItem->GetWidth(*this, *pEntry));
         nStart += pTab->CalcOffset(nItemWidth, nNextTabPos - nStart);
         auto nLen = nItemWidth;
         if (pNextTab)
@@ -3619,29 +3457,48 @@ IMPL_LINK( SvTreeListBox, DefaultCompare, const SvSortData&, rData, sal_Int32 )
     return DefaultCompare(pLeftText, pRightText);
 }
 
-void SvTreeListBox::ModelNotification(SvListAction nActionId, SvTreeListEntry* pEntry)
+void SvTreeListBox::ModelNotification(SvListAction eAction, SvTreeListEntry* pEntry)
 {
     SolarMutexGuard aSolarGuard;
 
-    if( nActionId == SvListAction::CLEARING )
-        CancelTextEditing();
-
-    switch (nActionId)
+    switch (eAction)
     {
         case SvListAction::INSERTED:
-            ActionInserted(pEntry);
-            ModelHasInserted(pEntry);
+        {
+            assert(pEntry && "missing entry that was inserted");
+            ActionInserted(*pEntry);
+            ModelHasInserted(*pEntry);
+            SvLBoxContextBmp* pBmpItem
+                = static_cast<SvLBoxContextBmp*>(pEntry->GetFirstItem(SvLBoxItemType::ContextBmp));
+            if (!pBmpItem)
+                break;
+            const Image& rBitmap1(pBmpItem->GetBitmap1());
+            const Image& rBitmap2(pBmpItem->GetBitmap2());
+            short nMaxWidth
+                = short(std::max(rBitmap1.GetSizePixel().Width(), rBitmap2.GetSizePixel().Width()));
+            nMaxWidth = m_pImpl->UpdateContextBmpWidthVector(pEntry, nMaxWidth);
+            if (nMaxWidth > m_nContextBmpWidthMax)
+            {
+                m_nContextBmpWidthMax = nMaxWidth;
+                SetTabs();
+            }
+            if (get_width_request() == -1)
+                queue_resize();
             break;
+        }
         case SvListAction::INSERTED_TREE:
-            ActionInsertedTree(pEntry);
-            ModelHasInsertedTree(pEntry);
+            assert(pEntry && "missing entry");
+            ActionInsertedTree(*pEntry);
+            ModelHasInsertedTree(*pEntry);
             break;
         case SvListAction::REMOVING:
-            ModelIsRemoving(pEntry);
-            ActionRemoving(pEntry);
+            assert(pEntry && "missing entry");
+            ModelIsRemoving(*pEntry);
+            ActionRemoving(*pEntry);
             break;
         case SvListAction::REMOVED:
-            ModelHasRemoved(pEntry);
+            assert(pEntry && "missing entry");
+            ModelHasRemoved(*pEntry);
             break;
         case SvListAction::MOVING:
             ModelIsMoving(pEntry);
@@ -3651,63 +3508,21 @@ void SvTreeListBox::ModelNotification(SvListAction nActionId, SvTreeListEntry* p
             ActionMoved();
             ModelHasMoved(pEntry);
             break;
-        case SvListAction::CLEARING:
-            Reset();
-            ModelHasCleared(); // sic! for compatibility reasons!
-            break;
-        case SvListAction::CLEARED:
-            break;
         case SvListAction::INVALIDATE_ENTRY:
             // no action for the base class
             ModelHasEntryInvalidated(pEntry);
             break;
         case SvListAction::RESORTED:
             m_bVisPositionsValid = false;
-            break;
-        case SvListAction::RESORTING:
-            break;
-        default:
-            OSL_FAIL("unknown ActionId");
-    }
-
-    switch( nActionId )
-    {
-        case SvListAction::INSERTED:
-        {
-            SvLBoxContextBmp* pBmpItem
-                = static_cast<SvLBoxContextBmp*>(pEntry->GetFirstItem(SvLBoxItemType::ContextBmp));
-            if ( !pBmpItem )
-                break;
-            const Image& rBitmap1( pBmpItem->GetBitmap1() );
-            const Image& rBitmap2( pBmpItem->GetBitmap2() );
-            short nMaxWidth = short( std::max( rBitmap1.GetSizePixel().Width(), rBitmap2.GetSizePixel().Width() ) );
-            nMaxWidth = m_pImpl->UpdateContextBmpWidthVector(pEntry, nMaxWidth);
-            if (nMaxWidth > m_nContextBmpWidthMax)
-            {
-                m_nContextBmpWidthMax = nMaxWidth;
-                SetTabs();
-            }
-            if (get_width_request() == -1)
-                queue_resize();
-        }
-        break;
-
-        case SvListAction::RESORTING:
-            SetUpdateMode( false );
-            break;
-
-        case SvListAction::RESORTED:
             // after a selection: show first entry and also keep the selection
             MakeVisible(m_pModel->First(), true);
             SetUpdateMode( true );
             break;
-
-        case SvListAction::CLEARED:
-            if( IsUpdateMode() )
-                PaintImmediately();
+        case SvListAction::RESORTING:
+            SetUpdateMode(false);
             break;
-
-        default: break;
+        default:
+            OSL_FAIL("unknown ActionId");
     }
 }
 
@@ -3794,10 +3609,10 @@ rtl::Reference<comphelper::OAccessible> SvTreeListBox::CreateAccessible()
     return {};
 }
 
-tools::Rectangle SvTreeListBox::GetBoundingRect(const SvTreeListEntry* pEntry)
+tools::Rectangle SvTreeListBox::GetBoundingRect(const SvTreeListEntry& rEntry)
 {
-    Point aPos = GetEntryPosition( pEntry );
-    tools::Rectangle aRect = GetFocusRect( pEntry, aPos.Y() );
+    Point aPos = GetEntryPosition(&rEntry);
+    tools::Rectangle aRect = GetFocusRect(&rEntry, aPos.Y());
     return aRect;
 }
 

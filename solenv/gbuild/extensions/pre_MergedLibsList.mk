@@ -72,7 +72,6 @@ gb_MERGE_LIBRARY_LIST := \
 	passwordcontainer \
 	sax \
 	sb \
-	simplecanvas \
 	sfx \
 	sofficeapp \
 	sot \
@@ -180,7 +179,6 @@ gb_MERGE_LIBRARY_LIST += \
 	$(if $(filter WNT,$(OS)), \
 		smplmail \
 	) \
-	solver \
 	storagefd \
 	svgfilter \
 	t602filter \

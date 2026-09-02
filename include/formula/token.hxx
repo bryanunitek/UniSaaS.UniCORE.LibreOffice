@@ -31,6 +31,7 @@
 #include <formula/types.hxx>
 #include <formula/paramclass.hxx>
 #include <formula/errorcodes.hxx>
+#include <formula/callable.hxx>
 #include <osl/interlck.h>
 #include <rtl/ustring.hxx>
 #include <sal/types.h>
@@ -50,6 +51,7 @@ enum StackVar : sal_uInt8
     svDouble,
     svString,
     svStringName,
+    svCallable,
     svDPFieldName,
     svSingleRef,
     svDoubleRef,
@@ -95,6 +97,7 @@ inline std::string StackVarEnumToString(StackVar const e)
         case svDouble:            return "Double";
         case svString:            return "String";
         case svStringName:        return "StringName";
+        case svCallable:          return "Callable";
         case svDPFieldName:       return "DPFieldName";
         case svSingleRef:         return "SingleRef";
         case svDoubleRef:         return "DoubleRef";
@@ -376,14 +379,30 @@ public:
 class FORMULA_DLLPUBLIC FormulaStringNameToken final : public FormulaToken
 {
     svl::SharedString maString;
+    bool mIsOptional;
 public:
-    FormulaStringNameToken(StackVar eTypeP, svl::SharedString r);
+    FormulaStringNameToken(StackVar eTypeP, svl::SharedString r, bool isOptional = false);
     FormulaStringNameToken(const FormulaStringNameToken& r);
 
     virtual FormulaToken* Clone() const override;
     const svl::SharedString& GetString() const { return maString; }
+    bool GetIsOptional() const { return mIsOptional; }
+    void SetIsOptional(bool isOptional) { mIsOptional = isOptional; }
     virtual bool operator==(const FormulaToken& rToken) const override;
 };
+
+// A data-pilot field name is stored in a FormulaStringNameToken too, so both
+// svStringName and svDPFieldName identify one.
+inline const FormulaStringNameToken* GetStringNameToken(const FormulaToken* p)
+{
+    const StackVar eType = p->GetType();
+    if (eType == svStringName || eType == svDPFieldName)
+    {
+        assert(dynamic_cast<const FormulaStringNameToken*>(p));
+        return static_cast<const FormulaStringNameToken*>(p);
+    }
+    return nullptr;
+}
 
 
 class FORMULA_DLLPUBLIC FormulaIndexToken final : public FormulaToken
@@ -510,6 +529,21 @@ public:
         nError = rOther.nError;
         return *this;
     }
+};
+
+
+// Only created from within the interpreter
+class FORMULA_DLLPUBLIC FormulaCallableToken final : public FormulaToken
+{
+private:
+            FormulaCallableRef  mpCallable;
+public:
+                                FormulaCallableToken( FormulaCallableRef pCallable ) :
+                                    FormulaToken( svCallable ), mpCallable(pCallable) {}
+                                FormulaCallableToken( const FormulaCallableToken& r ) = default;
+    virtual FormulaToken*       Clone() const override { return new FormulaCallableToken(*this); }
+            FormulaCallableRef  GetCallable() const;
+    virtual bool                operator==( const FormulaToken& rToken ) const override;
 };
 
 

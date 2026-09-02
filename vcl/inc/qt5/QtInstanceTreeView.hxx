@@ -48,7 +48,9 @@ public:
 
     virtual void do_insert_separator(int pos, const OUString& rId) override;
 
-    virtual void enable_toggle_buttons(weld::ColumnToggleType eType) override;
+    virtual void enable_toggle_buttons() override;
+
+    virtual void set_toggle_button_type(weld::ColumnToggleType eType) override;
 
     virtual void set_clicks_to_toggle(int nToggleBehavior) override;
 
@@ -66,7 +68,7 @@ public:
     virtual bool iter_parent(weld::TreeIter& rIter) const override;
     virtual int get_iter_depth(const weld::TreeIter& rIter) const override;
 
-    virtual int iter_n_children(const weld::TreeIter& rIter) const override;
+    virtual int do_iter_n_children(const weld::TreeIter& rIter) const override;
     virtual void set_extra_row_indent(const weld::TreeIter& rIter, int nIndentLevel) override;
     virtual void set_text(const weld::TreeIter& rIter, const OUString& rStr,
                           int nCol = -1) override;
@@ -76,7 +78,8 @@ public:
     virtual void set_text_emphasis(const weld::TreeIter& rIter, bool bOn, int nCol) override;
     virtual bool get_text_emphasis(const weld::TreeIter& rIter, int nCol) const override;
     virtual void set_text_align(const weld::TreeIter& rIter, TxtAlign eAlign, int nCol) override;
-    virtual void set_toggle(const weld::TreeIter& rIter, TriState eState, int nCol = -1) override;
+    virtual void do_set_toggle(const weld::TreeIter& rIter, TriState eState,
+                               int nCol = -1) override;
     virtual TriState get_toggle(const weld::TreeIter& rIter, int nCol = -1) const override;
     virtual OUString get_text(const weld::TreeIter& rIter, int nCol = -1) const override;
     virtual void set_image(const weld::TreeIter& rIter, const OUString& rImage,
@@ -181,6 +184,7 @@ private:
     void setImage(const weld::TreeIter& rIter, const QPixmap& rPixmap, int nCol);
     void setTextEmphasis(const QModelIndex& rIndex, bool bOn);
 
+    bool handleHeaderViewportEvent(const QEvent& rEvent);
     bool handleViewPortToolTipEvent(const QHelpEvent& rEvent);
 
 private Q_SLOTS:
@@ -188,6 +192,7 @@ private Q_SLOTS:
                            const QVector<int>& rRoles);
     void signalCollapsing(const QModelIndex& rIndex);
     void signalExpanding(const QModelIndex& rIndex);
+    void signalVisibleRangeChanged();
 };
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab cinoptions=b1,g0,N-s cinkeys+=0=break: */

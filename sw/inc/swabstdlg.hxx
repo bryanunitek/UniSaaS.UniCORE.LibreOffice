@@ -412,17 +412,6 @@ public:
     virtual sal_uInt16          GetRestartPage() const = 0;
 };
 
-class SwLanguageListItem;
-
-class AbstractSwTranslateLangSelectDlg
-{
-protected:
-    virtual ~AbstractSwTranslateLangSelectDlg() = default;
-public:
-    virtual std::shared_ptr<weld::DialogController> getDialogController() = 0;
-    virtual std::optional<SwLanguageListItem> GetSelectedLanguage() = 0;
-};
-
 class AbstractSwSortDlg : public VclAbstractDialog
 {
 protected:
@@ -480,8 +469,10 @@ public:
     virtual VclPtr<SfxAbstractDialog> CreateSwDropCapsDialog(weld::Window* pParent, const SfxItemSet& rSet) = 0;
     virtual VclPtr<SfxAbstractDialog> CreateSwBackgroundDialog(weld::Window* pParent, const SfxItemSet& rSet) = 0;
 
-    virtual VclPtr<AbstractSwWordCountFloatDlg> CreateSwWordCountDialog(SfxBindings* pBindings,
-        SfxChildWindow* pChild, weld::Window *pParent, SfxChildWinInfo* pInfo) = 0;
+    virtual VclPtr<AbstractSwWordCountFloatDlg>
+    CreateSwWordCountDialog(SfxBindings* pBindings, SfxChildWindow* pChild, weld::Window* pParent,
+                            SfxChildWinInfo& rInfo)
+        = 0;
 
     virtual VclPtr<AbstractSwInsertAbstractDlg> CreateSwInsertAbstractDlg(weld::Window* pParent) = 0;
     virtual VclPtr<SfxAbstractDialog> CreateSwAddressAbstractDlg(weld::Window* pParent, const SfxItemSet& rSet) = 0;
@@ -494,7 +485,6 @@ public:
     CreateSwContentControlListItemDlg(weld::Window* pParent, SwContentControlListItem& rItem) = 0;
 
     virtual std::shared_ptr<AbstractSwBreakDlg> CreateSwBreakDlg(weld::Window *pParent, SwWrtShell &rSh) = 0;
-    virtual std::shared_ptr<AbstractSwTranslateLangSelectDlg> CreateSwTranslateLangSelectDlg(weld::Window *pParent, SwWrtShell &rSh) = 0;
     virtual VclPtr<AbstractChangeDbDialog> CreateSwChangeDBDlg(SwView& rVw) = 0;
     virtual VclPtr<SfxAbstractTabDialog>  CreateSwCharDlg(weld::Window* pParent, SwView& rView, const SfxItemSet& rCoreSet,
         SwCharDlgMode nDialogMode, const OUString* pFormatStr = nullptr) = 0;
@@ -603,16 +593,14 @@ public:
     virtual VclPtr<AbstractEditRegionDlg>      CreateEditRegionDlg(weld::Window* pParent, SwWrtShell& rWrtSh) = 0;
     virtual VclPtr<AbstractInsertSectionTabDialog> CreateInsertSectionTabDialog(weld::Window* pParent,
                                                        const SfxItemSet& rSet, SwWrtShell& rSh) = 0;
-    virtual VclPtr<AbstractMarkFloatDlg>       CreateIndexMarkFloatDlg(
-                                                       SfxBindings* pBindings,
-                                                       SfxChildWindow* pChild,
-                                                       weld::Window *pParent,
-                                                       SfxChildWinInfo* pInfo) = 0;
-    virtual VclPtr<AbstractMarkFloatDlg>       CreateAuthMarkFloatDlg(
-                                                       SfxBindings* pBindings,
-                                                       SfxChildWindow* pChild,
-                                                       weld::Window *pParent,
-                                                       SfxChildWinInfo* pInfo) = 0;
+    virtual VclPtr<AbstractMarkFloatDlg>
+    CreateIndexMarkFloatDlg(SfxBindings* pBindings, SfxChildWindow* pChild, weld::Window* pParent,
+                            SfxChildWinInfo& rInfo)
+        = 0;
+    virtual VclPtr<AbstractMarkFloatDlg>
+    CreateAuthMarkFloatDlg(SfxBindings* pBindings, SfxChildWindow* pChild, weld::Window* pParent,
+                           SfxChildWinInfo& rInfo)
+        = 0;
     virtual VclPtr<VclAbstractDialog>         CreateIndexMarkModalDlg(
                                                 weld::Window *pParent, SwWrtShell& rSh, SwTOXMark* pCurTOXMark) = 0;
 

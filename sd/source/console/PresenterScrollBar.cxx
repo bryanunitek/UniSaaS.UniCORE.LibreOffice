@@ -21,10 +21,13 @@
 #include "PresenterBitmapContainer.hxx"
 #include "PresenterCanvasHelper.hxx"
 #include "PresenterGeometryHelper.hxx"
+#include "PresenterHelper.hxx"
 #include "PresenterPaintManager.hxx"
 #include "PresenterTimer.hxx"
 #include "PresenterUIPainter.hxx"
-#include <PresenterHelper.hxx>
+
+#include <toolkit/helper/vclunohelper.hxx>
+
 #include <com/sun/star/awt/PosSize.hpp>
 #include <com/sun/star/awt/XWindowPeer.hpp>
 #include <com/sun/star/rendering/CompositeOperation.hpp>
@@ -89,7 +92,8 @@ PresenterScrollBar::PresenterScrollBar (
 {
     try
     {
-        mxWindow = sd::presenter::PresenterHelper::createWindow(rxParentWindow, false);
+        mxWindow = VCLUnoHelper::GetInterface(
+            sd::presenter::PresenterHelper::createWindow(rxParentWindow, false));
 
         // Make the background transparent.  The slide show paints its own background.
         Reference<awt::XWindowPeer> xPeer (mxWindow, UNO_QUERY_THROW);

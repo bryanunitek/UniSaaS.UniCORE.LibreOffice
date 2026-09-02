@@ -525,7 +525,7 @@ inline constexpr OUString SC_UNO_PAGE_FTRSHARED       = u"FooterIsShared"_ustr;
 //  document settings
 inline constexpr OUString SC_UNO_CALCASSHOWN              = u"CalcAsShown"_ustr;
 inline constexpr OUString SC_UNO_DEFTABSTOP               = u"DefaultTabStop"_ustr;
-inline constexpr OUString SC_UNO_TABSTOPDIS               = u"TabStopDistance"_ustr; // is the same like the before, but only the writer name
+inline constexpr OUString SC_UNO_TABSTOPDIS               = u"TabStopDistance"_ustr; // same as above, but with the Writer property name
 inline constexpr OUString SC_UNO_IGNORECASE               = u"IgnoreCase"_ustr;
 inline constexpr OUString SC_UNO_ITERCOUNT                = u"IterationCount"_ustr;
 inline constexpr OUString SC_UNO_ITERENABLED              = u"IsIterationEnabled"_ustr;
@@ -644,6 +644,8 @@ inline constexpr OUString SC_UNO_DP_LAYOUTNAME           = u"LayoutName"_ustr;
 inline constexpr OUString SC_UNO_DP_FIELD_SUBTOTALNAME   = u"FieldSubtotalName"_ustr;
 inline constexpr OUString SC_UNO_DP_GRANDTOTAL_NAME      = u"GrandTotalName"_ustr;
 inline constexpr OUString SC_UNO_DP_HAS_HIDDEN_MEMBER    = u"HasHiddenMember"_ustr;
+inline constexpr OUString SC_UNO_DP_MEMBER_VALUE         = u"MemberValue"_ustr;
+inline constexpr OUString SC_UNO_DP_MEMBER_HAS_VALUE     = u"MemberHasValue"_ustr;
 #define SC_UNO_DP_CALCULATEDFIELD      SC_UNONAME_CALCULATEDFIELD
 #define SC_UNO_DP_CALCULATION          SC_UNONAME_CALCULATION
 inline constexpr OUString SC_UNO_DP_FLAGS                = u"Flags"_ustr;

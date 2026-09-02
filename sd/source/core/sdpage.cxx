@@ -23,6 +23,7 @@
 #include <comphelper/classids.hxx>
 #include <comphelper/embeddedobjectcontainer.hxx>
 #include <comphelper/lok.hxx>
+#include <comphelper/scopeguard.hxx>
 #include <LibreOfficeKit/LibreOfficeKitEnums.h>
 
 #include <sfx2/viewsh.hxx>
@@ -303,33 +304,18 @@ SdrObject* SdPage::CreatePresObj(PresObjKind eObjKind, bool bVertical, const ::t
         case PresObjKind::Title:
         {
             pSdrObj = new SdrRectObj(getSdrModelFromSdrPage(), ::tools::Rectangle(), SdrObjKind::TitleText);
-
-            if (mbMaster)
-            {
-                pSdrObj->SetNotVisibleAsMaster(true);
-            }
         }
         break;
 
         case PresObjKind::Outline:
         {
             pSdrObj = new SdrRectObj(getSdrModelFromSdrPage(), ::tools::Rectangle(), SdrObjKind::OutlineText);
-
-            if (mbMaster)
-            {
-                pSdrObj->SetNotVisibleAsMaster(true);
-            }
         }
         break;
 
         case PresObjKind::Notes:
         {
             pSdrObj = new SdrRectObj(getSdrModelFromSdrPage(), ::tools::Rectangle(), SdrObjKind::Text);
-
-            if (mbMaster)
-            {
-                pSdrObj->SetNotVisibleAsMaster(true);
-            }
         }
         break;
 
@@ -464,6 +450,24 @@ SdrObject* SdPage::CreatePresObj(PresObjKind eObjKind, bool bVertical, const ::t
 
     if (pSdrObj)
     {
+        // On a master page these are templates for the instances the slides carry themselves, so
+        // painting them on a slide too would show two placeholders where the user expects one.
+        // Everything else stays visible from the master, the footer and slide number above all.
+        if (mbMaster)
+        {
+            switch (eObjKind)
+            {
+                case PresObjKind::Title:
+                case PresObjKind::Outline:
+                case PresObjKind::Notes:
+                case PresObjKind::Graphic:
+                    pSdrObj->SetNotVisibleAsMaster(true);
+                    break;
+                default:
+                    break;
+            }
+        }
+
         pSdrObj->SetEmptyPresObj(bEmptyPresObj);
         pSdrObj->SetLogicRect(rRect);
 
@@ -1410,6 +1414,19 @@ void SdPage::SetCanvasPage()
     static_cast<SdDrawDocument&>(getSdrModelFromSdrPage()).StoreCanvasPage(this);
 }
 
+void SdPage::SetSoundFile(const OUString& rStr, bool bAllowed)
+{
+    // A fresh source takes the given allowed state; setting the same source
+    // again keeps the allowed state it already has.
+    if (maSoundLink.getURL() != rStr)
+        maSoundLink = SdSoundLink(rStr, bAllowed);
+    // A transition sound pointing outside the document package is a link the
+    // user allows on its own; register it as the URL is set so it joins link
+    // management.
+    if (maSoundLink.isExternalLink())
+        static_cast<SdDrawDocument&>(getSdrModelFromSdrPage()).RegisterPageSoundLink(*this);
+}
+
 static void CalcAutoLayoutRectangles( SdPage const & rPage,::tools::Rectangle* rRectangle ,const OUString& sLayoutType )
 {
     ::tools::Rectangle aTitleRect;
@@ -1450,7 +1467,7 @@ static void CalcAutoLayoutRectangles( SdPage const & rPage,::tools::Rectangle* r
         [&sLayoutType](const Reference<XNode>& layoutNode) {
             Reference<XNamedNodeMap> layoutAttrList = layoutNode->getAttributes();
 
-            // get the attribute value of layout (i.e it's type)
+            // get the attribute value of layout (i.e its type)
             OUString sLayoutAttName = layoutAttrList->getNamedItem(u"type"_ustr)->getNodeValue();
             return sLayoutAttName == sLayoutType;
         });
@@ -2465,6 +2482,154 @@ void SdPage::RemovePresObj(const SdrObject* pObj)
     }
 }
 
+void SdPage::onEmptyPresObjFilled(SdrObject& rObj)
+{
+    // Text in a picture placeholder is represented by an outliner object, and this is where every
+    // way of putting it there passes. The switch itself waits: svx is working on the object right
+    // now, and replacing it under its feet is what freed the lines a paint was walking.
+    //
+    // An object in text edit is left alone entirely. This is called from inside that edit as well -
+    // when a view asks the shape for its text through UNO - and the object belongs to the editing
+    // view until the edit ends, which is where the switch happens for it.
+    const SdrTextObj* pTextObj = DynCastSdrTextObj(&rObj);
+    if (pTextObj && !pTextObj->IsTextEditActive() && GetPresObjKind(&rObj) == PresObjKind::Graphic
+        && rObj.HasText() && HoldsPlaceholderStandIn(rObj, GetPlaceholderStandInChecksum()))
+    {
+        static_cast<SdDrawDocument&>(getSdrModelFromSdrPage()).ArmPlaceholderSwitch();
+    }
+}
+
+BitmapChecksum SdPage::GetPlaceholderStandInChecksum()
+{
+    // No file stores the art: what CreatePresObj would put there now is what to compare against.
+    return Bitmap(BMP_PRESOBJ_GRAPHIC).GetChecksum();
+}
+
+bool SdPage::HoldsPlaceholderStandIn(const SdrObject& rObj, BitmapChecksum nStandIn)
+{
+    const SdrGrafObj* pGraphic = dynamic_cast<const SdrGrafObj*>(&rObj);
+    if (!pGraphic)
+        return false;
+
+    // Holding nothing counts too: the shape factory creates a placeholder without the art that
+    // CreatePresObj puts there.
+    const Graphic& rGraphic = pGraphic->GetGraphic();
+    return rGraphic.IsNone() || rGraphic.GetChecksum() == nStandIn;
+}
+
+rtl::Reference<SdrObject> SdPage::MakePresObjText(SdrObject& rObj)
+{
+    const PresObjKind eKind = GetPresObjKind(&rObj);
+
+    rtl::Reference<SdrObject> xText = new SdrRectObj(getSdrModelFromSdrPage(), rObj.GetLogicRect(),
+                                                    SdrObjKind::OutlineText);
+    xText->SetName(rObj.GetName());
+    xText->SetTitle(rObj.GetTitle());
+    xText->SetDescription(rObj.GetDescription());
+    xText->SetUserCall(rObj.GetUserCall());
+
+    // An authored prompt belongs to the placeholder, so it has to be there when the text is gone.
+    xText->SetCustomPromptText(rObj.GetCustomPromptText());
+
+    // Text is what an outline placeholder holds, so its styles are the ones that fit.
+    xText->NbcSetStyleSheet(GetStyleSheetForPresObj(PresObjKind::Outline), true);
+
+    // What the file authored on the shape belongs to the shape, whatever represents it. A contour
+    // frame and centred paragraphs do not: they arrange a prompt around an icon.
+    SfxItemSet aAuthored(getSdrModelFromSdrPage().GetItemPool(),
+                         svl::Items<XATTR_LINE_FIRST, XATTR_LINE_LAST, XATTR_FILL_FIRST,
+                                    XATTR_FILL_LAST, SDRATTR_SHADOW_FIRST, SDRATTR_SHADOW_LAST,
+                                    SDRATTR_TEXT_MINFRAMEHEIGHT, SDRATTR_TEXT_VERTADJUST,
+                                    SDRATTR_GRAF_FIRST, SDRATTR_GRAF_LAST>);
+    aAuthored.Put(rObj.GetProperties().GetObjectItemSet());
+
+    // A text frame grows to its text, so without a minimum the box would stop matching the file.
+    aAuthored.Put(makeSdrTextMinFrameHeightItem(rObj.GetLogicRect().GetSize().Height()));
+    xText->SetMergedItemSet(aAuthored);
+
+    if (const OutlinerParaObject* pPara = rObj.GetOutlinerParaObject())
+    {
+        OutlinerParaObject aPara(*pPara);
+        aPara.SetOutlinerMode(OutlinerMode::OutlineObject);
+
+        // The cached layout was measured in an object whose text area is arranged differently.
+        aPara.ClearPortionInfo();
+        xText->SetOutlinerParaObject(std::move(aPara));
+    }
+
+    // Setting the text let the frame follow it, so the placeholder's rectangle has the last word,
+    // and the rectangle alone does not carry a rotated or sheared placeholder.
+    xText->NbcSetLogicRect(rObj.GetLogicRect());
+    if (const SdrTextObj* pTextObj = DynCastSdrTextObj(&rObj))
+    {
+        const GeoStat& rGeo = pTextObj->GetGeoStat();
+        // Both turn the rectangle's own corner about the point they are given, and the rectangle
+        // is the one set above - so the corner stays where it is and only the angles arrive. The
+        // snap rect is the box around a turned shape, and its corner sits somewhere else.
+        const Point aPivot(rObj.GetLogicRect().TopLeft());
+        if (rGeo.m_nShearAngle)
+            xText->NbcShear(aPivot, rGeo.m_nShearAngle, rGeo.mfTanShearAngle, false);
+        if (rGeo.m_nRotationAngle)
+            xText->NbcRotate(aPivot, rGeo.m_nRotationAngle, rGeo.mfSinRotationAngle,
+                             rGeo.mfCosRotationAngle);
+    }
+
+    // A click action, a sound or an animation effect is user data, so it needs its own copy here.
+    if (SdAnimationInfo* pInfo = SdDrawDocument::GetShapeUserData(rObj))
+    {
+        xText->AppendUserData(
+            std::unique_ptr<SdrObjUserData>(new SdAnimationInfo(*pInfo, *xText)));
+    }
+
+    InsertPresObj(xText.get(), eKind);
+
+    return xText;
+}
+
+rtl::Reference<SdrObject> SdPage::MakePresObjPlaceholder(SdrObject& rObj)
+{
+    const PresObjKind eKind = GetPresObjKind(&rObj);
+
+    // CreatePresObj records its insert whenever a list action is open, and the object leaves the
+    // page again below: an insert with no matching remove, which redo would perform a second time.
+    // The pair cancels out on the page, so the caller's replace is the only undoable step.
+    SfxUndoManager* pUndoManager
+        = static_cast<SdDrawDocument&>(getSdrModelFromSdrPage()).GetUndoManager();
+    const bool bUndoWasEnabled = pUndoManager && pUndoManager->IsUndoEnabled();
+    if (bUndoWasEnabled)
+        pUndoManager->EnableUndo(false);
+    comphelper::ScopeGuard aUndoGuard([pUndoManager, bUndoWasEnabled] {
+        if (bUndoWasEnabled)
+            pUndoManager->EnableUndo(true);
+    });
+
+    // What stands for the placeholder while it waits: for a picture one, the icon and the prompt.
+    SdrObject* pPlaceholder = CreatePresObj(eKind, /*bVertical*/false, rObj.GetLogicRect(),
+                                            rObj.GetCustomPromptText());
+    rtl::Reference<SdrObject> xPlaceholder;
+    if (pPlaceholder)
+    {
+        pPlaceholder->SetUserCall(rObj.GetUserCall());
+        pPlaceholder->SetName(rObj.GetName());
+        pPlaceholder->SetTitle(rObj.GetTitle());
+        pPlaceholder->SetDescription(rObj.GetDescription());
+
+        // What the file says about the picture - the outline it is clipped to, colour adjustments -
+        // belongs to the placeholder waiting for one, and travelled with the text meanwhile.
+        SfxItemSet aGraphic(getSdrModelFromSdrPage().GetItemPool(),
+                            svl::Items<SDRATTR_GRAF_FIRST, SDRATTR_GRAF_LAST>);
+        aGraphic.Put(rObj.GetProperties().GetObjectItemSet());
+        pPlaceholder->SetMergedItemSet(aGraphic);
+
+        // Taking it out of the page drops it from the presentation shape list, which is where the
+        // identity lives, so it goes back in.
+        xPlaceholder = RemoveObject(pPlaceholder->GetOrdNum());
+        InsertPresObj(xPlaceholder.get(), eKind);
+    }
+
+    return xPlaceholder;
+}
+
 void SdPage::InsertPresObj(SdrObject* pObj, PresObjKind eKind )
 {
     DBG_ASSERT( pObj, "sd::SdPage::InsertPresObj(), invalid presentation object inserted!" );
@@ -2711,12 +2876,24 @@ Orientation SdPage::GetOrientation() const
 
 OUString SdPage::GetPresObjText(PresObjKind eObjKind) const
 {
+    // A layout can author its own prompt, and it belongs to the slides using that layout, so ask
+    // the master for one before falling back to our own resource string.
+    if (!mbMaster && TRG_HasMasterPage())
+    {
+        SdPage& rMasterPage = static_cast<SdPage&>(TRG_GetMasterPage());
+        if (SdrObject* pMasterObj = rMasterPage.GetPresObj(eObjKind))
+        {
+            if (!pMasterObj->GetCustomPromptText().isEmpty())
+                return pMasterObj->GetCustomPromptText();
+        }
+    }
+
     OUString aString;
 
 #if defined(IOS) || defined(ANDROID)
-    bool isMobileDevice = true;
+    const bool isMobileDevice = true;
 #else
-    bool isMobileDevice = false;
+    const bool isMobileDevice = false;
 #endif
 
     if (eObjKind == PresObjKind::Title)
@@ -3002,7 +3179,8 @@ bool SdPage::RestoreDefaultText( SdrObject* pObj, const OUString& rStr )
         if (ePresObjKind == PresObjKind::Title   ||
             ePresObjKind == PresObjKind::Outline ||
             ePresObjKind == PresObjKind::Notes   ||
-            ePresObjKind == PresObjKind::Text)
+            ePresObjKind == PresObjKind::Text    ||
+            ePresObjKind == PresObjKind::Graphic)
         {
             sd::ModifyGuard aGuard(static_cast<SdDrawDocument*>(&getSdrModelFromSdrPage()));
 
@@ -3033,7 +3211,12 @@ bool SdPage::RestoreDefaultText( SdrObject* pObj, const OUString& rStr )
                 }
 
                 pTextObj->SetTextEditOutliner( nullptr );  // to make stylesheet settings work
-                pTextObj->NbcSetStyleSheet( GetStyleSheetForPresObj(ePresObjKind), true );
+
+                // A kind with no style sheet of its own keeps the one it has: left with none, the
+                // object falls back to the pool defaults, which paint a solid fill.
+                if (SfxStyleSheet* pStyleSheet = GetStyleSheetForPresObj(ePresObjKind))
+                    pTextObj->NbcSetStyleSheet( pStyleSheet, true );
+
                 pTextObj->SetEmptyPresObj(true);
                 bRet = true;
             }

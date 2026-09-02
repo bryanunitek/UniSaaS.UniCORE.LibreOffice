@@ -790,7 +790,7 @@ void ScHTMLExport::WriteTables()
                     "=\""
                     OOO_STRING_SVTOOLS_HTML_AL_left "\"");
         }
-            // ALIGN=LEFT allow text and graphics to flow around
+            // ALIGN=LEFT allows text and graphics to flow around
         // CELLSPACING
         aByteStrOut.append(" " OOO_STRING_SVTOOLS_HTML_O_cellspacing
                 "=\"" +
@@ -1223,7 +1223,7 @@ void ScHTMLExport::WriteCell( sc::ColumnBlockPosition& rBlockPos, SCCOL nCol, SC
 
         //create the element holding the contents
         //this is a bit naive, since it doesn't separate
-        //lines into html breaklines yet
+        //lines into html line breaks yet
         TAG_ON(OOO_STRING_SVTOOLS_HTML_comment2);
         OUT_STR( pNote->GetText() );
         TAG_OFF(OOO_STRING_SVTOOLS_HTML_comment2);
@@ -1396,7 +1396,9 @@ bool ScHTMLExport::WriteFieldText( const EditTextObject* pData )
                         {
                             bUrl = true;
                             rStrm.WriteChar( '<' ).WriteOString( OOO_STRING_SVTOOLS_HTML_anchor ).WriteChar( ' ' ).WriteOString( OOO_STRING_SVTOOLS_HTML_O_href ).WriteOString( "=\"" );
-                            OUT_STR( pURLField->GetURL() );
+                            // tdf#44196 - keep relative paths on URL export
+                            OUT_STR(URIHelper::simpleNormalizedMakeRelative(aBaseURL,
+                                                                            pURLField->GetURL()));
                             rStrm.WriteOString( "\">" );
                             OUT_STR( pURLField->GetRepresentation() );
                             rStrm.WriteOString( "</" ).WriteOString( OOO_STRING_SVTOOLS_HTML_anchor ).WriteChar( '>' );

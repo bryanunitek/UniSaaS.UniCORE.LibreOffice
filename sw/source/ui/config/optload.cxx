@@ -700,7 +700,13 @@ bool SwLoadOptPage::FillItemSet( SfxItemSet* rSet )
         if ( m_pWrtShell )
         {
             SwDoc* pDoc = m_pWrtShell->GetDoc();
+            // tdf#172325: this part broadcast changes and if there's the WriterInspector enabled
+            // it goes mayhem in SfxItemSet management
+            // so perhaps it's just a workaround but feel free to revert the lock/unlock call
+            // if you find a better way
+            m_pWrtShell->LockView(true);
             pDoc->SetDefaultPageMode( bIsSquaredPageModeFlag );
+            m_pWrtShell->LockView(false);
             m_pWrtShell->SetModified();
         }
         bRet = true;
@@ -956,7 +962,7 @@ SwCaptionOptPage::SwCaptionOptPage(weld::Container* pPage, weld::DialogControlle
 {
     m_xCategoryBox->connect_entry_insert_text(LINK(this, SwCaptionOptPage, TextFilterHdl));
 
-    m_xCheckLB->enable_toggle_buttons(weld::ColumnToggleType::Check);
+    m_xCheckLB->enable_toggle_buttons();
 
     SwStyleNameMapper::FillUIName(SwPoolFormatId::COLL_LABEL_ABB, m_sIllustration);
     SwStyleNameMapper::FillUIName(SwPoolFormatId::COLL_LABEL_TABLE, m_sTable);
@@ -1014,7 +1020,7 @@ SwCaptionOptPage::SwCaptionOptPage(weld::Container* pPage, weld::DialogControlle
     m_xEdDelim->set_text(sDelim);
 
     m_xCategoryBox->connect_changed(LINK(this, SwCaptionOptPage, ModifyComboHdl));
-    Link<weld::Entry&,void> aLk = LINK(this, SwCaptionOptPage, ModifyEntryHdl);
+    Link<weld::TextWidget&, void> aLk = LINK(this, SwCaptionOptPage, ModifyEntryHdl);
     m_xNumberingSeparatorED->connect_changed(aLk);
     m_xTextEdit->connect_changed(aLk);
 
@@ -1391,10 +1397,7 @@ void SwCaptionOptPage::ModifyHdl()
     InvalidatePreview();
 }
 
-IMPL_LINK_NOARG(SwCaptionOptPage, ModifyEntryHdl, weld::Entry&, void)
-{
-    ModifyHdl();
-}
+IMPL_LINK_NOARG(SwCaptionOptPage, ModifyEntryHdl, weld::TextWidget&, void) { ModifyHdl(); }
 
 IMPL_LINK_NOARG(SwCaptionOptPage, ModifyComboHdl, weld::ComboBox&, void)
 {

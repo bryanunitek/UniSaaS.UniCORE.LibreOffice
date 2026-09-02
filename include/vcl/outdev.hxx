@@ -39,6 +39,7 @@
 #include <vcl/rendercontext/SalLayoutFlags.hxx>
 #include <vcl/rendercontext/State.hxx>
 #include <vcl/mapmod.hxx>
+#include <vcl/outdev/OpenTypeMathConstant.hxx>
 #include <vcl/wall.hxx>
 #include <vcl/settings.hxx>
 #include <vcl/vclptr.hxx>
@@ -153,7 +154,8 @@ void AdjustTwoRect( SalTwoRect& rTwoRect, const tools::Rectangle& rValidSrcRect 
 
 class OutputDevice;
 
-namespace vcl {
+namespace vcl
+{
     typedef OutputDevice RenderContext;
 }
 
@@ -193,14 +195,6 @@ private:
     // The canvas interface for this output device. Is persistent after the first GetCanvas() call
     mutable css::uno::WeakReference< css::rendering::XCanvas >    mxCanvas;
 
-    /// Additional output pixel offset, applied in LogicToPixel (used by SetPixelOffset/GetPixelOffset)
-    tools::Long                            mnOutOffOrigX;
-    /// Additional output offset in _logical_ coordinates, applied in PixelToLogic (used by SetPixelOffset/GetPixelOffset)
-    tools::Long                            mnOutOffLogicX;
-    /// Additional output pixel offset, applied in LogicToPixel (used by SetPixelOffset/GetPixelOffset)
-    tools::Long                            mnOutOffOrigY;
-    /// Additional output offset in _logical_ coordinates, applied in PixelToLogic (used by SetPixelOffset/GetPixelOffset)
-    tools::Long                            mnOutOffLogicY;
     /// Output offset for device output in pixel (pseudo window offset within window system's frames)
     tools::Long                            mnOutOffX;
     /// Output offset for device output in pixel (pseudo window offset within window system's frames)
@@ -212,7 +206,6 @@ private:
     mutable tools::Long                    mnEmphasisDescent;
     DrawModeFlags                   mnDrawMode;
     vcl::text::ComplexTextLayoutFlags mnTextLayoutMode;
-    ImplMapRes                      maMapRes;
     const OutDevType                meOutDevType;
     OutDevViewType                  meOutDevViewType;
     vcl::Region                     maRegion;           // contains the clip region, see SetClipRegion(...)
@@ -308,10 +301,10 @@ public:
     tools::Long                 GetOutputHeightPixel() const;
     void                        SetOutputWidthPixel(tools::Long nWidth);
     void                        SetOutputHeightPixel(tools::Long nHeight);
-    tools::Long                 GetOutOffXPixel() const;
-    tools::Long                 GetOutOffYPixel() const;
-    void                        SetOutOffXPixel(tools::Long nOutOffX);
-    void                        SetOutOffYPixel(tools::Long nOutOffY);
+    tools::Long                 GetDeviceOriginX() const;
+    tools::Long                 GetDeviceOriginY() const;
+    void                        SetDeviceOriginX(tools::Long nOutOffX);
+    void                        SetDeviceOriginY(tools::Long nOutOffY);
     Point                       GetOutputOffPixel() const;
     tools::Rectangle            GetOutputRectPixel() const
                                     { return tools::Rectangle(GetOutputOffPixel(), GetOutputSizePixel() ); }
@@ -1185,6 +1178,14 @@ public:
 
     bool                        IsFontAvailable( std::u16string_view rFontName ) const;
 
+    bool                        GetTypographicFontName( std::u16string_view rRequestedFamily,
+                                                        FontWeight eWeight, FontWidth eWidth, FontItalic eItalic,
+                                                        OUString& rOutFamily, OUString& rOutSubfamily ) const;
+    bool                        GetLegacyFontName( std::u16string_view rTypoFamily,
+                                                   std::u16string_view rSubfamily,
+                                                   FontWeight eWeight, FontItalic eItalic,
+                                                   OUString& rOutLegacyName ) const;
+
     bool                        AddTempDevFont(const OUString& rFileURL, const OUString& rFontName) const;
     bool                        RemoveTempDevFont( const OUString& rFileURL, const OUString& rFontName );
     void                        RefreshFontData( const bool bNewFontLists );
@@ -1200,6 +1201,8 @@ public:
 
     bool                        GetGlyphBoundRects( const Point& rOrigin, const OUString& rStr, int nIndex,
                                                     int nLen, std::vector< tools::Rectangle >& rVector ) const;
+    bool                        SupportsOpenTypeMath() const;
+    double                      GetOpenTypeMathConstant(vcl::OpenTypeMathConstant aConstant) const;
 
     sal_Int32                   HasGlyphs( const vcl::Font& rFont, std::u16string_view rStr,
                                            sal_Int32 nIndex = 0, sal_Int32 nLen = -1 ) const;
@@ -1585,18 +1588,15 @@ public:
     virtual void                SetMetafileMapMode(const MapMode& rNewMapMode, bool bIsRecord);
     const MapMode&              GetMapMode() const;
 
+    basegfx::B2DHomMatrix GetViewTransformation() const;
+    basegfx::B2DHomMatrix GetViewTransformation(const MapMode& rMapMode) const;
+    basegfx::B2DHomMatrix GetInverseViewTransformation() const;
+    basegfx::B2DHomMatrix GetInverseViewTransformation(const MapMode& rMapMode) const;
+
 protected:
     virtual void ImplInitMapModeObjects();
 
 public:
-     // #i75163#
-    basegfx::B2DHomMatrix       GetViewTransformation() const;
-    basegfx::B2DHomMatrix       GetInverseViewTransformation() const;
-
-    SAL_DLLPRIVATE basegfx::B2DHomMatrix GetViewTransformation( const MapMode& rMapMode ) const;
-    basegfx::B2DHomMatrix       GetInverseViewTransformation( const MapMode& rMapMode ) const;
-
-
     /** Set an offset in pixel
 
         This method offsets every drawing operation that converts its
@@ -1627,14 +1627,14 @@ public:
 
         @return the current offset in pixel
      */
-    SAL_WARN_UNUSED_RESULT Size GetPixelOffset() const { return Size(mnOutOffOrigX, mnOutOffOrigY);}
+    SAL_WARN_UNUSED_RESULT Size GetPixelOffset() const;
 
     SAL_WARN_UNUSED_RESULT Point LogicToPixel(const Point& rLogicPt) const;
     SAL_WARN_UNUSED_RESULT Size  LogicToPixel(const Size& rLogicSize) const;
     SAL_WARN_UNUSED_RESULT tools::Rectangle LogicToPixel(const tools::Rectangle& rLogicRect) const;
     SAL_WARN_UNUSED_RESULT SAL_DLLPRIVATE tools::Polygon LogicToPixel(const tools::Polygon& rLogicPoly) const;
     SAL_WARN_UNUSED_RESULT SAL_DLLPRIVATE tools::PolyPolygon LogicToPixel(const tools::PolyPolygon& rLogicPolyPoly) const;
-    SAL_WARN_UNUSED_RESULT SAL_DLLPRIVATE basegfx::B2DPolyPolygon LogicToPixel(const basegfx::B2DPolyPolygon& rLogicPolyPoly) const;
+    SAL_WARN_UNUSED_RESULT basegfx::B2DPolyPolygon LogicToPixel(const basegfx::B2DPolyPolygon& rLogicPolyPoly) const;
     SAL_WARN_UNUSED_RESULT vcl::Region LogicToPixel(const vcl::Region& rLogicRegion)const;
     SAL_WARN_UNUSED_RESULT Point LogicToPixel(const Point& rLogicPt, const MapMode& rMapMode) const;
     SAL_WARN_UNUSED_RESULT Size LogicToPixel(const Size& rLogicSize, const MapMode& rMapMode) const;
@@ -1819,44 +1819,6 @@ private:
      @returns vcl::Region based on device pixel coordinates and units.
      */
     SAL_DLLPRIVATE vcl::Region       ImplPixelToDevicePixel( const vcl::Region& rRegion ) const;
-
-    /** Invalidate the view transformation.
-
-     @since AOO bug 75163 (OpenOffice.org 2.4.3 - OOH 680 milestone 212)
-     */
-    SAL_DLLPRIVATE void         ImplInvalidateViewTransform();
-
-    /** Get device transformation.
-
-     @since AOO bug 75163 (OpenOffice.org 2.4.3 - OOH 680 milestone 212)
-     */
-    SAL_DLLPRIVATE basegfx::B2DHomMatrix ImplGetDeviceTransformation() const;
-
-    /** Convert a logical X coordinate to a device pixel's X coordinate.
-
-     To get the device's X coordinate, it must calculate the mapping offset
-     coordinate X position (if there is one - if not then it just adds
-     the pseudo-window offset to the logical X coordinate), the X-DPI of
-     the device and the mapping's X scaling factor.
-
-     @param         nX          Logical X coordinate
-
-     @returns Device's X pixel coordinate
-     */
-    SAL_DLLPRIVATE tools::Long         ImplLogicXToDevicePixel( tools::Long nX ) const;
-
-    /** Convert a logical Y coordinate to a device pixel's Y coordinate.
-
-     To get the device's Y coordinate, it must calculate the mapping offset
-     coordinate Y position (if there is one - if not then it just adds
-     the pseudo-window offset to the logical Y coordinate), the Y-DPI of
-     the device and the mapping's Y scaling factor.
-
-     @param         nY          Logical Y coordinate
-
-     @returns Device's Y pixel coordinate
-     */
-    SAL_DLLPRIVATE tools::Long         ImplLogicYToDevicePixel( tools::Long nY ) const;
 
     SAL_DLLPRIVATE double ImplDevicePixelToLogicWidthDouble(double nWidth) const;
     SAL_DLLPRIVATE double ImplDevicePixelToLogicHeightDouble(double nHeight) const;

@@ -348,6 +348,7 @@ public:
 
     PDFAnnotationSubType getSubType() override;
     basegfx::B2DRectangle getRectangle() override;
+    int getFlags() override;
     bool hasKey(OString const& rKey) override;
     PDFObjectType getValueType(OString const& rKey) override;
     OUString getString(OString const& rKey) override;
@@ -1694,6 +1695,8 @@ PDFAnnotationSubType PDFiumAnnotationImpl::getSubType()
     return PDFAnnotationSubType(FPDFAnnot_GetSubtype(mpAnnotation));
 }
 
+int PDFiumAnnotationImpl::getFlags() { return FPDFAnnot_GetFlags(mpAnnotation); }
+
 basegfx::B2DRectangle PDFiumAnnotationImpl::getRectangle()
 {
     basegfx::B2DRectangle aB2DRectangle;
@@ -1981,7 +1984,7 @@ PDFiumLinkImpl::PDFiumLinkImpl(FPDF_DOCUMENT pDocument, FPDF_LINK pLink)
 
     char* pBuffer = new char[nLen];
     FPDFAction_GetURIPath(pDocument, pAction, pBuffer, nLen);
-    maURI = OUString::fromUtf8(std::string_view(pBuffer, nLen - 1));
+    maURI = OUString(pBuffer, nLen - 1, RTL_TEXTENCODING_UTF8);
     delete[] pBuffer;
 }
 

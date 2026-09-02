@@ -189,6 +189,9 @@ namespace xmloff::token {
         TOKEN( "urn:openoffice:names:experimental:ooo-ms-interop:xmlns:field:1.0",   XML_N_FIELD ),
         TOKEN( "field",         XML_NP_FIELD ),
 
+        TOKEN( "coext",                           XML_NP_COL_EXT ),
+        TOKEN( "urn:com:collaboraoffice:names:experimental:office:xmlns:coext:1.0", XML_N_COL_EXT ),
+
         // units
         TOKEN( "m",                               XML_UNIT_M ),
         TOKEN( "cm",                              XML_UNIT_CM ),
@@ -909,6 +912,8 @@ namespace xmloff::token {
         TOKEN( "font-style-name-asian",           XML_FONT_STYLE_NAME_ASIAN ),
         TOKEN( "font-style-name-complex",         XML_FONT_STYLE_NAME_COMPLEX ),
         TOKEN( "font-variation-settings",         XML_FONT_VARIATION_SETTINGS ),
+        TOKEN( "font-variation-settings-asian",   XML_FONT_VARIATION_SETTINGS_ASIAN ),
+        TOKEN( "font-variation-settings-complex", XML_FONT_VARIATION_SETTINGS_COMPLEX ),
         TOKEN( "font-variant",                    XML_FONT_VARIANT ),
         TOKEN( "font-weight",                     XML_FONT_WEIGHT ),
         TOKEN( "font-weight-asian",               XML_FONT_WEIGHT_ASIAN ),
@@ -934,6 +939,7 @@ namespace xmloff::token {
         TOKEN( "fontwork-style",                  XML_FONTWORK_STYLE ),
         TOKEN( "footer",                          XML_FOOTER ),
         TOKEN( "footer-first",                    XML_FOOTER_FIRST ),
+        TOKEN( "is-first-page-footer-enabled",    XML_IS_FIRST_PAGE_FOOTER_ENABLED),
         TOKEN( "footer-left",                     XML_FOOTER_LEFT ),
         TOKEN( "footer-style",                    XML_FOOTER_STYLE ),
         TOKEN( "footer-visible",                  XML_FOOTER_VISIBLE ),
@@ -1017,6 +1023,7 @@ namespace xmloff::token {
         TOKEN( "gradientTransform",               XML_GRADIENTTRANSFORM ),
         TOKEN( "grand-total",                     XML_GRAND_TOTAL ),
         TOKEN( "graphic",                         XML_GRAPHIC ),
+        TOKEN( "graphic-clip-poly",               XML_GRAPHIC_CLIP_POLY ),
         TOKEN( "gray",                            XML_GRAY ),
         TOKEN( "green",                           XML_GREEN ),
         TOKEN( "greyscale",                       XML_GREYSCALE ),
@@ -1036,6 +1043,7 @@ namespace xmloff::token {
         TOKEN( "triple",                          XML_HATCHSTYLE_TRIPLE ),
         TOKEN( "header",                          XML_HEADER ),
         TOKEN( "header-first",                    XML_HEADER_FIRST ),
+        TOKEN( "is-first-page-header-enabled",    XML_IS_FIRST_PAGE_HEADER_ENABLED ),
         TOKEN( "header-left",                     XML_HEADER_LEFT ),
         TOKEN( "header-style",                    XML_HEADER_STYLE ),
         TOKEN( "headers",                         XML_HEADERS ),
@@ -1095,6 +1103,7 @@ namespace xmloff::token {
         TOKEN( "hyphenation-zone-spread",         XML_HYPHENATION_ZONE_SPREAD ),
         TOKEN( "hyphenation-compound-remain-char-count", XML_HYPHENATION_COMPOUND_REMAIN_CHAR_COUNT ),
         TOKEN( "hyphenation-compound-push-char-count", XML_HYPHENATION_COMPOUND_PUSH_CHAR_COUNT ),
+        TOKEN( "hyphenation-level",               XML_HYPHENATION_LEVEL ),
         TOKEN( "i",                               XML_I ),
         TOKEN( "icon",                            XML_ICON ),
         TOKEN( "icon-set",                        XML_ICON_SET ),
@@ -1501,6 +1510,7 @@ namespace xmloff::token {
         TOKEN( "outset",                          XML_OUTSET ),
         TOKEN( "outside",                         XML_OUTSIDE ),
         TOKEN( "overflow-behavior",               XML_OVERFLOW_BEHAVIOR ),
+        TOKEN( "overflow-bin-value",              XML_OVERFLOW_BIN_VALUE ),
         TOKEN( "overlap",                         XML_OVERLAP ),
         TOKEN( "overlay",                         XML_OVERLAY ),
         TOKEN( "p",                               XML_P ),
@@ -1568,6 +1578,8 @@ namespace xmloff::token {
         TOKEN( "bounciness",                      XML_PHYSICS_ANIMATION_BOUNCINESS ),
         TOKEN( "pie-offset",                      XML_PIE_OFFSET ),
         TOKEN( "placeholder",                     XML_PLACEHOLDER ),
+        TOKEN( "placeholder-class",               XML_PLACEHOLDER_CLASS ),
+        TOKEN( "placeholder-prompt",              XML_PLACEHOLDER_PROMPT ),
         TOKEN( "placeholder-type",                XML_PLACEHOLDER_TYPE ),
         TOKEN( "placing",                         XML_PLACING ),
         TOKEN( "plain-number",                    XML_PLAIN_NUMBER ),
@@ -1868,6 +1880,7 @@ namespace xmloff::token {
         TOKEN( "specular-color",                  XML_SPECULAR_COLOR ),
         TOKEN( "speed",                           XML_SPEED ),
         TOKEN( "sphere",                          XML_SPHERE ),
+        TOKEN( "spill",                           XML_SPILL ),
         TOKEN( "spiral",                          XML_SPIRAL ),
         TOKEN( "spiral-in",                       XML_SPIRAL_IN ),
         TOKEN( "spiral-inward-left",              XML_SPIRAL_INWARD_LEFT ),
@@ -2125,6 +2138,7 @@ namespace xmloff::token {
         TOKEN( "suggested-signer-name",           XML_SUGGESTED_SIGNER_NAME ),
         TOKEN( "suggested-signer-title",          XML_SUGGESTED_SIGNER_TITLE ),
         TOKEN( "wave",                            XML_WAVE ),
+        TOKEN( "underflow-bin-value",             XML_UNDERFLOW_BIN_VALUE ),
         TOKEN( "unformatted-text",                XML_UNFORMATTED_TEXT ),
         TOKEN( "union",                           XML_UNION ),
         TOKEN( "unit",                            XML_UNIT ),
@@ -2173,6 +2187,8 @@ namespace xmloff::token {
         TOKEN( "user-index-source",               XML_USER_INDEX_SOURCE ),
         TOKEN( "user-transformed",                XML_USER_TRANSFORMED ),
         TOKEN( "username",                        XML_USERNAME ),
+        TOKEN( "use-overflow-bin",                XML_USE_OVERFLOW_BIN ),
+        TOKEN( "use-underflow-bin",               XML_USE_UNDERFLOW_BIN ),
         TOKEN( "validation",                      XML_VALIDATION ),
         TOKEN( "value",                           XML_VALUE ),
         TOKEN( "value-type",                      XML_VALUE_TYPE ),
@@ -3552,6 +3568,8 @@ namespace xmloff::token {
 
         TOKEN( "page-content-bottom",             XML_PAGE_CONTENT_BOTTOM ),
         TOKEN("margin-gutter", XML_MARGIN_GUTTER),
+        TOKEN("min-page-margin-top", XML_MIN_PAGE_MARGIN_TOP),
+        TOKEN("min-page-margin-bottom", XML_MIN_PAGE_MARGIN_BOTTOM),
 
         TOKEN("local-url", XML_LOCAL_URL),
         TOKEN("target-type", XML_TARGET_TYPE),
@@ -3612,6 +3630,8 @@ namespace xmloff::token {
         TOKEN("latin", XML_LATIN),
         TOKEN("asian", XML_ASIAN),
         TOKEN("complex", XML_COMPLEX),
+
+        TOKEN( "horizontal-rule",                 XML_HORIZONTAL_RULE ),
 
 #if OSL_DEBUG_LEVEL > 0
         { 0, nullptr, std::nullopt,               XML_TOKEN_END }

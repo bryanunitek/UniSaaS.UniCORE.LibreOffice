@@ -66,6 +66,7 @@
 #include <filter/GifWriter.hxx>
 #include <filter/BmpReader.hxx>
 #include <filter/BmpWriter.hxx>
+#include <filter/JxlReader.hxx>
 #include <filter/WebpReader.hxx>
 #include <filter/WebpWriter.hxx>
 #include <osl/module.hxx>
@@ -87,23 +88,11 @@
 #include <mutex>
 #include <string_view>
 #include <o3tl/string_view.hxx>
-#include <o3tl/test_info.hxx>
 #include <vcl/TypeSerializer.hxx>
 
 #include "FilterConfigCache.hxx"
 
 #include <graphic/GraphicFormatDetector.hxx>
-
-// Support for GfxLinkType::NativeWebp is so far disabled,
-// as enabling it would write .webp images e.g. to .odt documents,
-// making those images unreadable for older readers. So for now
-// disable the support so that .webp images will be written out as .png,
-// and somewhen later enable the support unconditionally.
-static bool supportNativeWebp()
-{
-    // Enable support only for unittests
-    return o3tl::IsRunningUnitTest();
-}
 
 static std::vector< GraphicFilter* > gaFilterHdlList;
 
@@ -736,6 +725,11 @@ ErrCode prepareImageTypeAndData(SvStream& rStream, sal_uInt32 nStreamLength, Bin
         rLinkType = GfxLinkType::NativeJpg;
         nStatus = ERRCODE_NONE;
     }
+    else if (o3tl::equalsIgnoreAsciiCase(rFilterName, IMP_JXL))
+    {
+        rLinkType = GfxLinkType::NativeJxl;
+        nStatus = ERRCODE_NONE;
+    }
     else if (o3tl::equalsIgnoreAsciiCase(rFilterName, IMP_SVG))
     {
         rStream.Seek(nStreamBegin);
@@ -791,11 +785,8 @@ ErrCode prepareImageTypeAndData(SvStream& rStream, sal_uInt32 nStreamLength, Bin
     }
     else if (o3tl::equalsIgnoreAsciiCase(rFilterName, IMP_WEBP))
     {
-        if (supportNativeWebp())
-        {
-            rLinkType = GfxLinkType::NativeWebp;
-            nStatus = ERRCODE_NONE;
-        }
+        rLinkType = GfxLinkType::NativeWebp;
+        nStatus = ERRCODE_NONE;
     }
 
     return nStatus;
@@ -958,6 +949,17 @@ ErrCode GraphicFilter::readJPEG(SvStream & rStream, Graphic & rGraphic, GfxLinkT
     return ERRCODE_NONE;
 }
 
+ErrCode GraphicFilter::readJXL(SvStream & rStream, Graphic & rGraphic, GfxLinkType & rLinkType)
+{
+    if (ImportJxlGraphic(rStream, rGraphic))
+    {
+        rLinkType = GfxLinkType::NativeJxl;
+        return ERRCODE_NONE;
+    }
+    else
+        return ERRCODE_GRFILTER_FILTERERROR;
+}
+
 ErrCode GraphicFilter::readSVG(SvStream & rStream, Graphic & rGraphic, GfxLinkType & rLinkType, BinaryDataContainer& rpGraphicContent)
 {
     ErrCode aReturnCode = ERRCODE_NONE;
@@ -988,7 +990,7 @@ ErrCode GraphicFilter::readSVG(SvStream & rStream, Graphic & rGraphic, GfxLinkTy
                 aMemStream.Seek(STREAM_SEEK_TO_BEGIN);
                 rpGraphicContent = BinaryDataContainer(aMemStream, nMemoryLength);
 
-                // Make a uncompressed copy for GfxLink
+                // Make an uncompressed copy for GfxLink
                 if (!aMemStream.GetError())
                 {
                     auto aVectorGraphicDataPtr = std::make_shared<VectorGraphicData>(rpGraphicContent, VectorGraphicDataType::Svg);
@@ -1281,8 +1283,7 @@ ErrCode GraphicFilter::readWEBP(SvStream & rStream, Graphic & rGraphic, GfxLinkT
 {
     if (ImportWebpGraphic(rStream, rGraphic))
     {
-        if(supportNativeWebp())
-            rLinkType = GfxLinkType::NativeWebp;
+        rLinkType = GfxLinkType::NativeWebp;
         return ERRCODE_NONE;
     }
     else
@@ -1348,6 +1349,10 @@ ErrCode GraphicFilter::ImportGraphic(Graphic& rGraphic, std::u16string_view rPat
     else if (aFilterName.equalsIgnoreAsciiCase(IMP_JPEG))
     {
         nStatus = readJPEG(rIStream, rGraphic, eLinkType, nImportFlags);
+    }
+    else if (aFilterName.equalsIgnoreAsciiCase(IMP_JXL))
+    {
+        nStatus = readJXL(rIStream, rGraphic, eLinkType);
     }
     else if (aFilterName.equalsIgnoreAsciiCase(IMP_SVG) || aFilterName.equalsIgnoreAsciiCase(IMP_SVGZ))
     {
@@ -1855,6 +1860,7 @@ IMPL_LINK( GraphicFilter, FilterCallback, ConvertData&, rData, bool )
         case ConvertDataFormat::BMP: aShortName = BMP_SHORTNAME; break;
         case ConvertDataFormat::GIF: aShortName = GIF_SHORTNAME; break;
         case ConvertDataFormat::JPG: aShortName = JPG_SHORTNAME; break;
+        case ConvertDataFormat::JXL: aShortName = JXL_SHORTNAME; break;
         case ConvertDataFormat::MET: aShortName = MET_SHORTNAME; break;
         case ConvertDataFormat::PCT: aShortName = PCT_SHORTNAME; break;
         case ConvertDataFormat::PNG: aShortName = PNG_SHORTNAME; break;

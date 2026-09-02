@@ -1650,9 +1650,9 @@ SfxVoidItem TransformDocumentStructure FN_TRANSFORM_DOCUMENT_STRUCTURE
     RecordAbsolute = FALSE,
     RecordPerSet;
 
-    AccelConfig = TRUE,
-    MenuConfig = TRUE,
-    ToolBoxConfig = TRUE,
+    AccelConfig = FALSE,
+    MenuConfig = FALSE,
+    ToolBoxConfig = FALSE,
     GroupId = SfxGroupId::Edit;
 ]
 
@@ -4284,6 +4284,23 @@ SfxVoidItem AddSlideSection SID_ADD_SLIDE_SECTION
 ]
 
 SfxVoidItem RemoveSlideSection SID_REMOVE_SLIDE_SECTION
+()
+[
+    AutoUpdate = FALSE,
+    FastCall = FALSE,
+    ReadOnlyDoc = FALSE,
+    Toggle = FALSE,
+    Container = FALSE,
+    RecordAbsolute = FALSE,
+    RecordPerSet;
+
+    AccelConfig = FALSE,
+    MenuConfig = TRUE,
+    ToolBoxConfig = FALSE,
+    GroupId = SfxGroupId::Format;
+]
+
+SfxVoidItem RemoveSlideSectionAndSlides SID_REMOVE_SLIDE_SECTION_AND_SLIDES
 ()
 [
     AutoUpdate = FALSE,

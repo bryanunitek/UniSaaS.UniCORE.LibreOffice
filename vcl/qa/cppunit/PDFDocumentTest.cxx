@@ -164,7 +164,7 @@ CPPUNIT_TEST_FIXTURE(PDFDocumentTest, testParseBasicPDF)
 CPPUNIT_TEST_FIXTURE(PDFDocumentTest, testParseDocumentWithNullAsWhitespace)
 {
     // tdf#140606
-    // Bug document contained a null, which cause the parser to panic,
+    // Bug document contained a null, which caused the parser to panic,
     // but other PDF readers can handle the file well.
 
     OUString aURL = m_directories.getURLFromSrc(DATA_DIRECTORY) + "DocumentWithNull.pdf";
@@ -423,7 +423,7 @@ CPPUNIT_TEST_FIXTURE(PDFDocumentTest, testParseArrayNestedWithNumbers)
         CPPUNIT_ASSERT_EQUAL(size_t(1), pArray3->GetElements().size());
 
         auto pNumber2 = dynamic_cast<vcl::filter::PDFNumberElement*>(pRootArray->GetElement(2));
-        CPPUNIT_ASSERT(pNumber1);
+        CPPUNIT_ASSERT(pNumber2);
         CPPUNIT_ASSERT_DOUBLES_EQUAL(2.0, pNumber2->GetValue(), 1e-4);
     }
 }

@@ -68,6 +68,7 @@
 #include <vcl/weld/MessageDialog.hxx>
 #include <osl/mutex.hxx>
 #include <o3tl/string_view.hxx>
+#include <o3tl/test_info.hxx>
 #include <memory>
 #include <vector>
 
@@ -420,6 +421,90 @@ FeatureState OQueryController::GetState(sal_uInt16 _nId) const
     return aReturn;
 }
 
+namespace {
+struct CommentStrip
+{
+    OUString maComment;
+    bool            mbLastOnLine;
+    CommentStrip( OUString sComment, bool bLastOnLine )
+        : maComment(std::move( sComment)), mbLastOnLine( bLastOnLine) {}
+};
+
+}
+
+/** Obtain all comments in a query.
+
+    See also delComment() implementation for OSQLParser::parseTree().
+ */
+static std::vector< CommentStrip > getComment( const OUString& rQuery )
+{
+    std::vector< CommentStrip > aRet;
+    // First a quick search if there is any "--" or "//" or "/*", if not then
+    // the whole copying loop is pointless.
+    if (rQuery.indexOf( "--" ) < 0 && rQuery.indexOf( "//" ) < 0 &&
+            rQuery.indexOf( "/*" ) < 0)
+        return aRet;
+
+    const sal_Unicode* pCopy = rQuery.getStr();
+    const sal_Int32 nQueryLen = rQuery.getLength();
+    bool bIsText1  = false;     // "text"
+    bool bIsText2  = false;     // 'text'
+    bool bComment2 = false;     // /* comment */
+    bool bComment  = false;     // -- or // comment
+    OUStringBuffer aBuf;
+    for (sal_Int32 i=0; i < nQueryLen; ++i)
+    {
+        if (bComment2)
+        {
+            aBuf.append( &pCopy[i], 1);
+            if ((i+1) < nQueryLen)
+            {
+                if (pCopy[i]=='*' && pCopy[i+1]=='/')
+                {
+                    bComment2 = false;
+                    aBuf.append( &pCopy[++i], 1);
+                    aRet.emplace_back( aBuf.makeStringAndClear(), false);
+                }
+            }
+            else
+            {
+                // comment can't close anymore, actually an error, but...
+                aRet.emplace_back( aBuf.makeStringAndClear(), false);
+            }
+            continue;
+        }
+        if (pCopy[i] == '\n' || i == nQueryLen-1)
+        {
+            if (bComment)
+            {
+                if (i == nQueryLen-1 && pCopy[i] != '\n')
+                    aBuf.append( &pCopy[i], 1);
+                aRet.emplace_back( aBuf.makeStringAndClear(), true);
+                bComment = false;
+            }
+            else if (!aRet.empty())
+                aRet.back().mbLastOnLine = true;
+        }
+        else if (!bComment)
+        {
+            if (pCopy[i] == '\"' && !bIsText2)
+                bIsText1 = !bIsText1;
+            else if (pCopy[i] == '\'' && !bIsText1)
+                bIsText2 = !bIsText2;
+            if (!bIsText1 && !bIsText2 && (i+1) < nQueryLen)
+            {
+                if ((pCopy[i]=='-' && pCopy[i+1]=='-') || (pCopy[i]=='/' && pCopy[i+1]=='/'))
+                    bComment = true;
+                else if (pCopy[i]=='/' && pCopy[i+1]=='*')
+                    bComment2 = true;
+            }
+        }
+        if (bComment || bComment2)
+            aBuf.append( &pCopy[i], 1);
+    }
+    return aRet;
+}
+
 void OQueryController::Execute(sal_uInt16 _nId, const Sequence< PropertyValue >& aArgs)
 {
     switch(_nId)
@@ -461,7 +546,29 @@ void OQueryController::Execute(sal_uInt16 _nId, const Sequence< PropertyValue >&
             SQLExceptionInfo aError;
             try
             {
-                setStatement_fireEvent( getContainer()->getStatement() );
+                OUString sContainerStatement = getContainer()->getStatement();
+
+                // When switching Design->SQL, preserve the original SQL with
+                // comments if the query body was not modified in Design view.
+                OUString sSavedStatementWithComments;
+                if (m_bGraphicalDesign && !m_sStatementWithComments.isEmpty() && m_pSqlIterator
+                    && m_pSqlIterator->getParseTree())
+                {
+                    // Parse the statement and check if it is the same with the
+                    // cached statement m_sStatementCanonical
+                    OUString sContainerCanonical;
+                    {
+                        OUString sErr;
+                        std::unique_ptr<::connectivity::OSQLParseNode> pTmp(
+                            m_aSqlParser.parseTree(sErr, sContainerStatement, m_bGraphicalDesign));
+                        if (pTmp)
+                            pTmp->parseNodeToStr(sContainerCanonical, getConnection());
+                    }
+                    if (sContainerCanonical == m_sStatementCanonical)
+                        sSavedStatementWithComments = m_sStatementWithComments;
+                }
+
+                setStatement_fireEvent(sContainerStatement);
                 if(m_sStatement.isEmpty() && m_pSqlIterator)
                 {
                     // change the view of the data
@@ -500,14 +607,63 @@ void OQueryController::Execute(sal_uInt16 _nId, const Sequence< PropertyValue >&
                             }
                             else
                             {
+                                if (!m_bGraphicalDesign)
+                                {
+                                    OUString sCurrentCanonical;
+                                    if (m_pSqlIterator->getParseTree())
+                                        m_pSqlIterator->getParseTree()->parseNodeToStr(
+                                            sCurrentCanonical, getConnection());
+                                    if (sCurrentCanonical != m_sStatement)
+                                    {
+                                        bool bUserSaysNo = true;
+                                        if (!Application::IsHeadlessModeEnabled() && !o3tl::IsRunningUITest())
+                                        {
+                                            OUString aMessage = lcl_getObjectResourceString(
+                                                STR_QRY_FORMAT_WARNING_2CHOICES,
+                                                m_nCommandType);
+                                            std::unique_ptr<weld::MessageDialog> xDlg(
+                                                Application::CreateMessageDialog(
+                                                    getFrameWeld(), VclMessageType::Warning,
+                                                    VclButtonsType::YesNo, aMessage));
+                                            xDlg->set_default_response(RET_NO);
+                                            bUserSaysNo = (xDlg->run() == RET_NO);
+                                        }
+                                        if (bUserSaysNo)
+                                            break; // stay in SQL view
+                                    }
+                                }
+
                                 // change the view of the data
                                 m_bGraphicalDesign = !m_bGraphicalDesign;
+
+                                if (m_bGraphicalDesign)
+                                {
+                                    // save the original SQL (with comments)
+                                    // so it can be restored when switching back.
+                                    m_sStatementWithComments = m_sStatement;
+                                    m_sStatementCanonical.clear();
+                                    m_pSqlIterator->getParseTree()->parseNodeToStr(
+                                        m_sStatementCanonical, getConnection());
+                                }
+                                else
+                                {
+                                    m_sStatementWithComments.clear();
+                                    m_sStatementCanonical.clear();
+                                }
+
                                 OUString sNewStatement;
-                                m_pSqlIterator->getParseTree()->parseNodeToStr( sNewStatement, getConnection() );
+                                if (!sSavedStatementWithComments.isEmpty())
+                                    sNewStatement = sSavedStatementWithComments;
+                                else if (m_bGraphicalDesign)
+                                    sNewStatement = m_sStatementCanonical;
+                                else
+                                    m_pSqlIterator->getParseTree()->parseNodeToStr(sNewStatement,
+                                                                                   getConnection());
                                 setStatement_fireEvent( sNewStatement );
                                 getContainer()->SaveUIConfig();
                                 m_vTableConnectionData.clear();
                                 impl_setViewMode( &aError );
+                                impl_resyncStatementCanonical();
                             }
                         }
                     }
@@ -616,6 +772,23 @@ void OQueryController::impl_showAutoSQLViewError( const css::uno::Any& _rErrorDe
     showError( aErrorContext );
 }
 
+void OQueryController::impl_resyncStatementCanonical()
+{
+    if (!m_bGraphicalDesign || m_sStatementWithComments.isEmpty())
+        return;
+    OUString sDesignSQL = getContainer()->getStatement();
+    if (sDesignSQL.isEmpty())
+        return;
+    OUString sErr;
+    std::unique_ptr<::connectivity::OSQLParseNode> pTmp(
+        m_aSqlParser.parseTree(sErr, sDesignSQL, m_bGraphicalDesign));
+    if (pTmp)
+    {
+        m_sStatementCanonical.clear();
+        pTmp->parseNodeToStr(m_sStatementCanonical, getConnection());
+    }
+}
+
 void OQueryController::impl_setViewMode( ::dbtools::SQLExceptionInfo* _pErrorInfo )
 {
     OSL_PRECOND( getContainer(), "OQueryController::impl_setViewMode: illegal call!" );
@@ -709,6 +882,7 @@ void OQueryController::impl_initialize(const ::comphelper::NamedValueCollection&
 
     // more non-legacy
     rArguments.get_ensureType( PROPERTY_GRAPHICAL_DESIGN, m_bGraphicalDesign );
+    rArguments.get_ensureType( PROPERTY_FORMAT_WARNING_SHOWN, m_bFormatWarningAlreadyShown );
 
     bool bEscapeProcessing( true );
     if ( rArguments.get_ensureType( PROPERTY_ESCAPE_PROCESSING, bEscapeProcessing ) )
@@ -802,7 +976,7 @@ void OQueryController::impl_initialize(const ::comphelper::NamedValueCollection&
     try
     {
         getContainer()->initialize();
-        impl_reset( bForceInitialDesign );
+        impl_reset( bForceInitialDesign, /*i_bIsInitialLoad*/ true );
 
         SQLExceptionInfo aError;
         const bool bAttemptedGraphicalDesign = m_bGraphicalDesign;
@@ -815,6 +989,8 @@ void OQueryController::impl_initialize(const ::comphelper::NamedValueCollection&
         {
             impl_setViewMode( &aError );
         }
+
+        impl_resyncStatementCanonical();
 
         if ( aError.isValid() && bAttemptedGraphicalDesign && !m_bGraphicalDesign )
         {
@@ -1009,6 +1185,7 @@ void OQueryController::saveViewSettings( ::comphelper::NamedValueCollection& o_r
     o_rViewSettings.put( u"Fields"_ustr, aAllFieldsData.getPropertyValues() );
     o_rViewSettings.put( u"SplitterPosition"_ustr, m_nSplitPos );
     o_rViewSettings.put( u"VisibleRows"_ustr, m_nVisibleRows );
+    o_rViewSettings.put( u"LastEditedInSqlView"_ustr, !m_bGraphicalDesign );
 }
 
 void OQueryController::loadViewSettings( const ::comphelper::NamedValueCollection& o_rViewSettings )
@@ -1018,6 +1195,7 @@ void OQueryController::loadViewSettings( const ::comphelper::NamedValueCollectio
     m_nSplitPos = o_rViewSettings.getOrDefault( u"SplitterPosition"_ustr, m_nSplitPos );
     m_nVisibleRows = o_rViewSettings.getOrDefault( u"VisibleRows"_ustr, m_nVisibleRows );
     m_aFieldInformation = o_rViewSettings.getOrDefault( u"Fields"_ustr, m_aFieldInformation );
+    m_bLastEditedInSqlView = o_rViewSettings.getOrDefault( u"LastEditedInSqlView"_ustr, false );
 }
 
 void OQueryController::execute_QueryPropDlg()
@@ -1368,90 +1546,6 @@ bool OQueryController::doSaveAsDoc(bool _bSaveAs)
     return bSuccess;
 }
 
-namespace {
-struct CommentStrip
-{
-    OUString maComment;
-    bool            mbLastOnLine;
-    CommentStrip( OUString sComment, bool bLastOnLine )
-        : maComment(std::move( sComment)), mbLastOnLine( bLastOnLine) {}
-};
-
-}
-
-/** Obtain all comments in a query.
-
-    See also delComment() implementation for OSQLParser::parseTree().
- */
-static std::vector< CommentStrip > getComment( const OUString& rQuery )
-{
-    std::vector< CommentStrip > aRet;
-    // First a quick search if there is any "--" or "//" or "/*", if not then
-    // the whole copying loop is pointless.
-    if (rQuery.indexOf( "--" ) < 0 && rQuery.indexOf( "//" ) < 0 &&
-            rQuery.indexOf( "/*" ) < 0)
-        return aRet;
-
-    const sal_Unicode* pCopy = rQuery.getStr();
-    const sal_Int32 nQueryLen = rQuery.getLength();
-    bool bIsText1  = false;     // "text"
-    bool bIsText2  = false;     // 'text'
-    bool bComment2 = false;     // /* comment */
-    bool bComment  = false;     // -- or // comment
-    OUStringBuffer aBuf;
-    for (sal_Int32 i=0; i < nQueryLen; ++i)
-    {
-        if (bComment2)
-        {
-            aBuf.append( &pCopy[i], 1);
-            if ((i+1) < nQueryLen)
-            {
-                if (pCopy[i]=='*' && pCopy[i+1]=='/')
-                {
-                    bComment2 = false;
-                    aBuf.append( &pCopy[++i], 1);
-                    aRet.emplace_back( aBuf.makeStringAndClear(), false);
-                }
-            }
-            else
-            {
-                // comment can't close anymore, actually an error, but...
-                aRet.emplace_back( aBuf.makeStringAndClear(), false);
-            }
-            continue;
-        }
-        if (pCopy[i] == '\n' || i == nQueryLen-1)
-        {
-            if (bComment)
-            {
-                if (i == nQueryLen-1 && pCopy[i] != '\n')
-                    aBuf.append( &pCopy[i], 1);
-                aRet.emplace_back( aBuf.makeStringAndClear(), true);
-                bComment = false;
-            }
-            else if (!aRet.empty())
-                aRet.back().mbLastOnLine = true;
-        }
-        else if (!bComment)
-        {
-            if (pCopy[i] == '\"' && !bIsText2)
-                bIsText1 = !bIsText1;
-            else if (pCopy[i] == '\'' && !bIsText1)
-                bIsText2 = !bIsText2;
-            if (!bIsText1 && !bIsText2 && (i+1) < nQueryLen)
-            {
-                if ((pCopy[i]=='-' && pCopy[i+1]=='-') || (pCopy[i]=='/' && pCopy[i+1]=='/'))
-                    bComment = true;
-                else if (pCopy[i]=='/' && pCopy[i+1]=='*')
-                    bComment2 = true;
-            }
-        }
-        if (bComment || bComment2)
-            aBuf.append( &pCopy[i], 1);
-    }
-    return aRet;
-}
-
 /** Concat/insert comments that were previously obtained with getComment().
 
     NOTE: The current parser implementation does not preserve newlines, so all
@@ -1520,18 +1614,30 @@ OUString OQueryController::translateStatement( bool _bFireStatementChange )
         try
         {
             OUString aErrorMsg;
+            std::unique_ptr<::connectivity::OSQLParseNode> pNode
+                = m_aSqlParser.parseTree( aErrorMsg, m_sStatement, m_bGraphicalDesign );
 
-            std::vector< CommentStrip > aComments = getComment( m_sStatement);
-
-            std::unique_ptr<::connectivity::OSQLParseNode> pNode = m_aSqlParser.parseTree( aErrorMsg, m_sStatement, m_bGraphicalDesign );
-            if(pNode)
+            if (pNode)
             {
-                pNode->parseNodeToStr( sTranslatedStmt, getConnection() );
+                if (m_bGraphicalDesign)
+                {
+                    // Design view: need composer to assemble query from parts.
+                    // Extract comments first, then re-attach after composition.
+                    std::vector<CommentStrip> aComments = getComment(m_sStatement);
+                    pNode->parseNodeToStr(sTranslatedStmt, getConnection());
+                    m_xComposer->setQuery(sTranslatedStmt);
+                    sTranslatedStmt = m_xComposer->getComposedQuery();
+                    sTranslatedStmt = concatComment(sTranslatedStmt, aComments);
+                }
+                else
+                {
+                    // SQL view (tdf#42713): preserve the raw SQL text as written
+                    // by the user, including original formatting and comment
+                    // positions. Parse above validated syntax; no need for
+                    // compose/recompose round-trip.
+                    sTranslatedStmt = m_sStatement;
+                }
             }
-
-            m_xComposer->setQuery(sTranslatedStmt);
-            sTranslatedStmt = m_xComposer->getComposedQuery();
-            sTranslatedStmt = concatComment( sTranslatedStmt, aComments);
         }
         catch(const SQLException& e)
         {
@@ -1584,7 +1690,7 @@ short OQueryController::saveModified()
     return nRet;
 }
 
-void OQueryController::impl_reset( const bool i_bForceCurrentControllerSettings )
+void OQueryController::impl_reset( const bool i_bForceCurrentControllerSettings, const bool i_bIsInitialLoad )
 {
     bool bValid = false;
 
@@ -1704,6 +1810,76 @@ void OQueryController::impl_reset( const bool i_bForceCurrentControllerSettings 
         setQueryComposer();
     OSL_ENSURE(m_pSqlIterator,"No SQLIterator set!");
 
+    // When loading (or re-loading) in Design view, check whether entering it would
+    // be destructive: either the SQL has comments (tdf#42713), or (more generally)
+    // it was last saved in SQL View (tdf#46841), meaning it may carry custom
+    // formatting (or comments) that Design View's canonicalization would destroy.
+    // TODO: in the future only check if last saved in SQL View
+    // (keep for now the comments check for backward compatibility).
+    if (m_bGraphicalDesign && !m_sStatement.isEmpty() && m_sStatementWithComments.isEmpty())
+    {
+        auto cacheStatementWithComments = [this]
+        {
+            m_sStatementWithComments = m_sStatement;
+            if (m_pSqlIterator && m_pSqlIterator->getParseTree())
+            {
+                m_sStatementCanonical.clear();
+                m_pSqlIterator->getParseTree()->parseNodeToStr(
+                    m_sStatementCanonical, getConnection());
+            }
+        };
+
+        std::vector<CommentStrip> aComments = getComment(m_sStatement);
+        if ((!aComments.empty() || m_bLastEditedInSqlView) && !m_bFormatWarningAlreadyShown)
+        {
+            if (Application::IsHeadlessModeEnabled() || o3tl::IsRunningUITest())
+            {
+                // No UI available/desired; keep the existing safe default.
+                m_bGraphicalDesign = false;
+            }
+            else if (i_bIsInitialLoad)
+            {
+                OUString aMessage = lcl_getObjectResourceString(
+                    !aComments.empty() ? STR_QRY_COMMENTS_WARNING_3CHOICES
+                                       : STR_QRY_FORMAT_WARNING_3CHOICES,
+                    m_nCommandType);
+                std::unique_ptr<weld::MessageDialog> xDlg(
+                    Application::CreateMessageDialog(
+                        getFrameWeld(), VclMessageType::Warning,
+                        VclButtonsType::NONE, aMessage));
+                xDlg->add_button(u"SQL View"_ustr, RET_NO);
+                xDlg->add_button(u"Continue"_ustr, RET_YES);
+                xDlg->add_button(GetStandardText(StandardButtonType::Cancel), RET_CANCEL);
+                xDlg->set_default_response(RET_NO);
+                sal_uInt16 nResult = xDlg->run();
+
+                if (nResult == RET_CANCEL)
+                {
+                    throw VetoException();
+                }
+                if (nResult == RET_NO)
+                {
+                    m_bGraphicalDesign = false;
+                    m_sStatementWithComments.clear();
+                    m_sStatementCanonical.clear();
+                }
+                else // RET_YES
+                {
+                    cacheStatementWithComments();
+                }
+            }
+            else
+            {
+                cacheStatementWithComments();
+                Application::PostUserEvent(LINK(this, OQueryController, OnDecideCommentsHandling));
+            }
+        }
+        else
+        {
+            cacheStatementWithComments();
+        }
+    }
+
     getContainer()->setNoneVisibleRow(m_nVisibleRows);
 }
 
@@ -1741,6 +1917,38 @@ void OQueryController::setEscapeProcessing_fireEvent( const bool _bEscapeProcess
 IMPL_LINK_NOARG( OQueryController, OnExecuteAddTable, void*, void )
 {
     Execute( ID_BROWSER_ADDTABLE,Sequence<PropertyValue>() );
+}
+
+IMPL_LINK_NOARG( OQueryController, OnDecideCommentsHandling, void*, void )
+{
+    // keep for backward compatibility
+    const bool bHasComments = !getComment(m_sStatementWithComments).empty();
+    OUString aMessage = lcl_getObjectResourceString(
+        bHasComments ? STR_QRY_COMMENTS_WARNING_3CHOICES : STR_QRY_FORMAT_WARNING_3CHOICES,
+        m_nCommandType);
+    std::unique_ptr<weld::MessageDialog> xDlg(
+        Application::CreateMessageDialog(
+            getFrameWeld(), VclMessageType::Warning,
+            VclButtonsType::NONE, aMessage));
+    xDlg->add_button(u"SQL View"_ustr, RET_NO);
+    xDlg->add_button(u"Continue"_ustr, RET_YES);
+    xDlg->add_button(GetStandardText(StandardButtonType::Cancel), RET_CANCEL);
+    xDlg->set_default_response(RET_NO);
+    sal_uInt16 nResult = xDlg->run();
+
+    if (nResult == RET_CANCEL)
+    {
+        closeTask();
+        return;
+    }
+    if (nResult == RET_NO)
+    {
+        m_bGraphicalDesign = false;
+        m_sStatementWithComments.clear();
+        m_sStatementCanonical.clear();
+        impl_setViewMode(nullptr);
+    }
+    // RET_YES: already tentatively in Design View; nothing more to do.
 }
 
 bool OQueryController::allowViews() const

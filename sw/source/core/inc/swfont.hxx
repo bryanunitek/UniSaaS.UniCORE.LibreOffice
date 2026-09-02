@@ -86,6 +86,7 @@ class SwSubFont final : public SvxFont
     void DrawStretchText_( SwDrawTextInfo &rInf );
     TextFrameIndex GetModelPositionForViewPoint_( SwDrawTextInfo& rInf );
     TextFrameIndex GetCapitalCursorOfst( SwDrawTextInfo& rInf );
+    bool HasCJKCodePages(SwViewShell const* pSh, const OutputDevice& rOut);
 
     inline void SetColor( const Color& rColor );
     inline void SetFillColor( const Color& rColor );
@@ -238,7 +239,8 @@ public:
     inline void SetCaseMap( const SvxCaseMap eNew );
     inline void SetEmphasisMark( const FontEmphasisMark eValue );
     inline void SetOpticalSizing( bool bOpticalSizing );
-    inline void SetVariations( const std::vector<vcl::font::Variation>& rVariations );
+    inline void SetVariations( const std::vector<vcl::font::Variation>& rVariations,
+                               const SwFontScript nWhich );
 
     // methods for sub-/superscript
     inline void SetEscapement( const short nNewEsc );
@@ -345,6 +347,9 @@ public:
 
     sal_uInt16 GetHangingBaseline( SwViewShell const *pSh, const OutputDevice& rOut )
         { return m_nActual == SwFontScript::CTL ? m_aSub[m_nActual].GetHangingBaseline( pSh, rOut ) : 0; }
+
+    bool HasCJKCodePages( SwViewShell const *pSh, const OutputDevice &rOut )
+        { return m_aSub[m_nActual].HasCJKCodePages(pSh, rOut); }
 
     void Invalidate()
         { m_bFontChg = m_bOrgChg = true; }
@@ -731,12 +736,11 @@ inline void SwSubFont::SetVariations( const std::vector<vcl::font::Variation>& r
     Font::SetVariations( rVariations );
 }
 
-inline void SwFont::SetVariations( const std::vector<vcl::font::Variation>& rVariations )
+inline void SwFont::SetVariations( const std::vector<vcl::font::Variation>& rVariations,
+                                   const SwFontScript nWhich )
 {
     m_bFontChg = true;
-    m_aSub[SwFontScript::Latin].SetVariations( rVariations );
-    m_aSub[SwFontScript::CJK].SetVariations( rVariations );
-    m_aSub[SwFontScript::CTL].SetVariations( rVariations );
+    m_aSub[nWhich].SetVariations( rVariations );
 }
 
 inline void SwFont::SetPropWidth( const sal_uInt16 nNew )

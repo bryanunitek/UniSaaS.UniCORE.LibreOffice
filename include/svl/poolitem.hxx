@@ -189,6 +189,7 @@ enum class SfxItemType : sal_uInt16
     SdrEdgeNode2VertDistItemType,
     SdrFractionItemType,
     SdrGrafBlueItemType,
+    SdrGrafClipPolyPolygonItemType,
     SdrGrafContrastItemType,
     SdrGrafCropItemType,
     SdrGrafGamma100ItemType,
@@ -788,12 +789,12 @@ private:
     virtual void remove(const SfxPoolItem&) = 0;
 };
 
-// offering a default implementation that can be use for
+// offering a default implementation that can be used for
 // each SfxPoolItem (except when !isShareable()). It just
 // uses an unordered_set holding ptrs to SfxPoolItems added
 // and SfxPoolItem::operator== to linearly search for one.
 // Thus this is not the fastest, but as fast as old 'pooled'
-// stuff - better use an intelligent, pro-Item implementation
+// stuff - better use an intelligent, per-Item implementation
 // that does e.g. hashing or whatever might be feasible for
 // that specific Item (see other derivations)
 class SVL_DLLPUBLIC DefaultItemInstanceManager final : public ItemInstanceManager

@@ -106,8 +106,8 @@ private:
     std::unique_ptr<weld::Widget> m_xUseAntiAliaseImg;
     std::unique_ptr<weld::CheckButton> m_xUseSkia;
     std::unique_ptr<weld::Widget> m_xUseSkiaImg;
-    std::unique_ptr<weld::CheckButton> m_xForceSkiaRaster;
-    std::unique_ptr<weld::Widget> m_xForceSkiaRasterImg;
+    std::unique_ptr<weld::CheckButton> m_xForceSkiaGPU;
+    std::unique_ptr<weld::Widget> m_xForceSkiaGPUImg;
 
     std::unique_ptr<weld::Label> m_xSkiaStatusEnabled;
     std::unique_ptr<weld::Label> m_xSkiaStatusDisabled;
@@ -178,7 +178,7 @@ class OfaLanguagesTabPage : public SfxTabPage
     std::unique_ptr<weld::Widget> m_xUseInputLanguageImg;
 
     DECL_LINK(LocaleSettingHdl, weld::ComboBox&, void);
-    DECL_LINK(DatePatternsHdl, weld::Entry&, void);
+    DECL_LINK(DatePatternsHdl, weld::TextWidget&, void);
 
     bool validateDatePatterns( bool& rbModified, OUString& rPatterns );
 

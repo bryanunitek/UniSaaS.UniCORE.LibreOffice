@@ -19,6 +19,7 @@
 #include <sal/macros.h>
 #include <sal/log.hxx>
 #include <rtl/math.hxx>
+#include <formula/callable.hxx>
 #include <formula/FormulaCompiler.hxx>
 #include <formula/errorcodes.hxx>
 #include <formula/token.hxx>
@@ -26,6 +27,9 @@
 #include <o3tl/string_view.hxx>
 #include <core_resource.hxx>
 #include <core_resource.hrc>
+#include <OOXMLRewriter.hxx>
+
+#include <memory>
 
 #include <svl/zforlist.hxx>
 #include <unotools/charclass.hxx>
@@ -55,6 +59,15 @@ class FormulaCompilerRecursionGuard
             : rRecursion( rRec ) { ++rRecursion; }
         ~FormulaCompilerRecursionGuard() { --rRecursion; }
 };
+
+// True when the opcode needs an operand after it: the prefix unary
+// and binary operators. The postfix # is excluded, as its operand
+// comes before it, so a binary operator may follow it.
+bool isOperatorExpectingOperand(OpCode eOp)
+{
+    return ocStartBinaryOperators <= eOp && eOp < ocStopUnaryOperators
+           && eOp != ocSpill;
+}
 
 SvNumFormatType lcl_GetRetFormat( OpCode eOpCode )
 {
@@ -326,6 +339,9 @@ bool isPotentialRangeLeftOp( OpCode eOp )
     switch (eOp)
     {
         case ocClose:
+        // The # comes after its operand, so it is the last opcode of a sub-expression that
+        // yields a reference.
+        case ocSpill:
             return true;
         default:
             return false;
@@ -338,6 +354,9 @@ bool isRangeResultFunction( OpCode eOp )
     {
         case ocIndirect:
         case ocOffset:
+        // In OOXML the # is written before its operand, so there it is the first opcode of a
+        // sub-expression that yields a reference.
+        case ocSpill:
             return true;
         default:
             return false;
@@ -353,6 +372,10 @@ bool isRangeResultOpCode( OpCode eOp )
         case ocIntersect:
         case ocIndirect:
         case ocOffset:
+        case ocIndex:
+        // The # postfix operator gives the spill range of the master cell before it, which
+        // is a reference just like the operators above.
+        case ocSpill:
             return true;
         default:
             return false;
@@ -389,12 +412,53 @@ bool isPotentialRangeType( FormulaToken const * pToken, bool bRPN, bool bRight )
             return true;
         case svSep:
             // A special case if a previous ocSep was converted to ocUnion it
-            // stays svSep instead of svByte.
-            return bRPN && !bRight && pToken->GetOpCode() == ocUnion;
+            // stays svSep instead of svByte. A union yields a reference, so it
+            // is fine on either side of an operator.
+            return bRPN && pToken->GetOpCode() == ocUnion;
         default:
             // Separators are not part of RPN and right opcodes need to be
             // other StackVar types or functions and thus svByte.
             return !bRPN && !bRight && isPotentialRangeLeftOp( pToken->GetOpCode());
+    }
+}
+
+/** Whether a token can start a part of a parenthesised range list: a reference, or a
+    function that returns one. Only the start matters, what the rest of the part makes of
+    it is the calculation's business. Anything else leaves the separator a separator.
+ */
+bool isRangeListPartStart( const FormulaToken& rToken )
+{
+    switch (rToken.GetType())
+    {
+        case svSingleRef:
+        case svDoubleRef:
+        case svExternalSingleRef:
+        case svExternalDoubleRef:
+        case svExternalName:
+        case svIndex:
+        // An error constant is a part too, and its error becomes the union's result.
+        case svError:
+            return true;
+        default:
+            break;
+    }
+    switch (rToken.GetOpCode())
+    {
+        // A parenthesised part, for example a nested list.
+        case ocOpen:
+        // IF and CHOOSE return the reference of the branch they take, IFS and SWITCH the
+        // reference of the result they pick, and a lookup a piece of the range it searched.
+        case ocIf:
+        case ocChoose:
+        case ocIfs_MS:
+        case ocSwitch_MS:
+        case ocIndex:
+        case ocXLookup:
+        // The @ operator comes before a reference it reads one value from.
+        case ocSingleValue:
+            return true;
+        default:
+            return isRangeResultFunction( rToken.GetOpCode());
     }
 }
 
@@ -622,6 +686,7 @@ uno::Sequence< sheet::FormulaOpCodeMapEntry > FormulaCompiler::OpCodeMap::create
                 ocIfNA,
                 ocChoose,
                 ocLet,
+                ocLambda,
                 ocAnd,
                 ocOr
             };
@@ -675,6 +740,11 @@ void FormulaCompiler::OpCodeMap::putOpCode( const OUString & rStr, const OpCode 
         {
             switch (eOp)
             {
+                // The _xlpm. and _xlop. prefixes both introduce a lambda
+                // parameter name. Keep the first spelling for output and
+                // register the rest as recognized aliases for input.
+                case ocStringName:
+                break;
                 // These OpCodes are meant to overwrite and also remove an
                 // existing mapping.
                 case ocCurrency:
@@ -783,7 +853,8 @@ FormulaCompiler::FormulaCompiler( FormulaTokenArray& rArr, bool bComputeII, bool
         mbJumpCommandReorder(true),
         mbStopOnError(true),
         mbComputeII(bComputeII),
-        mbMatrixFlag(bMatrixFlag)
+        mbMatrixFlag(bMatrixFlag),
+        mbPreferLocalNames(false)
 {
 }
 
@@ -808,7 +879,8 @@ FormulaCompiler::FormulaCompiler(bool bComputeII, bool bMatrixFlag)
         mbJumpCommandReorder(true),
         mbStopOnError(true),
         mbComputeII(bComputeII),
-        mbMatrixFlag(bMatrixFlag)
+        mbMatrixFlag(bMatrixFlag),
+        mbPreferLocalNames(false)
 {
 }
 
@@ -1203,7 +1275,7 @@ bool FormulaCompiler::IsOpCodeVolatile( OpCode eOp )
         // one parameter:
         case ocFormula:
         case ocInfo:
-        // more than one parameters:
+        // more than one parameter:
             // ocIndirect otherwise would have to do
             // StopListening and StartListening on a reference for every
             // interpreted value.
@@ -1214,6 +1286,15 @@ bool FormulaCompiler::IsOpCodeVolatile( OpCode eOp )
         case ocDebugVar:
             // ocRandArray is a volatile function.
         case ocRandArray:
+            // ocCall could wind up calling any of the above
+            // as could any higher-order function that uses callables
+        case ocCall:
+        case ocByCol:
+        case ocByRow:
+        case ocMakeArray:
+        case ocMap:
+        case ocReduce:
+        case ocScan:
             bRet = true;
             break;
         default:
@@ -1232,6 +1313,7 @@ bool FormulaCompiler::IsOpCodeJumpCommand( OpCode eOp )
         case ocIfNA:
         case ocChoose:
         case ocLet:
+        case ocLambda:
             return true;
         default:
             ;
@@ -1293,6 +1375,7 @@ bool FormulaCompiler::IsMatrixFunction( OpCode eOpCode )
         case ocLet :
         case ocWrapCols :
         case ocWrapRows :
+        case ocMakeArray :
             return true;
         default:
         {
@@ -1531,7 +1614,7 @@ bool FormulaCompiler::GetToken()
              nWasColRowName = 0;
         OpCode eTmpOp;
         mpToken = maArrIterator.Next();
-        while (mpToken && ((eTmpOp = mpToken->GetOpCode()) == ocSpaces || eTmpOp == ocWhitespace))
+        while (mpToken && isWhitespaceOpCode(eTmpOp = mpToken->GetOpCode()))
         {
             if (eTmpOp == ocSpaces)
             {
@@ -1569,7 +1652,8 @@ bool FormulaCompiler::GetToken()
             }
             else if (pSpacesToken && FormulaGrammar::isExcelSyntax( meGrammar) &&
                     mpLastToken && mpToken &&
-                    isPotentialRangeType( mpToken.get(), false, true) &&
+                    (mpToken->GetOpCode() == ocOpen
+                     || isPotentialRangeType(mpToken.get(), false, true)) &&
                     (mpLastToken->GetOpCode() == ocClose || isPotentialRangeType( mpLastToken.get(), false, false)))
             {
                 // Let IntersectionLine() <- Factor() decide how to treat this,
@@ -1684,23 +1768,24 @@ void FormulaCompiler::Factor()
             pFacToken = mpToken;
             NextToken();
             CheckSetForceArrayParameter( mpToken, 0);
+            // What the part starts with decides whether it can join the list.
+            const FormulaTokenRef pPartFirst = mpToken;
+            const sal_uInt16 nPartStart = mnPC;
             eOp = Expression();
             // Do not ignore error here, regardless of mbStopOnError, to not
             // change the formula expression in case of an unexpected state.
-            if (mpArr->GetCodeError() == FormulaError::NONE && mnPC >= 2)
+            if (mpArr->GetCodeError() == FormulaError::NONE && nPartStart >= 1 && mnPC > nPartStart)
             {
-                // Left and right operands must be reference or function
-                // returning reference to form a range list.
-                const FormulaToken* p = mpCode[-2];
-                if (p && isPotentialRangeType( p, true, false))
+                // The left operand has to be a reference or a function that returns one.
+                // The right part joins if it starts with one. What the part does with it
+                // from there is up to the calculation.
+                const FormulaToken* pLeft = mpCode[-static_cast<sal_Int32>(mnPC - nPartStart) - 1];
+                if (pLeft && isPotentialRangeType(pLeft, true, false)
+                    && pPartFirst && isRangeListPartStart(*pPartFirst))
                 {
-                    p = mpCode[-1];
-                    if (p && isPotentialRangeType( p, true, true))
-                    {
-                        pFacToken->NewOpCode( ocUnion, FormulaToken::PrivateAccess());
-                        // XXX NOTE: the token's eType is still svSep here!
-                        PutCode( pFacToken);
-                    }
+                    pFacToken->NewOpCode(ocUnion, FormulaToken::PrivateAccess());
+                    // XXX NOTE: the token's eType is still svSep here!
+                    PutCode(pFacToken);
                 }
             }
         }
@@ -1725,77 +1810,88 @@ void FormulaCompiler::Factor()
         if( mnNumFmt == SvNumFormatType::UNDEFINED )
             mnNumFmt = lcl_GetRetFormat( eOp );
 
-        if ( IsOpCodeVolatile( eOp) )
-            mpArr->SetExclusiveRecalcModeAlways();
-        else
+        if ( std::none_of( maBindings.begin(), maBindings.end(), [](BindingsLayer aLayer) {
+            return aLayer.eOpCode == ocLambda;
+        })) // anything inside a LAMBDA is never volatile, until it's called
         {
-            switch( eOp )
+            if ( IsOpCodeVolatile( eOp) )
+                mpArr->SetExclusiveRecalcModeAlways();
+            else
             {
-                    // Functions recalculated on every document load.
-                    // ONLOAD_LENIENT here to be able to distinguish and not
-                    // force a recalc (if not in an ALWAYS or ONLOAD_MUST
-                    // context) but keep an imported result from for example
-                    // OOXML a DDE call. Will be recalculated for ODFF.
-                case ocConvertOOo :
-                case ocDde:
-                case ocMacro:
-                case ocWebservice:
-                    mpArr->AddRecalcMode( ScRecalcMode::ONLOAD_LENIENT );
-                break;
-                    // RANDBETWEEN() is volatile like RAND(). Other Add-In
-                    // functions may have to be recalculated or not, we don't
-                    // know, classify as ONLOAD_LENIENT.
-                case ocExternal:
-                case ocUDExternal:
-                    if (mpToken->GetType() == svExternal
-                        && static_cast<FormulaExternalToken*>(mpToken.get())->GetExternal() == "com.sun.star.sheet.addin.Analysis.getRandbetween")
-                        mpArr->SetExclusiveRecalcModeAlways();
-                    else
+                switch( eOp )
+                {
+                        // Functions recalculated on every document load.
+                        // ONLOAD_LENIENT here to be able to distinguish and not
+                        // force a recalc (if not in an ALWAYS or ONLOAD_MUST
+                        // context) but keep an imported result from for example
+                        // OOXML a DDE call. Will be recalculated for ODFF.
+                    case ocConvertOOo :
+                    case ocDde:
+                    case ocMacro:
+                    case ocWebservice:
                         mpArr->AddRecalcMode( ScRecalcMode::ONLOAD_LENIENT );
-                break;
-                    // If the referred cell is moved the value changes.
-                case ocColumn :
-                case ocRow :
-                    mpArr->SetRecalcModeOnRefMove();
-                break;
-                    // ocCell needs recalc on move for some possible type values.
-                    // And recalc mode on load, tdf#60645
-                case ocCell :
-                    mpArr->SetRecalcModeOnRefMove();
-                    mpArr->AddRecalcMode( ScRecalcMode::ONLOAD_MUST );
-                break;
-                case ocHyperLink :
-                    // Cell with hyperlink needs to be calculated on load to
-                    // get its matrix result generated.
-                    mpArr->AddRecalcMode( ScRecalcMode::ONLOAD_MUST );
-                    mpArr->SetHyperLink( true);
-                break;
-                    // Functions whose natural output is a dynamic array. A
-                    // 1 by 1 declared matrix formula wrapping one of these is
-                    // treated as a dynamic array. Other matrix formulas keep
-                    // their declared dimensions.
-                case ocUnique:
-                case ocFilter:
-                case ocSort:
-                case ocSortBy:
-                case ocMatSequence:
-                case ocRandArray:
-                case ocChooseCols:
-                case ocChooseRows:
-                case ocDrop:
-                case ocExpand:
-                case ocHStack:
-                case ocVStack:
-                case ocTake:
-                case ocTextSplit:
-                case ocToCol:
-                case ocToRow:
-                case ocWrapCols:
-                case ocWrapRows:
-                    mpArr->SetDynamicArrayFunction( true);
-                break;
-                default:
-                    ;   // nothing
+                    break;
+                        // RANDBETWEEN() is volatile like RAND(). Other Add-In
+                        // functions may have to be recalculated or not, we don't
+                        // know, classify as ONLOAD_LENIENT.
+                    case ocExternal:
+                    case ocUDExternal:
+                        if (mpToken->GetType() == svExternal
+                            && static_cast<FormulaExternalToken*>(mpToken.get())->GetExternal()
+                                   == "com.sun.star.sheet.addin.Analysis.getRandbetween")
+                            mpArr->SetExclusiveRecalcModeAlways();
+                        else
+                            mpArr->AddRecalcMode( ScRecalcMode::ONLOAD_LENIENT );
+                    break;
+                        // If the referred cell is moved the value changes.
+                    case ocColumn :
+                    case ocRow :
+                        mpArr->SetRecalcModeOnRefMove();
+                    break;
+                        // ocCell needs recalc on move for some possible type values.
+                        // And recalc mode on load, tdf#60645
+                    case ocCell :
+                        mpArr->SetRecalcModeOnRefMove();
+                        mpArr->AddRecalcMode( ScRecalcMode::ONLOAD_MUST );
+                    break;
+                    case ocHyperLink :
+                        // Cell with hyperlink needs to be calculated on load to
+                        // get its matrix result generated.
+                        mpArr->AddRecalcMode( ScRecalcMode::ONLOAD_MUST );
+                        mpArr->SetHyperLink( true);
+                    break;
+                        // Functions whose natural output is a dynamic array. A
+                        // 1 by 1 declared matrix formula wrapping one of these is
+                        // treated as a dynamic array. Other matrix formulas keep
+                        // their declared dimensions.
+                    case ocUnique:
+                    case ocFilter:
+                    case ocSort:
+                    case ocSortBy:
+                    case ocMatSequence:
+                    case ocRandArray:
+                    case ocChooseCols:
+                    case ocChooseRows:
+                    case ocDrop:
+                    case ocExpand:
+                    case ocHStack:
+                    case ocVStack:
+                    case ocTake:
+                    case ocTextSplit:
+                    case ocToCol:
+                    case ocToRow:
+                    case ocWrapCols:
+                    case ocWrapRows:
+                    case ocByCol:
+                    case ocByRow:
+                    case ocMakeArray:
+                    case ocMap:
+                    case ocScan:
+                        mpArr->SetDynamicArrayFunction( true);
+                    break;
+                    default:
+                        ;   // nothing
+                }
             }
         }
         if (ocStartNoParameters <= eOp && eOp < ocStopNoParameters)
@@ -1804,7 +1900,8 @@ void FormulaCompiler::Factor()
             eOp = NextToken();
             if (eOp != ocOpen)
             {
-                SetError( FormulaError::PairExpected);
+                // if we're not calling the function right now, we need the Callable form
+                pFacToken = new FormulaCallableToken( FormulaBuiltInFunction::Get( pFacToken->GetOpCode() ) );
                 PutCode( pFacToken );
             }
             else
@@ -1897,27 +1994,31 @@ void FormulaCompiler::Factor()
                 eOp = NextToken();
                 if( mnNumFmt == SvNumFormatType::UNDEFINED && eOp == ocNot )
                     mnNumFmt = SvNumFormatType::LOGICAL;
-                if (eOp == ocOpen)
+                if (eOp != ocOpen)
+                {
+                    // if we're not calling the function right now, we need the Callable form
+                    pFacToken = new FormulaCallableToken( FormulaBuiltInFunction::Get( pFacToken->GetOpCode() ) );
+                    PutCode( pFacToken);
+                }
+                else
                 {
                     NextToken();
                     CheckSetForceArrayParameter( mpToken, 0);
                     eOp = Expression();
-                }
-                else
-                    SetError( FormulaError::PairExpected);
-                if (eOp != ocClose)
-                    SetError( FormulaError::PairExpected);
-                else if ( mpArr->GetCodeError() == FormulaError::NONE )
-                {
-                    static_cast<FormulaByteToken*>(&*pFacToken)->SetByte( 1 );
-                    if (mbComputeII)
+                    if (eOp != ocClose)
+                        SetError( FormulaError::PairExpected);
+                    else if ( mpArr->GetCodeError() == FormulaError::NONE )
                     {
-                        FormulaToken** pArg = mpCode - 1;
-                        HandleIIOpCode(pFacToken, &pArg, 1);
+                        static_cast<FormulaByteToken*>(&*pFacToken)->SetByte( 1 );
+                        if (mbComputeII)
+                        {
+                            FormulaToken** pArg = mpCode - 1;
+                            HandleIIOpCode(pFacToken, &pArg, 1);
+                        }
                     }
+                    PutCode( pFacToken );
+                    NextToken();
                 }
-                PutCode( pFacToken );
-                NextToken();
             }
         }
         else if ((ocStartTwoParameters <= eOp && eOp < ocStopTwoParameters)
@@ -1933,84 +2034,92 @@ void FormulaCompiler::Factor()
             pFacToken = mpToken;
             OpCode eMyLastOp = eOp;
             eOp = NextToken();
-            bool bNoParam = false;
-            bool bBadName = false;
-            if (eOp == ocOpen)
+            if (eOp != ocOpen)
             {
-                eOp = NextToken();
-                if (eOp == ocClose)
-                    bNoParam = true;
+                if (eMyLastOp == ocBad)
+                {
+                    // Just a bad name, not an unknown function, no parameters, no
+                    // closing expected. A bad name is held in a string token, so
+                    // set its parameter count to zero through that type. The byte
+                    // then lands in the token's own field next to its string.
+                    if (pFacToken->GetType() == svString)
+                        static_cast<FormulaStringOpToken*>(&*pFacToken)->SetByte(0);
+                    else
+                        static_cast<FormulaByteToken*>(&*pFacToken)->SetByte(0);
+                    PutCode( pFacToken);
+                    // keep current token for return
+                }
                 else
+                {
+                    // if we're not calling the function right now, we need a Callable form
+                    if ((ocStartTwoParameters <= eMyLastOp && eMyLastOp < ocStopTwoParameters)
+                       || eMyLastOp == ocAnd
+                       || eMyLastOp == ocOr)
+                        pFacToken = new FormulaCallableToken( FormulaBuiltInFunction::Get( eMyLastOp ) );
+                    PutCode( pFacToken);
+                }
+            }
+            else
+            {
+                sal_uInt32 nSepCount = 0;
+                eOp = NextToken();
+                if (eOp != ocClose)
                 {
                     CheckSetForceArrayParameter( mpToken, 0);
                     eOp = Expression();
-                }
-            }
-            else if (eMyLastOp == ocBad)
-            {
-                // Just a bad name, not an unknown function, no parameters, no
-                // closing expected.
-                bBadName = true;
-                bNoParam = true;
-            }
-            else
-                SetError( FormulaError::PairExpected);
-            sal_uInt32 nSepCount = 0;
-            if( !bNoParam )
-            {
-                bool bDoIICompute = mbComputeII;
-                // Array of FormulaToken double pointers to collect the parameters of II opcodes.
-                FormulaToken*** pArgArray = nullptr;
-                if (bDoIICompute)
-                {
-                    pArgArray = static_cast<FormulaToken***>(alloca(sizeof(FormulaToken**)*FORMULA_MAXPARAMSII));
-                    if (!pArgArray)
-                        bDoIICompute = false;
-                }
 
-                nSepCount++;
+                    bool bDoIICompute = mbComputeII;
+                    // Array of FormulaToken double pointers to collect the parameters of II opcodes.
+                    FormulaToken*** pArgArray = nullptr;
+                    if (bDoIICompute)
+                    {
+                        pArgArray = static_cast<FormulaToken***>(alloca(sizeof(FormulaToken**)*FORMULA_MAXPARAMSII));
+                        if (!pArgArray)
+                            bDoIICompute = false;
+                    }
 
-                if (bDoIICompute)
-                    pArgArray[nSepCount-1] = mpCode - 1; // Add first argument
+                    nSepCount++;
 
-                while ((eOp == ocSep) && (mpArr->GetCodeError() == FormulaError::NONE || !mbStopOnError))
+                    if (bDoIICompute)
+                        pArgArray[nSepCount-1] = mpCode - 1; // Add first argument
+
+                    while ((eOp == ocSep) && (mpArr->GetCodeError() == FormulaError::NONE || !mbStopOnError))
+                    {
+                        NextToken();
+                        CheckSetForceArrayParameter( mpToken, nSepCount);
+                        nSepCount++;
+                        if (nSepCount > FORMULA_MAXPARAMS)
+                            SetError( FormulaError::CodeOverflow);
+                        eOp = Expression();
+                        if (bDoIICompute && nSepCount <= FORMULA_MAXPARAMSII)
+                            pArgArray[nSepCount - 1] = mpCode - 1; // Add rest of the arguments
+                    }
+                    if (bDoIICompute)
+                        HandleIIOpCode(pFacToken, pArgArray,
+                                    std::min(nSepCount, static_cast<sal_uInt32>(FORMULA_MAXPARAMSII)));
+                } // params were supplied
+                bool bDone = false;
+                if (eOp != ocClose)
+                    SetError( FormulaError::PairExpected);
+                else
                 {
                     NextToken();
-                    CheckSetForceArrayParameter( mpToken, nSepCount);
-                    nSepCount++;
-                    if (nSepCount > FORMULA_MAXPARAMS)
-                        SetError( FormulaError::CodeOverflow);
-                    eOp = Expression();
-                    if (bDoIICompute && nSepCount <= FORMULA_MAXPARAMSII)
-                        pArgArray[nSepCount - 1] = mpCode - 1; // Add rest of the arguments
+                    bDone = true;
                 }
-                if (bDoIICompute)
-                    HandleIIOpCode(pFacToken, pArgArray,
-                                   std::min(nSepCount, static_cast<sal_uInt32>(FORMULA_MAXPARAMSII)));
-            }
-            bool bDone = false;
-            if (bBadName)
-                ;   // nothing, keep current token for return
-            else if (eOp != ocClose)
-                SetError( FormulaError::PairExpected);
-            else
-            {
-                NextToken();
-                bDone = true;
-            }
-            // Jumps are just normal functions for the FunctionAutoPilot tree view
-            if (!mbJumpCommandReorder && pFacToken->GetType() == svJump)
-                pFacToken = new FormulaFAPToken( pFacToken->GetOpCode(), nSepCount, pFacToken );
-            else if (pFacToken->GetType() == svExternal)
-                static_cast<FormulaExternalToken*>(&*pFacToken)->SetByte( nSepCount );
-            else if (pFacToken->GetType() == svString)
-                static_cast<FormulaStringOpToken*>(&*pFacToken)->SetByte( nSepCount );
-            else
-                static_cast<FormulaByteToken*>(&*pFacToken)->SetByte( nSepCount );
-            PutCode( pFacToken );
+                // Jumps are just normal functions for the FunctionAutoPilot tree view
+                if (!mbJumpCommandReorder && pFacToken->GetType() == svJump)
+                    pFacToken = new FormulaFAPToken( pFacToken->GetOpCode(), nSepCount, pFacToken );
+                else if (pFacToken->GetType() == svExternal)
+                    static_cast<FormulaExternalToken*>(&*pFacToken)->SetByte( nSepCount );
+                else if (pFacToken->GetType() == svString)
+                    static_cast<FormulaStringOpToken*>(&*pFacToken)->SetByte( nSepCount );
+                else
+                    static_cast<FormulaByteToken*>(&*pFacToken)->SetByte( nSepCount );
+                PutCode( pFacToken );
 
-            if (bDone)
-                AnnotateOperands();
+                if (bDone)
+                    AnnotateOperands();
+            }
         }
         else if (IsOpCodeJumpCommand(eOp))
         {
@@ -2026,6 +2135,7 @@ void FormulaCompiler::Factor()
                     pJumpToken->GetJump()[ 0 ] = FORMULA_MAXJUMPCOUNT + 1;
                     break;
                 case ocLet:
+                case ocLambda:
                     pJumpToken->GetJump()[ 0 ] = FORMULA_MAXPARAMS + 1;
                     break;
                 case ocIfError:
@@ -2036,22 +2146,13 @@ void FormulaCompiler::Factor()
                     SAL_WARN("formula.core","Jump OpCode: " << +eOp);
                     assert(!"FormulaCompiler::Factor: someone forgot to add a jump count case");
             }
-            eOp = NextToken();
-            if (eOp == ocOpen)
-            {
-                NextToken();
-                CheckSetForceArrayParameter( mpToken, 0);
-                eOp = Expression();
-            }
-            else
-                SetError( FormulaError::PairExpected);
-            PutCode( pFacToken );
+            OpCode eFacOpCode = pFacToken->GetOpCode();
             // During AutoCorrect (since pArr->GetCodeError() is
             // ignored) an unlimited ocIf would crash because
             // ScRawToken::Clone() allocates the JumpBuffer according to
             // nJump[0]*2+2, which is 3*2+2 on ocIf and 2*2+2 ocIfError and ocIfNA.
+            // Also, ocChoose, ocLet, and ocLambda have variable parameter list lengths.
             short nJumpMax;
-            OpCode eFacOpCode = pFacToken->GetOpCode();
             switch (eFacOpCode)
             {
                 case ocIf:
@@ -2061,6 +2162,7 @@ void FormulaCompiler::Factor()
                     nJumpMax = FORMULA_MAXJUMPCOUNT;
                     break;
                 case ocLet:
+                case ocLambda:
                     nJumpMax = FORMULA_MAXPARAMS;
                     break;
                 case ocIfError:
@@ -2078,17 +2180,114 @@ void FormulaCompiler::Factor()
                     assert(!"FormulaCompiler::Factor: someone forgot to add a jump max case");
             }
             short nJumpCount = 0;
-            while ( (nJumpCount < (FORMULA_MAXPARAMS - 1)) && (eOp == ocSep)
-                    && (mpArr->GetCodeError() == FormulaError::NONE || !mbStopOnError))
+            // ocLambda requires the operator to appear before all subexpressions in RPN
+            // ocIf, ocIfError, ocIfNA, and ocChoose require the first subexpression
+            // to appear before the operator. ocLet could be arranged either way, but the
+            // interpreter expects the first subexpression to appear before the operator.
+            if (eFacOpCode == ocLambda)
             {
-                if ( ++nJumpCount <= nJumpMax )
-                    static_cast<FormulaJumpToken*>(&*pFacToken)->GetJump()[nJumpCount] = mnPC-1;
-                NextToken();
-                CheckSetForceArrayParameter( mpToken, nJumpCount - 1);
-                eOp = Expression();
+                PutCode(pFacToken);
+                if (++nJumpCount <= nJumpMax)
+                    static_cast<FormulaJumpToken*>(&*pFacToken)->GetJump()[ nJumpCount ] = mnPC-1;
+
+                eOp = NextToken();
+                if (eOp == ocOpen)
+                {
+                    NextToken();
+                    // Optional LAMBDA parameters are surrounded by []
+                    if (mpToken->GetOpCode() == ocTableRefOpen)
+                    {
+                        meLastOp = ocSep; // So that NextToken() doesn't produce an error
+                        eOp = NextToken();
+                        if (eOp == ocPush && mpToken->GetType() == svStringName)
+                        {
+                            CheckSetForceArrayParameter(mpToken, 0);
+                            static_cast<FormulaStringNameToken*>(mpToken.get())->SetIsOptional(true);
+                            PutCode(mpToken);
+                            eOp = NextToken();
+                            if (eOp == ocTableRefClose)
+                            {
+                                meLastOp = ocPush; // So that NextToken() doesn't produce an error
+                                eOp = NextToken();
+                            }
+                            else
+                                SetError(FormulaError::PairExpected);
+                        }
+                        else
+                            SetError(FormulaError::ParameterExpected);
+                    }
+                    else
+                    {
+                        CheckSetForceArrayParameter(mpToken, 0);
+                        eOp = Expression();
+                    }
+                }
+                else
+                    SetError(FormulaError::PairExpected);
                 // ocSep or ocClose terminate the subexpression
-                PutCode( mpToken );
-            }
+                PutCode(mpToken);
+                while ( (nJumpCount < (FORMULA_MAXPARAMS - 1)) && (eOp == ocSep)
+                    && (mpArr->GetCodeError() == FormulaError::NONE || !mbStopOnError))
+                {
+                    if ( ++nJumpCount <= nJumpMax )
+                        static_cast<FormulaJumpToken*>(&*pFacToken)->GetJump()[nJumpCount] = mnPC-1;
+                    NextToken();
+                    // Optional LAMBDA parameters are surrounded by []
+                    if (mpToken->GetOpCode() == ocTableRefOpen)
+                    {
+                        meLastOp = ocSep; // So that NextToken() doesn't produce an error
+                        eOp = NextToken();
+                        if (eOp == ocPush && mpToken->GetType() == svStringName)
+                        {
+                            CheckSetForceArrayParameter(mpToken, nJumpCount - 1);
+                            static_cast<FormulaStringNameToken*>(mpToken.get())->SetIsOptional(true);
+                            PutCode(mpToken);
+                            eOp = NextToken();
+                            if (eOp == ocTableRefClose)
+                            {
+                                meLastOp = ocPush; // So that NextToken() doesn't produce an error
+                                eOp = NextToken();
+                            }
+                            else
+                                SetError(FormulaError::PairExpected);
+                        }
+                        else
+                            SetError(FormulaError::ParameterExpected);
+                    }
+                    else
+                    {
+                        CheckSetForceArrayParameter(mpToken, nJumpCount - 1);
+                        eOp = Expression();
+                    }
+                    // ocSep or ocClose terminate the subexpression
+                    PutCode(mpToken);
+                }
+            } // eFacOpCode == ocLambda
+            else
+            {
+                eOp = NextToken();
+                if (eOp == ocOpen)
+                {
+                    NextToken();
+                    CheckSetForceArrayParameter(mpToken, 0);
+                    eOp = Expression();
+                }
+                else
+                    SetError(FormulaError::PairExpected);
+                PutCode(pFacToken);
+
+                while ( (nJumpCount < (FORMULA_MAXPARAMS - 1)) && (eOp == ocSep)
+                        && (mpArr->GetCodeError() == FormulaError::NONE || !mbStopOnError))
+                {
+                    if ( ++nJumpCount <= nJumpMax )
+                        static_cast<FormulaJumpToken*>(&*pFacToken)->GetJump()[nJumpCount] = mnPC-1;
+                    NextToken();
+                    CheckSetForceArrayParameter(mpToken, nJumpCount - 1);
+                    eOp = Expression();
+                    // ocSep or ocClose terminate the subexpression
+                    PutCode(mpToken);
+                }
+            } // eFacOpCode != ocLambda
             if (eOp != ocClose)
                 SetError( FormulaError::PairExpected);
             else
@@ -2108,6 +2307,7 @@ void FormulaCompiler::Factor()
                         bLimitOk = (nJumpCount < FORMULA_MAXJUMPCOUNT);
                         break;
                     case ocLet:
+                    case ocLambda:
                         bLimitOk = (nJumpCount < FORMULA_MAXPARAMS);
                         break;
                     case ocIfError:
@@ -2174,15 +2374,32 @@ void FormulaCompiler::Factor()
     }
 }
 
+void FormulaCompiler::SpillOperator()
+{
+    while (mpToken->GetOpCode() == ocSpill)
+    {   // this operator _follows_ the reference it takes the spill range of, and binds
+        // to that reference alone
+        if (mbComputeII)
+        {
+            FormulaToken** pArg = mpCode - 1;
+            HandleIIOpCode(mpToken.get(), &pArg, 1);
+        }
+        PutCode(mpToken);
+        NextToken();
+    }
+}
+
 void FormulaCompiler::RangeLine()
 {
     Factor();
+    SpillOperator();
     while (mpToken->GetOpCode() == ocRange)
     {
         FormulaToken** pCode1 = mpCode - 1;
         FormulaTokenRef p = mpToken;
         NextToken();
         Factor();
+        SpillOperator();
         FormulaToken** pCode2 = mpCode - 1;
         if (!MergeRangeReference( pCode1, pCode2))
             PutCode(p);
@@ -2222,14 +2439,146 @@ void FormulaCompiler::IntersectionLine()
     }
 }
 
-void FormulaCompiler::UnionLine()
+void FormulaCompiler::CallLine()
 {
     IntersectionLine();
+    OpCode eOp = mpToken->GetOpCode();
+    while (mpToken->GetOpCode() == ocCall)
+    {
+        FormulaToken* pPrevToken = mpCode[-1];
+        FormulaTokenRef pOpToken = mpToken;
+        OpCode eCallableOp = ocNone;
+        sal_uInt32 nMaxArgs = FORMULA_MAXPARAMS;
+        bool isBuiltIn = false;
+        if (pPrevToken && pPrevToken->GetType() == svCallable && pPrevToken->GetOpCode() == ocPush)
+        {
+            eCallableOp = static_cast<FormulaCallableToken*>(pPrevToken)->GetCallable()->GetOpCode();
+            if ( ocStartNoParameters <= eCallableOp && eCallableOp < ocStopNoParameters )
+            {
+                nMaxArgs = 0;
+                isBuiltIn = true;
+            }
+            else if ( ocStartOneParameter <= eCallableOp && eCallableOp < ocStopOneParameter )
+            {
+                nMaxArgs = 1;
+                isBuiltIn = true;
+            }
+            else if ( ocStartTwoParameters <= eCallableOp && eCallableOp < ocStopTwoParameters )
+            {
+                nMaxArgs = FORMULA_MAXPARAMS;
+                isBuiltIn = true;
+            }
+            if (isBuiltIn)
+            {
+                // directly calling a builtin takes a shortcut; see below
+                // we're taking ownership of pPrevToken
+                *(--mpCode) = nullptr;
+                mnPC--;
+            }
+        }
+        OpCode eMyLastOp = eOp;
+        eOp = NextToken();
+        if (eOp != ocOpen)
+        {
+            if (eMyLastOp == ocBad)
+            {
+                // Just a bad name, not an unknown function, no parameters, no
+                // closing expected.
+                static_cast<FormulaByteToken*>(pOpToken.get())->SetByte( 0 );
+                PutCode( pOpToken);
+                // keep current token for return
+            }
+            else
+            {
+                SetError( FormulaError::PairExpected);
+                PutCode( pOpToken);
+            }
+        }
+        else
+        {
+            sal_uInt32 nArgCount = 0;
+            eOp = NextToken();
+            if (eOp != ocClose)
+            {
+                if (nMaxArgs < 1)
+                    SetError( FormulaError::PairExpected);
+                CheckSetForceArrayParameter( mpToken, 0);
+                eOp = Expression();
+                bool bDoIICompute = mbComputeII;
+                // Array of FormulaToken double pointers to collect the parameters of II opcodes.
+                FormulaToken*** pArgArray = nullptr;
+                if (bDoIICompute)
+                {
+                    pArgArray = static_cast<FormulaToken***>(alloca(sizeof(FormulaToken**)*FORMULA_MAXPARAMSII));
+                    if (!pArgArray)
+                        bDoIICompute = false;
+                }
+
+                nArgCount++;
+
+                if (bDoIICompute)
+                    pArgArray[nArgCount - 1] = mpCode - 1; // Add first argument
+
+                while ((eOp == ocSep) && (mpArr->GetCodeError() == FormulaError::NONE || !mbStopOnError))
+                {
+                    NextToken();
+                    CheckSetForceArrayParameter( mpToken, nArgCount);
+                    nArgCount++;
+                    if (nArgCount > FORMULA_MAXPARAMS)
+                        SetError( FormulaError::CodeOverflow);
+                    else if (nArgCount > nMaxArgs)
+                        SetError( FormulaError::PairExpected);
+                    eOp = Expression();
+                    if (bDoIICompute && nArgCount <= FORMULA_MAXPARAMSII)
+                        pArgArray[nArgCount - 1] = mpCode - 1; // Add rest of the arguments
+                }
+                if (bDoIICompute)
+                    HandleIIOpCode(&*pOpToken, pArgArray,
+                                    std::min(nArgCount, static_cast<sal_uInt32>(FORMULA_MAXPARAMSII)));
+            }
+            bool bDone = false;
+            if (eOp != ocClose)
+                SetError( FormulaError::PairExpected);
+            else
+            {
+                NextToken();
+                bDone = true;
+            }
+            // The ocCall token's byte counts the arguments plus the callable
+            // operand on the stack. A built-in invoked directly uses its own
+            // opcode and has had its callable operand removed from the code, so
+            // its byte counts only the arguments.
+            if (!isBuiltIn)
+                nArgCount++;
+            // Jumps are just normal functions for the FunctionAutoPilot tree view
+            if (!mbJumpCommandReorder && pOpToken->GetType() == svJump)
+                pOpToken = new FormulaFAPToken( pOpToken->GetOpCode(), nArgCount, &*pOpToken );
+            else
+            {
+                // instead of using ocCall, built-in functions use their own OpCodes, if they are called directly
+                if (isBuiltIn)
+                    pOpToken->NewOpCode( eCallableOp, FormulaToken::PrivateAccess() );
+                static_cast<FormulaByteToken*>(pOpToken.get())->SetByte( nArgCount);
+            }
+            PutCode( pOpToken);
+
+            if (bDone)
+                AnnotateOperands();
+        }
+
+        if (isBuiltIn)
+            pPrevToken->DecRef();
+    }
+}
+
+void FormulaCompiler::UnionLine()
+{
+    CallLine();
     while (mpToken->GetOpCode() == ocUnion)
     {
         FormulaTokenRef p = mpToken;
         NextToken();
-        IntersectionLine();
+        CallLine();
         PutCode(p);
     }
 }
@@ -2243,7 +2592,14 @@ void FormulaCompiler::UnaryLine()
     {
         FormulaTokenRef p = mpToken;
         NextToken();
-        UnaryLine();
+        // Hold the unary operator as the current factor so its
+        // parameter classification reaches the nested operators.
+        {
+            CurrentFactor pInnerFac(this);
+            pInnerFac = p;
+            CheckSetForceArrayParameter(mpToken, 0);
+            UnaryLine();
+        }
         if (mbComputeII)
         {
             FormulaToken** pArg = mpCode - 1;
@@ -2258,7 +2614,7 @@ void FormulaCompiler::UnaryLine()
 void FormulaCompiler::PostOpLine()
 {
     UnaryLine();
-    while ( mpToken->GetOpCode() == ocPercentSign )
+    while (mpToken->GetOpCode() == ocPercentSign)
     {   // this operator _follows_ its operand
         if (mbComputeII)
         {
@@ -2525,6 +2881,46 @@ void FormulaCompiler::CreateStringFromTokenArray( OUString& rFormula )
     rFormula = aBuffer.makeStringAndClear();
 }
 
+bool FormulaCompiler::AppendTokenOrError(OUStringBuffer& rBuffer, const FormulaToken*& rpToken)
+{
+    const OpCode eOp = rpToken->GetOpCode();
+    if (rpToken->GetType() == svByte)
+    {
+        if (eOp == ocNoName && FormulaGrammar::isOOXML(meGrammar))
+        {
+            // A call with no name would come out as "#NAME!()", which no reader
+            // accepts, so the error string replaces the whole formula.
+            rBuffer.setLength(0);
+            rBuffer.append(mxSymbols->getSymbol(ocErrRef));
+            return false;
+        }
+        if (eOp == ocExternal || eOp == ocPush)
+        {
+            // A function token that lost its name. The error string stands in for
+            // this one token only.
+            rBuffer.append(mxSymbols->getSymbol(ocErrRef));
+            rpToken = maArrIterator.Next();
+            return true;
+        }
+    }
+    else if (eOp == ocPush && rpToken->GetType() == svError
+             && static_cast<const FormulaErrorToken*>(rpToken)->GetError() == FormulaError::NoName
+             && FormulaGrammar::isOOXML(meGrammar))
+    {
+        const FormulaToken* pNext = maArrIterator.PeekNext();
+        if (pNext && pNext->IsRef())
+        {
+            // The error would come out as "#NAME?$C7", which no reader accepts,
+            // so the error string replaces the whole formula.
+            rBuffer.setLength(0);
+            rBuffer.append(mxSymbols->getSymbol(ocErrName));
+            return false;
+        }
+    }
+    rpToken = CreateStringFromToken(rBuffer, rpToken, true);
+    return true;
+}
+
 void FormulaCompiler::CreateStringFromTokenArray( OUStringBuffer& rBuffer )
 {
     rBuffer.setLength(0);
@@ -2551,8 +2947,16 @@ void FormulaCompiler::CreateStringFromTokenArray( OUStringBuffer& rBuffer )
         {
             MissingConventionOOXML aConv;
             mpArr = mpArr->RewriteMissing( aConv );
-            maArrIterator = FormulaTokenArrayPlainIterator( *mpArr );
         }
+        // Put in what OOXML spells out, so writing is a plain walk over the tokens.
+        OOXMLRewriter aRewriter(*mpArr);
+        if (std::unique_ptr<FormulaTokenArray> pOoxml = aRewriter.releaseTokens())
+        {
+            if (mpArr != pSaveArr)
+                delete mpArr;
+            mpArr = pOoxml.release();
+        }
+        maArrIterator = FormulaTokenArrayPlainIterator( *mpArr );
     }
 
     // At least one character per token, plus some are references, some are
@@ -2561,63 +2965,12 @@ void FormulaCompiler::CreateStringFromTokenArray( OUStringBuffer& rBuffer )
 
     if ( mpArr->IsRecalcModeForced() )
         rBuffer.append( '=');
+
     const FormulaToken* t = maArrIterator.First();
     while( t )
     {
-        // Discard writing unknown functions without a name in OOXML ex: #NAME!()
-        if (FormulaGrammar::isOOXML(meGrammar) && t->GetOpCode() == ocNoName
-            && t->GetType() == svByte)
-        {
-            rBuffer.setLength(0);
-            rBuffer.append(GetNativeSymbol(ocErrRef));
+        if (!AppendTokenOrError(rBuffer, t))
             break;
-        }
-        // #NAME? followed by a ref produces invalid OOXML like "#NAME?$C7"
-        if (FormulaGrammar::isOOXML(meGrammar) && t->GetOpCode() == ocPush
-            && t->GetType() == svError
-            && static_cast<const FormulaErrorToken*>(t)->GetError() == FormulaError::NoName)
-        {
-            FormulaToken* pNextToken = maArrIterator.PeekNext();
-            if (pNextToken && pNextToken->IsRef())
-            {
-                rBuffer.setLength(0);
-                rBuffer.append(GetNativeSymbol(ocErrName));
-                break;
-            }
-        }
-        if (FormulaGrammar::isOOXML(meGrammar) && t->GetOpCode() == ocOffset
-            && t->GetType() == svByte)
-        {
-            FormulaTokenArrayPlainIterator aTempIter(*mpArr);
-            aTempIter.Jump(maArrIterator.GetIndex());
-            FormulaToken* pNext = aTempIter.Next();
-            if (pNext && pNext->GetOpCode() == ocOpen
-                && pNext->GetType() == svSep)
-            {
-                FormulaToken* pNext2 = aTempIter.Next();
-                if (pNext2 && pNext2->GetOpCode() == ocPush)
-                {
-                    StackVar eType = pNext2->GetType();
-                    if (eType == svString || eType == svDouble)
-                    {
-                        rBuffer.append(GetNativeSymbol(t->GetOpCode()));
-                        rBuffer.append(GetNativeSymbol(pNext->GetOpCode()));
-                        rBuffer.append(GetNativeSymbol(ocErrRef));
-                        maArrIterator.Jump(aTempIter.GetIndex());
-                        t = maArrIterator.Next();
-                        continue;
-                    }
-                }
-            }
-        }
-        if ((t->GetOpCode() == ocExternal || t->GetOpCode() == ocPush) && t->GetType() == svByte)
-        {
-            rBuffer.append(GetNativeSymbol(ocErrRef));
-            t = maArrIterator.Next();
-            continue;
-        }
-
-        t = CreateStringFromToken(rBuffer, t, true);
     }
 
     if (pSaveArr != mpArr)
@@ -2642,6 +2995,7 @@ const FormulaToken* FormulaCompiler::CreateStringFromToken( OUStringBuffer& rBuf
 {
     bool bNext = true;
     bool bSpaces = false;
+    bool bCloseOptionalParam = false;
     const FormulaToken* t = pTokenP;
     OpCode eOp = t->GetOpCode();
     if( eOp >= ocAnd && eOp <= ocOr )
@@ -2657,7 +3011,7 @@ const FormulaToken* FormulaCompiler::CreateStringFromToken( OUStringBuffer& rBuf
     if( bSpaces )
         rBuffer.append( ' ');
 
-    if (eOp == ocSpaces || eOp == ocWhitespace)
+    if (isWhitespaceOpCode(eOp))
     {
         bool bWriteSpaces = true;
         if (eOp == ocSpaces && mxSymbols->isODFF())
@@ -2688,7 +3042,7 @@ const FormulaToken* FormulaCompiler::CreateStringFromToken( OUStringBuffer& rBuf
             // Suppress/remove it in any case also in UI, it will not be
             // preserved.
             const FormulaToken* p = maArrIterator.PeekPrevNoSpaces();
-            if (p && p->IsFunction())
+            if (p && (p->IsFunction() || p->GetOpCode() == ocCall) )
             {
                 p = maArrIterator.PeekNextNoSpaces();
                 if (p && p->GetOpCode() == ocOpen)
@@ -2736,16 +3090,44 @@ const FormulaToken* FormulaCompiler::CreateStringFromToken( OUStringBuffer& rBuf
         else
             rBuffer.append(mxSymbols->getSymbol(eOp));
     }
+    else if (eOp == ocSingleValue)
+    {
+        // The @ implicit-intersection operator is an in-memory marker
+        // for plain non-array formulas. ODF saves drop it. The next
+        // import re-adds it for any plain non-array, non-loext:spill
+        // cell whose RPN intends to produce an array. OOXML keeps the
+        // @ as the format does carry the operator.
+        if (!m_oODFSavingVersion.has_value())
+            rBuffer.append(mxSymbols->getSymbol(eOp));
+    }
     else if (eOp == ocNoName && FormulaGrammar::isOOXML(meGrammar))
     {
         // Don't export "#name!" in OOXML
     }
     else if (eOp == ocUDExternal)
     {
-        if (t->GetType() == svByte)
+        if (t->GetType() == svExternal && static_cast<const FormulaExternalToken*>(t)->GetExternal().isEmpty())
             rBuffer.append(mxSymbols->getSymbol(ocErrRef));
         else if (maArrIterator.PeekNext() && maArrIterator.PeekNext()->GetOpCode() == ocOpen)
             rBuffer.append(mxSymbols->getSymbol(eOp));
+    }
+    else if (eOp == ocStringName)
+    {
+        // A lambda parameter. An optional parameter, whose byte is set, takes
+        // the _xlop. prefix in OOXML and is wrapped in square brackets in the
+        // other grammars. A required parameter or a body reference takes the
+        // grammar's plain prefix, which is _xlpm. for the formats that use one
+        // and empty otherwise.
+        const bool bOptional = static_cast<const FormulaStringOpToken*>(t)->GetByte() != 0;
+        if (bOptional && FormulaGrammar::isOOXML(meGrammar))
+            rBuffer.append(u"_xlop.");
+        else if (bOptional)
+        {
+            rBuffer.append(mxSymbols->getSymbol(ocTableRefOpen));
+            bCloseOptionalParam = true;
+        }
+        else
+            rBuffer.append(mxSymbols->getSymbol(ocStringName));
     }
     else if( static_cast<sal_uInt16>(eOp) < mxSymbols->getSymbolCount())        // Keyword:
         rBuffer.append(mxSymbols->getSymbol(eOp));
@@ -2880,6 +3262,8 @@ const FormulaToken* FormulaCompiler::CreateStringFromToken( OUStringBuffer& rBuf
             } // of switch
         }
     }
+    if (bCloseOptionalParam)
+        rBuffer.append(mxSymbols->getSymbol(ocTableRefClose));
     if( bSpaces )
         rBuffer.append( ' ');
     if ( bAllowArrAdvance )
@@ -2971,11 +3355,11 @@ OpCode FormulaCompiler::NextToken()
     // There must be an operator before a push
     if ( (eOp == ocPush || eOp == ocColRowNameAuto) &&
             !( (meLastOp == ocOpen) || (meLastOp == ocSep) ||
-                (ocStartBinaryOperators <= meLastOp && meLastOp < ocStopUnaryOperators)) )
+                isOperatorExpectingOperand(meLastOp)) )
         SetError( FormulaError::OperatorExpected);
     // Operator and Plus => operator
     if (eOp == ocAdd && (meLastOp == ocOpen || meLastOp == ocSep ||
-                (ocStartBinaryOperators <= meLastOp && meLastOp < ocStopUnaryOperators)))
+                isOperatorExpectingOperand(meLastOp)))
     {
         FormulaCompilerRecursionGuard aRecursionGuard( mnRecursion );
         eOp = NextToken();
@@ -2987,7 +3371,7 @@ OpCode FormulaCompiler::NextToken()
         if ( eOp != ocAnd && eOp != ocOr &&
                 (ocStartBinaryOperators <= eOp && eOp < ocStopBinaryOperators )
                 && (meLastOp == ocOpen || meLastOp == ocSep ||
-                    (ocStartBinaryOperators <= meLastOp && meLastOp < ocStopUnaryOperators)))
+                    isOperatorExpectingOperand(meLastOp)))
         {
             SetError( FormulaError::VariableExpected);
             if ( mbAutoCorrect && !mpStack )
@@ -3060,12 +3444,16 @@ OpCode FormulaCompiler::NextToken()
         if (eOp == ocSpaces && FormulaGrammar::isExcelSyntax( meGrammar))
         {
             // Fake an intersection op as last op for the next round, but at
-            // least roughly check if it could make sense at all.
+            // least roughly check if it could make sense at all. The parenthesis
+            // tokens have the separator type, so accept them by opcode instead -
+            // a parenthesised expression is valid on either side of the space.
             FormulaToken* pPrev = maArrIterator.PeekPrevNoSpaces();
-            if (pPrev && isPotentialRangeType( pPrev, false, false))
+            if (pPrev
+                && (pPrev->GetOpCode() == ocClose || isPotentialRangeType(pPrev, false, false)))
             {
                 FormulaToken* pNext = maArrIterator.PeekNextNoSpaces();
-                if (pNext && isPotentialRangeType( pNext, false, true))
+                if (pNext
+                    && (pNext->GetOpCode() == ocOpen || isPotentialRangeType(pNext, false, true)))
                     meLastOp = ocIntersect;
                 else
                     meLastOp = eOp;
@@ -3205,7 +3593,7 @@ void FormulaCompiler::ForceArrayOperator( FormulaTokenRef const & rCurr )
     // returning array/matrix or inline arrays, though for the latter has one
     // example in 18.17.2 Syntax:
     // "SUM(SQRT({1,2,3,4})) returns 6.14 when entered normally". However,
-    // these need to be treated similar but not as ParamClass::ForceArray
+    // these need to be treated similarly but not as ParamClass::ForceArray
     // (which would contradict the example in
     // https://bugs.documentfoundation.org/show_bug.cgi?id=122301#c19 and A6 of
     // https://bugs.documentfoundation.org/show_bug.cgi?id=133260#c10 ).

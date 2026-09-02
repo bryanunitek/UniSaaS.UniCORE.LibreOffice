@@ -104,8 +104,8 @@ namespace xmloff
         /** constructs an object capable of exporting controls
 
             <p>You need at least two pre-requisites from outside: The control to be exported needs to have a class id
-            assigned, and you need the list control-ids of all the controls referring to this one as LabelControl.<br/>
-            This information can't be collected when known only the control itself and not it's complete context.</p>
+            assigned, and you need the list of control-ids of all the controls referring to this one as LabelControl.<br/>
+            This information can't be collected when knowing only the control itself and not its complete context.</p>
 
             @param _rControlId
                 the control id to use when exporting the control
@@ -204,7 +204,7 @@ namespace xmloff
         */
         void getSequenceInt16PropertyAsSet(const OUString& _rPropertyName, Int16Set& _rOut);
 
-        /** exports the attribute which descrives a cell value binding of a control
+        /** exports the attribute which describes a cell value binding of a control
             in a spreadsheet document
         */
         void exportCellBindingAttributes( bool _bIncludeListLinkageType );
@@ -219,7 +219,7 @@ namespace xmloff
         /** exports the attribute(s) for an XForms submission */
         void exportXFormsSubmissionAttributes();
 
-        /** exports the attribute which descrives a cell range which acts as list source for
+        /** exports the attribute which describes a cell range which acts as list source for
             a list-like control
         */
         void exportCellListSourceRange( );
@@ -283,7 +283,7 @@ namespace xmloff
     //= OFormExport
     /** Helper class for handling xml elements representing a form
 
-        <p>In opposite to the class <type>OControlExport</type>, OFormExport is unable to export a <em>complete</em>
+        <p>In contrast to the class <type>OControlExport</type>, OFormExport is unable to export a <em>complete</em>
         form. Instead the client has to care for sub elements of the form itself.</p>
     */
     class OFormExport

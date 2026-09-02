@@ -112,7 +112,10 @@ void ImplMapRes::CalcMapResolution(const MapMode& rMapMode, tools::Long nDPIX, t
     {
         auto funcCalcOffset = [](double fScale, tools::Long& rnMapOffset, tools::Long nOrigin) {
             assert(fScale != 0);
-            rnMapOffset = std::llround(double(rnMapOffset) / fScale) + nOrigin;
+            // clamp so + nOrigin can't overflow tools::Long
+            constexpr double fLimit = static_cast<double>(std::numeric_limits<sal_Int32>::max());
+            const double fOffset = std::clamp(double(rnMapOffset) / fScale, -fLimit, fLimit);
+            rnMapOffset = std::llround(fOffset) + nOrigin;
         };
 
         funcCalcOffset(fScaleX, mnMapOfsX, aOrigin.X());
@@ -123,6 +126,24 @@ void ImplMapRes::CalcMapResolution(const MapMode& rMapMode, tools::Long nDPIX, t
     // aTemp? = rMapRes.mnMapSc? * aScale?
     mfMapScX = fScaleX * mfMapScX;
     mfMapScY = fScaleY * mfMapScY;
+}
+
+ImplMapRes ImplMapRes::ResolveMapRes(const MapMode* pMode, const MapMode& rDefaultMapMode,
+                                     bool bMap, tools::Long nDPIX, tools::Long nDPIY)
+{
+    const MapMode* pEffectiveMode = pMode ? pMode : &rDefaultMapMode;
+
+    if (bMap && pEffectiveMode == &rDefaultMapMode)
+        return *this;
+
+    ImplMapRes aRes;
+
+    if (pEffectiveMode->GetMapUnit() == MapUnit::MapRelative)
+        aRes = *this;
+
+    aRes.CalcMapResolution(*pEffectiveMode, nDPIX, nDPIY);
+
+    return aRes;
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab cinoptions=b1,g0,N-s cinkeys+=0=break: */

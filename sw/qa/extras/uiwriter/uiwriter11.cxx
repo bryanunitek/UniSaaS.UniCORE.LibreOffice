@@ -9,6 +9,10 @@
 
 #include <swmodeltestbase.hxx>
 
+#include <com/sun/star/awt/FontUnderline.hpp>
+#include <com/sun/star/util/XPropertyReplace.hpp>
+
+#include <i18nutil/searchopt.hxx>
 #include <officecfg/Office/Writer.hxx>
 #include <test/commontesttools.hxx>
 #include <vcl/pdf/PDFPageObjectType.hxx>
@@ -31,6 +35,9 @@
 #include <ndtxt.hxx>
 #include <IDocumentLayoutAccess.hxx>
 #include <IDocumentRedlineAccess.hxx>
+#include <sfx2/bindings.hxx>
+#include <sfx2/request.hxx>
+#include <svl/srchitem.hxx>
 #include <svx/svxids.hrc>
 #include <sortedobjs.hxx>
 #include <rootfrm.hxx>
@@ -96,6 +103,27 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf113213_addToList)
 
     pWrtShell->Undo();
     CPPUNIT_ASSERT_EQUAL(OUString("1."), getProperty<OUString>(getParagraph(6), "ListLabelString"));
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf149061_moveNumParas)
+{
+    // given a document with a list containing some subPoints
+    createSwDoc("tdf149061_moveNumParas.odt");
+
+    // Move 'First Point' below 'Second Point' and its subpoint
+    dispatchCommand(mxComponent, u".uno:MoveDownSubItems"_ustr, {});
+    // Without the fix, this action was prevented by the section.
+    getParagraph(3, "First Point.");
+
+    // Position the cursor on 'A Point'
+    dispatchCommand(mxComponent, u".uno:GoToEndOfDoc"_ustr, {}); // subpoint
+    dispatchCommand(mxComponent, u".uno:GoToPrevPara"_ustr, {}); // B Point
+    dispatchCommand(mxComponent, u".uno:GoToPrevPara"_ustr, {}); // A Point
+
+    // Move 'A Point' below 'B Point' and its subpoint
+    dispatchCommand(mxComponent, u".uno:MoveDownSubItems"_ustr, {});
+    // Without the fix, this separated B from its subpoint - leaving the subpoint under A.
+    getParagraph(8, "A Point");
 }
 
 SwPostItMgr* getPostItMgr(SwDocShell* pDocShell)
@@ -562,16 +590,16 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf163194)
         // of the comments is stable and independent of the DPI.
         const OUString aLines[] = {
             // First annotation
-            u"A comment. One two three four"_ustr,
-            u"five six seven eight nine ten"_ustr,
-            u"eleven twelve thirteen fourteen"_ustr,
-            u"fifteen sixteen seventeen"_ustr,
+            u"A comment. One two three four "_ustr,
+            u"five six seven eight nine ten "_ustr,
+            u"eleven twelve thirteen fourteen "_ustr,
+            u"fifteen sixteen seventeen "_ustr,
             u"eighteen nineteen twenty."_ustr,
             // Second annotation
-            u"Another comment. Twenty-one"_ustr,
-            u"twenty-two twenty-three"_ustr,
+            u"Another comment. Twenty-one "_ustr,
+            u"twenty-two twenty-three "_ustr,
             u"twenty-four twenty-five twenty-"_ustr,
-            u"six twenty-seven twenty-eight"_ustr,
+            u"six twenty-seven twenty-eight "_ustr,
             u"twenty-nine thirty."_ustr,
         };
         std::set<OUString> aFoundLines;
@@ -683,16 +711,16 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf111880RtlPageCommentsOnLeftSide)
         // of the comments is stable and independent of the DPI.
         const OUString aLines[] = {
             // First annotation
-            u"A comment. One two three four"_ustr,
-            u"five six seven eight nine ten"_ustr,
-            u"eleven twelve thirteen fourteen"_ustr,
-            u"fifteen sixteen seventeen"_ustr,
+            u"A comment. One two three four "_ustr,
+            u"five six seven eight nine ten "_ustr,
+            u"eleven twelve thirteen fourteen "_ustr,
+            u"fifteen sixteen seventeen "_ustr,
             u"eighteen nineteen twenty."_ustr,
             // Second annotation
-            u"Another comment. Twenty-one"_ustr,
-            u"twenty-two twenty-three"_ustr,
+            u"Another comment. Twenty-one "_ustr,
+            u"twenty-two twenty-three "_ustr,
             u"twenty-four twenty-five twenty-"_ustr,
-            u"six twenty-seven twenty-eight"_ustr,
+            u"six twenty-seven twenty-eight "_ustr,
             u"twenty-nine thirty."_ustr,
         };
         std::set<OUString> aFoundLines;
@@ -845,6 +873,251 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf172081SplitParaClearsWritingModeAu
     CPPUNIT_ASSERT(getProperty<bool>(getRun(getParagraph(2), 1), u"WritingModeAutomatic"_ustr));
 }
 
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf36181_findReplaceParaStyle)
+{
+    // given a document with various paragraph styles
+
+    createSwDoc("tdf36181_findReplaceParaStyle.odt");
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwView& rView = pWrtShell->GetView();
+
+    // initialize find/replace static environment
+    SfxItemSet aSet(rView.GetPool(), svl::Items<SID_SEARCH_ITEM, SID_SEARCH_ITEM>);
+    rView.StateSearch(aSet); // initializes SwView::GetSearchItem
+    SvxSearchItem& rInit = *SwView::GetSearchItem();
+    rInit.SetSearchString("Body Text");
+    rInit.SetReplaceString("Caption");
+    rInit.SetPattern(true); // paragraph styles replacement
+    rInit.SetSelection(true); // only search inside of the current selection
+    rInit.SetBackward(false); // search forward - important to specify to avoid other tests...
+    rInit.SetCommand(SvxSearchCmd::REPLACE);
+
+    // pre-select something - that is what the bug is about...
+    dispatchCommand(mxComponent, u".uno:SelectAll"_ustr, {});
+
+    // Execute 'Replace' one instance
+    SfxItemSet aFn(rView.GetPool(), svl::Items<FN_REPEAT_SEARCH, FN_REPEAT_SEARCH>);
+    SfxRequest aRequest(FN_REPEAT_SEARCH, SfxCallMode::SYNCHRON, aFn);
+    rView.ExecSearch(aRequest);
+
+    // Without the fix, the Title style was also replaced by the Caption style
+    CPPUNIT_ASSERT_EQUAL(u"Title"_ustr,
+                         getProperty<OUString>(getParagraph(1), u"ParaStyleName"_ustr));
+    CPPUNIT_ASSERT_EQUAL(u"Caption"_ustr,
+                         getProperty<OUString>(getParagraph(2), u"ParaStyleName"_ustr));
+    // Without the fix, all of the selection applied the Caption style
+    CPPUNIT_ASSERT_EQUAL(u"Text body indent"_ustr,
+                         getProperty<OUString>(getParagraph(3), u"ParaStyleName"_ustr));
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf129449_findReplaceParaStyle2)
+{
+    // given a document that starts (and ends) with an empty paragraph with Title style
+
+    createSwDoc("tdf129449_findReplaceParaStyle2.odt");
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwView& rView = pWrtShell->GetView();
+
+    // initialize find/replace static environment
+    SfxItemSet aSet(rView.GetPool(), svl::Items<SID_SEARCH_ITEM, SID_SEARCH_ITEM>);
+    rView.StateSearch(aSet); // initializes SwView::GetSearchItem
+    SvxSearchItem& rInit = *SwView::GetSearchItem();
+    rInit.SetSearchString("Title");
+    rInit.SetReplaceString("Caption");
+    rInit.SetPattern(true); // paragraph styles replacement
+    rInit.SetBackward(true); // find the previous result
+    rInit.SetCommand(SvxSearchCmd::FIND);
+
+    // Go to the end of document, so we can test finding backwards
+    dispatchCommand(mxComponent, u".uno:GoToEndOfDoc"_ustr, {});
+
+    // Execute 'Find' - should find the first paragraph
+    SfxItemSet aFn(rView.GetPool(), svl::Items<FN_REPEAT_SEARCH, FN_REPEAT_SEARCH>);
+    SfxRequest aRequest(FN_REPEAT_SEARCH, SfxCallMode::SYNCHRON, aFn);
+    rView.ExecSearch(aRequest);
+
+    // Sanity check - no change requested yet.
+    CPPUNIT_ASSERT_EQUAL(u"Title"_ustr,
+                         getProperty<OUString>(getParagraph(1), u"ParaStyleName"_ustr));
+
+    // Find doesn't tell us much. Change it to replace (it replaces what was already found)
+    // and moves to the next item
+    rInit.SetCommand(SvxSearchCmd::REPLACE);
+    rInit.SetBackward(false); // after replacing, test using search forward for the last paragraph
+    rView.ExecSearch(aRequest);
+
+    // Test the replacement of the first paragraph. Without the fix, the Title style was not found.
+    CPPUNIT_ASSERT_EQUAL(u"Caption"_ustr,
+                         getProperty<OUString>(getParagraph(1), u"ParaStyleName"_ustr));
+    CPPUNIT_ASSERT_EQUAL(u"Title"_ustr,
+                         getProperty<OUString>(getParagraph(3), u"ParaStyleName"_ustr));
+
+    // Last Paragraph found - now do the actual replace.
+    rView.ExecSearch(aRequest);
+    // Test the replacement of the last paragraph. Without the fix, the Title style was not found.
+    CPPUNIT_ASSERT_EQUAL(u"Caption"_ustr,
+                         getProperty<OUString>(getParagraph(3), u"ParaStyleName"_ustr));
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf129449_findReplaceParaStyle3)
+{
+    // given a document that starts (and ends) with an empty paragraph with Title style
+
+    createSwDoc("tdf129449_findReplaceParaStyle2.odt");
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwView& rView = pWrtShell->GetView();
+
+    // initialize find/replace static environment
+    SfxItemSet aSet(rView.GetPool(), svl::Items<SID_SEARCH_ITEM, SID_SEARCH_ITEM>);
+    rView.StateSearch(aSet); // initializes SwView::GetSearchItem
+    SvxSearchItem& rInit = *SwView::GetSearchItem();
+    rInit.SetSearchString("Title");
+    rInit.SetPattern(true); // paragraph styles replacement
+    rInit.SetBackward(false); // find the next result
+    rInit.SetCommand(SvxSearchCmd::FIND);
+
+    // Go to the end of document (wrap around to find the first paragraph in the document)
+    dispatchCommand(mxComponent, u".uno:GoToEndOfDoc"_ustr, {});
+    CPPUNIT_ASSERT_EQUAL(SwNodeOffset(11), pWrtShell->GetCursor()->GetPointNode().GetIndex());
+
+    // Execute search with 'Find' - should find the first paragraph's style
+    SfxItemSet aFn(rView.GetPool(), svl::Items<FN_REPEAT_SEARCH, FN_REPEAT_SEARCH>);
+    SfxRequest aRequest(FN_REPEAT_SEARCH, SfxCallMode::SYNCHRON, aFn);
+    rView.ExecSearch(aRequest);
+
+    // Without the fix, the Cursor had not moved.
+    CPPUNIT_ASSERT_EQUAL(SwNodeOffset(9), pWrtShell->GetCursor()->GetPointNode().GetIndex());
+
+    // Go to the start of document (wrap around to find the last paragraph in the document)
+    dispatchCommand(mxComponent, u".uno:GoToStartOfDoc"_ustr, {});
+    CPPUNIT_ASSERT_EQUAL(SwNodeOffset(9), pWrtShell->GetCursor()->GetPointNode().GetIndex());
+
+    rInit.SetBackward(true); // find the previous result
+    rView.ExecSearch(aRequest);
+
+    // Without the fix, the Cursor had not moved.
+    CPPUNIT_ASSERT_EQUAL(SwNodeOffset(11), pWrtShell->GetCursor()->GetPointNode().GetIndex());
+
+    // Get the count of a FindAll for the paragraphs with a Title style
+    uno::Reference<util::XSearchable> xSearch(mxComponent, uno::UNO_QUERY);
+    uno::Reference<util::XSearchDescriptor> xSearchDes = xSearch->createSearchDescriptor();
+
+    // specifying the search attributes
+    uno::Reference<beans::XPropertySet> xPropSet(xSearchDes, uno::UNO_QUERY_THROW);
+    xSearchDes->setPropertyValue(u"SearchStyles"_ustr, uno::Any(true));
+    xSearchDes->setSearchString(u"Title"_ustr);
+
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), xSearch->findAll(xSearchDes)->getCount());
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf135857_findWithoutUnderline)
+{
+    // given a document contains a few underlined words and a few explicitly un-underlined words
+
+    createSwDoc("tdf135857_findWithoutUnderline.odt");
+
+    // Get the count of a FindAll of all runs that are not underlined.
+    uno::Reference<util::XSearchable> xSearch(mxComponent, uno::UNO_QUERY);
+    uno::Reference<util::XSearchDescriptor> xSearchDes = xSearch->createSearchDescriptor();
+
+    // specifying the search attributes
+    uno::Reference<util::XPropertyReplace> xProp(xSearchDes, uno::UNO_QUERY);
+    uno::Sequence<beans::PropertyValue> aDescriptor(comphelper::InitPropertySequence(
+        { { "CharUnderline", uno::Any(css::awt::FontUnderline::NONE) } }));
+    xProp->setSearchAttributes(aDescriptor);
+
+    // In the UI, this results in 5 matches. UNO seems to produce different results
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), xSearch->findAll(xSearchDes)->getCount());
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf36582_findReplaceRedline)
+{
+    // given a two-paragraph document, where the first paragraph contains a change tracking deletion
+
+    createSwDoc("tdf36582_findReplaceRedline.odt");
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwView& rView = pWrtShell->GetView();
+    IDocumentRedlineAccess& rIDRA(getSwDoc()->getIDocumentRedlineAccess());
+
+    // Start by seeing the redlines, but NOT tracking changes.
+    CPPUNIT_ASSERT(!rIDRA.IsRedlineOn());
+
+    CPPUNIT_ASSERT_EQUAL(u"Expunged Text"_ustr, getParagraph(1)->getString()); // showing deletion
+    CPPUNIT_ASSERT_EQUAL(u"Expunged Text"_ustr, getParagraph(2)->getString()); // all normal text
+
+    // initialize environment to emulate a Find and Replace situation
+    SfxItemSet aSet(
+        SfxItemSet::makeFixedSfxItemSet<SID_SEARCH_ITEM, SID_SEARCH_ITEM>(rView.GetPool()));
+    rView.StateSearch(aSet); // initializes SwView::GetSearchItem
+    SvxSearchItem& rInit = *SwView::GetSearchItem();
+    rInit.SetReplaceString("Deleted"); // emulated environment needs to match replaceString below
+    rInit.SetCommand(SvxSearchCmd::REPLACE); // needed only to emulate find/replace environment
+
+    i18nutil::SearchOptions2 aSearchOpt;
+    aSearchOpt.searchString = "Expunged Text"; // deletion is 'Expunged ': search for more than that
+    aSearchOpt.replaceString = "Deleted";
+    aSearchOpt.AlgorithmType2 = css::util::SearchAlgorithms2::ABSOLUTE;
+    const FindRanges flagReplaceAll = FindRanges::InBody | FindRanges::InSelAll;
+
+    // Find and replace all
+    pWrtShell->SearchPattern(aSearchOpt, /*SearchInNotes=*/false, SwDocPositions::Start,
+                             SwDocPositions::End, flagReplaceAll, /*Replace=*/true);
+
+    // don't replace when it found a mixture of deleted and non-deleted text
+    CPPUNIT_ASSERT_EQUAL(u"Expunged Text"_ustr, getParagraph(1)->getString()); // found mixture
+    CPPUNIT_ASSERT_EQUAL(u"Deleted"_ustr, getParagraph(2)->getString());
+
+    pWrtShell->Undo();
+    // reset search to just find (part of) the deletion string
+    aSearchOpt.searchString = "Expunged";
+
+    pWrtShell->SearchPattern(aSearchOpt, /*SearchInNotes=*/false, SwDocPositions::Start,
+                             SwDocPositions::End, flagReplaceAll, /*Replace=*/true);
+
+    // Special case: the deletion should remain deleted - just 'fix' the deleted text
+    CPPUNIT_ASSERT_EQUAL(u"Deleted Text"_ustr, getParagraph(1)->getString());
+    CPPUNIT_ASSERT_EQUAL(u"Deleted Text"_ustr, getParagraph(2)->getString()); // sanity check
+
+    pWrtShell->Undo();
+
+    CPPUNIT_ASSERT_EQUAL(u"Expunged Text"_ustr, getParagraph(1)->getString());
+    CPPUNIT_ASSERT_EQUAL(u"Expunged Text"_ustr, getParagraph(2)->getString());
+
+    pWrtShell->Redo();
+
+    CPPUNIT_ASSERT_EQUAL(u"Deleted Text"_ustr, getParagraph(1)->getString());
+    CPPUNIT_ASSERT_EQUAL(u"Deleted Text"_ustr, getParagraph(2)->getString());
+
+    pWrtShell->Undo(); // back to initial state
+
+    CPPUNIT_ASSERT_EQUAL(u"Expunged Text"_ustr, getParagraph(1)->getString());
+    CPPUNIT_ASSERT_EQUAL(u"Expunged Text"_ustr, getParagraph(2)->getString());
+    CPPUNIT_ASSERT_EQUAL(SwRedlineTable::size_type(1), rIDRA.GetRedlineTable().size());
+
+    // now turn change tracking on and do it again
+    RedlineFlags const nMode(pWrtShell->GetRedlineFlags() | RedlineFlags::On);
+    pWrtShell->SetRedlineFlags(nMode);
+    CPPUNIT_ASSERT(getSwDoc()->getIDocumentRedlineAccess().IsRedlineOn());
+
+    pWrtShell->SearchPattern(aSearchOpt, /*SearchInNotes=*/false, SwDocPositions::Start,
+                             SwDocPositions::End, flagReplaceAll, /*Replace=*/true);
+
+    // The deletion should remain deleted - just 'fix' the deleted text
+    CPPUNIT_ASSERT_EQUAL(u"Deleted Text"_ustr, getParagraph(1)->getString());
+    CPPUNIT_ASSERT_EQUAL(u"ExpungedDeleted Text"_ustr, getParagraph(2)->getString());
+
+    pWrtShell->Undo();
+
+    CPPUNIT_ASSERT_EQUAL(u"Expunged Text"_ustr, getParagraph(1)->getString());
+    CPPUNIT_ASSERT_EQUAL(u"Expunged Text"_ustr, getParagraph(2)->getString());
+    CPPUNIT_ASSERT_EQUAL(SwRedlineTable::size_type(1), rIDRA.GetRedlineTable().size());
+
+    pWrtShell->Redo();
+
+    CPPUNIT_ASSERT_EQUAL(u"Deleted Text"_ustr, getParagraph(1)->getString());
+    CPPUNIT_ASSERT_EQUAL(u"ExpungedDeleted Text"_ustr, getParagraph(2)->getString());
+}
+
 CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testRedlineAutoCorrectInsertOverlap)
 {
     createSwDoc();
@@ -864,6 +1137,68 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testRedlineAutoCorrectInsertOverlap)
     // NOTE: whether the autocorrect replacement itself should be recorded
     // as a tracked change is an open question.
     CPPUNIT_ASSERT_EQUAL(u"tsettest "_ustr, getParagraph(1)->getString());
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf124442)
+{
+    // Create a new empty Writer document
+    createSwDoc();
+
+    SwDoc* pDoc = getSwDoc();
+    SwCursorShell* pShell(pDoc->GetEditShell());
+    CPPUNIT_ASSERT(pShell);
+    SwPaM* pCursor = pShell->GetCursor();
+    IDocumentContentOperations& rIDCO(pDoc->getIDocumentContentOperations());
+    rIDCO.InsertString(*pCursor, u"Test search not found bug"_ustr);
+
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwView& rView = pWrtShell->GetView();
+
+    SfxItemSet aSet(rView.GetPool(), svl::Items<SID_SEARCH_ITEM, SID_SEARCH_ITEM>);
+    rView.StateSearch(aSet); // initializes SwView::GetSearchItem
+    SvxSearchItem& rSearchItem = *SwView::GetSearchItem();
+    rSearchItem.SetCommand(SvxSearchCmd::FIND);
+
+    SfxItemSet aFn(rView.GetPool(), svl::Items<FN_REPEAT_SEARCH, FN_REPEAT_SEARCH>);
+    SfxRequest aRequest(FN_REPEAT_SEARCH, SfxCallMode::SYNCHRON, aFn);
+    OUString sText;
+    OUString sSearchString;
+
+    // Test when a forward search finds a unique match at the end of the document followed by a
+    // backward search.
+    sSearchString = "bug";
+    rSearchItem.SetSearchString(sSearchString);
+
+    rSearchItem.SetBackward(false);
+    rView.ExecSearch(aRequest);
+    rSearchItem.SetBackward(true);
+    rView.ExecSearch(aRequest);
+
+    pWrtShell->GetSelectedText(sText);
+
+    // Without the patch in place assert failed with:
+    // equality assertion failed
+    // - Expected: bug
+    // - Actual  :
+    CPPUNIT_ASSERT_EQUAL(sSearchString, sText);
+
+    // Test when a backward search finds a unique match at the start of the document followed by a
+    // forward search.
+    sSearchString = "Test";
+    rSearchItem.SetSearchString(sSearchString);
+
+    rSearchItem.SetBackward(true);
+    rView.ExecSearch(aRequest);
+    rSearchItem.SetBackward(false);
+    rView.ExecSearch(aRequest);
+
+    pWrtShell->GetSelectedText(sText);
+
+    // Without the patch in place assert failed with:
+    // equality assertion failed
+    // - Expected: Test
+    // - Actual  :
+    CPPUNIT_ASSERT_EQUAL(sSearchString, sText);
 }
 
 } // end of anonymous namespace

@@ -12,6 +12,7 @@
 #include <docsh.hxx>
 #include <scitems.hxx>
 #include <attrib.hxx>
+#include <formulacell.hxx>
 #include <stlpool.hxx>
 #include <validat.hxx>
 #include <scresid.hxx>
@@ -19,6 +20,7 @@
 #include <subtotalparam.hxx>
 #include <globstr.hrc>
 #include <dpobject.hxx>
+#include <formula/errorcodes.hxx>
 
 #include <comphelper/processfactory.hxx>
 #include <editeng/wghtitem.hxx>
@@ -31,11 +33,17 @@
 #include <tools/fldunit.hxx>
 #include <svl/numformat.hxx>
 
+#include <com/sun/star/awt/FontSlant.hpp>
+#include <com/sun/star/awt/FontStrikeout.hpp>
+#include <com/sun/star/awt/FontUnderline.hpp>
+#include <com/sun/star/awt/FontWeight.hpp>
+#include <com/sun/star/awt/TextAlign.hpp>
 #include <com/sun/star/drawing/XControlShape.hpp>
 #include <com/sun/star/drawing/XDrawPages.hpp>
 #include <com/sun/star/drawing/XDrawPagesSupplier.hpp>
 #include <com/sun/star/packages/zip/ZipFileAccess.hpp>
 #include <com/sun/star/sheet/GlobalSheetSettings.hpp>
+#include <com/sun/star/style/VerticalAlignment.hpp>
 
 using namespace ::com::sun::star;
 using namespace ::com::sun::star::uno;
@@ -153,6 +161,61 @@ CPPUNIT_TEST_FIXTURE(ScExportTest4, testTdf120177)
                                           "table:table/office:forms/form:form/form:radio[2]",
                                           "group-name");
     CPPUNIT_ASSERT_EQUAL(sGroupName1, sGroupName2);
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testSingleValueDroppedOnXlsExport)
+{
+    // The @ implicit-intersection marker survives an XLS round trip
+    // even though the BIFF stream has no token for it.
+
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+
+    pDoc->SetValue(ScAddress(1, 0, 0), 10.0);
+    pDoc->SetValue(ScAddress(1, 1, 0), 20.0);
+    pDoc->SetValue(ScAddress(1, 2, 0), 30.0);
+    pDoc->SetValue(ScAddress(1, 3, 0), 40.0);
+
+    pDoc->SetFormula(ScAddress(0, 0, 0), u"=@TRANSPOSE(B1:B4)"_ustr,
+                     formula::FormulaGrammar::GRAM_NATIVE);
+    CPPUNIT_ASSERT_EQUAL(10.0, pDoc->GetValue(ScAddress(0, 0, 0)));
+
+    saveAndReload(TestFilter::XLS);
+
+    pDoc = getScDoc();
+    ScFormulaCell* pCell = pDoc->GetFormulaCell(ScAddress(0, 0, 0));
+    CPPUNIT_ASSERT(pCell);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(FormulaError::NONE), sal_Int32(pCell->GetErrCode()));
+    CPPUNIT_ASSERT_EQUAL(u"=@TRANSPOSE(B1:B4)"_ustr, pDoc->GetFormula(0, 0, 0));
+    CPPUNIT_ASSERT_EQUAL(10.0, pDoc->GetValue(ScAddress(0, 0, 0)));
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testSingleValueOnArithmeticSurvivesXlsRoundTrip)
+{
+    // The @ marker survives an XLS round trip even when the array
+    // intent comes from a plain arithmetic operator on a range, not
+    // from a matrix function.
+
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+
+    pDoc->SetValue(ScAddress(0, 0, 0), 1.0);
+    pDoc->SetValue(ScAddress(0, 1, 0), 2.0);
+    pDoc->SetValue(ScAddress(0, 2, 0), 3.0);
+    pDoc->SetValue(ScAddress(0, 3, 0), 4.0);
+
+    pDoc->SetFormula(ScAddress(1, 0, 0), u"=@A1:A4 + 10"_ustr,
+                     formula::FormulaGrammar::GRAM_NATIVE);
+    CPPUNIT_ASSERT_EQUAL(11.0, pDoc->GetValue(ScAddress(1, 0, 0)));
+
+    saveAndReload(TestFilter::XLS);
+
+    pDoc = getScDoc();
+    ScFormulaCell* pCell = pDoc->GetFormulaCell(ScAddress(1, 0, 0));
+    CPPUNIT_ASSERT(pCell);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(FormulaError::NONE), sal_Int32(pCell->GetErrCode()));
+    CPPUNIT_ASSERT_EQUAL(u"=@A1:A4+10"_ustr, pDoc->GetFormula(1, 0, 0));
+    CPPUNIT_ASSERT_EQUAL(11.0, pDoc->GetValue(ScAddress(1, 0, 0)));
 }
 
 CPPUNIT_TEST_FIXTURE(ScExportTest4, testTdf85553)
@@ -702,6 +765,49 @@ CPPUNIT_TEST_FIXTURE(ScExportTest4, testTdf126305_DataValidatyErrorAlert)
                 u"information");
 }
 
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testDataValidationExport)
+{
+    createScDoc("xlsx/data_validation_test.xlsx");
+    save(TestFilter::XLSX);
+
+    xmlDocUniquePtr pSheet = parseExport(u"xl/worksheets/sheet1.xml"_ustr);
+    CPPUNIT_ASSERT(pSheet);
+
+    // Sheet1 has 4 data validation checks
+    // Without this change, some data validations didn't get exported
+    assertXPath(pSheet, "/x:worksheet/x:dataValidations", "count", u"4");
+    CPPUNIT_ASSERT_EQUAL(
+        4, countXPathNodes(pSheet, "/x:worksheet/x:dataValidations/x:dataValidation"));
+
+    std::map<OUString, OUString> aExpected{
+        { u"A1"_ustr, u"Sheet2!$A$2:$A$4"_ustr },
+        { u"A2"_ustr, u"Sheet2!$B$2:$B$4"_ustr },
+        { u"B1"_ustr, u"INDIRECT(Sheet2!$A$1)"_ustr },
+        { u"B2"_ustr, u"INDIRECT(OFFSET(Sheet2!$A$1,0,1))"_ustr },
+    };
+
+    // Calc's export of data validity checks can differ from Excel's
+    // if that changes, this test needs to be updated
+    for (int i = 1; i <= 4; i++)
+    {
+        const OString aEntry
+            = "/x:worksheet/x:dataValidations/x:dataValidation[" + OString::number(i) + "]";
+
+        const OUString aSqref = getXPath(pSheet, aEntry, "sqref");
+        const auto it = aExpected.find(aSqref);
+
+        CPPUNIT_ASSERT_MESSAGE(
+            OString("Unexpected or duplicated sqref: " + aSqref.toUtf8()).getStr(),
+            it != aExpected.end());
+
+        assertXPathContent(pSheet, aEntry + "/x:formula1", it->second);
+
+        aExpected.erase(it);
+    }
+
+    CPPUNIT_ASSERT_MESSAGE("Not every data validation was exported", aExpected.empty());
+}
+
 CPPUNIT_TEST_FIXTURE(ScExportTest4, testTdf76047_externalLink)
 {
     createScDoc("xlsx/tdf76047_externalLink.xlsx");
@@ -1070,6 +1176,22 @@ CPPUNIT_TEST_FIXTURE(ScExportTest4, testCheckboxFormControlXlsxExport)
     CPPUNIT_ASSERT(pDoc);
     assertXPathContent(pDoc, "/xml/v:shape/xx:ClientData/xx:Anchor", u"1, 22, 3, 3, 3, 30, 6, 1");
 
+    // Without the fix, the label's font was written as a bare <font> element
+    assertXPath(pDoc, "/xml/v:shape/v:textbox/div/font", "face", u"Segoe UI");
+    assertXPath(pDoc, "/xml/v:shape/v:textbox/div/font", "size", u"160");
+
+    // Excel builds its model from the DrawingML, so the font has to reach it as well
+    xmlDocUniquePtr pDrawing = parseExport(u"xl/drawings/drawing1.xml"_ustr);
+    CPPUNIT_ASSERT(pDrawing);
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/a:p/"
+                "a:r/a:rPr",
+                "sz", u"800");
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/a:p/"
+                "a:r/a:rPr/a:latin",
+                "typeface", u"Segoe UI");
+
     // reloaded document: make sure it still has a flat (non-3d) look
     uno::Reference<drawing::XDrawPagesSupplier> xDrawPagesSupplier(mxComponent, UNO_QUERY_THROW);
     uno::Reference<container::XIndexAccess> xIA_DrawPage(
@@ -1091,6 +1213,164 @@ CPPUNIT_TEST_FIXTURE(ScExportTest4, testCheckboxFormControlXlsxExport)
     xPropertySet->getPropertyValue(u"BackgroundColor"_ustr) >>= aColor;
     // without the fix, this was COL_WHITE
     CPPUNIT_ASSERT_EQUAL(COL_TRANSPARENT, aColor);
+
+    OUString sFontName;
+    xPropertySet->getPropertyValue(u"FontName"_ustr) >>= sFontName;
+    // without the fix, this was the control's default font
+    CPPUNIT_ASSERT_EQUAL(u"Segoe UI"_ustr, sFontName);
+
+    float fFontHeight = 0;
+    xPropertySet->getPropertyValue(u"FontHeight"_ustr) >>= fFontHeight;
+    // without the fix, this was 10 - so adjacent labels overlapped
+    CPPUNIT_ASSERT_EQUAL(8.0f, fFontHeight);
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testCheckboxFormControlFontXlsxExport)
+{
+    // Given two checkbox form controls, the first with a bold, italic, doubly underlined and
+    // struck out label, the second with a singly underlined one:
+    createScDoc("xlsx/checkbox-form-control-font.xlsx");
+
+    // When exporting to XLSX:
+    saveAndReload(TestFilter::XLSX);
+
+    // Then make sure the effects are written into the label's VML markup. Without the fix, the
+    // <font> element carried neither the effects nor the font name, size and colour.
+    xmlDocUniquePtr pDoc = parseExport(u"xl/drawings/vmlDrawing1.vml"_ustr);
+    CPPUNIT_ASSERT(pDoc);
+    assertXPath(pDoc, "/xml/v:shape[1]/v:textbox/div/font", "face", u"DejaVu Sans");
+    assertXPath(pDoc, "/xml/v:shape[1]/v:textbox/div/font", "size", u"160");
+    assertXPath(pDoc, "/xml/v:shape[1]/v:textbox/div/font", "color", u"#c9211e");
+    // which record the class names depends on the fonts the document holds
+    OUString aFontId;
+    CPPUNIT_ASSERT(getXPath(pDoc, "/xml/v:shape[1]/v:textbox/div/font/b/i/u", "class")
+                       .startsWith(u"font", &aFontId));
+    xmlDocUniquePtr pStyles = parseExport(u"xl/styles.xml"_ustr);
+    CPPUNIT_ASSERT(pStyles);
+    const OString aRecord
+        = "/x:styleSheet/x:fonts/x:font[" + OString::number(aFontId.toInt32() + 1) + "]";
+    assertXPath(pStyles, aRecord + "/x:u", "val", u"double");
+    assertXPath(pStyles, aRecord + "/x:name", "val", u"DejaVu Sans");
+    assertXPath(pStyles, aRecord + "/x:sz", "val", u"8");
+    assertXPathContent(pDoc, "/xml/v:shape[1]/v:textbox/div/font/b/i/u/s", u"All effects");
+    assertXPathContent(pDoc, "/xml/v:shape[2]/v:textbox/div/font/u", u"Underlined");
+    assertXPathNoAttribute(pDoc, "/xml/v:shape[2]/v:textbox/div/font/u", "class");
+
+    // Excel builds its model from the DrawingML, so the effects have to reach it as well
+    xmlDocUniquePtr pDrawing = parseExport(u"xl/drawings/drawing1.xml"_ustr);
+    CPPUNIT_ASSERT(pDrawing);
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[1]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:p/a:r/a:rPr",
+                "b", u"1");
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[1]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:p/a:r/a:rPr",
+                "i", u"1");
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[1]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:p/a:r/a:rPr",
+                "u", u"dbl");
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[1]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:p/a:r/a:rPr",
+                "strike", u"sngStrike");
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[1]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:p/a:r/a:rPr/a:solidFill/a:srgbClr",
+                "val", u"C9211E");
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[2]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:p/a:r/a:rPr",
+                "u", u"sng");
+
+    // reloaded document: the controls still carry the effects
+    auto xDrawPagesSupplier = mxComponent.queryThrow<drawing::XDrawPagesSupplier>();
+    auto xIA_DrawPage
+        = xDrawPagesSupplier->getDrawPages()->getByIndex(0).queryThrow<container::XIndexAccess>();
+    auto xControlShape = xIA_DrawPage->getByIndex(0).queryThrow<drawing::XControlShape>();
+    auto xPropertySet = xControlShape->getControl().queryThrow<beans::XPropertySet>();
+
+    float fFontWeight = 0;
+    xPropertySet->getPropertyValue(u"FontWeight"_ustr) >>= fFontWeight;
+    CPPUNIT_ASSERT_EQUAL(awt::FontWeight::BOLD, fFontWeight);
+
+    // the control model exposes the slant as a short, not as an awt::FontSlant
+    sal_Int16 nFontSlant = 0;
+    xPropertySet->getPropertyValue(u"FontSlant"_ustr) >>= nFontSlant;
+    CPPUNIT_ASSERT_EQUAL(sal_Int16(awt::FontSlant_ITALIC), nFontSlant);
+
+    sal_Int16 nFontUnderline = 0;
+    xPropertySet->getPropertyValue(u"FontUnderline"_ustr) >>= nFontUnderline;
+    CPPUNIT_ASSERT_EQUAL(sal_Int16(awt::FontUnderline::DOUBLE), nFontUnderline);
+
+    sal_Int16 nFontStrikeout = 0;
+    xPropertySet->getPropertyValue(u"FontStrikeout"_ustr) >>= nFontStrikeout;
+    CPPUNIT_ASSERT_EQUAL(sal_Int16(awt::FontStrikeout::SINGLE), nFontStrikeout);
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testCheckboxFormControlAlignXlsxExport)
+{
+    // Given two checkbox form controls, the first with a right and bottom aligned label, the
+    // second with a centered and top aligned one:
+    createScDoc("xlsx/checkbox-form-control-align.xlsx");
+
+    // When exporting to XLSX:
+    saveAndReload(TestFilter::XLSX);
+
+    // Then make sure the alignment reaches the VML markup. Without the fix, TextHAlign was a
+    // fixed Center on a button and absent elsewhere, TextVAlign a fixed Center on every control,
+    // and the <div> carried no style.
+    xmlDocUniquePtr pDoc = parseExport(u"xl/drawings/vmlDrawing1.vml"_ustr);
+    CPPUNIT_ASSERT(pDoc);
+    assertXPath(pDoc, "/xml/v:shape[1]/v:textbox/div", "style", u"text-align:right");
+    assertXPathContent(pDoc, "/xml/v:shape[1]/xx:ClientData/xx:TextHAlign", u"Right");
+    assertXPathContent(pDoc, "/xml/v:shape[1]/xx:ClientData/xx:TextVAlign", u"Bottom");
+    assertXPath(pDoc, "/xml/v:shape[2]/v:textbox/div", "style", u"text-align:center");
+    assertXPathContent(pDoc, "/xml/v:shape[2]/xx:ClientData/xx:TextHAlign", u"Center");
+    // Top is Excel's default, which it writes by leaving the element out
+    assertXPath(pDoc, "/xml/v:shape[2]/xx:ClientData/xx:TextVAlign", 0);
+
+    // Excel only honours the alignment when the DrawingML side agrees with the VML
+    xmlDocUniquePtr pDrawing = parseExport(u"xl/drawings/drawing1.xml"_ustr);
+    CPPUNIT_ASSERT(pDrawing);
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[1]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:bodyPr",
+                "anchor", u"b");
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[1]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:p/a:pPr",
+                "algn", u"r");
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[2]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:bodyPr",
+                "anchor", u"t");
+    assertXPath(pDrawing,
+                "/xdr:wsDr/mc:AlternateContent[2]/mc:Choice/xdr:twoCellAnchor/xdr:sp/xdr:txBody/"
+                "a:p/a:pPr",
+                "algn", u"ctr");
+
+    // reloaded document: the controls still carry the alignment
+    auto xDrawPagesSupplier = mxComponent.queryThrow<drawing::XDrawPagesSupplier>();
+    auto xIA_DrawPage
+        = xDrawPagesSupplier->getDrawPages()->getByIndex(0).queryThrow<container::XIndexAccess>();
+
+    auto xFirstShape = xIA_DrawPage->getByIndex(0).queryThrow<drawing::XControlShape>();
+    auto xFirst = xFirstShape->getControl().queryThrow<beans::XPropertySet>();
+    sal_Int16 nAlign = 0;
+    xFirst->getPropertyValue(u"Align"_ustr) >>= nAlign;
+    CPPUNIT_ASSERT_EQUAL(sal_Int16(awt::TextAlign::RIGHT), nAlign);
+    style::VerticalAlignment eVerAlign{};
+    xFirst->getPropertyValue(u"VerticalAlign"_ustr) >>= eVerAlign;
+    CPPUNIT_ASSERT_EQUAL(style::VerticalAlignment_BOTTOM, eVerAlign);
+
+    auto xSecondShape = xIA_DrawPage->getByIndex(1).queryThrow<drawing::XControlShape>();
+    auto xSecond = xSecondShape->getControl().queryThrow<beans::XPropertySet>();
+    xSecond->getPropertyValue(u"Align"_ustr) >>= nAlign;
+    CPPUNIT_ASSERT_EQUAL(sal_Int16(awt::TextAlign::CENTER), nAlign);
+    xSecond->getPropertyValue(u"VerticalAlign"_ustr) >>= eVerAlign;
+    CPPUNIT_ASSERT_EQUAL(style::VerticalAlignment_TOP, eVerAlign);
 }
 
 CPPUNIT_TEST_FIXTURE(ScExportTest4, testVMLShapeStroke)
@@ -1195,6 +1475,20 @@ CPPUNIT_TEST_FIXTURE(ScExportTest4, testEmptyExternalDefinedNames)
                        u"TRIM([2]!_xludf.SplitsItems($A1,\",\",COLUMN()-1))");
 }
 
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testCool16026_InvalidUserDefinedFun)
+{
+    createScDoc("xls/forum-mso-de-49320.xls");
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pSheet = parseExport(u"xl/worksheets/sheet1.xml"_ustr);
+    CPPUNIT_ASSERT(pSheet);
+
+    // without the fix this would fail with the following result, which produces invalid XLSX:
+    // - Expected: #REF!(SUM(A1:A2))
+    // - Actual  : _xludf.(SUM(A1:A2))
+    assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[3]/x:c[1]/x:f",
+                       u"#REF!(SUM(A1:A2))");
+}
+
 CPPUNIT_TEST_FIXTURE(ScExportTest4, testLocalePrefix)
 {
     createScDoc("ods/fdo67682-2.ods");
@@ -1223,6 +1517,171 @@ CPPUNIT_TEST_FIXTURE(ScExportTest4, testCool15769MinimalDBRanges)
     // these tables should exist regardless of the change
     CPPUNIT_ASSERT(xNameAccess->hasByName(u"xl/tables/table2.xml"_ustr));
     CPPUNIT_ASSERT(xNameAccess->hasByName(u"xl/tables/table3.xml"_ustr));
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testSingleOperatorXlsxRoundTrip)
+{
+    // The @ operator round-trips through XLSX as _xlfn.SINGLE.
+
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+
+    // Fill A1:A3 so the @ has a real range to collapse.
+    pDoc->SetValue(ScAddress(0, 0, 0), 1.0);
+    pDoc->SetValue(ScAddress(0, 1, 0), 2.0);
+    pDoc->SetValue(ScAddress(0, 2, 0), 3.0);
+
+    // Author =@(A1:A3+0) at B1. The @ collapses the array result of
+    // (A1:A3+0) to its first element, so B1 reads 1.
+    pDoc->SetFormula(ScAddress(1, 0, 0), u"=@(A1:A3+0)"_ustr, formula::FormulaGrammar::GRAM_NATIVE);
+    CPPUNIT_ASSERT_EQUAL(1.0, pDoc->GetValue(ScAddress(1, 0, 0)));
+
+    save(TestFilter::XLSX);
+
+    // The saved file carries the _xlfn.SINGLE wrapper, not the bare @.
+    // The operand brings its own parentheses, so the result has no
+    // redundant outer pair.
+    xmlDocUniquePtr pSheet = parseExport(u"xl/worksheets/sheet1.xml"_ustr);
+    CPPUNIT_ASSERT(pSheet);
+    assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[1]/x:c[2]/x:f",
+                       u"_xlfn.SINGLE(A1:A3+0)");
+
+    // Reload the saved file. The importer maps _xlfn.SINGLE to the @
+    // operator through the OOXML symbol table, so the formula reads
+    // back exactly as authored.
+    saveAndReload(TestFilter::XLSX);
+    pDoc = getScDoc();
+    CPPUNIT_ASSERT_EQUAL(u"=@(A1:A3+0)"_ustr, pDoc->GetFormula(1, 0, 0));
+    CPPUNIT_ASSERT_EQUAL(1.0, pDoc->GetValue(ScAddress(1, 0, 0)));
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testSpilledRangeOperatorXlsxExport)
+{
+    // The # spilled-range operator exports as the _xlfn.ANCHORARRAY
+    // wrapper the format uses, not a bare A1# that older readers
+    // reject.
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+
+    // A1 spills with SEQUENCE(3) into A1:A3. B1 references the spill
+    // range with the # postfix.
+    pDoc->SetFormula(ScAddress(0, 0, 0), u"=SEQUENCE(3)"_ustr,
+                     formula::FormulaGrammar::GRAM_NATIVE);
+    pDoc->SetFormula(ScAddress(1, 0, 0), u"=A1#"_ustr, formula::FormulaGrammar::GRAM_NATIVE);
+
+    save(TestFilter::XLSX);
+
+    xmlDocUniquePtr pSheet = parseExport(u"xl/worksheets/sheet1.xml"_ustr);
+    CPPUNIT_ASSERT(pSheet);
+
+    assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[1]/x:c[2]/x:f",
+                       u"_xlfn.ANCHORARRAY(A1)");
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testSingleOnSpilledRangeXlsxExport)
+{
+    // In =@A1# the # binds tighter than @, so the XLSX form nests
+    // as _xlfn.SINGLE(_xlfn.ANCHORARRAY(A1)).
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+
+    pDoc->SetFormula(ScAddress(0, 0, 0), u"=SEQUENCE(3)"_ustr,
+                     formula::FormulaGrammar::GRAM_NATIVE);
+    pDoc->SetFormula(ScAddress(1, 0, 0), u"=@A1#"_ustr, formula::FormulaGrammar::GRAM_NATIVE);
+
+    save(TestFilter::XLSX);
+
+    xmlDocUniquePtr pSheet = parseExport(u"xl/worksheets/sheet1.xml"_ustr);
+    CPPUNIT_ASSERT(pSheet);
+
+    assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[1]/x:c[2]/x:f",
+                       u"_xlfn.SINGLE(_xlfn.ANCHORARRAY(A1))");
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testParenthesizedSpilledRangeXlsxRoundTrip)
+{
+    // A # on an operand that is already parenthesised keeps those parentheses inside the
+    // wrapper, so _xlfn.ANCHORARRAY((A1)), which is what OOXML uses. The import reads that
+    // back as the postfix (A1)# it came from.
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+
+    pDoc->SetFormula(ScAddress(0, 0, 0), u"=SEQUENCE(3)"_ustr,
+                     formula::FormulaGrammar::GRAM_NATIVE);
+    pDoc->SetFormula(ScAddress(1, 0, 0), u"=(A1)#"_ustr, formula::FormulaGrammar::GRAM_NATIVE);
+
+    save(TestFilter::XLSX);
+
+    xmlDocUniquePtr pSheet = parseExport(u"xl/worksheets/sheet1.xml"_ustr);
+    CPPUNIT_ASSERT(pSheet);
+
+    assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[1]/x:c[2]/x:f",
+                       u"_xlfn.ANCHORARRAY((A1))");
+
+    saveAndReload(TestFilter::XLSX);
+    pDoc = getScDoc();
+    CPPUNIT_ASSERT_EQUAL(u"=(A1)#"_ustr, pDoc->GetFormula(1, 0, 0));
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testIntersectedSpilledRangeXlsxRoundTrip)
+{
+    // OOXML writes the intersection operator as a blank and the # before its operand, so the
+    // two end up next to each other as "A1:A5 _xlfn.ANCHORARRAY(C1)". To read the blank back
+    // as the operator the import has to know that what follows yields a reference.
+    createScDoc();
+    ScDocument* pDocument = getScDoc();
+
+    pDocument->SetFormula(ScAddress(1, 0, 0), u"=A1:A5!C1#"_ustr,
+                          formula::FormulaGrammar::GRAM_NATIVE);
+
+    save(TestFilter::XLSX);
+
+    xmlDocUniquePtr pSheet = parseExport(u"xl/worksheets/sheet1.xml"_ustr);
+    CPPUNIT_ASSERT(pSheet);
+
+    assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[1]/x:c[1]/x:f",
+                       u"A1:A5 _xlfn.ANCHORARRAY(C1)");
+
+    saveAndReload(TestFilter::XLSX);
+    pDocument = getScDoc();
+    CPPUNIT_ASSERT_EQUAL(u"=A1:A5!C1#"_ustr, pDocument->GetFormula(1, 0, 0));
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest4, testReferenceUnionXlsxRoundTrip)
+{
+    // OOXML spells the union operator with the same comma that separates
+    // arguments, so a union saves as a parenthesized list that stays one
+    // argument and survives the round trip.
+
+    // F1:F3 hold =SUM(A1~B2), =AREAS(A1:A2~B1:B2) and
+    // =INDEX(A1:B3~D1:E3;1;1;2).
+    createScDoc("fods/reference-union.fods");
+    ScDocument* pDoc = getScDoc();
+    CPPUNIT_ASSERT_EQUAL(5.0, pDoc->GetValue(ScAddress(5, 0, 0)));
+    CPPUNIT_ASSERT_EQUAL(2.0, pDoc->GetValue(ScAddress(5, 1, 0)));
+    CPPUNIT_ASSERT_EQUAL(10.0, pDoc->GetValue(ScAddress(5, 2, 0)));
+
+    save(TestFilter::XLSX);
+
+    xmlDocUniquePtr pSheet = parseExport(u"xl/worksheets/sheet1.xml"_ustr);
+    CPPUNIT_ASSERT(pSheet);
+    assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[1]/x:c[@r='F1']/x:f",
+                       u"SUM((A1,B2))");
+    assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[2]/x:c[@r='F2']/x:f",
+                       u"AREAS((A1:A2,B1:B2))");
+    assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[3]/x:c[@r='F3']/x:f",
+                       u"INDEX((A1:B3,D1:E3),1,1,2)");
+
+    // On reload each union is still one argument, now inside the parentheses
+    // the save gave it, and the values are unchanged.
+    saveAndReload(TestFilter::XLSX);
+    pDoc = getScDoc();
+    CPPUNIT_ASSERT_EQUAL(u"=SUM((A1~B2))"_ustr, pDoc->GetFormula(5, 0, 0));
+    CPPUNIT_ASSERT_EQUAL(u"=AREAS((A1:A2~B1:B2))"_ustr, pDoc->GetFormula(5, 1, 0));
+    CPPUNIT_ASSERT_EQUAL(u"=INDEX((A1:B3~D1:E3),1,1,2)"_ustr, pDoc->GetFormula(5, 2, 0));
+    CPPUNIT_ASSERT_EQUAL(5.0, pDoc->GetValue(ScAddress(5, 0, 0)));
+    CPPUNIT_ASSERT_EQUAL(2.0, pDoc->GetValue(ScAddress(5, 1, 0)));
+    CPPUNIT_ASSERT_EQUAL(10.0, pDoc->GetValue(ScAddress(5, 2, 0)));
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

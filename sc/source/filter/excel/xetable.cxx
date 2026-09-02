@@ -949,9 +949,7 @@ void XclExpFormulaCell::SaveXml( XclExpXmlStream& rStrm )
     // Mark dynamic array masters with cm="1" so it is recognised as a
     // dynamic array and reads the matching dynamicArrayProperties out of
     // xl/metadata.xml.
-    const bool bDynamicArrayMaster
-        = mrScFmlaCell.GetMatrixFlag() == ScMatrixMode::Formula
-          && mrScFmlaCell.GetCode() && mrScFmlaCell.GetCode()->HasDynamicArrayFunction();
+    const bool bDynamicArrayMaster = mrScFmlaCell.IsDynamicArrayMaster();
     if (bDynamicArrayMaster)
         rStrm.NoteDynamicArrayFormula();
 
@@ -2363,7 +2361,7 @@ void XclExpRowBuffer::Finalize( XclExpDefaultRowData& rDefRowData,
     XclExpDefaultRowData aMaxDefData;
     size_t nMaxDefCount = 0;
     // only look for default format in existing rows, if there are more than unused
-    // if the row is hidden, then row xml must be created even if it not contain cells
+    // if the row is hidden, then row xml must be created even if it does not contain cells
     XclExpRow* pPrev = nullptr;
     std::vector< XclExpRow* > aRepeated;
     for (const auto& rEntry : maRowMap)
@@ -2607,7 +2605,7 @@ XclExpCellTable::XclExpCellTable( const XclExpRoot& rRoot ) :
     if(nLastUsedScCol > nMaxScCol)
         nLastUsedScCol = nMaxScCol;
 
-    // check extra blank rows to avoid of losing their not default settings (workaround for tdf#41425)
+    // check extra blank rows to avoid losing their non-default settings (workaround for tdf#41425)
     nLastUsedScRow += 1000;
 
     if(nLastUsedScRow > nMaxScRow)

@@ -18,6 +18,7 @@
  */
 
 #include <DocumentSettingManager.hxx> //For SwFmt::getIDocumentSettingAccess()
+#include <FillBitmapNotify.hxx>
 #include <IDocumentTimerAccess.hxx>
 #include <doc.hxx>
 #include <fmtcolfunc.hxx>
@@ -25,6 +26,7 @@
 #include <frmatr.hxx>
 #include <hintids.hxx>
 #include <hints.hxx>
+#include <ndhints.hxx>
 #include <poolfmt.hxx>
 #include <o3tl/unit_conversion.hxx>
 #include <osl/diagnose.h>
@@ -50,13 +52,17 @@ SwFormat::SwFormat( SwAttrPool& rPool, const UIName& rFormatNm,
     m_bAutoUpdateOnDirectFormat = false; // LAYER_IMPL
     m_bAutoFormat = true;
     m_bFormatInDTOR = m_bHidden = false;
-    m_bIsFavourite = true;
 
     if( pDrvdFrame )
     {
         pDrvdFrame->Add(*this);
         m_aSet.SetParent( &pDrvdFrame->m_aSet );
     }
+
+    // m_bIsFavourite left as std::nullopt: unknown until the format is
+    // imported from DOCX (SetGrabBagItem -> ParseFavourites). For non-DOCX
+    // sources (new documents, ODT import) the optional stays unset so the
+    // DOCX exporter falls back to lcl_guessQFormat for well-known styles.
 }
 
 SwFormat::SwFormat( const SwFormat& rFormat ) :
@@ -206,6 +212,11 @@ void SwFormat::Destr()
 
 SwFormat::~SwFormat()
 {
+    // release any fill-bitmap link that has this format as its target
+    SwDoc& rDoc = GetDoc();
+    if (rDoc.HasFillBitmapLinks() && !rDoc.IsInDtor())
+        rDoc.getIDocumentLinksAdministration().onFillBitmapURLChanged(*this, u"");
+
     Destr();
 }
 
@@ -260,6 +271,7 @@ void SwFormat::SwClientNotify(const SwModify&, const SfxHint& rHint)
             else
                 oDependsHint.reset();
         }
+        sw::notifyFillBitmapIfChanged(*this, &m_aSet, pOldAttrSetChg, pNewAttrSetChg);
         if(oDependsHint)
         {
             InvalidateInSwFntCache();
@@ -464,7 +476,7 @@ bool SwFormat::SetFormatAttr( const SfxPoolItem& rAttr )
         // fill a local ItemSet with the attributes corresponding as good as possible
         // to the new fill properties [XATTR_FILL_FIRST .. XATTR_FILL_LAST] and set these
         // as ItemSet
-        setSvxBrushItemAsFillAttributesToTargetSet(rSource, aTempSet);
+        setSvxBrushItemAsFillAttributesToTargetSet(rSource, aTempSet, GetDoc().GetLinkReferer());
 
         if(IsModifyLocked())
         {
@@ -535,9 +547,12 @@ bool SwFormat::SetFormatAttr( const SfxItemSet& rSet )
 
     bool bRet = false;
 
+    // tdf#172647
+    std::optional<SfxItemSet> oTypographic = ConvertCharFontsToTypographic(rSet, GetDoc());
+
     // Use local copy to be able to apply needed changes, e.g. call
     // CheckForUniqueItemForLineFillNameOrIndex which is needed for NameOrIndex stuff
-    SfxItemSet aTempSet(rSet);
+    SfxItemSet aTempSet(oTypographic ? *oTypographic : rSet);
 
     // Need to check for unique item for DrawingLayer items of type NameOrIndex
     // and evtl. correct that item to ensure unique names for that type. This call may
@@ -554,7 +569,8 @@ bool SwFormat::SetFormatAttr( const SfxItemSet& rSet )
             // copy all items to be set anyways to a local ItemSet with is also prepared for the new
             // fill attribute ranges [XATTR_FILL_FIRST .. XATTR_FILL_LAST]. Add the attributes
             // corresponding as good as possible to the new fill properties and set the whole ItemSet
-            setSvxBrushItemAsFillAttributesToTargetSet(*pSource, aTempSet);
+            setSvxBrushItemAsFillAttributesToTargetSet(*pSource, aTempSet,
+                                                       GetDoc().GetLinkReferer());
 
             if(IsModifyLocked())
             {
@@ -562,6 +578,7 @@ bool SwFormat::SetFormatAttr( const SfxItemSet& rSet )
                 if( bRet )
                 {
                     m_aSet.SetModifyAtAttr( this );
+                    sw::notifyFillBitmapForPutSet(*this, aTempSet, &m_aSet);
                 }
             }
             else
@@ -591,7 +608,10 @@ bool SwFormat::SetFormatAttr( const SfxItemSet& rSet )
     {
         bRet = m_aSet.Put( aTempSet );
         if( bRet )
+        {
             m_aSet.SetModifyAtAttr( this );
+            sw::notifyFillBitmapForPutSet(*this, aTempSet, &m_aSet);
+        }
         // #i71574#
         if ( nFormatWhich == RES_TXTFMTCOLL )
         {
@@ -745,14 +765,14 @@ void SwFormat::ParseFavourites()
         if (aIt->second >>= nVal)
         {
             if (nVal == 0)
-                SetFavourite(false);
+                SetFavourite(std::optional<bool>(false));
             else
-                SetFavourite(true);
+                SetFavourite(std::optional<bool>(true));
         }
     }
     else
     {
-        SetFavourite(false);
+        SetFavourite(std::optional<bool>(false));
     }
 }
 

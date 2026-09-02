@@ -50,7 +50,7 @@ public:
     /// Access to the attribute output class.
     AttributeOutputBase& AttrOutput() const override;
 
-    /// Access to the sections/headers/footres.
+    /// Access to the sections/headers/footers.
     MSWordSections& Sections() const override;
 
     /// Access to the Rtf Sdr exporter.
@@ -69,11 +69,13 @@ public:
                          const SwRedlineData* pSwRedlineData = nullptr) override;
 
     void AppendBookmark(const OUString& rName) override;
+    void AppendBookmarkStart(const OUString& rName) override;
+    void AppendBookmarkEnd(const OUString& rName, bool bIsFinal) override;
 
     void AppendAnnotationMarks(const SwWW8AttrIter& rAttrs, sal_Int32 nCurrentPos,
                                sal_Int32 nLen) override;
 
-    //For i120928,add an interface to export graphic of bullet
+    // For i120928, add an interface to export graphic of bullet
     void ExportGrfBullet(const SwTextNode& rNd) override;
 
     void

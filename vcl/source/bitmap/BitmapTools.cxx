@@ -52,6 +52,27 @@ using drawinglayer::primitive2d::Primitive2DReference;
 namespace vcl::bitmap
 {
 
+sal_uInt8 sanitizePaletteIndex(sal_uInt8 nIndex, std::size_t nEntryCount)
+{
+    if (nEntryCount == 0 || nIndex < nEntryCount)
+        return nIndex;
+
+    SAL_WARN("vcl", "invalid palette index: " << static_cast<unsigned int>(nIndex)
+                                              << ", palette len is: " << nEntryCount);
+    return nIndex % nEntryCount;
+}
+
+const Color& sanitizedPaletteColor(std::vector<Color> const& rvPalette, sal_uInt8 nIndex)
+{
+    if (rvPalette.empty())
+    {
+        SAL_WARN("vcl", "palette index " << static_cast<unsigned int>(nIndex) << " with no palette");
+        return COL_BLACK;
+    }
+
+    return rvPalette[sanitizePaletteIndex(nIndex, rvPalette.size())];
+}
+
 Bitmap loadFromName(const OUString& rFileName, const ImageLoadFlags eFlags)
 {
     bool bSuccess = true;
@@ -282,6 +303,7 @@ Bitmap CreateFromData( RawBitmap&& rawBitmap )
     return aBmp;
 }
 
+#if defined(_WIN32) && !USE_HEADLESS_CODE
 void fillWithData(sal_uInt8* pData, Bitmap const& rBitmap)
 {
     BitmapScopedReadAccess aReadAccess(rBitmap);
@@ -303,7 +325,7 @@ void fillWithData(sal_uInt8* pData, Bitmap const& rBitmap)
         }
     }
 }
-
+#endif
 
 #if ENABLE_CAIRO_CANVAS
 Bitmap CreateFromCairoSurface(Size aSize, cairo_surface_t * pSurface)
@@ -996,6 +1018,23 @@ void CanvasCairoExtractBitmapData( const Bitmap & aBitmap, unsigned char*& data,
         return premultiply_table;
     }
 #endif
+
+std::optional<ScanlineChannelOffsets> get32BitTcChannelOffsets(ScanlineFormat eFormat)
+{
+    switch (eFormat)
+    {
+        case ScanlineFormat::N32BitTcAbgr:
+            return ScanlineChannelOffsets{ 1, 2, 3, 0 };
+        case ScanlineFormat::N32BitTcArgb:
+            return ScanlineChannelOffsets{ 3, 2, 1, 0 };
+        case ScanlineFormat::N32BitTcBgra:
+            return ScanlineChannelOffsets{ 0, 1, 2, 3 };
+        case ScanlineFormat::N32BitTcRgba:
+            return ScanlineChannelOffsets{ 2, 1, 0, 3 };
+        default:
+            return std::nullopt;
+    }
+}
 
 Bitmap GetDownsampledBitmap(Size const& rDstSizeTwip, Point const& rSrcPt, Size const& rSrcSz,
                             Bitmap const& rBmp, tools::Long nMaxBmpDPIX, tools::Long nMaxBmpDPIY)

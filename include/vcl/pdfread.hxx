@@ -80,6 +80,22 @@ struct PDFGraphicAnnotation
 
     pdf::PDFAnnotationSubType meSubType;
     std::shared_ptr<pdf::PDFAnnotationMarker> mpMarker;
+
+    /// Raw /F value (annotation flags bitfield). 0 if absent.
+    int mnFlags = 0;
+    /// Pdfium index of this annotation on its page. Indices are page-scoped; PDF spec requires
+    /// /IRT parents to live on the same page as the referring annotation, so a per-page map is
+    /// sufficient to resolve them.
+    int mnPdfiumIndex = -1;
+    /// Pdfium index of the parent annotation (/IRT) on the same page; -1 if root (no /IRT) or
+    /// if the PDF is malformed and /IRT pointed to a different page.
+    int mnParentPdfiumIndex = -1;
+    /// /RT (reply type): "R" = reply (default), "Group" = grouped with parent but not a reply.
+    OUString maReplyType = u"R"_ustr;
+    /// Raw /State value (e.g. "Marked", "Unmarked", "Accepted", "Completed").
+    OUString maState;
+    /// Raw /StateModel value ("Marked" or "Review").
+    OUString maStateModel;
 };
 
 class PDFGraphicResult
@@ -113,9 +129,17 @@ public:
 
 /// Import PDF as Graphic images (1 per page), but not loaded yet.
 /// Returns the number of pages read.
-VCL_DLLPUBLIC size_t ImportPDFUnloaded(const OUString& rURL,
-                                       std::vector<PDFGraphicResult>& rGraphics);
-VCL_DLLPUBLIC size_t ImportPDFUnloaded(SvStream& rStream, std::vector<PDFGraphicResult>& rGraphics);
+/// xInteractionHandler and rPassword let an encrypted (and/or too-new) PDF be
+/// decrypted for the version downgrade - the password is used directly when
+/// given, otherwise the handler is asked.
+VCL_DLLPUBLIC size_t ImportPDFUnloaded(
+    const OUString& rURL, std::vector<PDFGraphicResult>& rGraphics,
+    const css::uno::Reference<css::task::XInteractionHandler>& xInteractionHandler = nullptr,
+    const OUString& rPassword = OUString());
+VCL_DLLPUBLIC size_t ImportPDFUnloaded(
+    SvStream& rStream, std::vector<PDFGraphicResult>& rGraphics,
+    const css::uno::Reference<css::task::XInteractionHandler>& xInteractionHandler = nullptr,
+    const OUString& rPassword = OUString());
 }
 
 #endif // INCLUDED_VCL_SOURCE_FILTER_IPDF_PDFREAD_HXX

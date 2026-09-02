@@ -20,6 +20,7 @@
 
 #include <comphelper/string.hxx>
 #include <svl/stritem.hxx>
+#include <svx/svdetc.hxx>
 #include <svx/svdotext.hxx>
 #include <svx/svdpage.hxx>
 #include <svx/svdoutl.hxx>
@@ -1619,7 +1620,7 @@ void SdrTextObj::TRSetBaseGeometry(const basegfx::B2DHomMatrix& rMatrix, const b
         GeoStat aGeoStat;
 
         // #i78696#
-        // fRotate is matematically correct, but aGeoStat.nRotationAngle is
+        // fRotate is mathematically correct, but aGeoStat.nRotationAngle is
         // mirrored -> mirror value here
         aGeoStat.m_nRotationAngle = NormAngle36000(Degree100(basegfx::fround(-basegfx::rad2deg<100>(fRotate))));
         aGeoStat.RecalcSinCos();
@@ -2008,6 +2009,11 @@ rtl::Reference<SdrObject> SdrTextObj::getFullDragClone() const
  }
 
 /* End chaining code */
+
+std::optional<Color> SdrTextObj::GetActiveTextBackgroundColor(const SdrText* /*pSdrText*/) const
+{
+    return GetDraftFillColor(GetMergedItemSet());
+}
 
 /** returns the currently active text. */
 SdrText* SdrTextObj::getActiveText() const

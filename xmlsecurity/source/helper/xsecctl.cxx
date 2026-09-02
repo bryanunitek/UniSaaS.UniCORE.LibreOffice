@@ -435,7 +435,7 @@ void XSecController::startMission(const rtl::Reference<UriBindingHelper>& xUriBi
  *  get ready for a new mission.
  *
  *   INPUTS
- *  xUriBinding       - the Uri binding that provide maps between uris and
+ *  xUriBinding       - the Uri binding that provides maps between uris and
  *                          XInputStreams
  *  xSecurityContext  - the security context component which can provide
  *                      cryptoken
@@ -499,7 +499,7 @@ void XSecController::endMission()
     {
         if ( m_eStatusOfSecurityComponents == InitializationState::INITIALIZED )
         /*
-         * ResolvedListener only exist when the security components are created.
+         * ResolvedListener only exists when the security components are created.
          */
         {
             css::uno::Reference< css::xml::crypto::sax::XMissionTaker > xMissionTaker
@@ -921,7 +921,7 @@ void XSecController::UpdateSignatureInformation(sal_Int32 const nSecurityId,
     std::vector<SignatureInformation::X509Data> && rDatas)
 {
     int const nIndex = findSignatureInfor(nSecurityId);
-    assert(nIndex != -1); // nothing should touch this between parsing and verify
+    assert(nIndex != -1); // nothing should touch this between parsing and verification
     m_vInternalSignatureInformations[nIndex].signatureInfor.X509Datas = std::move(rDatas);
 }
 

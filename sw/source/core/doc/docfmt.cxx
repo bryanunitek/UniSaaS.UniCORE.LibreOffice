@@ -31,7 +31,6 @@
 #include <osl/diagnose.h>
 #include <svl/zforlist.hxx>
 #include <comphelper/processfactory.hxx>
-#include <unotools/configmgr.hxx>
 #include <sal/log.hxx>
 #include <com/sun/star/i18n/WordType.hpp>
 #include <i18npool/breakiterator.hxx>
@@ -1515,7 +1514,7 @@ void SwDoc::CopyPageDesc( const SwPageDesc& rSrcDesc, SwPageDesc& rDstDesc,
         CopyHeader( rSrcDesc.GetLeft(), rDstDesc.GetLeft() );
     else
         rDstDesc.GetLeft().SetFormatAttr( rDstDesc.GetMaster().GetHeader() );
-    if( !rDstDesc.IsFirstShared() )
+    if( !rDstDesc.IsFirstShared() && !rDstDesc.IsWithoutFirstHeader() )
     {
         CopyHeader( rSrcDesc.GetFirstMaster(), rDstDesc.GetFirstMaster() );
         rDstDesc.GetFirstLeft().SetFormatAttr(rDstDesc.GetFirstMaster().GetHeader());
@@ -1530,7 +1529,7 @@ void SwDoc::CopyPageDesc( const SwPageDesc& rSrcDesc, SwPageDesc& rDstDesc,
         CopyFooter( rSrcDesc.GetLeft(), rDstDesc.GetLeft() );
     else
         rDstDesc.GetLeft().SetFormatAttr( rDstDesc.GetMaster().GetFooter() );
-    if( !rDstDesc.IsFirstShared() )
+    if( !rDstDesc.IsFirstShared() && !rDstDesc.IsWithoutFirstFooter() )
     {
         CopyFooter( rSrcDesc.GetFirstMaster(), rDstDesc.GetFirstMaster() );
         rDstDesc.GetFirstLeft().SetFormatAttr(rDstDesc.GetFirstMaster().GetFooter());
@@ -1573,7 +1572,11 @@ void SwDoc::CopyPageDesc( const SwPageDesc& rSrcDesc, SwPageDesc& rDstDesc,
                 {
                     if (&pStashedFormatSrc->GetDoc() != this)
                     {
-                        SwFrameFormat newFormat(GetAttrPool(), UIName(u"CopyDesc"_ustr), GetDfltFrameFormat());
+                        OSL_ENSURE(pStashedFormatSrc->GetName() == rSrcDesc.GetName(),
+                                   "stashed SwFrameFormat UIName differs from containing "
+                                   "SwPageDesc UIName");
+                        SwFrameFormat newFormat(GetAttrPool(), rSrcDesc.GetName(),
+                                                GetDfltFrameFormat());
 
                         SfxItemSet aAttrSet(pStashedFormatSrc->GetAttrSet());
                         aAttrSet.ClearItem(RES_HEADER);

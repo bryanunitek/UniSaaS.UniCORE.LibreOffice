@@ -70,9 +70,10 @@ struct ScDataFormFragment
 class ScViewFunc : public ScTabView
 {
 private:
-    ScAddress   aFormatSource;      // for automatic extension of formatting
-    ScRange     aFormatArea;
-    bool        bFormatValid;
+    ScAddress   maFormatSource;      // for automatic extension of formatting
+    ScRange     maFormatArea;
+    bool        mbFormatValid;
+    bool        mbMultiInsert;
 
 public:
                     ScViewFunc( vcl::Window* pParent, ScDocShell& rDocSh, ScTabViewShell* pViewShell );
@@ -93,10 +94,10 @@ public:
     bool            AutoSum( const ScRange& rRange, bool bSubTotal, bool bSetCursor, bool bContinue, const OpCode eCode );
     OUString        GetAutoSumFormula( const ScRangeList& rRangeList, bool bSubTotal, const ScAddress& rAddr, const OpCode eCode );
 
-    SC_DLLPUBLIC void EnterDataToCurrentCell(const OUString& rString, const EditTextObject* pData = nullptr, bool bMatrixExpand = false);
+    SC_DLLPUBLIC void EnterDataToCurrentCell(const OUString& rString, const EditTextObject* pData = nullptr, bool bAutoDynamicArray = false);
 
     SC_DLLPUBLIC void EnterData(SCCOL nCol, SCROW nRow, SCTAB nTab, const OUString& rString,
-                                const EditTextObject* pData = nullptr, bool bMatrixExpand = false);
+                                const EditTextObject* pData = nullptr, bool bAutoDynamicArray = false);
     void            EnterData( SCCOL nCol, SCROW nRow, SCTAB nTab,
                                const EditTextObject& rData, bool bTestSimple = false );
     void            EnterValue( SCCOL nCol, SCROW nRow, SCTAB nTab, const double& rValue );
@@ -149,6 +150,9 @@ public:
                                         const css::uno::Reference< css::datatransfer::XTransferable >& rxTransferable,
                                         SCCOL nPosX, SCROW nPosY, const Point* pLogicPos,
                                         bool bLink = false, bool bAllowDialogs = false, bool useSavedPrefs = false );
+
+    bool            isMultiInsert() { return mbMultiInsert; }
+    void            SetMultiInsertState( bool bMultiInsert ) { mbMultiInsert = bMultiInsert; }
 
     bool            PasteFile( const Point&, const OUString&, bool bLink );
     bool            PasteObject( const Point&, const css::uno::Reference < css::embed::XEmbeddedObject >&, const Size*, const Graphic* = nullptr, const OUString& = OUString(), sal_Int64 nAspect = css::embed::Aspects::MSOLE_CONTENT );

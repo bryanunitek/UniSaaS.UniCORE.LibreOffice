@@ -73,8 +73,7 @@ class SAL_DLLPUBLIC_RTTI SwEditWin final : public vcl::DocWindow,
 {
     static  QuickHelpData* s_pQuickHlpData;
 
-    static  tools::Long    s_nDDStartPosX;
-    static  tools::Long    s_nDDStartPosY;
+    static Point s_aDDStartPos;
 
     Color m_aWaterCanTextColor;     // text color; for the watering can
     Color m_aWaterCanTextBackColor; // text background; for the watering can
@@ -127,7 +126,7 @@ class SAL_DLLPUBLIC_RTTI SwEditWin final : public vcl::DocWindow,
                     m_bIsInMove       : 1,
                     m_bIsInDrag       : 1, // don't execute StartExecuteDrag twice
                     m_bOldIdle        : 1, // to stop to idle
-                    m_bOldIdleSet     : 1, // during QeueryDrop
+                    m_bOldIdleSet     : 1, // during QueryDrop
                     m_bChainMode      : 1, // connect frames
                     m_bWasShdwCursor    : 1, // ShadowCursor was on in MouseButtonDown
                     m_bLockInput      : 1, // lock while calc panel is active
@@ -156,6 +155,9 @@ class SAL_DLLPUBLIC_RTTI SwEditWin final : public vcl::DocWindow,
     void            ChangeFly(Move::Direction eDir, Move::Size eDirSize, bool bWeb);
     void            ChangeDrawing(Move::Direction eDir, Move::Size eDirSize);
 
+    // let a drag of the selected object start at rDocPos
+    static void ArmFrameDrag(SwWrtShell& rSh, const Point& rDocPos);
+
     bool            EnterDrawMode(const MouseEvent& rMEvt, const Point& aDocPos);
     bool            RulerColumnDrag( const MouseEvent& rMEvt, bool bVerticalMode);
 
@@ -178,7 +180,7 @@ class SAL_DLLPUBLIC_RTTI SwEditWin final : public vcl::DocWindow,
     void            StopDDTimer(SwWrtShell *, const Point &);
     DECL_LINK( DDHandler, Timer *, void );
 
-    // timer for ANY-KeyInut question without a following KeyInputEvent
+    // timer for ANY-KeyInput question without a following KeyInputEvent
     DECL_LINK( KeyInputFlushHandler, Timer *, void );
 
     // timer for ApplyTemplates via mouse (in disguise Drag&Drop)
@@ -264,8 +266,7 @@ public:
 
     virtual rtl::Reference<comphelper::OAccessible> CreateAccessible() override;
 
-    static tools::Long GetDDStartPosX() { return s_nDDStartPosX; }
-    static tools::Long GetDDStartPosY() { return s_nDDStartPosY; }
+    static const Point& GetDDStartPos() { return s_aDDStartPos; }
 
     static void InitStaticData();
     static void FinitStaticData();

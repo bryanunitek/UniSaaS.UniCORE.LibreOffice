@@ -43,6 +43,12 @@ struct AxisDispUnitsModel
                         ~AxisDispUnitsModel();
 };
 
+enum class ChartType : sal_Int32 {
+    C_2007,     // 2007 chart
+    C_OTHER,    // later chart
+    CX          // later chartex
+};
+
 struct AxisModel
 {
     typedef ModelRef< Shape >               ShapeRef;
@@ -56,7 +62,8 @@ struct AxisModel
     AxisDispUnitsRef    mxDispUnits;        /// Axis units label.
     ShapeRef            mxMajorGridLines;   /// Major grid lines formatting.
     ShapeRef            mxMinorGridLines;   /// Minor grid lines formatting.
-    NumberFormat        maNumberFormat;     /// Number format for axis tick labels.
+    std::optional<NumberFormat>       maNumberFormat;     /// Number format for axis tick labels.
+    std::optional<bool>      mobCatNotVal;       /// True if cat axis, false if val axis (for chartex)
     std::optional< double >  mofCrossesAt;       /// Position on this axis where another axis crosses.
     std::optional< double >  mofMajorUnit;       /// Unit for major tick marks on date/value axis.
     std::optional< double >  mofMinorUnit;       /// Unit for minor tick marks on date/value axis.
@@ -84,8 +91,10 @@ struct AxisModel
     bool                mbAuto;             /// True = automatic selection of text/date axis type.
     bool                mbDeleted;          /// True = axis has been deleted manually.
     bool                mbNoMultiLevel;     /// True = no multi-level categories supported.
+    bool                mbMajorGridLinesHasSpPr; /// True = imported cx:majorGridlines had an spPr child.
+    bool                mbMinorGridLinesHasSpPr; /// True = imported cx:minorGridlines had an spPr child.
 
-    explicit            AxisModel( sal_Int32 nTypeId, bool bMSO2007Doc );
+    explicit            AxisModel( sal_Int32 nTypeId, enum ChartType eCT );
                         ~AxisModel();
 };
 

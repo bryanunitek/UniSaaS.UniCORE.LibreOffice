@@ -52,6 +52,7 @@
 #include <breakit.hxx>
 #include <docsh.hxx>
 #include <PostItMgr.hxx>
+#include <UndoRedline.hxx>
 #include <view.hxx>
 #include <i18nutil/unicodeescape.hxx>
 
@@ -184,10 +185,36 @@ lcl_CleanStr(const SwTextNode& rNd,
              SwRootFrame const*const pLayout,
              AmbiguousIndex const nStart, AmbiguousIndex & rEnd,
              std::vector<AmbiguousIndex> &rArr,
-             bool const bRemoveSoftHyphen, bool const bRemoveCommentAnchors)
+             const i18nutil::SearchOptions2& rSearchOpt)
 {
     OUStringBuffer buf(pLayout ? pFrame->GetText() : rNd.GetText());
     rArr.clear();
+
+    // if the search string contains a soft hyphen, we don't strip them from the text
+    bool bRemoveSoftHyphen = true;
+    // if the search string contains a comment, we don't strip them from the text
+    const bool bRemoveCommentAnchors = rSearchOpt.searchString.indexOf(CH_TXTATR_INWORD) == -1;
+
+    if (SearchAlgorithms2::REGEXP == rSearchOpt.AlgorithmType2)
+    {
+        if (-1 != rSearchOpt.searchString.indexOf("\\xAD")
+            || -1 != rSearchOpt.searchString.indexOf("\\x{00AD}")
+            || -1 != rSearchOpt.searchString.indexOf("\\u00AD")
+            || -1 != rSearchOpt.searchString.indexOf("\\u00ad")
+            || -1 != rSearchOpt.searchString.indexOf("\\U000000AD")
+            || -1 != rSearchOpt.searchString.indexOf("\\N{SOFT HYPHEN}"))
+        {
+             bRemoveSoftHyphen = false;
+        }
+    }
+    else
+    {
+        if (1 == rSearchOpt.searchString.getLength() &&
+            CHAR_SOFTHYPHEN == rSearchOpt.searchString.toChar())
+        {
+            bRemoveSoftHyphen = false;
+        }
+    }
 
     MaybeMergedIter iter(pLayout ? pFrame : nullptr, pLayout ? nullptr : &rNd);
 
@@ -279,7 +306,7 @@ lcl_CleanStr(const SwTextNode& rNd,
                 case RES_TXTATR_METAFIELD:
                     {
                         // (1998) they are desired as separators and
-                        // belong not any longer to a word.
+                        // no longer belong to a word.
                         // they should also be ignored at a
                         // beginning/end of a sentence if blank. Those are
                         // simply removed if first. If at the end, we keep the
@@ -359,7 +386,7 @@ lcl_CleanStr(const SwTextNode& rNd,
 static bool DoSearch(SwPaM & rSearchPam,
     const i18nutil::SearchOptions2& rSearchOpt, utl::TextSearch& rSText,
     SwMoveFnCollection const & fnMove,
-    bool bSrchForward, bool bRegSearch, bool bChkEmptyPara, bool bChkParaEnd,
+    bool bSrchForward,
     AmbiguousIndex & nStart, AmbiguousIndex & nEnd, AmbiguousIndex nTextLen,
     SwTextNode const* pNode, SwTextFrame const* pTextFrame,
     SwRootFrame const* pLayout, SwPaM& rPam);
@@ -371,7 +398,7 @@ bool FindTextImpl(SwPaM & rSearchPam,
         const i18nutil::SearchOptions2& rSearchOpt, bool bSearchInNotes,
         utl::TextSearch& rSText,
         SwMoveFnCollection const & fnMove, const SwPaM & rRegion,
-        bool bInReadOnly, SwRootFrame const*const pLayout,
+        bool bInReadOnly, SwRootFrame const*const pLayout, bool bMustStartWithCurrentNode,
         std::unique_ptr<SvxSearchItem>& xSearchItem)
 {
     if( rSearchOpt.searchString.isEmpty() )
@@ -388,11 +415,19 @@ bool FindTextImpl(SwPaM & rSearchPam,
     bool bFirst = true;
     SwContentNode * pNode;
 
+    const OUString& rSrch = rSearchOpt.searchString;
     const bool bRegSearch = SearchAlgorithms2::REGEXP == rSearchOpt.AlgorithmType2;
-    const bool bChkEmptyPara = bRegSearch && 2 == rSearchOpt.searchString.getLength() &&
-                        ( rSearchOpt.searchString == "^$" ||
-                          rSearchOpt.searchString == "$^" );
-    const bool bChkParaEnd = bRegSearch && rSearchOpt.searchString == "$";
+    const bool bChkEmptyPara = bRegSearch && (rSrch == "^$" || rSrch == "$^");
+    const bool bAvoidGettingStuck = bRegSearch && !bChkEmptyPara
+        && (rSrch.startsWith("^") || rSrch.startsWith("\\A")); // beginning of the paragraph
+    if (bAvoidGettingStuck)
+    {
+        // Do not search the current paragraph: prevent repeated finds of the same para.
+        // But do check current paragraph on wrap arounds, Find All, or forced paragraph moves
+        // which set bMustStartWithCurrentNode to true.
+        // Also check the current paragraph if not already at the very start.
+        bFirst = bMustStartWithCurrentNode || rPtPos.GetContentIndex();
+    }
 
     if (!xSearchItem)
     {
@@ -676,8 +711,8 @@ bool FindTextImpl(SwPaM & rSearchPam,
                     nTextLen = nStartInside - nEndInside;
                 }
                 // search inside the text between a note
-                bFound = DoSearch(rSearchPam, rSearchOpt, rSText, fnMove, bSrchForward, bRegSearch,
-                                  bChkEmptyPara, bChkParaEnd, nStartInside, nEndInside, nTextLen,
+                bFound = DoSearch(rSearchPam, rSearchOpt, rSText, fnMove, bSrchForward,
+                                  nStartInside, nEndInside, nTextLen,
                                   pNode->GetTextNode(), pFrame, pLayout, *oPam);
                 if (bFound)
                     break;
@@ -707,8 +742,8 @@ bool FindTextImpl(SwPaM & rSearchPam,
         {
             // if there is no SwPostItField inside or searching inside notes
             // is disabled, we search the whole length just like before
-            bFound = DoSearch(rSearchPam, rSearchOpt, rSText, fnMove, bSrchForward, bRegSearch,
-                              bChkEmptyPara, bChkParaEnd, nStart, nEnd, nTextLen,
+            bFound = DoSearch(rSearchPam, rSearchOpt, rSText, fnMove, bSrchForward,
+                              nStart, nEnd, nTextLen,
                               pNode->GetTextNode(), pFrame, pLayout, *oPam);
         }
         if (bFound)
@@ -721,13 +756,34 @@ bool FindTextImpl(SwPaM & rSearchPam,
 
 bool DoSearch(SwPaM & rSearchPam,
         const i18nutil::SearchOptions2& rSearchOpt, utl::TextSearch& rSText,
-                      SwMoveFnCollection const & fnMove, bool bSrchForward, bool bRegSearch,
-                      bool bChkEmptyPara, bool bChkParaEnd,
+                      SwMoveFnCollection const & fnMove, bool bSrchForward,
         AmbiguousIndex & nStart, AmbiguousIndex & nEnd, AmbiguousIndex const nTextLen,
         SwTextNode const*const pNode, SwTextFrame const*const pFrame,
         SwRootFrame const*const pLayout, SwPaM& rPam)
 {
-    if (bRegSearch && rSearchOpt.searchString.endsWith("$"))
+    const OUString& rSrch = rSearchOpt.searchString;
+    const bool bRegSearch = SearchAlgorithms2::REGEXP == rSearchOpt.AlgorithmType2;
+    const bool bChkEmptyPara = bRegSearch && (rSrch == "^$" || rSrch == "$^");
+    const bool bChkParaEnd = bRegSearch && rSrch == "$";
+    const bool bChkParaStart = bRegSearch && (rSrch == "^" || rSrch == "\\A");
+    if (bChkParaStart)
+    {
+        // every paragraph has a start - no need to actually do the regex search
+        if (bSrchForward ? nStart.GetAnyIndex() : nEnd.GetAnyIndex())
+            return false; // the beginning of the paragraph is not included in the search range.
+
+        if (pLayout)
+            *rSearchPam.GetPoint() = pFrame->MapViewToModelPos(TextFrameIndex(0));
+        else
+        {
+            *rSearchPam.GetPoint() = *rPam.GetPoint();
+            rSearchPam.GetPoint()->SetContent(0);
+        }
+        rSearchPam.SetMark(); // Mark == Point
+        return true;
+    }
+
+    if (bRegSearch && rSrch.endsWith("$"))
     {
         bool bAlwaysSearchingForEndOfPara = true;
         sal_Int32 nIndex = 0;
@@ -750,37 +806,13 @@ bool DoSearch(SwPaM & rSearchPam,
     OUString sCleanStr;
     std::vector<AmbiguousIndex> aFltArr;
     LanguageType eLastLang = LANGUAGE_SYSTEM;
-    // if the search string contains a soft hyphen,
-    // we don't strip them from the text:
-    bool bRemoveSoftHyphens = true;
-    // if the search string contains a comment, we don't strip them from the text
-    const bool bRemoveCommentAnchors = rSearchOpt.searchString.indexOf( CH_TXTATR_INWORD ) == -1;
-
-    if ( bRegSearch )
-    {
-        if (   -1 != rSearchOpt.searchString.indexOf("\\xAD")
-            || -1 != rSearchOpt.searchString.indexOf("\\x{00AD}")
-            || -1 != rSearchOpt.searchString.indexOf("\\u00AD")
-            || -1 != rSearchOpt.searchString.indexOf("\\u00ad")
-            || -1 != rSearchOpt.searchString.indexOf("\\U000000AD")
-            || -1 != rSearchOpt.searchString.indexOf("\\N{SOFT HYPHEN}"))
-        {
-             bRemoveSoftHyphens = false;
-        }
-    }
-    else
-    {
-        if ( 1 == rSearchOpt.searchString.getLength() &&
-             CHAR_SOFTHYPHEN == rSearchOpt.searchString.toChar() )
-             bRemoveSoftHyphens = false;
-    }
 
     if( bSrchForward )
         sCleanStr = lcl_CleanStr(*pNode, pFrame, pLayout, nStart, nEnd,
-                        aFltArr, bRemoveSoftHyphens, bRemoveCommentAnchors);
+                        aFltArr, rSearchOpt);
     else
         sCleanStr = lcl_CleanStr(*pNode, pFrame, pLayout, nEnd, nStart,
-                        aFltArr, bRemoveSoftHyphens, bRemoveCommentAnchors);
+                        aFltArr, rSearchOpt);
 
     std::unique_ptr<SwScriptIterator> pScriptIter;
     sal_uInt16 nSearchScript = 0;
@@ -890,7 +922,19 @@ bool DoSearch(SwPaM & rSearchPam,
         return true;
 
     if (!bChkEmptyPara && !bChkParaEnd)
+    {
+        if (bZeroMatch)
+        {
+            if (pLayout)
+                *rSearchPam.GetPoint() = pFrame->MapViewToModelPos(nEnd.GetFrameIndex());
+            else
+                rSearchPam.GetPoint()->SetContent(nEnd.GetModelIndex());
+            rSearchPam.SetMark();
+
+            return true;
+        }
         return false;
+    }
 
     if (bChkEmptyPara && bSrchForward && nTextLen.GetAnyIndex())
         return false; // the length is not zero - there is content here
@@ -938,19 +982,26 @@ struct SwFindParaText : public SwFindParas
     utl::TextSearch m_aSText;
     bool m_bReplace;
     bool m_bSearchInNotes;
+    bool m_bMustStartWithCurrentNode;
 
-    SwFindParaText(const i18nutil::SearchOptions2& rOpt, bool bSearchInNotes,
-            bool bRepl, SwCursor& rCursor, SwRootFrame const*const pLayout)
+    SwFindParaText(const i18nutil::SearchOptions2& rOpt, bool bSearchInNotes, bool bRepl,
+                   SwCursor& rCursor, SwRootFrame const*const pLayout,
+                   bool bMustStartWithCurrentNode)
         : m_rSearchOpt( rOpt )
         , m_rCursor( rCursor )
         , m_pLayout(pLayout)
         , m_aSText(rOpt)
         , m_bReplace( bRepl )
         , m_bSearchInNotes( bSearchInNotes )
+        , m_bMustStartWithCurrentNode(bMustStartWithCurrentNode)
     {}
     virtual int DoFind(SwPaM &, SwMoveFnCollection const &, const SwPaM &, bool bInReadOnly, std::unique_ptr<SvxSearchItem>& xSearchItem) override;
     virtual bool IsReplaceMode() const override;
     virtual ~SwFindParaText();
+    virtual void SetMustStartWithCurrentNode(bool bSet) override
+    {
+        m_bMustStartWithCurrentNode = bSet;
+    }
 };
 
 }
@@ -966,8 +1017,10 @@ int SwFindParaText::DoFind(SwPaM & rCursor, SwMoveFnCollection const & fnMove,
     if( bInReadOnly && m_bReplace )
         bInReadOnly = false;
 
-    const bool bFnd = sw::FindTextImpl(rCursor, m_rSearchOpt, m_bSearchInNotes,
-            m_aSText, fnMove, rRegion, bInReadOnly, m_pLayout, xSearchItem);
+    const bool bFnd
+        = sw::FindTextImpl(rCursor, m_rSearchOpt, m_bSearchInNotes, m_aSText, fnMove,  rRegion,
+                           bInReadOnly, m_pLayout, m_bMustStartWithCurrentNode, xSearchItem);
+    m_bMustStartWithCurrentNode = false;
 
     if( bFnd && m_bReplace ) // replace string
     {
@@ -1046,7 +1099,9 @@ sal_Int32 SwCursor::Find_Text( const i18nutil::SearchOptions2& rSearchOpt, bool 
     bool bSearchSel = 0 != (rSearchOpt.searchFlag & SearchFlags::REG_NOT_BEGINOFLINE);
     if( bSearchSel )
         eFndRngs = static_cast<FindRanges>(eFndRngs | FindRanges::InSel);
-    SwFindParaText aSwFindParaText(rSearchOpt, bSearchInNotes, bReplace, *this, pLayout);
+    const bool bMustStartWithCurrentNode = nStart != SwDocPositions::Curr;
+    SwFindParaText aSwFindParaText(rSearchOpt, bSearchInNotes, bReplace, *this, pLayout,
+                                   bMustStartWithCurrentNode);
     sal_Int32 nRet = FindAll( aSwFindParaText, nStart, nEnd, eFndRngs, bCancel );
     rDoc.SetOle2Link( aLnk );
     if( nRet && bReplace )
@@ -1093,7 +1148,18 @@ bool ReplaceImpl(
         }
     }
 #else
-    IDocumentRedlineAccess const& rIDRA(rDoc.getIDocumentRedlineAccess());
+    IDocumentRedlineAccess& rIDRA(rDoc.getIDocumentRedlineAccess());
+    const RedlineFlags eOld = rIDRA.GetRedlineFlags();
+
+    // oFoundStringIsAllDeletedContent: only gets value if part of the search-string is a deletion.
+    std::optional<bool> oFoundStringIsAllDeletedContent;
+
+    // Track changes considerations: IsRedlineOn? IsHideRedlines?
+    // case 1,1: currently tracking changes, but is hiding them
+    // This is the easy case. Just do the replacement. Only non-deleted content was found.
+
+    // case 0,1: currently not tracking changes, and is hiding any existing deletions
+    // In this case, eliminate the unseen redlines that exist in the string that is being replaced.
     if (pLayout && pLayout->IsHideRedlines()
         && !rIDRA.IsRedlineOn() // otherwise: ReplaceRange will handle it
         && (rIDRA.GetRedlineFlags() & RedlineFlags::ShowDelete)) // otherwise: ReplaceRange will DeleteRedline()
@@ -1126,7 +1192,80 @@ bool ReplaceImpl(
             }
         }
     }
+    // cases 0,0 and 1,0: the view is showing deletions
+    // This might have found a string containing a mixture of deleted and non-deleted content.
+    // Only worry about this for find and replace - not spell checking...
+    else if (SwView::GetSearchItem() && pLayout && !pLayout->IsHideRedlines()
+             && (rIDRA.GetRedlineFlags() & RedlineFlags::ShowDelete))
+    {
+        const SvxSearchCmd eCmd = SwView::GetSearchItem()->GetCommand();
+        bool bProbablyIsFindAndReplace
+            = eCmd == SvxSearchCmd::REPLACE || eCmd == SvxSearchCmd::REPLACE_ALL;
+        if (bProbablyIsFindAndReplace)
+        {
+            // verify just in case the dialog was not closed 'properly'
+            bProbablyIsFindAndReplace = SwView::GetSearchItem()->GetReplaceString() == rReplacement;
+            if (!bProbablyIsFindAndReplace)
+                SwView::GetSearchItem()->SetCommand(SvxSearchCmd::FIND); // reset to optimize
+        }
+
+        if (bProbablyIsFindAndReplace)
+        {
+            // determine the value of oFoundStringIsAllDeletedContent
+            SwRedlineTable::size_type tmp;
+            rIDRA.GetRedline(*rCursor.Start(), &tmp);
+            SwPosition aLastPosition = *rCursor.Start();
+            while (tmp < rIDRA.GetRedlineTable().size())
+            {
+                const SwRangeRedline& rRedline(*rIDRA.GetRedlineTable()[tmp]);
+                ++tmp;
+                if (*rCursor.End() <= *rRedline.Start())
+                    break;
+                if (*rRedline.End() <= aLastPosition || rRedline.GetType() != RedlineType::Delete)
+                    continue;
+
+                if (*rRedline.Start() > aLastPosition)
+                {
+                    oFoundStringIsAllDeletedContent = false;
+                    break;
+                }
+                oFoundStringIsAllDeletedContent = true;
+                aLastPosition = *rRedline.End();
+            }
+            if (oFoundStringIsAllDeletedContent.has_value() && aLastPosition < *rCursor.End())
+                oFoundStringIsAllDeletedContent = false;
+
+            // Is the 'found string' a mixture of deleted and non-deleted text?
+            if (!oFoundStringIsAllDeletedContent.value_or(true))
+                return false; // just refuse to replace it.
+
+            // case 1,0: currently tracking changes, and is not hiding deletions
+            if (rIDRA.IsRedlineOn())
+            {
+                // Is the 'found string' entirely inside a deletion? Then replace deletion: no Insert.
+                if (oFoundStringIsAllDeletedContent.value_or(false))
+                    rIDRA.SetRedlineFlags_intern(eOld & ~RedlineFlags::On);
+            }
+        }
+    }
+
     bReplaced &= rIDCO.ReplaceRange(rCursor, rReplacement, bRegExp);
+    if (bReplaced && oFoundStringIsAllDeletedContent.value_or(false))
+    {
+        // mark the replaced deletion as deleted
+        rIDRA.SetRedlineFlags_intern(eOld | RedlineFlags::On);
+
+        rIDRA.AppendRedline(new SwRangeRedline(RedlineType::Delete, rCursor), /*CallDelete=*/false);
+
+        if (rDoc.GetIDocumentUndoRedo().DoesUndo())
+        {
+            rDoc.GetIDocumentUndoRedo().AppendUndo(
+                std::make_unique<SwUndoRedlineDelete>(rCursor, SwUndoId::EMPTY));
+        }
+
+        sw::UpdateFramesForAddDeleteRedline(rDoc, rCursor);
+    }
+    rIDRA.SetRedlineFlags_intern(eOld);
 #endif
     return bReplaced;
 }
@@ -1182,7 +1321,7 @@ std::optional<OUString> ReplaceBackReferences(const i18nutil::SearchOptions2& rS
                 }
                 std::vector<AmbiguousIndex> aFltArr;
                 OUString const aStr = lcl_CleanStr(*pTextNode->GetTextNode(), pFrame, pLayout,
-                                                   nStart, nEnd, aFltArr, false, false);
+                                                   nStart, nEnd, aFltArr, rSearchOpt);
                 if (aSText.SearchForward(aStr, &nStart.GetAnyIndex(), &nEnd.GetAnyIndex(), &aResult))
                 {
                     utl::TextSearch::ReplaceBackReferences( aReplaceStr, aStr, aResult );

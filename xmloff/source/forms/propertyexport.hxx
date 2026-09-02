@@ -54,7 +54,7 @@ namespace xmloff
     //= OPropertyExport
     /** provides export related tools for attribute handling
 
-        <p>(The name is somewhat misleading. It's not only a PropertyExport, but in real an ElementExport.
+        <p>(The name is somewhat misleading. It's not only a PropertyExport, but in reality an ElementExport.
         Anyway.)</p>
     */
     class OPropertyExport
@@ -82,7 +82,7 @@ namespace xmloff
     public:
         /** constructs an object capable of handling attributes for export
             @param  _rContext
-                the export context to which's attribute list the property translation should be added
+                the export context to whose attribute list the property translation should be added
             @param  m_xControl
                 the property set to be exported
         */
@@ -90,7 +90,7 @@ namespace xmloff
             const css::uno::Reference< css::beans::XPropertySet >& _rxProps);
 
     protected:
-        /** examines a property set given for all properties which's value are to made persistent
+        /** examines a property set given for all properties whose values are to be made persistent
 
             <p>upon return the <method>m_aRemainingProps</method> will be filled with the names of all properties
             which need to be stored</p>
@@ -326,7 +326,7 @@ namespace xmloff
         */
         bool shouldExportProperty( const OUString& i_propertyName ) const;
 
-        /** tries to convert an arbitrary <type scope="com.sun:star.uno">Any</type> into an string
+        /** tries to convert an arbitrary <type scope="com.sun:star.uno">Any</type> into a string
 
             <p>If the type contained in the Any is not supported, the returned string will be empty. In the
             debug version, an additional assertion occurs.</p>
@@ -345,7 +345,7 @@ namespace xmloff
                 <ul>
                     <li><b>boolean</b>: <arg>_rValue</arg> was interpreted as boolean value before converting
                         it into a string</li>
-                    <li><b>float</b>: <arg>_rValue</arg> was interpreted as 64 bit floating point 16bit integer, 32bit integer or 64 bit integer value before
+                    <li><b>float</b>: <arg>_rValue</arg> was interpreted as 64 bit floating point, 16bit integer, 32bit integer or 64 bit integer value before
                         converting it into a string</li>
                     <li><b>string</b>: <arg>_rValue</arg> did not need any conversion as it already was a string</li>
                 </ul>

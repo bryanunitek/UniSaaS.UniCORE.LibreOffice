@@ -114,7 +114,7 @@ namespace rptui
                 const css::uno::Sequence< css::beans::NamedValue >& _rSettings
             );
 
-    /** notifySystemWindow adds or remove the given window _pToRegister at the Systemwindow found when search _pWindow.
+    /** notifySystemWindow adds or removes the given window _pToRegister at the Systemwindow found when searching _pWindow.
         @param  pWindow
             The window which is used to search for the SystemWindow.
         @param  pToRegister
@@ -130,7 +130,7 @@ namespace rptui
 
     const sal_Int16 ISOVER_IGNORE_CUSTOMSHAPES = 1;
 
-    /** checks whether the given rectangle overlapps another OUnoObject object in that view.
+    /** checks whether the given rectangle overlaps another OUnoObject object in that view.
     *
     * \param _rRect
     * \param _rPage
@@ -141,7 +141,7 @@ namespace rptui
 
     SdrObject* isOver(const tools::Rectangle& _rRect,SdrPage const & _rPage,SdrView const & _rView,bool _bAllObjects, rtl::Reference<SdrUnoObj> _pIgnoreList[], int _nIgnoreListLength);
 
-    /** checks whether the given OUnoObject object rectangle overlapps another object in that view.
+    /** checks whether the given OUnoObject object rectangle overlaps another object in that view.
     *
     * \param _pObj
     * \param _rPage
@@ -157,7 +157,7 @@ namespace rptui
 
     /** ensures that no control overlaps the given one.
     *
-    * \param pControl           the control which should place in the section without overlapping
+    * \param pControl           the control which should be placed in the section without overlapping
     * \param _pReportSection    the section
     * \param _bInsert           sal_True when the control should be inserted, otherwise not.
     */

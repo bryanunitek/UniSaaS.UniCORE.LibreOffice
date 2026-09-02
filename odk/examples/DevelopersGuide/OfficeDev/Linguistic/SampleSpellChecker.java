@@ -315,7 +315,7 @@ public class SampleSpellChecker extends ComponentBase implements
             return null;
 
         // linguistic is currently not allowed to throw exceptions
-        // thus we return null fwhich means 'word cannot be spelled'
+        // thus we return null which means 'word cannot be spelled'
         if (!hasLocale( aLocale ))
             return null;
 
@@ -420,7 +420,7 @@ public class SampleSpellChecker extends ComponentBase implements
      * Returns a factory for creating the service.
      * This method is called by the <code>JavaLoader</code>
      * <p>
-     * @return  returns a <code>XSingleComponentFactory</code> for creating the component
+     * @return  returns an <code>XSingleComponentFactory</code> for creating the component
      * @param   aImplName     the name of the implementation for which a service is desired
      * @see                  com.sun.star.comp.loader.JavaLoader
      */

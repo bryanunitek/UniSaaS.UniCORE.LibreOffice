@@ -19,10 +19,6 @@
 
 #pragma once
 
-#include <premac.h>
-#include <IOKit/pwr_mgt/IOPMLib.h>
-#include <postmac.h>
-
 #include <tools/long.hxx>
 #include <vcl/sysdata.hxx>
 
@@ -30,6 +26,7 @@
 #include <osx/salmenu.h>
 #include <osx/saldata.hxx>
 #include <osx/osxvcltypes.h>
+#include <osx/sessioninhibitor.hxx>
 
 #include <salframe.hxx>
 
@@ -85,7 +82,7 @@ public:
     InputContextFlags               mnICOptions;
 
     // To prevent display sleep during presentation
-    IOPMAssertionID                 mnAssertionID;
+    SessionManagerInhibitor         mSessionManagerInhibitor;
 
     NSRect                          maFrameRect;
     NSRect                          maContentRect;
@@ -137,11 +134,11 @@ public:
     virtual void                SetMaxClientSize( tools::Long nWidth, tools::Long nHeight )
         override;
     virtual void                SetPosSize( tools::Long nX, tools::Long nY, tools::Long nWidth, tools::Long nHeight, sal_uInt16 nFlags ) override;
-    virtual void                GetClientSize( tools::Long& rWidth, tools::Long& rHeight ) override;
+    virtual Size GetClientSize() override;
     virtual void                GetWorkArea( AbsoluteScreenPixelRectangle& rRect ) override;
     virtual SalFrame*           GetParent() const override;
-    virtual void SetWindowState(const vcl::WindowData*) override;
-    virtual bool GetWindowState(vcl::WindowData*) override;
+    virtual void SetWindowState(const vcl::WindowData& rState) override;
+    virtual vcl::WindowData GetWindowState() override;
     virtual void                ShowFullScreen( bool bFullScreen, sal_Int32 nDisplay ) override;
     virtual void                StartPresentation( bool bStart ) override;
     virtual void                SetAlwaysOnTop( bool bOnTop ) override;
@@ -161,7 +158,6 @@ public:
     virtual const SystemEnvData&  GetSystemData() const override;
     virtual SalPointerState     GetPointerState() override;
     virtual KeyIndicatorState   GetIndicatorState() override;
-    virtual void                SimulateKeyPress( sal_uInt16 nKeyCode ) override;
     virtual void                SetParent( SalFrame* pNewParent ) override;
     virtual void                SetPluginParent( SystemParentData* pNewParent ) override;
     virtual void                SetExtendedFrameStyle( SalExtStyle ) override;
@@ -252,7 +248,7 @@ private: // data
 
 inline bool AquaSalFrame::isAlive( const AquaSalFrame* pFrame )
 {
-    AquaSalInstance *pInst = GetSalData()->mpInstance;
+    AquaSalInstance* pInst = GetAquaSalInstance();
     return pInst && pInst->isFrameAlive( pFrame );
 }
 

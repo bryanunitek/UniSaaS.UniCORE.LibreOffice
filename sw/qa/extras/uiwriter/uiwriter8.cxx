@@ -10,6 +10,7 @@
 #include <swmodeltestbase.hxx>
 #include <LibreOfficeKit/LibreOfficeKitEnums.h>
 #include <vcl/filter/PDFiumLibrary.hxx>
+#include <vcl/pdf/PDFPageObjectType.hxx>
 #include <vcl/scheduler.hxx>
 #include <vcl/TypeSerializer.hxx>
 #include <com/sun/star/awt/FontWeight.hpp>
@@ -815,10 +816,28 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf152575)
 
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
     CPPUNIT_ASSERT_EQUAL(3, pPdfDocument->getPageCount());
-    std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/1);
-    CPPUNIT_ASSERT(pPdfPage);
-    // Without the fix for tdf#152575 this would be only 42 objects
-    CPPUNIT_ASSERT_EQUAL(51, pPdfPage->getObjectCount());
+
+    int nCommentsCount(0);
+    for (int nPageIndex = 0; nPageIndex < pPdfDocument->getPageCount(); ++nPageIndex)
+    {
+        std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(nPageIndex);
+        CPPUNIT_ASSERT(pPdfPage);
+        auto pTextPage = pPdfPage->getTextPage();
+        CPPUNIT_ASSERT(pTextPage);
+        for (int i = 0; i < pPdfPage->getObjectCount(); ++i)
+        {
+            auto pObject = pPdfPage->getObject(i);
+
+            if (pObject->getType() == vcl::pdf::PDFPageObjectType::Text)
+            {
+                OUString aText = pObject->getText(pTextPage);
+                if (aText.startsWith("Test comment"))
+                    ++nCommentsCount;
+            }
+        }
+    }
+    // Without the fix for tdf#152575 this would be only 2 comments
+    CPPUNIT_ASSERT_EQUAL(4, nCommentsCount);
 }
 
 CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf140731)
@@ -2823,8 +2842,7 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf128106)
         pMasterDoc->getIDocumentLinksAdministration().GetLinkManager().GetLinks().size());
     // no way to set SwDocShell::m_nUpdateDocMode away from NO_UPDATE ?
     // pMasterDoc->getIDocumentLinksAdministration().UpdateLinks();
-    pMasterDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, nullptr,
-                                                                                  u""_ustr);
+    pMasterDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, u""_ustr);
     // note: this has called SwGetRefFieldType::UpdateGetReferences()
     SwFieldType const* const pType(
         pMasterDoc->getIDocumentFieldsAccess().GetSysFieldType(SwFieldIds::GetRef));
@@ -2886,8 +2904,7 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf103612)
     SwDoc* pDoc = getSwDoc();
     CPPUNIT_ASSERT_EQUAL(
         size_t(1), pDoc->getIDocumentLinksAdministration().GetLinkManager().GetLinks().size());
-    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, nullptr,
-                                                                            u""_ustr);
+    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, u""_ustr);
 
     xmlDocUniquePtr pLayout = parseLayoutDump();
 
@@ -2914,8 +2931,7 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf121119)
     SwDoc* pDoc = getSwDoc();
     CPPUNIT_ASSERT_EQUAL(
         size_t(2), pDoc->getIDocumentLinksAdministration().GetLinkManager().GetLinks().size());
-    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, nullptr,
-                                                                            u""_ustr);
+    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, u""_ustr);
 
     uno::Reference<text::XTextGraphicObjectsSupplier> xTextGraphicObjectsSupplier(mxComponent,
                                                                                   uno::UNO_QUERY);

@@ -73,7 +73,7 @@ oslFileError SAL_CALL osl_abbreviateSystemPath( rtl_uString *ustrSystemPath, rtl
             break;
     }
 
-    /* Now abbreviate file component */
+    /* Now abbreviate the file component */
 
     while ( uPathWidth + uFileWidth > uMaxWidth )
     {
@@ -93,7 +93,7 @@ oslFileError SAL_CALL osl_abbreviateSystemPath( rtl_uString *ustrSystemPath, rtl
 
     rtl_uString_newConcat( pustrCompacted, ustrPath, ustrFile );
 
-    /* Event now if path was compacted to ".../..." it can be too large */
+    /* Even now if path was compacted to ".../..." it can be too large */
 
     uPathWidth += uFileWidth;
 

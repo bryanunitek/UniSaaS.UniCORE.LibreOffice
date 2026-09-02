@@ -89,7 +89,7 @@ SwContentNode* GetNode(SwPaM&, bool&, SwMoveFnCollection const &,
 namespace sw {
 
     void MakeRegion(SwMoveFnCollection const & fnMove,
-            const SwPaM & rOrigRg, std::optional<SwPaM>& rDestinaton);
+            const SwPaM & rOrigRg, std::optional<SwPaM>& rDestination);
 
     /// Search.
     bool FindTextImpl(SwPaM & rSearchPam,
@@ -98,7 +98,7 @@ namespace sw {
                 utl::TextSearch& rSText,
                 SwMoveFnCollection const & fnMove,
                 const SwPaM & rRegion, bool bInReadOnly,
-                SwRootFrame const* pLayout,
+                SwRootFrame const* pLayout, bool bMustStartWithCurrentNode,
                 std::unique_ptr<SvxSearchItem>& xSearchItem);
     bool FindFormatImpl(SwPaM & rSearchPam,
                 const SwFormat& rFormat,

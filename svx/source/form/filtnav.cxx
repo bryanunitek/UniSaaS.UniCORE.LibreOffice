@@ -1135,7 +1135,7 @@ IMPL_LINK(FmFilterNavigator, EditedEntryHdl, const weld::TreeView::IterColText&,
     OUString aText(comphelper::string::strip(rNewText, ' '));
     if (aText.isEmpty())
     {
-        // deleting the entry asynchron
+        // deleting the entry asynchronously
         m_nAsyncRemoveEvent = Application::PostUserEvent(LINK(this, FmFilterNavigator, OnRemove), pData);
     }
     else
@@ -1722,10 +1722,11 @@ void FmFilterNavigator::DeleteSelection()
         m_pModel->Remove(*i);
 }
 
-FmFilterNavigatorWin::FmFilterNavigatorWin(SfxBindings* _pBindings, SfxChildWindow* _pMgr,
+FmFilterNavigatorWin::FmFilterNavigatorWin(SfxBindings& rBindings, SfxChildWindow* _pMgr,
                                            vcl::Window* _pParent)
-    : SfxDockingWindow(_pBindings, _pMgr, _pParent, u"FilterNavigator"_ustr, u"svx/ui/filternavigator.ui"_ustr)
-    , SfxControllerItem( SID_FM_FILTER_NAVIGATOR_CONTROL, *_pBindings )
+    : SfxDockingWindow(rBindings, _pMgr, _pParent, u"FilterNavigator"_ustr,
+                       u"svx/ui/filternavigator.ui"_ustr)
+    , SfxControllerItem(SID_FM_FILTER_NAVIGATOR_CONTROL, rBindings)
     , m_xNavigatorTree(new FmFilterNavigator(this, m_xBuilder->weld_tree_view(u"treeview"_ustr)))
 {
     SetHelpId( HID_FILTER_NAVIGATOR_WIN );
@@ -1835,13 +1836,12 @@ void FmFilterNavigatorWin::GetFocus()
 
 SFX_IMPL_DOCKINGWINDOW( FmFilterNavigatorWinMgr, SID_FM_FILTER_NAVIGATOR )
 
-
-FmFilterNavigatorWinMgr::FmFilterNavigatorWinMgr( vcl::Window *_pParent, sal_uInt16 _nId,
-                                    SfxBindings *_pBindings, SfxChildWinInfo* _pInfo )
-                 :SfxChildWindow( _pParent, _nId )
+FmFilterNavigatorWinMgr::FmFilterNavigatorWinMgr(vcl::Window* _pParent, sal_uInt16 _nId,
+                                                 SfxBindings& rBindings, SfxChildWinInfo& rInfo)
+    : SfxChildWindow(_pParent, _nId)
 {
-    SetWindow( VclPtr<FmFilterNavigatorWin>::Create( _pBindings, this, _pParent ) );
-    static_cast<SfxDockingWindow*>(GetWindow())->Initialize( _pInfo );
+    SetWindow(VclPtr<FmFilterNavigatorWin>::Create(rBindings, this, _pParent));
+    static_cast<SfxDockingWindow*>(GetWindow())->Initialize(rInfo);
 }
 
 

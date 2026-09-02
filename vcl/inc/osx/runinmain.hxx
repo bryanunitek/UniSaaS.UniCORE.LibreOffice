@@ -44,28 +44,12 @@
 #include <osl/thread.h>
 
 #include "saltimer.h"
-#include <salframe.hxx>
 #include <tools/debug.hxx>
+#include <osx/salinst.h>
+#include <osx/salmutex.hxx>
 
-union RuninmainResult
-{
-    void*                            pointer;
-    bool                             boolean;
-    struct SalFrame::SalPointerState state;
-
-    RuninmainResult() {}
-};
-
-#define OSX_RUNINMAIN_MEMBERS \
-    std::mutex              m_runInMainMutex; \
-    std::condition_variable m_aInMainCondition; \
-    std::condition_variable m_aResultCondition; \
-    bool                    m_wakeUpMain = false; \
-    bool                    m_resultReady = false; \
-    RuninmainBlock          m_aCodeBlock; \
-    RuninmainResult         m_aResult;
-
-#define OSX_RUNINMAIN( instance, command ) \
+#define OSX_RUNINMAIN(command) \
+    AquaSalInstance* instance = GetAquaSalInstance(); \
     if ( !instance->IsMainThread() ) \
     { \
         DBG_TESTSOLARMUTEX(); \
@@ -91,7 +75,8 @@ union RuninmainResult
         return; \
     }
 
-#define OSX_RUNINMAIN_POINTER( instance, command, type ) \
+#define OSX_RUNINMAIN_POINTER(command, type) \
+    AquaSalInstance* instance = GetAquaSalInstance(); \
     if ( !instance->IsMainThread() ) \
     { \
         DBG_TESTSOLARMUTEX(); \
@@ -117,7 +102,8 @@ union RuninmainResult
         return static_cast<type>( aMutex->m_aResult.pointer ); \
     }
 
-#define OSX_RUNINMAIN_UNION( instance, command, member ) \
+#define OSX_RUNINMAIN_UNION(command, member) \
+    AquaSalInstance* instance = GetAquaSalInstance(); \
     if ( !instance->IsMainThread() ) \
     { \
         DBG_TESTSOLARMUTEX(); \
@@ -142,31 +128,5 @@ union RuninmainResult
         } \
         return std::move( aMutex->m_aResult.member ); \
     }
-
-/**
- * convenience macros used from SalInstance
- */
-
-#define OSX_INST_RUNINMAIN( command ) \
-    OSX_RUNINMAIN( this, command )
-
-#define OSX_INST_RUNINMAIN_POINTER( command, type ) \
-    OSX_RUNINMAIN_POINTER( this, command, type )
-
-#define OSX_INST_RUNINMAIN_UNION( command, member ) \
-    OSX_RUNINMAIN_UNION( this, command, member )
-
-/**
- * convenience macros using global SalData
- */
-
-#define OSX_SALDATA_RUNINMAIN( command ) \
-    OSX_RUNINMAIN( GetSalData()->mpInstance, command )
-
-#define OSX_SALDATA_RUNINMAIN_POINTER( command, type ) \
-    OSX_RUNINMAIN_POINTER( GetSalData()->mpInstance, command, type )
-
-#define OSX_SALDATA_RUNINMAIN_UNION( command, member ) \
-    OSX_RUNINMAIN_UNION( GetSalData()->mpInstance, command, member )
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

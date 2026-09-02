@@ -12,9 +12,12 @@
 #include <com/sun/star/lang/XSingleComponentFactory.hpp>
 #include <com/sun/star/script/browse/BrowseNodeTypes.hpp>
 #include <com/sun/star/script/browse/XBrowseNode.hpp>
+#include <com/sun/star/script/browse/XCopyableBrowseNode.hpp>
+#include <com/sun/star/script/browse/XCreatableBrowseNode.hpp>
+#include <com/sun/star/script/browse/XEditableBrowseNode.hpp>
 #include <com/sun/star/script/provider/ScriptURIHelper.hpp>
 #include <com/sun/star/script/provider/XScriptProvider.hpp>
-#include <com/sun/star/script/XInvocation.hpp>
+#include <com/sun/star/script/provider/theMasterScriptProviderFactory.hpp>
 #include <com/sun/star/text/XText.hpp>
 #include <com/sun/star/text/XTextDocument.hpp>
 #include <com/sun/star/ucb/SimpleFileAccess.hpp>
@@ -40,12 +43,14 @@ private:
     css::uno::Reference<css::script::provider::XScriptProvider> m_xScriptProvider;
 
     css::uno::Reference<css::script::provider::XScriptProvider> createScriptProvider();
+    void createDummyMacro(const OUString& sDirectoryUri);
 
     void testEditableCreatable();
     void testCreate();
     void testRun();
     void testUnrelatedFile();
     void testFolder();
+    void testCopyable();
 
     CPPUNIT_TEST_SUITE(JsProvTest);
     CPPUNIT_TEST(testEditableCreatable);
@@ -53,6 +58,7 @@ private:
     CPPUNIT_TEST(testRun);
     CPPUNIT_TEST(testUnrelatedFile);
     CPPUNIT_TEST(testFolder);
+    CPPUNIT_TEST(testCopyable);
     CPPUNIT_TEST_SUITE_END();
 };
 
@@ -124,35 +130,32 @@ css::uno::Reference<css::script::provider::XScriptProvider> JsProvTest::createSc
                  "implementation");
 }
 
-bool getBooleanProperty(const css::uno::Reference<css::uno::XInterface>& xInterface,
-                        const OUString& sPropertyName)
+bool isEditable(const css::uno::Reference<css::script::browse::XBrowseNode>& xNode)
 {
-    css::uno::Reference<css::beans::XPropertySet> xPropertySet(xInterface,
-                                                               css::uno::UNO_QUERY_THROW);
-    css::uno::Any xAnyResult = xPropertySet->getPropertyValue(sPropertyName);
+    css::uno::Reference<css::script::browse::XEditableBrowseNode> xEditable(xNode,
+                                                                            css::uno::UNO_QUERY);
 
-    CPPUNIT_ASSERT_EQUAL(css::uno::TypeClass_BOOLEAN, xAnyResult.getValueTypeClass());
+    return xEditable.is() && xEditable->isEditableNode();
+}
 
-    bool bBoolResult = false;
-    bool bConversionResult = xAnyResult >>= bBoolResult;
+bool isCreatable(const css::uno::Reference<css::script::browse::XBrowseNode>& xNode)
+{
+    css::uno::Reference<css::script::browse::XCreatableBrowseNode> xCreatable(xNode,
+                                                                              css::uno::UNO_QUERY);
 
-    CPPUNIT_ASSERT(bConversionResult);
-
-    return bBoolResult;
+    return xCreatable.is() && xCreatable->isCreatableNode();
 }
 
 void JsProvTest::testEditableCreatable()
 {
     // Create a dummy macro in the script directory
-    m_xFileAccess->openFileWrite(m_xUriHelper->getRootStorageURI() + "/MyScript.js");
+    createDummyMacro(m_xUriHelper->getRootStorageURI() + "/MyScript.js");
 
     // The root node should be creatable but not editable
-    CPPUNIT_ASSERT(getBooleanProperty(m_xScriptProvider, "Creatable"));
-    CPPUNIT_ASSERT(!getBooleanProperty(m_xScriptProvider, "Editable"));
-    css::uno::Reference<css::script::XInvocation> xInvocation(m_xScriptProvider,
-                                                              css::uno::UNO_QUERY_THROW);
-    CPPUNIT_ASSERT(xInvocation->hasMethod("Creatable"));
-    CPPUNIT_ASSERT(!xInvocation->hasMethod("Editable"));
+    css::uno::Reference<css::script::browse::XBrowseNode> xRootNode(m_xScriptProvider,
+                                                                    css::uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT(isCreatable(xRootNode));
+    CPPUNIT_ASSERT(!isEditable(xRootNode));
 
     css::uno::Reference<css::script::browse::XBrowseNode> xBrowseNode(m_xScriptProvider,
                                                                       css::uno::UNO_QUERY_THROW);
@@ -174,11 +177,8 @@ void JsProvTest::testEditableCreatable()
     CPPUNIT_ASSERT_EQUAL(u"MyScript"_ustr, xBrowseNode->getName());
 
     // The module should be editable but not creatable
-    CPPUNIT_ASSERT(!getBooleanProperty(xBrowseNode, "Creatable"));
-    CPPUNIT_ASSERT(getBooleanProperty(xBrowseNode, "Editable"));
-    xInvocation.set(xBrowseNode, css::uno::UNO_QUERY_THROW);
-    CPPUNIT_ASSERT(!xInvocation->hasMethod("Creatable"));
-    CPPUNIT_ASSERT(xInvocation->hasMethod("Editable"));
+    CPPUNIT_ASSERT(!isCreatable(xBrowseNode));
+    CPPUNIT_ASSERT(isEditable(xBrowseNode));
 
     // The module should have exactly one child to represent the macro
     CPPUNIT_ASSERT(xBrowseNode->hasChildNodes());
@@ -192,11 +192,8 @@ void JsProvTest::testEditableCreatable()
     CPPUNIT_ASSERT_EQUAL(u"MyScript"_ustr, xBrowseNode->getName());
 
     // The macro should be editable but not creatable
-    CPPUNIT_ASSERT(!getBooleanProperty(xBrowseNode, "Creatable"));
-    CPPUNIT_ASSERT(getBooleanProperty(xBrowseNode, "Editable"));
-    xInvocation.set(xBrowseNode, css::uno::UNO_QUERY_THROW);
-    CPPUNIT_ASSERT(!xInvocation->hasMethod("Creatable"));
-    CPPUNIT_ASSERT(xInvocation->hasMethod("Editable"));
+    CPPUNIT_ASSERT(!isCreatable(xBrowseNode));
+    CPPUNIT_ASSERT(isEditable(xBrowseNode));
 
     // The macro should have no children
     CPPUNIT_ASSERT(!xBrowseNode->hasChildNodes());
@@ -220,19 +217,12 @@ void JsProvTest::testCreate()
     CPPUNIT_ASSERT_EQUAL(sal_Int32(0), xBrowseNode->getChildNodes().getLength());
 
     // The root node should be creatable
-    CPPUNIT_ASSERT(getBooleanProperty(xBrowseNode, "Creatable"));
+    CPPUNIT_ASSERT(isCreatable(xBrowseNode));
 
-    // and have the Creatable method
-    css::uno::Reference<css::script::XInvocation> xInvocation(m_xScriptProvider,
-                                                              css::uno::UNO_QUERY_THROW);
-    CPPUNIT_ASSERT(xInvocation->hasMethod("Creatable"));
-
-    // Invoke the method
-    css::uno::Sequence<css::uno::Any> aInArgs(1);
-    aInArgs.getArray()[0] <<= u"My Script"_ustr;
-    css::uno::Sequence<sal_Int16> aOutParamIndex;
-    css::uno::Sequence<css::uno::Any> aOutParam;
-    xInvocation->invoke("Creatable", aInArgs, aOutParamIndex, aOutParam);
+    // Invoke the create method
+    css::uno::Reference<css::script::browse::XCreatableBrowseNode> xCreatable(
+        xBrowseNode, css::uno::UNO_QUERY_THROW);
+    xCreatable->createNode(u"My Script"_ustr);
 
     // That should have created the file
     CPPUNIT_ASSERT(m_xFileAccess->exists(m_xUriHelper->getRootStorageURI() + "/My Script.js"));
@@ -244,11 +234,11 @@ void JsProvTest::testCreate()
     CPPUNIT_ASSERT_EQUAL(u"My Script"_ustr, xBrowseNode->getChildNodes()[0]->getName());
 }
 
-void JsProvTest::testRun()
+void JsProvTest::createDummyMacro(const OUString& sDirectoryUri)
 {
-    // Create a dummy macro in the script directory
+    // Create a dummy macro in the given directory
     css::uno::Reference<css::io::XOutputStream> xOutput
-        = m_xFileAccess->openFileWrite(m_xUriHelper->getRootStorageURI() + "/MyScript.js");
+        = m_xFileAccess->openFileWrite(sDirectoryUri);
 
     // Make the script insert some text in all of the writer documents
     static constexpr OString sSource
@@ -266,6 +256,11 @@ void JsProvTest::testRun()
     xOutput->writeBytes(aSource);
 
     xOutput->closeOutput();
+}
+
+void JsProvTest::testRun()
+{
+    createDummyMacro(m_xUriHelper->getRootStorageURI() + "/MyScript.js");
 
     // Get the macro as a property set
     css::uno::Reference<css::script::browse::XBrowseNode> xBrowseNode(m_xScriptProvider,
@@ -332,17 +327,125 @@ void JsProvTest::testFolder()
         CPPUNIT_ASSERT_EQUAL(sPart, xBrowseNode->getName());
 
         // Folders should be creatable but not editable
-        CPPUNIT_ASSERT(getBooleanProperty(m_xScriptProvider, "Creatable"));
-        CPPUNIT_ASSERT(!getBooleanProperty(m_xScriptProvider, "Editable"));
-        css::uno::Reference<css::script::XInvocation> xInvocation(xBrowseNode,
-                                                                  css::uno::UNO_QUERY_THROW);
-        CPPUNIT_ASSERT(xInvocation->hasMethod("Creatable"));
-        CPPUNIT_ASSERT(!xInvocation->hasMethod("Editable"));
+        CPPUNIT_ASSERT(isCreatable(xBrowseNode));
+        CPPUNIT_ASSERT(!isEditable(xBrowseNode));
     }
 
     CPPUNIT_ASSERT_EQUAL(sal_Int32(1), xBrowseNode->getChildNodes().getLength());
     xBrowseNode = xBrowseNode->getChildNodes()[0];
     CPPUNIT_ASSERT_EQUAL(u"MyScript"_ustr, xBrowseNode->getName());
+}
+
+bool isCopyableNode(const css::uno::Reference<css::script::browse::XBrowseNode>& xNode)
+{
+    css::uno::Reference<css::script::browse::XCopyableBrowseNode> xCopyable(xNode,
+                                                                            css::uno::UNO_QUERY);
+
+    return xCopyable.is() && xCopyable->isCopyableNode();
+}
+
+void JsProvTest::testCopyable()
+{
+    // Create a dummy macro in a subfolder of the script directory
+    m_xFileAccess->createFolder(m_xUriHelper->getRootStorageURI() + "/SrcDir");
+    createDummyMacro(m_xUriHelper->getRootStorageURI() + "/SrcDir/MyScript.js");
+
+    css::uno::Reference<css::script::browse::XBrowseNode> xRootNode(m_xScriptProvider,
+                                                                    css::uno::UNO_QUERY_THROW);
+
+    // The root node shouldn’t be copyable
+    CPPUNIT_ASSERT(!isCopyableNode(xRootNode));
+
+    css::uno::Reference<css::script::browse::XBrowseNode> xLibrary = xRootNode->getChildNodes()[0];
+    CPPUNIT_ASSERT_EQUAL(u"SrcDir"_ustr, xLibrary->getName());
+
+    // The library shouldn’t be copyable
+    CPPUNIT_ASSERT(!isCopyableNode(xLibrary));
+
+    css::uno::Reference<css::script::browse::XBrowseNode> xFile = xLibrary->getChildNodes()[0];
+    CPPUNIT_ASSERT_EQUAL(u"MyScript"_ustr, xFile->getName());
+
+    // File nodes are copyable
+    CPPUNIT_ASSERT(isCopyableNode(xFile));
+
+    css::uno::Reference<css::script::browse::XBrowseNode> xMacro = xFile->getChildNodes()[0];
+    CPPUNIT_ASSERT_EQUAL(u"MyScript"_ustr, xMacro->getName());
+
+    // Macro nodes are not copyable
+    CPPUNIT_ASSERT(!isCopyableNode(xMacro));
+
+    css::uno::Reference<css::script::browse::XCopyableBrowseNode> xCopyable(
+        xFile, css::uno::UNO_QUERY_THROW);
+
+    // We can copy to the root level of the JavaScript hierarchy
+    CPPUNIT_ASSERT(xCopyable->nodeCanBeCopiedTo(xRootNode));
+    // We can’t copy to the same directory that the file is already in
+    CPPUNIT_ASSERT(!xCopyable->nodeCanBeCopiedTo(xLibrary));
+    // We can’t copy to a file
+    CPPUNIT_ASSERT(!xCopyable->nodeCanBeCopiedTo(xFile));
+    // or a macro
+    CPPUNIT_ASSERT(!xCopyable->nodeCanBeCopiedTo(xMacro));
+
+    // We shouldn’t be able to copy to any other language providers
+    css::uno::Reference<css::script::provider::XScriptProviderFactory> xMasterProviderFactory
+        = css::script::provider::theMasterScriptProviderFactory::get(m_xContext);
+    css::uno::Reference<css::script::browse::XBrowseNode> xMasterProvider(
+        xMasterProviderFactory->createScriptProvider(css::uno::Any(u"user"_ustr)),
+        css::uno::UNO_QUERY_THROW);
+    for (const auto& xChild : xMasterProvider->getChildNodes())
+    {
+        if (xChild->getName() == u"JavaScript"_ustr)
+            continue;
+        CPPUNIT_ASSERT(!xCopyable->nodeCanBeCopiedTo(xChild));
+    }
+
+    // Make a new library that we can copy to
+    m_xFileAccess->createFolder(m_xUriHelper->getRootStorageURI() + "/DestDir");
+    css::uno::Reference<css::script::browse::XBrowseNode> xOtherLibrary;
+    for (const auto& xChild : xRootNode->getChildNodes())
+    {
+        if (xChild->getName() == u"DestDir"_ustr)
+        {
+            xOtherLibrary = xChild;
+            break;
+        }
+    }
+    CPPUNIT_ASSERT(xOtherLibrary.is());
+
+    // We should be able to copy into the new library
+    CPPUNIT_ASSERT(xCopyable->nodeCanBeCopiedTo(xOtherLibrary));
+    css::uno::Reference<css::script::browse::XBrowseNode> xCopiedNode
+        = xCopyable->copyNode(xOtherLibrary);
+
+    CPPUNIT_ASSERT_EQUAL(u"MyScript"_ustr, xCopiedNode->getName());
+
+    css::uno::Reference<css::script::browse::XBrowseNode> xCopiedMacro
+        = xCopiedNode->getChildNodes()[0];
+    CPPUNIT_ASSERT_EQUAL(u"MyScript"_ustr, xCopiedMacro->getName());
+
+    // Get the URI of the copied macro
+    css::uno::Reference<css::beans::XPropertySet> xPropertySet(xCopiedMacro,
+                                                               css::uno::UNO_QUERY_THROW);
+    css::uno::Any xURI = xPropertySet->getPropertyValue(u"URI"_ustr);
+    OUString sURI;
+    CPPUNIT_ASSERT(xURI >>= sURI);
+
+    // The URI should contain the new library name
+    CPPUNIT_ASSERT(sURI.indexOf(":DestDir|") != -1);
+
+    // Create a document to run the script on
+    loadFromURL(u"private:factory/swriter"_ustr);
+
+    // Execute it
+    css::uno::Sequence<css::uno::Any> aScriptParams;
+    css::uno::Sequence<sal_Int16> aOutParamIndex;
+    css::uno::Sequence<css::uno::Any> aOutParam;
+    m_xScriptProvider->getScript(sURI)->invoke(aScriptParams, aOutParamIndex, aOutParam);
+
+    // Check that the text was inserted into our test document
+    css::uno::Reference<css::text::XTextDocument> xTextDocument(mxComponent,
+                                                                css::uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_EQUAL(u"jsprovtest"_ustr, xTextDocument->getText()->getString());
 }
 
 CPPUNIT_TEST_SUITE_REGISTRATION(JsProvTest);

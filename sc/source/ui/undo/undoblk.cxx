@@ -1435,15 +1435,14 @@ void ScUndoDragDrop::Undo()
         aCxt.mnTabDelta = nTabDelta;
 
         // Global range names.
-        ScRangeName* pName = rDoc.GetRangeName();
-        if (pName)
-            pName->UpdateReference(aCxt);
+        ScRangeName& rName = rDoc.GetRangeName();
+        rName.UpdateReference(aCxt);
 
         SCTAB nTabCount = rDoc.GetTableCount();
         for (SCTAB nTab = 0; nTab < nTabCount; ++nTab)
         {
             // Sheet-local range names.
-            pName = rDoc.GetRangeName(nTab);
+            ScRangeName* pName = rDoc.GetRangeName(nTab);
             if (pName)
                 pName->UpdateReference(aCxt, nTab);
         }
@@ -2019,11 +2018,13 @@ bool ScUndoSelectionStyle::CanRepeat(SfxRepeatTarget& rTarget) const
 
 ScUndoEnterMatrix::ScUndoEnterMatrix( ScDocShell& rNewDocShell, const ScRange& rArea,
                                       ScDocumentUniquePtr pNewUndoDoc, OUString aForm,
-                                      std::unique_ptr<ScTokenArray> pArray ) :
+                                      std::unique_ptr<ScTokenArray> pArray,
+                                      bool bDynamicArrayMaster) :
     ScBlockUndo( rNewDocShell, rArea, SC_UNDO_SIMPLE ),
     pUndoDoc( std::move(pNewUndoDoc) ),
     aFormula(std::move( aForm )),
-    pTokenArray(std::move( pArray ))
+    pTokenArray(std::move(pArray)),
+    mbDynamicArrayMaster(bDynamicArrayMaster)
 {
     SetChangeTrack();
 }
@@ -2081,7 +2082,9 @@ void ScUndoEnterMatrix::Redo()
 
     rDoc.InsertMatrixFormula( aBlockRange.aStart.Col(), aBlockRange.aStart.Row(),
                                aBlockRange.aEnd.Col(),   aBlockRange.aEnd.Row(),
-                               aDestMark, aFormula, pTokenArray.get() );
+                               aDestMark, aFormula, pTokenArray.get(),
+                               formula::FormulaGrammar::GRAM_DEFAULT,
+                               mbDynamicArrayMaster);
 
     SetChangeTrack();
 

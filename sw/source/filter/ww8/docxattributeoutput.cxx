@@ -104,6 +104,9 @@
 #include <svx/svdogrp.hxx>
 #include <svx/diagram/DiagramHelper_svx.hxx>
 #include <svl/grabbagitem.hxx>
+#include <svl/numformat.hxx>
+#include <svl/zformat.hxx>
+#include <i18nlangtag/mslangid.hxx>
 #include <tools/date.hxx>
 #include <tools/datetime.hxx>
 #include <tools/datetimeutils.hxx>
@@ -3204,6 +3207,41 @@ void DocxAttributeOutput::CmdEndField_Impl(SwTextNode const*const pNode,
         }
 }
 
+static LanguageType lcl_getDateFieldNumberFormatLang(const FieldInfos& rInfos, SwDoc& rDoc)
+{
+    if (!rInfos.pField)
+        return LANGUAGE_DONTKNOW;
+    switch (rInfos.eType)
+    {
+        case ww::eDATE:
+        case ww::eTIME:
+        case ww::eCREATEDATE:
+        case ww::eSAVEDATE:
+        case ww::ePRINTDATE:
+            break;
+        default:
+            return LANGUAGE_DONTKNOW;
+    }
+    SvNumberFormatter* pFormatter = rDoc.GetNumberFormatter();
+    const SvNumberformat* pEntry
+        = pFormatter ? pFormatter->GetEntry(rInfos.pField->GetUntypedFormat()) : nullptr;
+    return pEntry ? pEntry->GetLanguage() : LANGUAGE_DONTKNOW;
+}
+
+/// The w:lang attribute for the script of this language.
+static sal_Int32 lcl_getLangAttr(LanguageType nLang)
+{
+    switch (MsLangId::getScriptType(nLang))
+    {
+        case css::i18n::ScriptType::ASIAN:
+            return FSNS(XML_w, XML_eastAsia);
+        case css::i18n::ScriptType::COMPLEX:
+            return FSNS(XML_w, XML_bidi);
+        default:
+            return FSNS(XML_w, XML_val);
+    }
+}
+
 /// Writes properties for run that is used to separate field implementation.
 /// There are several runs are used:
 ///     <w:r>
@@ -3246,6 +3284,10 @@ void DocxAttributeOutput::DoWriteFieldRunProperties( const SwTextNode * pNode, s
     }
 
     m_bPreventDoubleFieldsHandling = true;
+    // tdf#146973 OOXML takes a date field's month/day names from the run language
+    m_nFieldFormatLang = m_Fields.empty()
+        ? LANGUAGE_DONTKNOW
+        : lcl_getDateFieldNumberFormatLang(m_Fields.back(), m_rExport.m_rDoc);
 
     {
         m_pSerializer->startElementNS(XML_w, XML_rPr);
@@ -3262,6 +3304,15 @@ void DocxAttributeOutput::DoWriteFieldRunProperties( const SwTextNode * pNode, s
         SwWW8AttrIter aAttrIt( m_rExport, *pNode );
         aAttrIt.OutAttr( nPos, bWriteCombChars );
 
+        // add w:lang unless CharLanguage already emitted it from the run above
+        if ( m_nFieldFormatLang != LANGUAGE_DONTKNOW )
+        {
+            const sal_Int32 nLangAttr = lcl_getLangAttr( m_nFieldFormatLang );
+            if ( !m_pCharLangAttrList || !m_pCharLangAttrList->hasAttribute( nLangAttr ) )
+                AddToAttrList( m_pCharLangAttrList, nLangAttr,
+                               LanguageTag( m_nFieldFormatLang ).getBcp47MS() );
+        }
+
         // 3. write the character properties
         WriteCollectedRunProperties();
 
@@ -3271,6 +3322,7 @@ void DocxAttributeOutput::DoWriteFieldRunProperties( const SwTextNode * pNode, s
         m_pSerializer->endElementNS( XML_w, XML_rPr );
     }
 
+    m_nFieldFormatLang = LANGUAGE_DONTKNOW;
     m_bPreventDoubleFieldsHandling = false;
 }
 
@@ -7137,12 +7189,30 @@ static bool lcl_guessQFormat(const OUString& rName, sal_uInt16 nWwId)
     return aAllowlist.find(rName) != aAllowlist.end();
 }
 
+/// Detect whether the source document was loaded from DOCX. The writerfilter
+/// import populates the document-level InteropGrabBag (latentStyles, default
+/// tab stops, etc.) on every DOCX it loads; new documents and ODT imports
+/// leave it empty. A non-empty bag is therefore a reliable "DOCX origin"
+/// signal we can use to suppress the lcl_guessQFormat fallback for styles
+/// that were auto-created (e.g. the Heading pool style spawned as parent of
+/// Heading 1) rather than imported from the source.
+static bool lcl_sourceWasDocx(const MSWordExportBase& rExport)
+{
+    if (!rExport.m_xTextDoc.is())
+        return false;
+    uno::Sequence<beans::PropertyValue> aDocGrabBag;
+    rExport.m_xTextDoc->getPropertyValue(u"InteropGrabBag"_ustr) >>= aDocGrabBag;
+    return aDocGrabBag.hasElements();
+}
+
 void DocxAttributeOutput::StartStyle( const OUString& rName, StyleType eType,
         sal_uInt16 nBase, sal_uInt16 nNext, sal_uInt16 nLink, sal_uInt16 nWwId, sal_uInt16 nSlot, bool bAutoUpdate )
 {
     bool bUnhideWhenUsed = false, bSemiHidden = false, bLocked = false, bDefault = false, bCustomStyle = false;
-    bool bQFormat = false; // DEPRECATED: from grab-bag
-    bool bRealQFormat = true; // from SwFormat
+    // unset means we have no information from import: fall back to lcl_guessQFormat.
+    // Set means the format was imported from a DOCX (via ParseFavourites) and the
+    // import-time qFormat state must be preserved on export.
+    std::optional<bool> oQFormat;
 
     OUString aRsid, aUiPriority;
     rtl::Reference<FastAttributeList> pStyleAttributeList = FastSerializerHelper::createAttrList();
@@ -7151,7 +7221,7 @@ void DocxAttributeOutput::StartStyle( const OUString& rName, StyleType eType,
     {
         const SwFormat* pFormat = m_rExport.m_pStyles->GetSwFormat(nSlot);
         pFormat->GetGrabBagItem(aAny);
-        bRealQFormat = pFormat->IsFavourite();
+        oQFormat = pFormat->IsFavourite();
     }
     else
     {
@@ -7165,7 +7235,14 @@ void DocxAttributeOutput::StartStyle( const OUString& rName, StyleType eType,
         if (rProp.Name == "uiPriority")
             aUiPriority = rProp.Value.get<OUString>();
         else if (rProp.Name == "qFormat")
-            bQFormat = true;
+        {
+            // For paragraph and character styles SwFormat::IsFavourite already
+            // carries the import-time decision (set by ParseFavourites). Only
+            // honor the grab-bag value when we have no SwFormat-level state,
+            // which today only happens for numbering styles.
+            if (!oQFormat.has_value())
+                oQFormat = rProp.Value.get<sal_Int32>() != 0;
+        }
         else if (rProp.Name == "rsid")
             aRsid = rProp.Value.get<OUString>();
         else if (rProp.Name == "unhideWhenUsed")
@@ -7229,8 +7306,19 @@ void DocxAttributeOutput::StartStyle( const OUString& rName, StyleType eType,
         m_pSerializer->singleElementNS(XML_w, XML_semiHidden);
     if (bUnhideWhenUsed)
         m_pSerializer->singleElementNS(XML_w, XML_unhideWhenUsed);
-    // by default we use old guess, if user marks style as non-favourite -> do not export qFormat
-    if (bRealQFormat && (bQFormat || lcl_guessQFormat(rName, nWwId)))
+    // Honor the explicit qFormat value from import. Otherwise: for DOCX-sourced
+    // documents the absence of qFormat means the style was auto-created and
+    // wasn't in the source - preserve that silence. For new or ODT-imported
+    // documents fall back to guessing so well-known built-in styles still get
+    // qFormat in their first DOCX export.
+    bool bEmitQFormat;
+    if (oQFormat.has_value())
+        bEmitQFormat = oQFormat.value();
+    else if (lcl_sourceWasDocx(m_rExport))
+        bEmitQFormat = false;
+    else
+        bEmitQFormat = lcl_guessQFormat(rName, nWwId);
+    if (bEmitQFormat)
         m_pSerializer->singleElementNS(XML_w, XML_qFormat);
     if (bLocked)
         m_pSerializer->singleElementNS(XML_w, XML_locked);
@@ -8348,7 +8436,7 @@ void DocxAttributeOutput::CharEscapement( const SvxEscapementItem& rEscapement )
 void DocxAttributeOutput::CharFont( const SvxFontItem& rFont)
 {
     GetExport().GetId( rFont ); // ensure font info is written to fontTable.xml
-    const OUString& sFontName(rFont.GetFamilyName());
+    OUString sFontName(wwFontHelper::GetExportFontName(rFont));
     if (sFontName.isEmpty())
         return;
 
@@ -8392,7 +8480,13 @@ void DocxAttributeOutput::CharKerning( const SvxKerningItem& rKerning )
 
 void DocxAttributeOutput::CharLanguage( const SvxLanguageItem& rLanguage )
 {
-    OUString aLanguageCode(LanguageTag( rLanguage.GetLanguage()).getBcp47MS());
+    LanguageType nLang = rLanguage.GetLanguage();
+    // tdf#146973 a date/time field run carries its number format locale instead
+    if ( m_nFieldFormatLang != LANGUAGE_DONTKNOW
+         && rLanguage.Which() == GetWhichOfScript( RES_CHRATR_LANGUAGE,
+                                     MsLangId::getScriptType( m_nFieldFormatLang ) ) )
+        nLang = m_nFieldFormatLang;
+    OUString aLanguageCode( LanguageTag( nLang ).getBcp47MS() );
 
     switch ( rLanguage.Which() )
     {
@@ -8540,7 +8634,7 @@ void DocxAttributeOutput::CharFontCJK( const SvxFontItem& rFont )
         return;
     }
 
-    AddToAttrList( m_pFontsAttrList, FSNS( XML_w, XML_eastAsia ), rFont.GetFamilyName() );
+    AddToAttrList( m_pFontsAttrList, FSNS( XML_w, XML_eastAsia ), wwFontHelper::GetExportFontName(rFont) );
 }
 
 void DocxAttributeOutput::CharPostureCJK( const SvxPostureItem& rPosture )
@@ -8573,7 +8667,7 @@ void DocxAttributeOutput::CharFontCTL( const SvxFontItem& rFont )
         return;
     }
 
-    AddToAttrList( m_pFontsAttrList, FSNS( XML_w, XML_cs ), rFont.GetFamilyName() );
+    AddToAttrList( m_pFontsAttrList, FSNS( XML_w, XML_cs ), wwFontHelper::GetExportFontName(rFont) );
 }
 
 void DocxAttributeOutput::CharPostureCTL( const SvxPostureItem& rPosture)
@@ -9396,7 +9490,9 @@ void DocxAttributeOutput::ParaAdjust( const SvxAdjustItem& rAdjust )
             switch ( rAdjust.GetPropWordSpacingMinimum() )
             {
                 case 133:
-                    if ( rAdjust.GetPropWordSpacingMaximum() == 133 )
+                case 150:
+                    if ( rAdjust.GetPropWordSpacingMaximum() == 133 ||
+                            rAdjust.GetPropWordSpacingMaximum() == 150 )
                         pAdjustString = "lowKashida";
                     break;
                 case 200:

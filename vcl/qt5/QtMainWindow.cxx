@@ -24,6 +24,7 @@ QtMainWindow::QtMainWindow(QtFrame& rFrame, Qt::WindowFlags f)
 #ifndef __EMSCRIPTEN__
     QAccessible::installFactory(QtAccessibleWidget::customFactory);
 #endif
+    setUnifiedTitleAndToolBarOnMac(true);
 }
 
 void QtMainWindow::closeEvent(QCloseEvent* pEvent)
@@ -33,9 +34,9 @@ void QtMainWindow::closeEvent(QCloseEvent* pEvent)
 
     if (bRet)
         pEvent->accept();
-    // SalEvent::Close returning false may mean that user has vetoed
+    // SalEvent::Close returning false may mean that the user has vetoed
     // closing the frame ("you have unsaved changes" dialog for example)
-    // We shouldn't process the event in such case
+    // We shouldn't process the event in such a case
     else
         pEvent->ignore();
 }

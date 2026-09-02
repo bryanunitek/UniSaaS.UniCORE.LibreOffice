@@ -47,7 +47,7 @@ private:
     void createColorWindow();
     void LockWidthRequest(int nWidthRequest);
     int CalcBestWidthRequest();
-    ColorWindow* getColorWindow() const;
+    ColorWindow& getColorWindow() const;
 
     DECL_DLLPRIVATE_LINK(ToggleHdl, weld::Toggleable&, void);
 
@@ -68,8 +68,8 @@ public:
     void SelectEntry(const NamedColor& rColor);
     void SelectEntry(const Color& rColor);
 
-    void SetNoSelection() { getColorWindow()->SetNoSelection(); }
-    bool IsNoSelection() const { return getColorWindow()->IsNoSelection(); }
+    void SetNoSelection() { getColorWindow().SetNoSelection(); }
+    bool IsNoSelection() const { return getColorWindow().IsNoSelection(); }
 
     void SetAutoDisplayColor(const Color& rColor) { m_aAutoDisplayColor = rColor; }
 
@@ -95,6 +95,9 @@ public:
         m_xButton->connect_focus_out(rLink);
     }
     weld::MenuButton& get_widget() { return *m_xButton; }
+
+    // move the color window content into pTarget for inline embedding
+    void EmbedColorWindowContent(weld::Container* pTarget);
 };
 
 #endif

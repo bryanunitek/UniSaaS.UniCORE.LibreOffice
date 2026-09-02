@@ -79,10 +79,7 @@ void DetailsContainer::notifyChange( )
     m_aChangeHdl.Call( this );
 }
 
-IMPL_LINK_NOARG( DetailsContainer, ValueChangeHdl, weld::Entry&, void )
-{
-    notifyChange( );
-}
+IMPL_LINK_NOARG(DetailsContainer, ValueChangeHdl, weld::TextWidget&, void) { notifyChange(); }
 
 HostDetailsContainer::HostDetailsContainer(PlaceEditDialog* pDialog, sal_uInt16 nPort, OUString sScheme) :
     DetailsContainer( pDialog ),
@@ -310,13 +307,12 @@ void CmisDetailsContainer::set_visible( bool bShow )
         m_pDialog->m_xRepositoryBox->hide();
         m_pDialog->m_xEDRoot->hide();
         m_pDialog->m_xFTRoot->hide();
-#if defined OAUTH2REQUEST_SUPPORTED
+
         if (m_sBinding == GDRIVE_BASE_URL || m_sBinding == ONEDRIVE_BASE_URL)
         {
             m_pDialog->m_xFTShare->hide();
             m_pDialog->m_xEDShare->hide();
         }
-#endif
     }
     else
     {
@@ -335,10 +331,8 @@ void CmisDetailsContainer::set_visible( bool bShow )
 
 bool CmisDetailsContainer::enablePassword()
 {
-#if defined OAUTH2REQUEST_SUPPORTED
     if (m_sBinding == GDRIVE_BASE_URL || m_sBinding == ONEDRIVE_BASE_URL)
         return false;
-#endif
     return DetailsContainer::enablePassword();
 }
 

@@ -221,6 +221,7 @@ void ScRawToken::SetOpCode( OpCode e )
             nJump[ 0 ] = FORMULA_MAXJUMPCOUNT + 1;
             break;
         case ocLet:
+        case ocLambda:
             eType = svJump;
             nJump[ 0 ] = FORMULA_MAXPARAMS + 1;
             break;
@@ -349,6 +350,9 @@ void ScRawToken::SetExternal( const OUString& rStr, OpCode eCode )
 {
     eOp   = eCode;
     eType = svExternal;
+    // set later when a call's arguments are parsed
+    sbyte.cByte = 0;
+    sbyte.eInForceArray = ParamClass::Unknown;
     maExternalName = rStr;
 }
 
@@ -689,10 +693,12 @@ bool ScMatrixToken::operator==( const FormulaToken& r ) const
         && pMatrix == static_cast<const ScMatrixToken&>(r).GetMatrix();
 }
 
-ScMatrixRangeToken::ScMatrixRangeToken( const sc::RangeMatrix& rMat ) :
-    ScMatrixToken(rMat.mpMat)
+ScMatrixRangeToken::ScMatrixRangeToken(sc::RangeMatrix const& rMatrix, bool bReference)
+    : ScMatrixToken(rMatrix.mpMat)
+    , mbReference(bReference)
 {
-    maRef.InitRange(rMat.mnCol1, rMat.mnRow1, rMat.mnTab1, rMat.mnCol2, rMat.mnRow2, rMat.mnTab2);
+    maRef.InitRange(rMatrix.mnCol1, rMatrix.mnRow1, rMatrix.mnTab1, rMatrix.mnCol2,
+                    rMatrix.mnRow2, rMatrix.mnTab2);
 }
 
 ScMatrixRangeToken::ScMatrixRangeToken( const ScMatrixRangeToken& ) = default;
@@ -935,7 +941,13 @@ bool ScMatrixFormulaCellToken::operator==( const FormulaToken& r ) const
 
 void ScMatrixFormulaCellToken::CloneUpperLeftIfNecessary()
 {
-    if (xUpperLeft && xUpperLeft->GetType() == svDouble)
+    // Clone an svDouble because SetUpperLeftDouble changes it in place. Clone an
+    // uncounted token because storing it here would take no counted reference
+    // and leave the upper left dangling; this happens during threaded group
+    // calculation, when the group's pCode tokens are switched to
+    // RefCntPolicy::None. The clone is a normally reference-counted copy.
+    if (xUpperLeft && (xUpperLeft->GetType() == svDouble
+            || xUpperLeft->GetRefCntPolicy() == formula::RefCntPolicy::None))
         xUpperLeft = xUpperLeft->Clone();
 }
 
@@ -1200,6 +1212,7 @@ void ScTokenArray::CheckForThreading( const FormulaToken& r )
     constinit
 #endif
     static const o3tl::sorted_vector<OpCode> aThreadedCalcDenyList({
+        ocCall,
         ocIndirect,
         ocMacro,
         ocOffset,
@@ -1512,6 +1525,7 @@ void ScTokenArray::CheckToken( const FormulaToken& r )
                 // Depends on the reference state.
                 meVectorState = FormulaVectorCheckReference;
             break;
+            case svCallable:
             case svError:
             case svEmptyCell:
             case svExternal:
@@ -1615,6 +1629,7 @@ void ScTokenArray::CheckToken( const FormulaToken& r )
             case ocIfNA:
             case ocChoose:
             case ocLet:
+            case ocLambda:
                 // Jump commands are now supported.
             break;
         }
@@ -1906,11 +1921,15 @@ std::unique_ptr<ScTokenArray> ScTokenArray::Clone() const
             *pp = (*pp)->Clone();
             (*pp)->IncRef();
         }
+        // pCode is sized to exactly nLen here, so the array is already at its minimum size; mark it
+        // so that a later Add() reallocates instead of writing past the end:
+        p->mbFinalized = true;
     }
     if( nRPN )
     {
-        pp = p->pRPN = new FormulaToken*[ nRPN ];
-        memcpy( pp, pRPN, nRPN * sizeof( formula::FormulaToken* ) );
+        p->pRPN = std::make_unique<FormulaToken*[]>(nRPN);
+        pp = p->pRPN.get();
+        memcpy( pp, pRPN.get(), nRPN * sizeof( formula::FormulaToken* ) );
         for( sal_uInt16 i = 0; i < nRPN; i++, pp++ )
         {
             FormulaToken* t = *pp;
@@ -1965,11 +1984,15 @@ ScTokenArray ScTokenArray::CloneValue() const
             *pp = (*pp)->Clone();
             (*pp)->IncRef();
         }
+        // pCode is sized to exactly nLen here, so the array is already at its minimum size; mark it
+        // so that a later Add() reallocates instead of writing past the end:
+        aNew.mbFinalized = true;
     }
     if( nRPN )
     {
-        pp = aNew.pRPN = new FormulaToken*[ nRPN ];
-        memcpy( pp, pRPN, nRPN * sizeof( formula::FormulaToken* ) );
+        aNew.pRPN = std::make_unique<FormulaToken*[]>(nRPN);
+        pp = aNew.pRPN.get();
+        memcpy( pp, pRPN.get(), nRPN * sizeof( formula::FormulaToken* ) );
         for( sal_uInt16 i = 0; i < nRPN; i++, pp++ )
         {
             FormulaToken* t = *pp;
@@ -2558,7 +2581,7 @@ void ScTokenArray::ReadjustAbsolute3DReferences( const ScDocument& rOldDoc, ScDo
 void ScTokenArray::AdjustAbsoluteRefs( const ScDocument& rOldDoc, const ScAddress& rOldPos, const ScAddress& rNewPos,
         bool bCheckCopyRange)
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN, true);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN, true);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -2622,7 +2645,7 @@ void adjustRelativeTabRef(ScSingleRefData& rRef, SCTAB nOldTab, SCTAB nNewTab, b
 void ScTokenArray::AdjustRelativeTabRefs(SCTAB nOldTab, SCTAB nNewTab, sc::TargetTabState eMode)
 {
     const bool bInsertedTab = (eMode == sc::TargetTabState::Inserted);
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN, true);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN, true);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -2657,7 +2680,7 @@ void ScTokenArray::AdjustRelativeTabRefs(SCTAB nOldTab, SCTAB nNewTab, sc::Targe
 
 void ScTokenArray::AdjustSheetLocalNameReferences( SCTAB nOldTab, SCTAB nNewTab )
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN, false);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN, false);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -2705,7 +2728,7 @@ void ScTokenArray::AdjustSheetLocalNameReferences( SCTAB nOldTab, SCTAB nNewTab 
 
 bool ScTokenArray::ReferencesSheet( SCTAB nTab, SCTAB nPosTab ) const
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN, false);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN, false);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken* const * pp = aPtrs.maPointerRange[j].mpStart;
@@ -3182,7 +3205,7 @@ sc::RefUpdateResult ScTokenArray::AdjustReferenceOnShift( const sc::RefUpdateCon
         }
     }
 
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -3427,7 +3450,7 @@ sc::RefUpdateResult ScTokenArray::AdjustReferenceOnMove(
         assert(!"can't move");
     }
 
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -3576,7 +3599,7 @@ sc::RefUpdateResult ScTokenArray::AdjustReferenceOnMove(
 void ScTokenArray::MoveReferenceColReorder(
     const ScAddress& rPos, SCTAB nTab, SCROW nRow1, SCROW nRow2, const sc::ColRowReorderMapType& rColMap )
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -3645,7 +3668,7 @@ void ScTokenArray::MoveReferenceColReorder(
 
 void ScTokenArray::MoveReferenceRowReorder( const ScAddress& rPos, SCTAB nTab, SCCOL nCol1, SCCOL nCol2, const sc::ColRowReorderMapType& rRowMap )
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -3872,7 +3895,7 @@ sc::RefUpdateResult ScTokenArray::AdjustReferenceInName(
         // Copying cells does not modify named expressions.
         return aRes;
 
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4147,7 +4170,7 @@ sc::RefUpdateResult ScTokenArray::AdjustReferenceInMovedName( const sc::RefUpdat
 
     sc::RefUpdateResult aRes;
 
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4310,7 +4333,7 @@ sc::RefUpdateResult ScTokenArray::AdjustReferenceOnDeletedTab( const sc::RefUpda
     ScAddress aNewPos = rOldPos;
     ScRangeUpdater::UpdateDeleteTab( aNewPos, rCxt);
 
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4393,7 +4416,7 @@ sc::RefUpdateResult ScTokenArray::AdjustReferenceOnInsertedTab( const sc::RefUpd
     if (rCxt.mnInsertPos <= rOldPos.Tab())
         aNewPos.IncTab(rCxt.mnSheets);
 
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4487,7 +4510,7 @@ sc::RefUpdateResult ScTokenArray::AdjustReferenceOnMovedTab( const sc::RefUpdate
         aRes.mnTab = aNewPos.Tab(); // this sets the new tab position used when deleting
     }
 
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4561,7 +4584,7 @@ sc::RefUpdateResult ScTokenArray::AdjustReferenceOnMovedTab( const sc::RefUpdate
 
 void ScTokenArray::AdjustReferenceOnMovedOrigin( const ScAddress& rOldPos, const ScAddress& rNewPos )
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4611,7 +4634,7 @@ void ScTokenArray::AdjustReferenceOnMovedOrigin( const ScAddress& rOldPos, const
 
 void ScTokenArray::AdjustReferenceOnMovedOriginIfOtherSheet( const ScAddress& rOldPos, const ScAddress& rNewPos )
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4665,7 +4688,7 @@ void ScTokenArray::AdjustReferenceOnMovedOriginIfOtherSheet( const ScAddress& rO
 
 void ScTokenArray::AdjustReferenceOnCopy( const ScAddress& rNewPos )
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN, false);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN, false);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4848,7 +4871,7 @@ void checkBounds(
 void ScTokenArray::CheckRelativeReferenceBounds(
     const sc::RefUpdateContext& rCxt, const ScAddress& rPos, SCROW nGroupLen, std::vector<SCROW>& rBounds ) const
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4883,7 +4906,7 @@ void ScTokenArray::CheckRelativeReferenceBounds(
 void ScTokenArray::CheckRelativeReferenceBounds(
     const ScAddress& rPos, SCROW nGroupLen, const ScRange& rRange, std::vector<SCROW>& rBounds ) const
 {
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken** pp = aPtrs.maPointerRange[j].mpStart;
@@ -4920,7 +4943,7 @@ void ScTokenArray::CheckExpandReferenceBounds(
     const sc::RefUpdateContext& rCxt, const ScAddress& rPos, SCROW nGroupLen, std::vector<SCROW>& rBounds ) const
 {
     const SCROW nInsRow = rCxt.maRange.aStart.Row();
-    TokenPointers aPtrs( pCode.get(), nLen, pRPN, nRPN);
+    TokenPointers aPtrs( pCode.get(), nLen, pRPN.get(), nRPN);
     for (size_t j=0; j<2; ++j)
     {
         FormulaToken* const * pp = aPtrs.maPointerRange[j].mpStart;

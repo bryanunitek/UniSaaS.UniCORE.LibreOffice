@@ -19,9 +19,8 @@
 
 #pragma once
 
+#include "PresenterHelper.hxx"
 #include "PresenterPaneBorderPainter.hxx"
-
-#include <PresenterHelper.hxx>
 
 #include <cppuhelper/compbase.hxx>
 #include <com/sun/star/awt/XWindowListener.hpp>
@@ -73,6 +72,10 @@ public:
     virtual rtl::Reference<sd::framework::ResourceId> getResourceId() override;
 
     virtual bool isAnchorOnly() override;
+
+    // AbstractPane
+    virtual css::uno::Reference<css::awt::XWindow> getWindow() override;
+    css::uno::Reference<css::rendering::XCanvas> getCanvas() override;
 
     // XWindowListener
 

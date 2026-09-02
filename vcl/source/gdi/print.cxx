@@ -194,19 +194,30 @@ void Printer::DrawDeviceBitmap( const Point& rDestPt, const Size& rDestSize,
                                 const Point& rSrcPtPixel, const Size& rSrcSizePixel,
                                 Bitmap& rBmp )
 {
+#ifdef MACOSX
+    // tdf#172059 draw alpha bitmaps directly to print graphics on macOS
+    // The semi-transparent images in the .odt file attached to tdf#172059
+    // print as partially or completely opaque so add back the code that
+    // was reverted in commit 25ffb536755f10e2dfd3da26ce4dacdab271a044.
+    // The only code that wasn't added back was inverting the alpha mask.
+    // On macOS, there are no known problems drawing semi-transparent
+    // bitmaps so just draw the alpha mask directly without any blending.
+    DrawDeviceAlphaBitmap( Bitmap(rBmp.CreateColorBitmap(), rBmp.CreateAlphaMask()), rDestPt, rDestSize, rSrcPtPixel, rSrcSizePixel );
+#else
     if( rBmp.HasAlpha() )
     {
         // #107169# For true alpha bitmaps, no longer masking the
         // bitmap, but perform a full alpha blend against a white
         // background here.
-        Bitmap aBmp( rBmp.CreateColorBitmap() );
-        aBmp.Blend( rBmp.CreateAlphaMask(), COL_WHITE );
+        auto [ aBmp, aAlpha ] = rBmp.SplitIntoColorAndAlpha();
+        aBmp.Blend(aAlpha, COL_WHITE);
         DrawBitmap( rDestPt, rDestSize, rSrcPtPixel, rSrcSizePixel, aBmp );
     }
     else
     {
         ImplPrintTransparent( rBmp, rDestPt, rDestSize, rSrcPtPixel, rSrcSizePixel );
     }
+#endif
 }
 
 void Printer::EmulateDrawTransparent ( const tools::PolyPolygon& rPolyPoly,
@@ -896,7 +907,7 @@ void Printer::dispose()
         mpDisplayDev.disposeAndClear();
     else
     {
-        // OutputDevice Dtor is trying the same thing; that why we need to set
+        // OutputDevice Dtor is trying the same thing; that is why we need to set
         // the FontEntry to NULL here
         // TODO: consolidate duplicate cleanup by Printer and OutputDevice
         mpFontInstance.clear();
@@ -905,7 +916,7 @@ void Printer::dispose()
         // font list deleted by OutputDevice dtor
     }
 
-    // Add printer from the list
+    // Remove printer from the list
     ImplSVData* pSVData = ImplGetSVData();
     if ( mpPrev )
         mpPrev->mpNext = mpNext;
@@ -1305,7 +1316,7 @@ bool Printer::SetPaperSizeUser( const Size& rSize )
     if(!bNeedToChange)
     {
         // #i122984# only need to change when Paper is different from PAPER_USER and
-        // the mapped Paper which will created below in the call to ImplFindPaperFormatForUserSize
+        // the mapped Paper which will be created below in the call to ImplFindPaperFormatForUserSize
         // and will replace maJobSetup.ImplGetConstData()->GetPaperFormat(). This leads to
         // unnecessary JobSetups, e.g. when printing a multi-page fax, but also with
         // normal print

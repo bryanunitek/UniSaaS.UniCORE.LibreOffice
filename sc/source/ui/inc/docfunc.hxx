@@ -133,6 +133,7 @@ public:
 
     SC_DLLPUBLIC void SetNoteText( const ScAddress& rPos, const OUString& rNoteText, bool bApi );
     SC_DLLPUBLIC void ReplaceNote( const ScAddress& rPos, const OUString& rNoteText, const OUString* pAuthor, const OUString* pDate, bool bApi );
+    SC_DLLPUBLIC void InsertThreadedComment( const ScAddress& rPos, const OUString& rText, const OUString* pAuthor, bool bApi );
     SC_DLLPUBLIC void ImportNote( const ScAddress& rPos,
                                   std::unique_ptr<GenerateNoteCaption> xGenerator,
                                   const tools::Rectangle& rCaptionRect, bool bShown );
@@ -188,7 +189,7 @@ public:
                                          const OUString& rString, bool bApi, bool bEnglish,
                                          const OUString& rFormulaNmsp,
                                          const formula::FormulaGrammar::Grammar,
-                                         bool bCheckForSpill = false);
+                                         bool bDynamicArrayMaster = false);
 
     SC_DLLPUBLIC bool TabOp( const ScRange& rRange, const ScMarkData* pTabMark,
                                    const ScTabOpParam& rParam, bool bRecord, bool bApi );

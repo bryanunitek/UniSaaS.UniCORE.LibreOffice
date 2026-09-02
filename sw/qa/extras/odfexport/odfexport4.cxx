@@ -1270,8 +1270,7 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf121119)
     SwDoc* pDoc = getSwDoc();
     CPPUNIT_ASSERT_EQUAL(
         size_t(2), pDoc->getIDocumentLinksAdministration().GetLinkManager().GetLinks().size());
-    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, nullptr,
-                                                                            u""_ustr);
+    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, u""_ustr);
 
     uno::Reference<text::XTextGraphicObjectsSupplier> xTextGraphicObjectsSupplier(mxComponent,
                                                                                   uno::UNO_QUERY);
@@ -1285,8 +1284,7 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf121119)
 
     CPPUNIT_ASSERT_EQUAL(
         size_t(2), pDoc->getIDocumentLinksAdministration().GetLinkManager().GetLinks().size());
-    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, nullptr,
-                                                                            u""_ustr);
+    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, u""_ustr);
 
     uno::Reference<text::XTextGraphicObjectsSupplier> xTextGraphicObjectsSupplier2(mxComponent,
                                                                                    uno::UNO_QUERY);
@@ -1303,11 +1301,9 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf121119_runtime_update)
     SwDoc* pDoc = getSwDoc();
     CPPUNIT_ASSERT_EQUAL(
         size_t(2), pDoc->getIDocumentLinksAdministration().GetLinkManager().GetLinks().size());
-    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, nullptr,
-                                                                            u""_ustr);
+    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, u""_ustr);
     // double update of the links
-    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, nullptr,
-                                                                            u""_ustr);
+    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, u""_ustr);
 
     uno::Reference<text::XTextGraphicObjectsSupplier> xTextGraphicObjectsSupplier(mxComponent,
                                                                                   uno::UNO_QUERY);
@@ -1816,6 +1812,19 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf72640LabelAlignCompatThirdpartyVersion)
     CPPUNIT_ASSERT(!fnCheck());
     saveAndReload(TestFilter::ODT);
     CPPUNIT_ASSERT(!fnCheck());
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testFlyInDeleteRedline)
+{
+    // The document has one paragraph-anchored text frame and tracked deletions that span the
+    // paragraphs around the anchor. It is saved with tracked changes hidden in the layout.
+    createSwDoc("fdo66811-1.odt");
+    saveAndReload(TestFilter::ODT);
+
+    // The text frame was exported twice
+    auto pXmlDoc = parseExport(u"content.xml"_ustr);
+    assertXPath(pXmlDoc, "//draw:frame", 1);
+    CPPUNIT_ASSERT_EQUAL(1, getShapes());
 }
 
 } // end of anonymous namespace

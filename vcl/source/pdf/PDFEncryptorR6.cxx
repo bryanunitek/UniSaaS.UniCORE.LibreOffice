@@ -12,7 +12,7 @@
 #include <pdf/pdfwriter_impl.hxx>
 #include <comphelper/crypto/Crypto.hxx>
 #include <comphelper/hash.hxx>
-#include <comphelper/random.hxx>
+#include <rtl/random.h>
 
 using namespace css;
 
@@ -38,8 +38,10 @@ void generateBytes(std::vector<sal_uInt8>& rBytes, size_t nSize)
 {
     rBytes.resize(nSize);
 
-    for (size_t i = 0; i < rBytes.size(); ++i)
-        rBytes[i] = sal_uInt8(comphelper::rng::uniform_uint_distribution(0, 0xFF));
+    if (rBytes.empty())
+        return;
+
+    (void)rtl_random_getBytes(nullptr, rBytes.data(), rBytes.size());
 }
 
 } // end anonymous
@@ -136,11 +138,16 @@ std::vector<sal_uInt8> decryptKey(const sal_uInt8* pPass, size_t nLength, std::v
 std::vector<sal_uInt8> decryptPerms(std::vector<sal_uInt8>& rPermsEncrypted,
                                     std::vector<sal_uInt8>& rFileEncryptionKey)
 {
-    std::vector<sal_uInt8> aPermsDecrpyted(rPermsEncrypted.size());
+    std::vector<sal_uInt8> aPermsDecrypted(rPermsEncrypted.size());
     std::vector<sal_uInt8> iv(IV_SIZE, 0);
     comphelper::Decrypt aDecryptor(rFileEncryptionKey, iv, comphelper::CryptoType::AES_256_ECB);
-    aDecryptor.update(aPermsDecrpyted, rPermsEncrypted);
-    return aPermsDecrpyted;
+    aDecryptor.update(aPermsDecrypted, rPermsEncrypted);
+    if (aPermsDecrypted[9] == 'a' && aPermsDecrypted[10] == 'd' && aPermsDecrypted[11] == 'b')
+    {
+        return aPermsDecrypted;
+    }
+    SAL_INFO("vcl.pdfwriter", "decryptPerms failed");
+    return {};
 }
 
 /** Algorithm 10 step f) */
@@ -190,7 +197,9 @@ std::vector<sal_uInt8> computeHashR6(const sal_uInt8* pPassword, size_t nPasswor
 
     std::vector<sal_uInt8> E;
 
-    sal_Int32 nRound = 1; // round 0 is done already
+    // Counts the repetitions of steps a) to d) done so far.
+    // K is the input to the first repetition and is not counted.
+    sal_Int32 nRound = 0;
     do
     {
         // Step a)
@@ -235,7 +244,7 @@ std::vector<sal_uInt8> computeHashR6(const sal_uInt8* pPassword, size_t nPasswor
     }
     // Step e) and f)
     // We stop iteration if we do at least 64 rounds and (the last element of E <= round number - 32)
-    while (nRound <= 64 || E.back() > (nRound - 32));
+    while (nRound < 64 || E.back() > (nRound - 32));
 
     // Output - first 32 bytes
     return std::vector<sal_uInt8>(K.begin(), K.begin() + 32);
@@ -243,13 +252,10 @@ std::vector<sal_uInt8> computeHashR6(const sal_uInt8* pPassword, size_t nPasswor
 
 size_t addPaddingToVector(std::vector<sal_uInt8>& rVector, size_t nBlockSize)
 {
-    size_t nPaddedSize = comphelper::roundUp(rVector.size(), size_t(nBlockSize));
-    if (nPaddedSize > rVector.size())
-    {
-        sal_uInt8 nPaddedValue = sal_uInt8(nPaddedSize - rVector.size());
-        rVector.resize(nPaddedSize, nPaddedValue);
-    }
-    return nPaddedSize;
+    // RFC 8018 PKCS #5: Always add padding, between 1 and nBlockSize bytes.
+    size_t nPaddingSize = nBlockSize - (rVector.size() % nBlockSize);
+    rVector.resize(rVector.size() + nPaddingSize, sal_uInt8(nPaddingSize));
+    return rVector.size();
 }
 
 class VCL_DLLPUBLIC EncryptionContext
@@ -349,7 +355,8 @@ void PDFEncryptorR6::setupKeysAndCheck(vcl::PDFEncryptionProperties& rProperties
 
 sal_uInt64 PDFEncryptorR6::calculateSizeIncludingHeader(sal_uInt64 nSize)
 {
-    return IV_SIZE + comphelper::roundUp<sal_uInt64>(nSize, BLOCK_SIZE);
+    // IV goes before the data, and padding adds 1 to BLOCK_SIZE bytes.
+    return IV_SIZE + nSize + (BLOCK_SIZE - nSize % BLOCK_SIZE);
 }
 
 void PDFEncryptorR6::setupEncryption(std::vector<sal_uInt8>& rEncryptionKey, sal_Int32 /*nObject*/)

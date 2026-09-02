@@ -25,6 +25,7 @@
 #include <cppuhelper/compbase.hxx>
 #include <cppuhelper/weakref.hxx>
 #include <memory>
+#include <rtl/ref.hxx>
 #include <OTypeInfo.hxx>
 #include <unotools/tempfile.hxx>
 #include <unotools/weakref.hxx>
@@ -130,6 +131,26 @@ namespace connectivity::firebird
         /** We are using an external (local) file */
         bool                m_bIsFile;
 
+        /** The driver that made this connection, and owns the directory firebird works in. */
+        rtl::Reference<FirebirdDriver> m_xDriver;
+
+        /**
+         * The name firebird was given for a database outside its own directory, empty when the
+         * database is inside it and its path was handed over directly.
+         */
+        OUString            m_sExternalDatabaseName;
+
+        /** The name or path this connection hands to firebird to reach its database. */
+        const OUString& getFirebirdDatabaseName() const
+        {
+            return m_sExternalDatabaseName.isEmpty() ? m_sFirebirdURL : m_sExternalDatabaseName;
+        }
+
+        /** When true the embedded database was opened in this session, so the
+            temporary .fdb holds live data that must be written back into the .odb
+            when the connection is disposed. */
+        bool                m_bBackupDataOnDispose;
+
         /* CONNECTION PROPERTIES */
         bool                m_bIsAutoCommit;
         bool                m_bIsReadOnly;
@@ -165,7 +186,8 @@ namespace connectivity::firebird
         /// @throws css::sdbc::SQLException
         /// @throws css::uno::RuntimeException
         void construct( const OUString& url,
-                                const css::uno::Sequence< css::beans::PropertyValue >& info);
+                                const css::uno::Sequence< css::beans::PropertyValue >& info,
+                                FirebirdDriver& rDriver);
 
         const OUString& getConnectionURL()  const   {return m_sConnectionURL;}
         bool            isEmbedded()        const   {return m_bIsEmbedded;}

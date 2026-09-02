@@ -731,7 +731,7 @@ std::shared_ptr<CairoSurfaceHelper> getOrCreateCairoSurfaceHelper(const Bitmap& 
         // mechanism since there is no real need to hold MipMapped data.
         // The key here is to balance the effort for that against evtl. needed (!)
         // Mip-Mapping, and that depends on the Bitmap's size (in square pixels).
-        // Thus, add a shortcut here - but ONLY for small enough Bitmpaps that
+        // Thus, add a shortcut here - but ONLY for small enough Bitmaps that
         // do not cost too much to be painted in cairo with good quality. Remember
         // that cairo *is* a software-renderer after all (!). This value may be adapted as
         // needed. Note that below there is also 'isTrivial' used which already uses
@@ -1087,8 +1087,8 @@ CairoPixelProcessor2D::CairoPixelProcessor2D(OutputDevice& rOutputDevice,
 
     // get evtl. offsets if OutputDevice is e.g. a OUTDEV_WINDOW
     // to evaluate if initial clip is needed
-    const tools::Long nOffsetPixelX(mpTargetOutputDevice->GetOutOffXPixel());
-    const tools::Long nOffsetPixelY(mpTargetOutputDevice->GetOutOffYPixel());
+    const tools::Long nOffsetPixelX(mpTargetOutputDevice->GetDeviceOriginX());
+    const tools::Long nOffsetPixelY(mpTargetOutputDevice->GetDeviceOriginY());
     const tools::Long nWidthPixel(mpTargetOutputDevice->GetOutputWidthPixel());
     const tools::Long nHeightPixel(mpTargetOutputDevice->GetOutputHeightPixel());
     bool bClipNeeded(false);
@@ -1200,7 +1200,7 @@ Bitmap CairoPixelProcessor2D::extractBitmap() const
         // we for now only support ARGB32 and RGB24, format not supported, not valid
         return aRetval;
 
-    // ensure surface read access, wer need CAIRO_SURFACE_TYPE_IMAGE
+    // ensure surface read access, we need CAIRO_SURFACE_TYPE_IMAGE
     cairo_surface_t* pReadSource(pSource);
 
     if (CAIRO_SURFACE_TYPE_IMAGE != cairo_surface_get_type(pReadSource))
@@ -1449,7 +1449,7 @@ void CairoPixelProcessor2D::paintBitmapAlpha(const Bitmap& rBitmap,
     cairo_matrix_scale(&aMatrix, cairo_image_surface_get_width(pTarget.get()),
                        cairo_image_surface_get_height(pTarget.get()));
 
-    // The alternative wpuld be: resize/scale it SLIGHTLY to force
+    // The alternative would be: resize/scale it SLIGHTLY to force
     // that half pixel overlap to be inside the unit range.
     // That makes the error disappear, so no clip needed, but
     // SLIGHTLY smaller. Keeping this code if someone might have
@@ -2865,7 +2865,7 @@ void CairoPixelProcessor2D::processFillGradientPrimitive2D_linear_axial(
         aBColorStopsAlpha = rFillGradientPrimitive2D.getAlphaGradient().getColorStops();
     const bool bAxial(css::awt::GradientStyle_AXIAL == rFillGradient.getStyle());
 
-    // get and apply border - create soace at start in gradient
+    // get and apply border - create space at start in gradient
     const double fBorder(std::max(std::min(rFillGradient.getBorder(), 1.0), 0.0));
     if (!basegfx::fTools::equalZero(fBorder))
     {
@@ -3055,7 +3055,7 @@ void CairoPixelProcessor2D::processFillGradientPrimitive2D_square_rect(
         aBColorStops.tryToApplyBColorModifierStack(maBColorModifierStack);
     }
 
-    // get and apply border - create soace at start in gradient
+    // get and apply border - create space at start in gradient
     const double fBorder(std::max(std::min(rFillGradient.getBorder(), 1.0), 0.0));
     if (!basegfx::fTools::equalZero(fBorder))
     {
@@ -3289,7 +3289,7 @@ void CairoPixelProcessor2D::processFillGradientPrimitive2D_radial_elliptical(
     if (bHasAlpha)
         aBColorStopsAlpha = rFillGradientPrimitive2D.getAlphaGradient().getColorStops();
 
-    // get and apply border - create soace at start in gradient
+    // get and apply border - create space at start in gradient
     const double fBorder(std::max(std::min(rFillGradient.getBorder(), 1.0), 0.0));
     if (!basegfx::fTools::equalZero(fBorder))
     {
@@ -3401,7 +3401,7 @@ void CairoPixelProcessor2D::processFillGradientPrimitive2D_fallback_decompose(
     // draw all-covering initial BG polygon 1st using getOuterColor and getOutputRange
     processFillGradientPrimitive2D_drawOutputRange(rFillGradientPrimitive2D);
 
-    // bet basic form in unit coordinates
+    // get basic form in unit coordinates
     CairoPathHelper aForm(rFillGradientPrimitive2D.getUnitPolygon());
 
     // paint solid fill steps by providing callback as lambda
@@ -3555,27 +3555,37 @@ void CairoPixelProcessor2D::processPatternFillPrimitive2D(
 {
     if (!mpTargetOutputDevice)
         return;
+
     const basegfx::B2DRange& rReferenceRange = rPrimitive.getReferenceRange();
     if (rReferenceRange.isEmpty() || rReferenceRange.getWidth() <= 0.0
         || rReferenceRange.getHeight() <= 0.0)
         return;
+
     basegfx::B2DPolyPolygon aMask = rPrimitive.getMask();
     aMask.transform(getViewInformation2D().getObjectToViewTransformation());
     const basegfx::B2DRange aMaskRange(aMask.getB2DRange());
+
     if (aMaskRange.isEmpty() || aMaskRange.getWidth() <= 0.0 || aMaskRange.getHeight() <= 0.0)
         return;
+
     sal_uInt32 nTileWidth, nTileHeight;
     rPrimitive.getTileSize(nTileWidth, nTileHeight, getViewInformation2D());
     if (nTileWidth == 0 || nTileHeight == 0)
         return;
     Bitmap aTileImage = rPrimitive.createTileImage(nTileWidth, nTileHeight);
     tools::Rectangle aMaskRect = vcl::unotools::rectangleFromB2DRectangle(aMaskRange);
+
     // Unless smooth edges are needed, simply use clipping.
     if (basegfx::utils::isRectangle(aMask) || !getViewInformation2D().getUseAntiAliasing())
     {
         mpTargetOutputDevice->Push(vcl::PushFlags::CLIPREGION);
         mpTargetOutputDevice->IntersectClipRegion(vcl::Region(aMask));
-        mpTargetOutputDevice->DrawWallpaper(aMaskRect, Wallpaper(aTileImage));
+        Wallpaper aWallpaper(aTileImage);
+        aWallpaper.SetColor(COL_TRANSPARENT);
+        Point aPaperPt(aMaskRect.getX() % nTileWidth, aMaskRect.getY() % nTileHeight);
+        tools::Rectangle aPaperRect(aPaperPt, aTileImage.GetSizePixel());
+        aWallpaper.SetRect(aPaperRect);
+        mpTargetOutputDevice->DrawWallpaper(aMaskRect, aWallpaper);
         mpTargetOutputDevice->Pop();
         return;
     }
@@ -3591,19 +3601,30 @@ void CairoPixelProcessor2D::processPatternFillPrimitive2D(
     }
 
     impBufferDevice aBufferDevice(*mpTargetOutputDevice, aMaskRect);
+
     if (!aBufferDevice.isVisible())
         return;
+
     // remember last OutDev and set to content
     OutputDevice* pLastOutputDevice = mpTargetOutputDevice;
     mpTargetOutputDevice = &aBufferDevice.getContent();
-    mpTargetOutputDevice->DrawWallpaper(aMaskRect, Wallpaper(aTileImage));
+
+    Wallpaper aWallpaper(aTileImage);
+    aWallpaper.SetColor(COL_TRANSPARENT);
+    Point aPaperPt(aMaskRect.getX() % nTileWidth, aMaskRect.getY() % nTileHeight);
+    tools::Rectangle aPaperRect(aPaperPt, aTileImage.GetSizePixel());
+    aWallpaper.SetRect(aPaperRect);
+    mpTargetOutputDevice->DrawWallpaper(aMaskRect, aWallpaper);
+
     // back to old OutDev
     mpTargetOutputDevice = pLastOutputDevice;
+
     // draw mask
     VirtualDevice& rMask = aBufferDevice.getTransparence();
     rMask.SetLineColor();
     rMask.SetFillColor(COL_BLACK);
     rMask.DrawPolyPolygon(aMask);
+
     // dump buffer to outdev
     aBufferDevice.paint();
 }
@@ -4224,7 +4245,7 @@ void CairoPixelProcessor2D::processSvgLinearGradientPrimitive2D(
             break;
     }
 
-    // get PathGeometry & paint it filed with gradient
+    // get PathGeometry & paint it filled with gradient
     cairo_new_path(mpRT);
     getOrCreateFillGeometry(mpRT, rCandidate.getPolyPolygon());
     cairo_set_source(mpRT, pPattern);
@@ -4332,7 +4353,7 @@ void CairoPixelProcessor2D::processSvgRadialGradientPrimitive2D(
             break;
     }
 
-    // get PathGeometry & paint it filed with gradient
+    // get PathGeometry & paint it filled with gradient
     cairo_new_path(mpRT);
     getOrCreateFillGeometry(mpRT, rCandidate.getPolyPolygon());
     cairo_set_source(mpRT, pPattern);
@@ -4362,7 +4383,7 @@ void CairoPixelProcessor2D::processControlPrimitive2D(
 
     if (bControlIsVisibleAsChildWindow)
     {
-        // f the control is already visualized as a VCL-ChildWindow it
+        // if the control is already visualized as a VCL-ChildWindow it
         // does not need to be painted at all
         return;
     }

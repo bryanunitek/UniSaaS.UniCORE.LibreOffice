@@ -9,6 +9,7 @@
 
 #include "sdmodeltestbase.hxx"
 #include <tools/color.hxx>
+#include <tools/stream.hxx>
 #include <com/sun/star/document/UpdateDocMode.hpp>
 #include <comphelper/propertyvalue.hxx>
 #include <comphelper/sequenceashashmap.hxx>
@@ -21,16 +22,22 @@
 
 #include <svx/xlineit0.hxx>
 #include <svx/xlndsit.hxx>
+#include <svx/svdograf.hxx>
 #include <svx/svdoole2.hxx>
 #include <svx/svdotable.hxx>
+#include <svx/unoapi.hxx>
+#include <unotools/tempfile.hxx>
+#include <vcl/filter/PngImageReader.hxx>
 #include <xmloff/autolayout.hxx>
 
 #include <com/sun/star/awt/FontUnderline.hpp>
 #include <com/sun/star/drawing/EnhancedCustomShapeParameterPair.hpp>
 #include <com/sun/star/drawing/FillStyle.hpp>
+#include <com/sun/star/drawing/GraphicExportFilter.hpp>
 #include <com/sun/star/drawing/TextHorizontalAdjust.hpp>
 #include <com/sun/star/lang/IndexOutOfBoundsException.hpp>
 #include <com/sun/star/lang/Locale.hpp>
+#include <com/sun/star/lang/XComponent.hpp>
 #include <com/sun/star/style/ParagraphAdjust.hpp>
 #include <com/sun/star/text/GraphicCrop.hpp>
 #include <com/sun/star/text/WritingMode2.hpp>
@@ -86,6 +93,63 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testMasterBackgroundColor)
     xmlDocUniquePtr pLayout1 = parseExport(u"ppt/slideLayouts/slideLayout1.xml"_ustr);
     assertXPath(pLayout1, "/p:sldLayout/p:cSld/p:spTree/p:sp/p:spPr/a:solidFill/a:schemeClr", "val",
                 u"bg1");
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testGraphicPlaceholderHiddenAsMaster)
+{
+    // A layout's picture placeholder is imported onto a master page, where it is a template for
+    // the instances the slides carry themselves. It must not paint on them, or a slide shows two
+    // placeholders - the slide's own, movable one, and the layout's immovable one behind it.
+    createSdImpressDoc("pptx/picture-placeholder-custom-prompt.pptx");
+
+    SdXImpressDocument* pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    CPPUNIT_ASSERT(pXImpressDocument);
+    SdDrawDocument* pDoc = pXImpressDocument->GetDoc();
+    CPPUNIT_ASSERT_MESSAGE("no document", pDoc != nullptr);
+
+    // Only title, outline and notes placeholders used to be hidden this way. A layout's
+    // <p:ph type="pic"/> became an outline shape once, which is why it behaved before.
+    bool bFoundGraphicPresObj = false;
+    for (sal_uInt16 nMaster = 0; nMaster < pDoc->GetMasterSdPageCount(PageKind::Standard);
+         ++nMaster)
+    {
+        SdPage* pMasterPage = pDoc->GetMasterSdPage(nMaster, PageKind::Standard);
+        for (size_t nObj = 0; nObj < pMasterPage->GetObjCount(); ++nObj)
+        {
+            // A picture placeholder is an empty SdrGrafObj; a graphic the document actually
+            // contains is not an empty presentation object.
+            SdrObject* pObj = pMasterPage->GetObj(nObj);
+            if (dynamic_cast<SdrGrafObj*>(pObj) == nullptr || !pObj->IsEmptyPresObj())
+                continue;
+
+            bFoundGraphicPresObj = true;
+            CPPUNIT_ASSERT_MESSAGE("a master's picture placeholder would paint onto the slides",
+                                   pObj->IsNotVisibleAsMaster());
+        }
+    }
+    CPPUNIT_ASSERT_MESSAGE("no picture placeholder on any master page", bFoundGraphicPresObj);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testLayoutClrMapOvr)
+{
+    // Test that slide layout color map override (clrMapOvr) is preserved on round-trip
+    createSdImpressDoc("pptx/layout-clrmap-override.pptx");
+    save(TestFilter::PPTX);
+
+    // Verify the slide layout has clrMapOvr with overrideClrMapping
+    xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/slideLayouts/slideLayout1.xml"_ustr);
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "bg1", u"dk1");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "tx1", u"lt1");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "bg2", u"dk2");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "tx2", u"lt2");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "accent1", u"accent1");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "accent2", u"accent2");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "accent3", u"accent3");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "accent4", u"accent4");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "accent5", u"accent5");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "accent6", u"accent6");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "hlink", u"hlink");
+    assertXPath(pXmlDoc, "/p:sldLayout/p:clrMapOvr/a:overrideClrMapping", "folHlink", u"folHlink");
 }
 
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testSmartArtPreserve)
@@ -874,24 +938,24 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf140912_PicturePlaceholder)
             >>= isEmptyPresentationObject;
         CPPUNIT_ASSERT(isEmptyPresentationObject);
 
-        // If we supported custom prompt text, here we would also test "String" property,
-        // which would be equal to "Insert Image". See first tests: testCustomPromptTexts
+        // The slide-side shape does not carry the layout's prompt; only the layout placeholder
+        // does. See testPicturePlaceholderCustomPromptText for the prompt itself.
 
         auto xShape = xShapeProps.queryThrow<drawing::XShape>();
         aSizeBefore = xShape->getSize();
         aPosBefore = xShape->getPosition();
     }
 
-    // The picture placeholder must round-trip with its size and position (inherited from the layout
-    // via an empty <p:spPr/>), and must remain visible.
+    // The picture placeholder must round-trip with its size and position, and must remain visible.
     saveAndReload(TestFilter::PPTX);
 
     {
-        // After reload, the saved markup should be <p:sp> with <p:ph type="pic"/>
-        // and an empty <p:spPr/>.
+        // After reload, the saved markup should be <p:sp> with <p:ph type="pic"/> and its own
+        // geometry. Relying on the layout to supply the geometry instead left the placeholder
+        // 0x0 whenever the slide's layout placeholder could not be resolved on reimport.
         xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/slides/slide1.xml"_ustr);
         assertXPath(pXmlDoc, "/p:sld/p:cSld/p:spTree/p:sp/p:nvSpPr/p:nvPr/p:ph", "type", u"pic");
-        assertXPathChildren(pXmlDoc, "/p:sld/p:cSld/p:spTree/p:sp/p:spPr", 0);
+        assertXPath(pXmlDoc, "/p:sld/p:cSld/p:spTree/p:sp/p:spPr/a:xfrm/a:ext", "cx", u"6635520");
 
         uno::Reference<beans::XPropertySet> xShapeProps(getShapeFromPage(0, 0));
         bool bEmpty = false;
@@ -909,6 +973,107 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf140912_PicturePlaceholder)
         CPPUNIT_ASSERT_DOUBLES_EQUAL(aPosBefore.X, aPosAfter.X, 1);
         CPPUNIT_ASSERT_DOUBLES_EQUAL(aPosBefore.Y, aPosAfter.Y, 1);
     }
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testNoPicPlaceholderOnSlideMaster)
+{
+    // Given a deck whose only layout carries a picture placeholder, so on import the placeholder
+    // lands on the Impress master page:
+    createSdImpressDoc("pptx/tdfpictureplaceholder.pptx");
+    save(TestFilter::PPTX);
+
+    // A slide master takes only title, body, dt, ftr and sldNum placeholders. Without the
+    // accompanying fix the master carried <p:ph type="pic"/> and PowerPoint refused to open the
+    // saved file at all, reporting it as corrupted and unreadable.
+    xmlDocUniquePtr pMaster = parseExport(u"ppt/slideMasters/slideMaster1.xml"_ustr);
+    assertXPath(pMaster, "/p:sldMaster/p:cSld/p:spTree/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='pic']", 0);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testPicPlaceholderMovedToLayout)
+{
+    // Given a deck of one master and one layout, so the master page's own shapes go into the
+    // p:sldMaster part and the layout gets none of them:
+    createSdImpressDoc("pptx/picture-placeholder-one-layout.pptx");
+    save(TestFilter::PPTX);
+
+    // The picture placeholder still goes on the layout, which is where a slide resolves what it
+    // inherits. Without the accompanying fix it had nowhere to go but the slide master, which may
+    // not carry one, and PowerPoint refused to open the file.
+    xmlDocUniquePtr pLayout = parseExportedLayoutNamed(u"Picture placeholder");
+    assertXPath(pLayout, "/p:sldLayout/p:cSld/p:spTree/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='pic']", 1);
+
+    xmlDocUniquePtr pMaster2 = parseExport(u"ppt/slideMasters/slideMaster1.xml"_ustr);
+    assertXPath(pMaster2, "/p:sldMaster/p:cSld/p:spTree/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='pic']", 0);
+
+    xmlDocUniquePtr pSlide = parseExport(u"ppt/slides/slide1.xml"_ustr);
+    assertXPath(pSlide, "/p:sld/p:cSld/p:spTree/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='pic']", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testSlideShowsMasterCustomPrompt)
+{
+    // Given a layout whose picture placeholder authored a prompt:
+    createSdImpressDoc("pptx/picture-placeholder-custom-prompt.pptx");
+
+    // The slide's own placeholder shows it too. PlaceholderText is what the user reads on the
+    // slide; without the accompanying fix the slide ignored the layout and showed Impress's own
+    // resource string instead, so the layout and the slide disagreed about the same placeholder.
+    // The placeholder is looked up by what it is, not by where it sits: which shape comes first on
+    // the slide is not what this test is about.
+    SdPage* pPage = getSdDocShell()->GetDoc()->GetSdPage(0, PageKind::Standard);
+    SdrObject* pPlaceholder = pPage->GetPresObj(PresObjKind::Graphic);
+    CPPUNIT_ASSERT_MESSAGE("no picture placeholder on the slide", pPlaceholder);
+    auto xShapeProps = GetXShapeForSdrObject(pPlaceholder).queryThrow<beans::XPropertySet>();
+
+    OUString aPlaceholderText;
+    CPPUNIT_ASSERT(xShapeProps->getPropertyValue(u"PlaceholderText"_ustr) >>= aPlaceholderText);
+    CPPUNIT_ASSERT_EQUAL(u"Custom prompt to insert an image"_ustr, aPlaceholderText);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testMediaPlaceholder)
+{
+    // Given a deck with an empty media placeholder on a slide, inheriting from its layout:
+    createSdImpressDoc("pptx/media-placeholder.pptx");
+    save(TestFilter::PPTX);
+
+    // It keeps its placeholder identity on both levels. Without the accompanying fix the layout
+    // one degraded to <p:ph type="body"/>, and the slide one was written as a real media object,
+    // a <p:pic> with the internal placeholder icon embedded as its <a:blipFill>. The layout
+    // carries the header and footer placeholders too, so select the media one.
+    xmlDocUniquePtr pLayout = parseExportedLayoutNamed(u"Media placeholder");
+    assertXPath(pLayout, "/p:sldLayout/p:cSld/p:spTree/p:sp[p:nvSpPr/p:nvPr/p:ph/@type='media']",
+                1);
+
+    xmlDocUniquePtr pSlide = parseExport(u"ppt/slides/slide1.xml"_ustr);
+    assertXPath(pSlide, "/p:sld/p:cSld/p:spTree/p:sp[p:nvSpPr/p:nvPr/p:ph/@type='media']", 1);
+    assertXPath(pSlide, "/p:sld/p:cSld/p:spTree/p:pic", 0);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testPicturePlaceholderCustomPromptText)
+{
+    // Given one layout whose picture placeholder authored a prompt, and another whose
+    // picture placeholder authored none:
+    createSdImpressDoc("pptx/picture-placeholder-custom-prompt.pptx");
+    save(TestFilter::PPTX);
+
+    static constexpr OString aPicPlaceholder(
+        "/p:sldLayout/p:cSld/p:spTree/p:sp[p:nvSpPr/p:nvPr/p:ph/@type='pic']"_ostr);
+
+    // The authored prompt survives. Without the accompanying fix it was replaced by Impress's
+    // own localized resource, since a slide layout arrives as a master page and the shown text
+    // was only ever set off a master.
+    xmlDocUniquePtr pAuthored = parseExportedLayoutNamed(u"Picture placeholder, custom prompt");
+    assertXPath(pAuthored, aPicPlaceholder + "/p:nvSpPr/p:nvPr/p:ph", "hasCustomPrompt", u"1");
+    assertXPathContent(pAuthored, aPicPlaceholder + "/p:txBody/a:p/a:r/a:t",
+                       u"Custom prompt to insert an image");
+
+    // The one with no authored prompt writes no text, rather than that same resource string
+    // written out as if the document had contained it. Its body properties stay: a reader needs
+    // the insets and the anchor whether or not there is anything in the box yet.
+    xmlDocUniquePtr pDefault = parseExportedLayoutNamed(u"Picture with Caption");
+    assertXPath(pDefault, aPicPlaceholder, 1);
+    assertXPath(pDefault, aPicPlaceholder + "/p:txBody/a:bodyPr", 1);
+    assertXPath(pDefault, aPicPlaceholder + "/p:txBody/a:p", 1);
+    assertXPath(pDefault, aPicPlaceholder + "/p:txBody/a:p/a:r", 0);
 }
 
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testEnhancedPathViewBox)
@@ -1598,7 +1763,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testConvertWithMasterDeduplication)
         = packages::zip::ZipFileAccess::createWithURL(comphelper::getComponentContext(m_xSFactory),
                                                       maTempFile.GetURL());
 
-    // For each slide check that it's layout exists
+    // For each slide check that its layout exists
     for (int i = 1; i <= 4; ++i)
     {
         xmlDocUniquePtr pXmlDocRels
@@ -1665,21 +1830,13 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testCustomPromptTexts)
                                      pTxtObj->GetObjIdentifier());
         const EditTextObject& aEdit = pTxtObj->GetOutlinerParaObject()->GetTextObject();
         OUString aText = aEdit.GetText(0);
-        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text!", aText, u"Click to add Text"_ustr);
-        /* TODO: handle subtitle shape: see tdf#112557 workaround
-            - Expected: Click to edit customized Master Subtitle style
-            - Actual : Click to add Text
-            - Wrong placeholder text!
-        */
+        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text!",
+                                     u"Click to edit customized Master Subtitle style"_ustr, aText);
 
         auto xShapeProps(getShapeFromPage(0, 0));
         CPPUNIT_ASSERT(xShapeProps->getPropertyValue(u"CustomPromptText"_ustr) >>= aText);
-        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text was set!", aText, u""_ustr);
-        /* TODO: handle subtitle shape: see tdf#112557 workaround
-            - Expected: Click to edit customized Master Subtitle style
-            - Actual :
-            - Wrong placeholder text was set!
-        */
+        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text was set!",
+                                     u"Click to edit customized Master Subtitle style"_ustr, aText);
     }
 
     {
@@ -1689,12 +1846,12 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testCustomPromptTexts)
                                      pTxtObj->GetObjIdentifier());
         const EditTextObject& aEdit = pTxtObj->GetOutlinerParaObject()->GetTextObject();
         OUString aText = aEdit.GetText(0);
-        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text!", aText, u"Custom Title 1"_ustr);
+        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text!", u"Custom Title 1"_ustr, aText);
 
         auto xShapeProps(getShapeFromPage(1, 0));
         CPPUNIT_ASSERT(xShapeProps->getPropertyValue(u"CustomPromptText"_ustr) >>= aText);
-        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text was set!", aText,
-                                     u"Custom Title 1"_ustr);
+        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text was set!", u"Custom Title 1"_ustr,
+                                     aText);
     }
 
     const SdrPage* pPage2 = GetPage(3);
@@ -1706,12 +1863,12 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testCustomPromptTexts)
                                      pTxtObj->GetObjIdentifier());
         const EditTextObject& aEdit = pTxtObj->GetOutlinerParaObject()->GetTextObject();
         OUString aText = aEdit.GetText(0);
-        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text!", aText, u"Text placeholder"_ustr);
+        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text!", u"Text placeholder"_ustr, aText);
 
         auto xShapeProps(getShapeFromPage(0, 1));
         CPPUNIT_ASSERT(xShapeProps->getPropertyValue(u"CustomPromptText"_ustr) >>= aText);
-        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text was set!", aText,
-                                     u"Text placeholder"_ustr);
+        CPPUNIT_ASSERT_EQUAL_MESSAGE("Wrong placeholder text was set!", u"Text placeholder"_ustr,
+                                     aText);
     }
 }
 
@@ -2256,6 +2413,205 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testSlideSectionsODPToPPTX)
         OUString sId = getXPath(pXmlDoc, sPath + "/p14:section[" + OString::number(i) + "]", "id");
         CPPUNIT_ASSERT(!sId.isEmpty());
     }
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testCool16078_placeholderKeepsItsOutline)
+{
+    // Given a layout whose picture placeholder is clipped to an outline of two <a:path> elements:
+    // a frame with two holes, one of them round, and a second path holding a triangle that crosses
+    // the round one:
+    createSdImpressDoc("pptx/custgeom-placeholder.pptx");
+    save(TestFilter::PPTX);
+
+    // The outline is written back as the placeholder's own geometry. Without it the placeholder
+    // saved as a plain rectangle, and its fill then hid both holes and what showed through.
+    xmlDocUniquePtr pLayout = parseExportedLayoutNamed(u"Picture placeholder, clipped outline");
+    OString aPath
+        = "//p:sp[p:nvSpPr/p:nvPr/p:ph/@type='pic']/p:spPr/a:custGeom/a:pathLst/a:path"_ostr;
+    assertXPath(pLayout, aPath, 1);
+    // Three contours in one path, which is what subtracts the holes from the frame - the same three
+    // the ODF side writes. The second path is not one of them: it is filled rather than cut out, so
+    // the triangle it holds took a piece of the round hole back instead of adding a contour.
+    assertXPath(pLayout, aPath + "/a:moveTo", 3);
+    assertXPath(pLayout, aPath + "/a:close", 3);
+    // Four sides each for the two rectangles, the closing one included.
+    assertXPath(pLayout, aPath + "/a:lnTo", 8);
+    // What is left of the round hole is still curves, not a polygon flattened out of them.
+    assertXPath(pLayout, aPath + "/a:cubicBezTo", 6);
+    assertXPath(pLayout, aPath + "/a:cubicBezTo[1]/a:pt", 3);
+    // The frame's own corner, in the path's coordinates.
+    assertXPath(pLayout, aPath + "/a:moveTo[1]/a:pt", "x", u"0");
+    assertXPath(pLayout, aPath + "/a:moveTo[1]/a:pt", "y", u"0");
+
+    // The preset rectangle it used to write would have claimed the whole frame.
+    assertXPath(pLayout, "//p:sp[p:nvSpPr/p:nvPr/p:ph/@type='pic']/p:spPr/a:prstGeom", 0);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testCool16080_masterKeepsItsPlaceholders)
+{
+    // Given a deck of one master and eleven layouts, so one Impress master page stands for the
+    // whole group:
+    createSdImpressDoc("pptx/master-and-eleven-layouts.pptx");
+    save(TestFilter::PPTX);
+
+    // The master part carries its own placeholders. Without the fix it held a shape tree with
+    // nothing in it, so PowerPoint offered an empty slide master: nothing to inherit from, and
+    // an edit meant for every layout had to be repeated on each of them.
+    xmlDocUniquePtr pMaster = parseExport(u"ppt/slideMasters/slideMaster1.xml"_ustr);
+    static constexpr OString aTree("/p:sldMaster/p:cSld/p:spTree"_ostr);
+    assertXPath(pMaster, aTree + "/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='title']", 1);
+    assertXPath(pMaster, aTree + "/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='dt']", 1);
+    assertXPath(pMaster, aTree + "/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='ftr']", 1);
+    assertXPath(pMaster, aTree + "/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='sldNum']", 1);
+
+    // The body comes from the first layout that has one, since the page standing for the group is
+    // the Title Slide layout and has none. That layout inherits the master's geometry, so the
+    // placeholder lands where the master put it rather than where a layout would.
+    assertXPath(pMaster, aTree + "/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='body']", 1);
+    assertXPath(pMaster, aTree + "/p:sp[p:nvSpPr/p:nvPr/p:ph/@type='body']/p:spPr/a:xfrm/a:off",
+                "y", u"1825560");
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testCool16080_layoutShapesStayOnTheirLayout)
+{
+    // Given a deck whose first layout paints the whole slide blue, and a slide on another layout,
+    // which is therefore white:
+    createSdImpressDoc("pptx/layout-own-background.pptx");
+    saveAndReload(TestFilter::PPTX);
+
+    utl::TempFileNamed aPng;
+    aPng.EnableKillingFile();
+    uno::Sequence<beans::PropertyValue> aFilterData{
+        comphelper::makePropertyValue(u"PixelWidth"_ustr, sal_Int32(64)),
+        comphelper::makePropertyValue(u"PixelHeight"_ustr, sal_Int32(36))
+    };
+    uno::Sequence<beans::PropertyValue> aDescriptor{
+        comphelper::makePropertyValue(u"URL"_ustr, aPng.GetURL()),
+        comphelper::makePropertyValue(u"FilterName"_ustr, u"PNG"_ustr),
+        comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData)
+    };
+    auto xExporter = drawing::GraphicExportFilter::create(getComponentContext());
+    xExporter->setSourceDocument(getPage(0).queryThrow<lang::XComponent>());
+    xExporter->filter(aDescriptor);
+
+    SvFileStream aStream(aPng.GetURL(), StreamMode::READ);
+    Bitmap aSlide = vcl::PngImageReader(aStream).read();
+    CPPUNIT_ASSERT_EQUAL(Size(64, 36), aSlide.GetSizePixel());
+
+    // The slide is still white. An imported master and layout collapse onto one Impress master
+    // page, so the page standing for the group holds the first layout's rectangle - and writing
+    // that page's shapes into the master part painted it under every slide of the deck. Sample
+    // the side margins, which no placeholder of this layout reaches.
+    // Without the fix in place, this test would have failed with
+    // - Expected: rgba[ffffffff]
+    // - Actual  : rgba[0000ffff]
+    CPPUNIT_ASSERT_EQUAL(COL_WHITE, aSlide.GetPixelColor(2, 18));
+    CPPUNIT_ASSERT_EQUAL(COL_WHITE, aSlide.GetPixelColor(61, 18));
+
+    // The layout it belongs to still paints it, which is what a slide of that layout inherits.
+    xmlDocUniquePtr pLayout = parseExportedLayoutNamed(u"Title Slide");
+    assertXPath(pLayout,
+                "/p:sldLayout/p:cSld/p:spTree/p:sp[p:nvSpPr/p:cNvPr/@name='Blue background']"
+                "/p:spPr/a:solidFill/a:srgbClr",
+                "val", u"0000FF");
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testCool16080_masterKeepsWhatItsLayoutsShare)
+{
+    // Given a deck of one master that draws a rule of its own across the top of the slide, in
+    // segments of colour, and seven layouts that draw nothing:
+    createSdImpressDoc("pptx/tdf157740.pptx");
+    saveAndReload(TestFilter::PPTX);
+
+    // The rule is on the slide master, so PowerPoint edits it once for every layout. The import
+    // gives each of the seven Impress master pages a copy, and the master used to get none.
+    // Without the fix in place, this test would have failed with
+    // - Expected: 1
+    // - Actual  : 0
+    xmlDocUniquePtr pMaster = parseExport(u"ppt/slideMasters/slideMaster1.xml"_ustr);
+    assertXPath(pMaster,
+                "/p:sldMaster/p:cSld/p:spTree/p:grpSp[p:nvGrpSpPr/p:cNvPr/@name='Group 1']", 1);
+
+    // It moved there rather than being written seven more times: a layout holds the three
+    // placeholders it inherits and nothing else.
+    xmlDocUniquePtr pLayout = parseExportedLayoutNamed(u"Title, Content over Content");
+    static constexpr OString aLayoutTree("/p:sldLayout/p:cSld/p:spTree"_ostr);
+    assertXPath(pLayout, aLayoutTree + "/*[not(self::p:nvGrpSpPr) and not(self::p:grpSpPr)]", 3);
+    assertXPath(pLayout, aLayoutTree + "/p:sp/p:nvSpPr/p:nvPr/p:ph", 3);
+
+    // And the slide still shows the rule, wherever it is written
+    utl::TempFileNamed aPng;
+    aPng.EnableKillingFile();
+    uno::Sequence<beans::PropertyValue> aFilterData{
+        comphelper::makePropertyValue(u"PixelWidth"_ustr, sal_Int32(1920)),
+        comphelper::makePropertyValue(u"PixelHeight"_ustr, sal_Int32(1080))
+    };
+    uno::Sequence<beans::PropertyValue> aDescriptor{
+        comphelper::makePropertyValue(u"URL"_ustr, aPng.GetURL()),
+        comphelper::makePropertyValue(u"FilterName"_ustr, u"PNG"_ustr),
+        comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData)
+    };
+    auto xExporter = drawing::GraphicExportFilter::create(getComponentContext());
+    xExporter->setSourceDocument(getPage(0).queryThrow<lang::XComponent>());
+    xExporter->filter(aDescriptor);
+
+    SvFileStream aStream(aPng.GetURL(), StreamMode::READ);
+    Bitmap aSlide = vcl::PngImageReader(aStream).read();
+    CPPUNIT_ASSERT_EQUAL(Size(1920, 1080), aSlide.GetSizePixel());
+    // 90EBCD is accent5 of the deck's theme, the fill of the rule's second segment
+    CPPUNIT_ASSERT_EQUAL(Color(0x90EBCD), aSlide.GetPixelColor(200, 5));
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testCool16082_layoutKeepsSubtitle)
+{
+    // Given a deck whose Title Slide layout carries a subtitle placeholder:
+    createSdImpressDoc("pptx/master-and-eleven-layouts.pptx");
+    save(TestFilter::PPTX);
+
+    // The layout keeps it. Without the fix every layout of a master holding more than one lost its
+    // subtitle, so a slide made from the layout afterwards had nowhere to put one.
+    xmlDocUniquePtr pLayout = parseExportedLayoutNamed(u"Title Slide");
+    assertXPath(pLayout, "/p:sldLayout/p:cSld/p:spTree/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='subTitle']",
+                1);
+
+    // The slide master still gets none, which is what PowerPoint refuses the file over.
+    xmlDocUniquePtr pMaster = parseExport(u"ppt/slideMasters/slideMaster1.xml"_ustr);
+    assertXPath(pMaster, "/p:sldMaster/p:cSld/p:spTree/p:sp/p:nvSpPr/p:nvPr/p:ph[@type='subTitle']",
+                0);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testCool16079_dateTimeField)
+{
+    // Given a deck whose date placeholders hold an automatically updated date:
+    createSdImpressDoc("pptx/master-and-eleven-layouts.pptx");
+    save(TestFilter::PPTX);
+
+    // The placeholder keeps a field. Without the fix it held our own display string as literal
+    // text, so PowerPoint showed "<date/time>" where the original showed a date. The type is the
+    // one that leaves the format to the reader, which is what a field holding none asks for - the
+    // alias PowerPoint writes here stands for a fixed MM/DD/YYYY.
+    xmlDocUniquePtr pLayout = parseExportedLayoutNamed(u"Title Slide");
+    assertXPath(pLayout, "//p:sp[p:nvSpPr/p:nvPr/p:ph/@type='dt']/p:txBody/a:p/a:fld", "type",
+                u"datetime");
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf166401_textGivenToAPicturePlaceholder)
+{
+    // Given a slide whose picture placeholder is given text without any editing, which is what a
+    // script does and what leaves the placeholder standing for itself rather than for the text:
+    createSdImpressDoc("pptx/picture-placeholder-custom-prompt.pptx");
+    getShapeFromPage(0, 0).queryThrow<text::XTextRange>()->setString(
+        u"Given to a picture placeholder"_ustr);
+    save(TestFilter::PPTX);
+
+    // The placeholder is written with its text. It holds no image, so writing it as a picture wrote
+    // nothing at all and the text went with the shape.
+    xmlDocUniquePtr pSlide = parseExport(u"ppt/slides/slide1.xml"_ustr);
+    static constexpr OString aPlaceholder(
+        "/p:sld/p:cSld/p:spTree/p:sp[p:nvSpPr/p:nvPr/p:ph/@type='pic']"_ostr);
+    assertXPath(pSlide, aPlaceholder, 1);
+    assertXPathContent(pSlide, aPlaceholder + "/p:txBody/a:p/a:r/a:t",
+                       u"Given to a picture placeholder");
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

@@ -24,6 +24,7 @@
 #include "docxattributeoutput.hxx"
 #include "docxsdrexport.hxx"
 #include "docxhelper.hxx"
+#include "NamespaceAdjustmentHandler.hxx"
 
 #include <com/sun/star/document/XDocumentPropertiesSupplier.hpp>
 #include <com/sun/star/document/XDocumentProperties.hpp>
@@ -231,6 +232,25 @@ void DocxExport::AppendBookmark( const OUString& rName )
     std::vector< OUString > aEnds { rName };
 
     m_pAttrOutput->WriteBookmarks_Impl( aStarts, aEnds );
+}
+
+void DocxExport::AppendBookmarkStart(const OUString& rName)
+{
+    std::vector<OUString> aStarts{ rName };
+    std::vector<OUString> aEnds{};
+
+    m_pAttrOutput->WriteBookmarks_Impl(aStarts, aEnds);
+}
+
+void DocxExport::AppendBookmarkEnd(const OUString& rName, bool bIsFinal)
+{
+    std::vector<OUString> aStarts{};
+    std::vector<OUString> aEnds{ rName };
+
+    if (bIsFinal)
+        m_pAttrOutput->WriteFinalBookmarks_Impl(aStarts, aEnds);
+    else
+        m_pAttrOutput->WriteBookmarks_Impl(aStarts, aEnds);
 }
 
 void DocxExport::AppendAnnotationMarks( const SwWW8AttrIter& rAttrs, sal_Int32 nCurrentPos, sal_Int32 nLen )
@@ -711,6 +731,8 @@ ErrCode DocxExport::ExportDocument_Impl()
 
     WriteCustomXml();
 
+    WriteWebSettings();
+
     WriteEmbeddings();
 
     if (m_bDocm)
@@ -1167,6 +1189,8 @@ void DocxExport::WriteDocVars(const sax_fastparser::FSHelperPtr& pFS)
 static auto
 WriteCompat(SwDoc const& rDoc, ::sax_fastparser::FSHelperPtr const& rpFS) -> void
 {
+    // NOTE: officeotron complains if these are placed in the 'wrong order'
+
     const IDocumentSettingAccess& rIDSA = rDoc.getIDocumentSettingAccess();
     if (!rIDSA.get(DocumentSettingId::ADD_EXT_LEADING))
     {
@@ -1191,6 +1215,8 @@ WriteCompat(SwDoc const& rDoc, ::sax_fastparser::FSHelperPtr const& rpFS) -> voi
     {
         rpFS->singleElementNS(XML_w, XML_adjustLineHeightInTable);
     }
+    if (rIDSA.get(DocumentSettingId::PARA_SPACE_MAX))
+        rpFS->singleElementNS(XML_w, XML_doNotUseHTMLParagraphAutoSpacing);
     if (rIDSA.get(DocumentSettingId::DO_NOT_BREAK_WRAPPED_TABLES))
     {
         // Map the DoNotBreakWrappedTables compat flag to <w:doNotBreakWrappedTables>.
@@ -1891,6 +1917,7 @@ static void lcl_UpdateXmlValues(const SdtData& sdtData, const uno::Reference<css
 
     xTransformer->start();
     xListener->wait();
+    xTransformer->terminate();
 }
 
 void DocxExport::WriteCustomXml()
@@ -1983,6 +2010,40 @@ void DocxExport::WriteCustomXml()
                     Concat2View("itemProps"+OUString::number(j+1)+".xml" ));
         }
     }
+}
+
+void DocxExport::WriteWebSettings()
+{
+    uno::Reference<beans::XPropertySetInfo> xPropSetInfo = m_xTextDoc->getPropertySetInfo();
+    if (!xPropSetInfo->hasPropertyByName(UNO_NAME_MISC_OBJ_INTEROPGRABBAG))
+        return;
+
+    css::uno::Reference<css::xml::dom::XDocument> xWebSettingsDom;
+    css::uno::Sequence<beans::PropertyValue> propList;
+    m_xTextDoc->getPropertyValue(UNO_NAME_MISC_OBJ_INTEROPGRABBAG) >>= propList;
+    auto pProp = std::find_if(std::cbegin(propList), std::cend(propList),
+                              [](const beans::PropertyValue& rProp)
+                              { return rProp.Name == "OOXWebSettings"; });
+    if (pProp != std::cend(propList))
+        pProp->Value >>= xWebSettingsDom;
+
+    if (!xWebSettingsDom.is())
+        return;
+
+    m_rFilter.addRelation(m_pDocumentFS->getOutputStream(),
+                          oox::getRelationship(oox::Relationship::WEBSETTINGS),
+                          u"webSettings.xml");
+
+    uno::Reference<xml::sax::XSAXSerializable> xSerializer(xWebSettingsDom,
+                                                            uno::UNO_QUERY_THROW);
+    uno::Reference<xml::sax::XWriter> xWriter
+        = xml::sax::Writer::create(comphelper::getProcessComponentContext());
+    xWriter->setOutputStream(GetFilter().openFragmentStream(
+        u"word/webSettings.xml"_ustr,
+        u"application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml"_ustr));
+    xSerializer->serialize(
+        uno::Reference<xml::sax::XDocumentHandler>(new NamespaceAdjustmentHandler(m_rFilter,
+            xWriter)), css::uno::Sequence<beans::StringPair>());
 }
 
 void DocxExport::WriteVBA()

@@ -21,7 +21,6 @@
 
 #include <sal/types.h>
 #include <tools/fontenum.hxx>
-#include <tools/stream.hxx>
 #include <unotools/fontdefs.hxx>
 #include <osl/file.hxx>
 #include <osl/thread.h>
@@ -89,23 +88,44 @@ sal_Int32 PhysicalFontFace::CompareIgnoreSize(const PhysicalFontFace& rOther) co
     return nRet;
 }
 
-static int FamilyNameMatchValue(FontSelectPattern const& rFSP, std::u16string_view sFontFamily)
+bool PhysicalFontFace::MatchFamilyName(std::u16string_view rFamilyName) const
 {
-    const OUString& rFontName = rFSP.maTargetName;
-
-    if (rFontName.equalsIgnoreAsciiCase(sFontFamily))
-        return 240000;
-
-    return 0;
+    return o3tl::equalsIgnoreAsciiCase(rFamilyName, GetFamilyName());
 }
 
-static int StyleNameMatchValue(FontMatchStatus const& rStatus, std::u16string_view rStyle)
+static bool IsPlainStyleName(const OUString& rStyleName)
 {
-    if (rStatus.mpTargetStyleName
-        && o3tl::equalsIgnoreAsciiCase(rStyle, *rStatus.mpTargetStyleName))
-        return 120000;
+    if (rStyleName.isEmpty())
+        return true;
+    const OUString aName = rStyleName.replaceAll(u" ", u"").toAsciiLowerCase();
+    return aName == "regular" || aName == "normal" || aName == "standard" || aName == "roman"
+           || aName == "bold" || aName == "italic" || aName == "oblique" || aName == "bolditalic"
+           || aName == "boldoblique";
+}
 
-    return 0;
+static int StyleNameMatchValue(FontSelectPattern const& rFSP, const PhysicalFontFace& rFontFace)
+{
+    const OUString& aStyleName = rFontFace.GetStyleName();
+    // If no subfamily requested prefer plain style names over extended ones
+    // with the same properties, so a bare request picks "Regular" over "Small
+    // Caps"
+    if (rFSP.GetStyleName().isEmpty())
+        return IsPlainStyleName(aStyleName) ? 10 : 0;
+    if (!o3tl::equalsIgnoreAsciiCase(aStyleName, rFSP.GetStyleName()))
+        return 0;
+
+    // A plain requested style (e.g. a stale "Regular" left on bold text) must
+    // not override an explicit weight or posture. An extended subfamily,
+    // however, must override it.
+    if (IsPlainStyleName(rFSP.GetStyleName()))
+    {
+        if (rFSP.GetWeight() != WEIGHT_DONTKNOW && rFSP.GetWeight() != rFontFace.GetWeight())
+            return 0;
+        if (rFSP.GetItalic() != ITALIC_DONTKNOW && rFSP.GetItalic() != rFontFace.GetItalic())
+            return 0;
+    }
+
+    return 120000;
 }
 
 static int PitchMatchValue(FontSelectPattern const& rFSP, FontPitch ePitch)
@@ -116,9 +136,26 @@ static int PitchMatchValue(FontSelectPattern const& rFSP, FontPitch ePitch)
     return 0;
 }
 
-static int PreferNormalFontWidthMatchValue(FontWidth eWidthType)
+static int WidthMatchValue(FontSelectPattern const& rFSP, FontWidth eWidthType)
 {
-    // TODO: change when the upper layers can tell their width preference
+    if (rFSP.GetWidthType() != WIDTH_DONTKNOW)
+    {
+        // A width was requested: prefer the closest width.
+        int nWidthDiff = static_cast<int>(rFSP.GetWidthType()) - static_cast<int>(eWidthType);
+        if (nWidthDiff < 0)
+            nWidthDiff = -nWidthDiff;
+
+        if (nWidthDiff == 0)
+            return 1000;
+        else if (nWidthDiff == 1)
+            return 700;
+        else if (nWidthDiff == 2)
+            return 200;
+
+        return 0;
+    }
+
+    // prefer NORMAL font width
     if (eWidthType == WIDTH_NORMAL)
         return 400;
     else if ((eWidthType == WIDTH_SEMI_EXPANDED) || (eWidthType == WIDTH_SEMI_CONDENSED))
@@ -192,12 +229,12 @@ static int ItalicMatchValue(FontSelectPattern const& rFSP, FontItalic eItalic)
     return 0;
 }
 
-bool PhysicalFontFace::IsBetterMatch(const FontSelectPattern& rFSP, FontMatchStatus& rStatus) const
+bool PhysicalFontFace::IsBetterMatch(const FontSelectPattern& rFSP, int& rnBestMatch) const
 {
-    int nMatch = FamilyNameMatchValue(rFSP, GetFamilyName());
-    nMatch += StyleNameMatchValue(rStatus, GetStyleName());
+    int nMatch = MatchFamilyName(rFSP.maTargetName) ? 240000 : 0;
+    nMatch += StyleNameMatchValue(rFSP, *this);
     nMatch += PitchMatchValue(rFSP, GetPitch());
-    nMatch += PreferNormalFontWidthMatchValue(GetWidthType());
+    nMatch += WidthMatchValue(rFSP, GetWidthType());
     nMatch += WeightMatchValue(rFSP, GetWeight());
     nMatch += ItalicMatchValue(rFSP, GetItalic());
 
@@ -208,13 +245,13 @@ bool PhysicalFontFace::IsBetterMatch(const FontSelectPattern& rFSP, FontMatchSta
     else
         nMatch += 5;
 
-    if (rStatus.mnFaceMatch > nMatch)
+    if (rnBestMatch > nMatch)
     {
         return false;
     }
-    else if (rStatus.mnFaceMatch < nMatch)
+    else if (rnBestMatch < nMatch)
     {
-        rStatus.mnFaceMatch = nMatch;
+        rnBestMatch = nMatch;
         return true;
     }
 
@@ -254,10 +291,6 @@ FontCharMapRef PhysicalFontFace::GetFontCharMap() const
 {
     if (mxCharMap.is())
         return mxCharMap;
-
-    // Check if this font is using symbol cmap subtable, most likely redundant
-    // since HarfBuzz handles mapping symbol fonts for us.
-    RawFontData aData(GetRawFontData(HB_TAG('c', 'm', 'a', 'p')));
 
     hb_face_t* pHbFace = GetHbFace();
     hb_set_t* pUnicodes = hb_set_create();
@@ -301,34 +334,30 @@ bool PhysicalFontFace::GetFontCapabilities(vcl::FontCapabilities& rFontCapabilit
     if (!mxFontCapabilities)
     {
         mxFontCapabilities.emplace();
-        RawFontData aData(GetRawFontData(HB_TAG('O', 'S', '/', '2')));
+        hb_face_t* pHbFace = GetHbFace();
 
-        SvMemoryStream aStream(const_cast<uint8_t*>(aData.data()), aData.size(), StreamMode::READ);
-        aStream.SetEndian(SvStreamEndian::BIG);
-
-        sal_uInt32 nValue;
-
-        auto& rUnicodeRange = mxFontCapabilities->oUnicodeRange;
-        rUnicodeRange = std::bitset<vcl::UnicodeCoverage::MAX_UC_ENUM>();
-        aStream.Seek(vcl::OS2_ulUnicodeRange1_offset);
-        aStream.ReadUInt32(nValue);
-        appendBitset(*rUnicodeRange, 0, nValue);
-        aStream.ReadUInt32(nValue);
-        appendBitset(*rUnicodeRange, 32, nValue);
-        aStream.ReadUInt32(nValue);
-        appendBitset(*rUnicodeRange, 64, nValue);
-        aStream.ReadUInt32(nValue);
-        appendBitset(*rUnicodeRange, 96, nValue);
-
-        if (aStream.good())
+        const sal_uInt32 nUR1 = hb_ot_fetch_bits(pHbFace, HB_OT_BITS_TAG_UNICODE_RANGE_1);
+        const sal_uInt32 nUR2 = hb_ot_fetch_bits(pHbFace, HB_OT_BITS_TAG_UNICODE_RANGE_2);
+        const sal_uInt32 nUR3 = hb_ot_fetch_bits(pHbFace, HB_OT_BITS_TAG_UNICODE_RANGE_3);
+        const sal_uInt32 nUR4 = hb_ot_fetch_bits(pHbFace, HB_OT_BITS_TAG_UNICODE_RANGE_4);
+        if (nUR1 || nUR2 || nUR3 || nUR4)
         {
-            auto& rCodePageRange = mxFontCapabilities->oCodePageRange;
-            rCodePageRange = std::bitset<vcl::CodePageCoverage::MAX_CP_ENUM>();
-            aStream.Seek(vcl::OS2_ulCodePageRange1_offset);
-            aStream.ReadUInt32(nValue);
-            appendBitset(*rCodePageRange, 0, nValue);
-            aStream.ReadUInt32(nValue);
-            appendBitset(*rCodePageRange, 32, nValue);
+            std::bitset<vcl::UnicodeCoverage::MAX_UC_ENUM> aUnicodeRange;
+            appendBitset(aUnicodeRange, 0, nUR1);
+            appendBitset(aUnicodeRange, 32, nUR2);
+            appendBitset(aUnicodeRange, 64, nUR3);
+            appendBitset(aUnicodeRange, 96, nUR4);
+            mxFontCapabilities->oUnicodeRange = aUnicodeRange;
+        }
+
+        const sal_uInt32 nCPR1 = hb_ot_fetch_bits(pHbFace, HB_OT_BITS_TAG_CODE_PAGE_RANGE_1);
+        const sal_uInt32 nCPR2 = hb_ot_fetch_bits(pHbFace, HB_OT_BITS_TAG_CODE_PAGE_RANGE_2);
+        if (nCPR1 || nCPR2)
+        {
+            std::bitset<vcl::CodePageCoverage::MAX_CP_ENUM> aCodePageRange;
+            appendBitset(aCodePageRange, 0, nCPR1);
+            appendBitset(aCodePageRange, 32, nCPR2);
+            mxFontCapabilities->oCodePageRange = aCodePageRange;
         }
     }
 
@@ -430,16 +459,24 @@ OUString GenerateVariableFontPSName(const PhysicalFontFace& rFace,
     }
     else
     {
-        for (const auto& rVariation : rVariations)
+        // Append non-default axes in a fixed (fvar) order so the name does not
+        // depend on the order the variation list happened to be built in.
+        unsigned int nAxes = hb_ot_var_get_axis_count(pHbFace);
+        std::vector<hb_ot_var_axis_info_t> aAxes(nAxes);
+        hb_ot_var_get_axis_infos(pHbFace, 0, &nAxes, aAxes.data());
+        for (const auto& rAxis : aAxes)
         {
-            hb_ot_var_axis_info_t info;
-            if (hb_ot_var_find_axis_info(pHbFace, rVariation.nTag, &info))
+            const vcl::font::Variation* pMatch = nullptr;
+            for (const auto& rVariation : rVariations)
             {
-                if (rVariation.fValue == info.default_value)
-                    continue;
+                if (rVariation.nTag == rAxis.tag)
+                    pMatch = &rVariation;
+            }
+            if (pMatch && pMatch->fValue != rAxis.default_value)
+            {
                 char aTag[5] = {};
-                hb_tag_to_string(rVariation.nTag, aTag);
-                aName.append("_" + OUString::number(rVariation.fValue)
+                hb_tag_to_string(rAxis.tag, aTag);
+                aName.append("_" + OUString::number(pMatch->fValue)
                              + o3tl::trim(OUString::createFromAscii(aTag)));
             }
         }
@@ -478,16 +515,12 @@ bool PhysicalFontFace::CreateFontSubset(std::vector<sal_uInt8>& rOutBuffer,
 
     unsigned int flags = HB_SUBSET_FLAGS_DEFAULT;
 
-#if HB_VERSION_ATLEAST(13, 0, 0)
     // If the font has CFF2 table, we need to downgrade it to CFF, as we can’t embed CFF2 in PDF.
     flags |= HB_SUBSET_FLAGS_DOWNGRADE_CFF2;
-#endif
 
-#if !HB_VERSION_ATLEAST(13, 0, 2)
-    // tdf#171202: Work around HarfBuzz bug where setting old_to_new_glyph_mapping would result in
-    // invalid local subr indices. De-subroutinize the font if we are building against old HarfBuzz.
-    flags |= HB_SUBSET_FLAGS_DESUBROUTINIZE;
-#endif
+    // Make the charset of CID-keyed CFF fonts identity, so that the CIDs of the
+    // subset are its glyph IDs.
+    flags |= HB_SUBSET_FLAGS_CFF_IDENTITY_CHARSET;
 
     hb_subset_input_set_flags(pInput, flags);
 
@@ -564,25 +597,12 @@ bool PhysicalFontFace::CreateFontSubset(std::vector<sal_uInt8>& rOutBuffer,
     if (hb_ot_metrics_get_position(pSubsetFont, HB_OT_METRICS_TAG_CAP_HEIGHT, &nCapHeight))
         rInfo.m_nCapHeight = XUnits(nUPEM, nCapHeight);
 
-    hb_blob_t* pHeadBlob = hb_face_reference_table(pSubsetFace, HB_TAG('h', 'e', 'a', 'd'));
-    comphelper::ScopeGuard aHeadBlobGuard([&]() { hb_blob_destroy(pHeadBlob); });
-
-    unsigned int nHeadLen;
-    const char* pHead = hb_blob_get_data(pHeadBlob, &nHeadLen);
-    SvMemoryStream aStream(const_cast<char*>(pHead), nHeadLen, StreamMode::READ);
-    // Font data are big endian.
-    aStream.SetEndian(SvStreamEndian::BIG);
-    if (aStream.Seek(vcl::HEAD_yMax_offset) == vcl::HEAD_yMax_offset)
-    {
-        sal_Int16 xMin, yMin, xMax, yMax;
-        aStream.Seek(vcl::HEAD_xMin_offset);
-        aStream.ReadInt16(xMin);
-        aStream.ReadInt16(yMin);
-        aStream.ReadInt16(xMax);
-        aStream.ReadInt16(yMax);
-        rInfo.m_aFontBBox = tools::Rectangle(Point(XUnits(nUPEM, xMin), XUnits(nUPEM, yMin)),
-                                             Point(XUnits(nUPEM, xMax), XUnits(nUPEM, yMax)));
-    }
+    auto nXMin = hb_ot_fetch_number(pSubsetFace, HB_OT_NUMBER_TAG_FONT_X_MIN);
+    auto nYMin = hb_ot_fetch_number(pSubsetFace, HB_OT_NUMBER_TAG_FONT_Y_MIN);
+    auto nXMax = hb_ot_fetch_number(pSubsetFace, HB_OT_NUMBER_TAG_FONT_X_MAX);
+    auto nYMax = hb_ot_fetch_number(pSubsetFace, HB_OT_NUMBER_TAG_FONT_Y_MAX);
+    rInfo.m_aFontBBox = tools::Rectangle(Point(XUnits(nUPEM, nXMin), XUnits(nUPEM, nYMin)),
+                                         Point(XUnits(nUPEM, nXMax), XUnits(nUPEM, nYMax)));
 
     hb_blob_t* pCFFBlob = hb_face_reference_table(pSubsetFace, HB_TAG('C', 'F', 'F', ' '));
     comphelper::ScopeGuard aCFFBlobGuard([&]() { hb_blob_destroy(pCFFBlob); });
@@ -591,56 +611,8 @@ bool PhysicalFontFace::CreateFontSubset(std::vector<sal_uInt8>& rOutBuffer,
         // This is not a font with CFF table, so we will create a TTF font subset.
         rInfo.m_nFontType = FontType::SFNT_TTF;
 
-        // HarfBuzz creates a Unicode cmap, but we need a fake cmap based on pEncoding,
-        // so we use face builder construct a new face based in the subset table,
-        // and create a new cmap table and add it to the new face.
-        hb_face_t* pBuilderFace = hb_face_builder_create();
-        comphelper::ScopeGuard aBuilderFaceGuard([&]() { hb_face_destroy(pBuilderFace); });
-        unsigned int nSubsetTableCount = hb_face_get_table_tags(pSubsetFace, 0, nullptr, nullptr);
-        std::vector<hb_tag_t> aSubsetTableTags(nSubsetTableCount);
-        hb_face_get_table_tags(pSubsetFace, 0, &nSubsetTableCount, aSubsetTableTags.data());
-        for (unsigned int i = 0; i < nSubsetTableCount; ++i)
-        {
-            hb_blob_t* pTableBlob = hb_face_reference_table(pSubsetFace, aSubsetTableTags[i]);
-            hb_face_builder_add_table(pBuilderFace, aSubsetTableTags[i], pTableBlob);
-            hb_blob_destroy(pTableBlob);
-        }
-
-        // Build a cmap table with a format 0 subtable
-        SvMemoryStream aCmapStream;
-        aCmapStream.SetEndian(SvStreamEndian::BIG);
-
-        // cmap header
-        aCmapStream.WriteUInt16(0); // version
-        aCmapStream.WriteUInt16(1); // numTables
-
-        // Encoding record
-        aCmapStream.WriteUInt16(1); // platformID (Mac: 1)
-        aCmapStream.WriteUInt16(0); // encodingID (Roman: 0)
-        aCmapStream.WriteUInt32(12); // subtable offset
-
-        // Format 0 subtable
-        aCmapStream.WriteUInt16(0); // format
-        aCmapStream.WriteUInt16(262); // length
-        aCmapStream.WriteUInt16(0); // language
-
-        // glyphIdArray
-        for (int i = 0; i < 256; ++i)
-        {
-            if (i < nGlyphCount)
-                aCmapStream.WriteUInt8(pEncoding[i]);
-            else
-                aCmapStream.WriteUInt8(0);
-        }
-
-        hb_blob_t* pCmapBlob
-            = hb_blob_create(static_cast<const char*>(aCmapStream.GetData()), aCmapStream.Tell(),
-                             HB_MEMORY_MODE_DUPLICATE, nullptr, nullptr);
-        hb_face_builder_add_table(pBuilderFace, HB_TAG('c', 'm', 'a', 'p'), pCmapBlob);
-        hb_blob_destroy(pCmapBlob);
-
-        hb_blob_t* pSubsetBlob = hb_face_reference_blob(pBuilderFace);
-        comphelper::ScopeGuard aBuilderBlobGuard([&]() { hb_blob_destroy(pSubsetBlob); });
+        hb_blob_t* pSubsetBlob = hb_face_reference_blob(pSubsetFace);
+        comphelper::ScopeGuard aSubsetBlobGuard([&]() { hb_blob_destroy(pSubsetBlob); });
 
         unsigned int nSubsetLength;
         const char* pSubsetData = hb_blob_get_data(pSubsetBlob, &nSubsetLength);
@@ -652,23 +624,16 @@ bool PhysicalFontFace::CreateFontSubset(std::vector<sal_uInt8>& rOutBuffer,
     }
     else
     {
-        // Ideally we should be outputting a CFF (Type1C) font here, but I couldn’t get it to work.
-        // So we oconvert it to Type1 font instead.
-        // TODO: simplify CreateCFFfontSubset() to only do the conversion, since we already
-        // have the subsetted font.
-        rInfo.m_nFontType = FontType::TYPE1_PFB;
+        // This is a font with CFF table, so we will create a base CFF font subset.
+        rInfo.m_nFontType = FontType::CFF_FONT;
 
         unsigned int nCffLen;
         const char* pCffData = hb_blob_get_data(pCFFBlob, &nCffLen);
         if (!pCffData || !nCffLen)
             return false;
 
-        if (!ConvertCFFfontToType1(reinterpret_cast<const unsigned char*>(pCffData), nCffLen,
-                                   rOutBuffer, rInfo))
-        {
-            SAL_WARN("vcl.fonts.cff", "Failed to convert CFF data to Type 1 font");
-            return false;
-        }
+        rOutBuffer.assign(reinterpret_cast<const sal_uInt8*>(pCffData),
+                          reinterpret_cast<const sal_uInt8*>(pCffData) + nCffLen);
     }
 
     return true;
@@ -803,7 +768,7 @@ OUString PhysicalFontFace::GetName(NameID aNameID, const LanguageTag& rLanguageT
     return sName;
 }
 
-std::vector<OUString> PhysicalFontFace::GetAliases() const
+std::vector<OUString> PhysicalFontFace::GetLocalizedNames(NameID aNameID) const
 {
     std::vector<OUString> aNames;
 
@@ -815,7 +780,7 @@ std::vector<OUString> PhysicalFontFace::GetAliases() const
     std::vector<char16_t> aBuf;
     for (unsigned int i = 0; i < nEntries; ++i)
     {
-        if (aEntries[i].name_id != HB_OT_NAME_ID_FONT_FAMILY)
+        if (aEntries[i].name_id != hb_ot_name_id_t(aNameID))
         {
             continue;
         }
@@ -831,14 +796,23 @@ std::vector<OUString> PhysicalFontFace::GetAliases() const
             hb_ot_name_get_utf16(pHbFace, aEntries[i].name_id, aEntries[i].language, &nName,
                                  reinterpret_cast<uint16_t*>(aBuf.data()));
 
-            OUString sName{ aBuf.data(), static_cast<sal_Int32>(nName) };
-            if (GetFamilyName() != sName)
-            {
-                aNames.push_back(std::move(sName));
-            }
+            aNames.emplace_back(aBuf.data(), static_cast<sal_Int32>(nName));
         }
     }
 
+    return aNames;
+}
+
+bool PhysicalFontFace::HasOpenTypeMathTable() const
+{
+    const auto pHbFace = GetHbFace();
+    return hb_ot_math_has_data(pHbFace);
+}
+
+std::vector<OUString> PhysicalFontFace::GetAliases() const
+{
+    std::vector<OUString> aNames = GetLocalizedNames(NAME_ID_FONT_FAMILY);
+    std::erase(aNames, GetFamilyName());
     return aNames;
 }
 

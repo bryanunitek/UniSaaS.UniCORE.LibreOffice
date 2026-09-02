@@ -2,12 +2,6 @@ basctl/source/basicide/baside3.cxx:843
     enum NameClashMode NO_CLASH
 basctl/source/basicide/doceventnotifier.cxx:55
     enum basctl::(anonymous namespace)::ListenerAction RemoveListener
-basctl/source/basicide/macrodlg.hxx:32
-    enum basctl::MacroExitCode Macro_Close
-basctl/source/basicide/macrodlg.hxx:34
-    enum basctl::MacroExitCode Macro_New
-basctl/source/basicide/macrodlg.hxx:35
-    enum basctl::MacroExitCode Macro_Edit
 basctl/source/inc/bastype2.hxx:40
     enum BrowseMode All
 basctl/source/inc/dlged.hxx:99
@@ -1316,9 +1310,9 @@ desktop/source/lib/init.cxx:8046
     enum (unnamed at /home/noel/libo-plugin/desktop/source/lib/init.cxx:8043:5) FULL_INIT
 desktop/source/migration/services/oo3extensionmigration.hxx:62
     enum migration::OO3ExtensionMigration::ScanResult SCANRESULT_DONTMIGRATE_EXTENSION
-desktop/unx/source/start.c:178
+desktop/unx/source/start.cxx:178
     int ProgressExit
-desktop/unx/source/start.c:178
+desktop/unx/source/start.cxx:178
     int ProgressRestart
 drawinglayer/source/tools/emfphelperdata.hxx:250
     enum emfplushelper::EmfPlusHelperData::Direction vertical
@@ -6176,6 +6170,8 @@ sw/inc/sortopt.hxx:27
     enum SwSortOrder Descending
 sw/inc/sortopt.hxx:28
     enum SwSortDirection Columns
+sw/inc/SwAppletImpl.hxx:30
+    enum SwHtmlOptType IGNORE
 sw/inc/swcrsr.hxx:65
     enum SwCursorSkipMode Chars
 sw/inc/swmodule.hxx:63

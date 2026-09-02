@@ -205,9 +205,9 @@ BackendImpl::BackendImpl(
             new ConfigurationBackendDb(getComponentContext(), dbFile));
         //clean up data folders which are no longer used.
         //This must not be done in the same process where the help files
-        //are still registers. Only after revoking and restarting OOo the folders
+        //are still registered. Only after revoking and restarting OOo the folders
         //can be removed. This works now, because the extension manager is a singleton
-        //and the backends are only create once per process.
+        //and the backends are only created once per process.
         std::vector<OUString> folders = m_backendDb->getAllDataUrls();
         deleteUnusedFolders(folders);
 
@@ -503,7 +503,7 @@ bool BackendImpl::removeFromConfigmgrIni(
     auto i(std::find(rSet.begin(), rSet.end(), rcterm));
     if (i == rSet.end() && !isSchema)
     {
-        //in case the xcu contained %origin% then the configmr.ini contains the
+        //in case the xcu contained %origin% then the configmgr.ini contains the
         //url to the file in the user installation (e.g. $BUNDLED_EXTENSIONS_USER)
         //However, m_url (getURL()) contains the URL for the file in the actual
         //extension installation.
@@ -723,7 +723,7 @@ void BackendImpl::PackageImpl::processPackage_(
             for (auto const& entry : entries)
             {
                 //If the xcu file was installed before the configmgr was changed
-                //to use the configmgr.ini, one needed to rebuild to whole directory
+                //to use the configmgr.ini, one needed to rebuild the whole directory
                 //structure containing the xcu, xcs files from all extensions. Now,
                 //we just add all other xcu/xcs files to the configmgr.ini instead of
                 //rebuilding the directory structure.
@@ -765,8 +765,8 @@ void BackendImpl::PackageImpl::processPackage_(
         }
 #endif
         ::std::optional<ConfigurationBackendDb::Data> data = that->readDataFromDb(url);
-        //If an xcu file was life deployed then always a data entry is written.
-        //If the xcu file was already in the configmr.ini then there is also
+        //If an xcu file was live deployed then always a data entry is written.
+        //If the xcu file was already in the configmgr.ini then there is also
         //a data entry
         if (!m_isSchema && data)
         {

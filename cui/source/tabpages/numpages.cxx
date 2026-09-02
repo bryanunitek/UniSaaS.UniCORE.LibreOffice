@@ -1260,8 +1260,8 @@ void SvxNumOptionsTabPage::SetMetric(FieldUnit eMetric)
         m_xWidthMF->set_digits(1);
         m_xHeightMF->set_digits(1);
     }
-    m_xWidthMF->set_unit(eMetric);
-    m_xHeightMF->set_unit(eMetric);
+    SetFieldUnit(*m_xWidthMF, eMetric);
+    SetFieldUnit(*m_xHeightMF, eMetric);
 }
 
 std::unique_ptr<SfxTabPage> SvxNumOptionsTabPage::Create(weld::Container* pPage, weld::DialogController* pController,
@@ -2264,7 +2264,7 @@ IMPL_LINK_NOARG(SvxNumOptionsTabPage, CharFmtHdl_Impl, weld::ComboBox&, void)
     SetModified(false);
 };
 
-IMPL_LINK(SvxNumOptionsTabPage, EditModifyHdl_Impl, weld::Entry&, rEdit, void)
+IMPL_LINK(SvxNumOptionsTabPage, EditModifyHdl_Impl, weld::TextWidget&, rEdit, void)
 {
     EditModifyHdl_Impl(&rEdit);
 }
@@ -2274,7 +2274,7 @@ IMPL_LINK(SvxNumOptionsTabPage, SpinModifyHdl_Impl, weld::SpinButton&, rSpinButt
     EditModifyHdl_Impl(&rSpinButton);
 }
 
-void SvxNumOptionsTabPage::EditModifyHdl_Impl(const weld::Entry* pEdit)
+void SvxNumOptionsTabPage::EditModifyHdl_Impl(const weld::TextWidget* pEdit)
 {
     bool bPrefixSuffix = (pEdit == m_xPrefixED.get())|| (pEdit == m_xSuffixED.get());
     bool bStart = pEdit == m_xStartED.get();
@@ -2783,12 +2783,12 @@ void SvxNumPositionTabPage::SetMetric(FieldUnit eMetric)
         m_xAlignedAtMF->set_digits(1);
         m_xIndentAtMF->set_digits(1);
     }
-    m_xDistBorderMF->set_unit(eMetric);
-    m_xDistNumMF->set_unit(eMetric);
-    m_xIndentMF->set_unit(eMetric);
-    m_xListtabMF->set_unit(eMetric);
-    m_xAlignedAtMF->set_unit(eMetric);
-    m_xIndentAtMF->set_unit(eMetric);
+    SetFieldUnit(*m_xDistBorderMF, eMetric);
+    SetFieldUnit(*m_xDistNumMF, eMetric);
+    SetFieldUnit(*m_xIndentMF, eMetric);
+    SetFieldUnit(*m_xListtabMF, eMetric);
+    SetFieldUnit(*m_xAlignedAtMF, eMetric);
+    SetFieldUnit(*m_xIndentAtMF, eMetric);
 }
 
 IMPL_LINK_NOARG(SvxNumPositionTabPage, EditModifyHdl_Impl, weld::ComboBox&, void)

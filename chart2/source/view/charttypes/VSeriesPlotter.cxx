@@ -59,6 +59,7 @@
 #include "CandleStickChart.hxx"
 #include "BubbleChart.hxx"
 #include "NetChart.hxx"
+#include "FunnelChart.hxx"
 #include "UnsupportedChart.hxx"
 #include <unonames.hxx>
 #include <SpecialCharacters.hxx>
@@ -1948,7 +1949,7 @@ public:
         rfMax = std::numeric_limits<double>::lowest();
 
         /**
-         * For each, X value, calculate Y value range
+         * For each X value, calculate Y value range
          */
         for (auto const& it : m_SeriesGroup)
         {
@@ -2224,7 +2225,7 @@ OUString VSeriesPlotter::getCategoryName( sal_Int32 nPointIndex ) const
 }
 
 namespace {
-// The following it to support rendering order for combo charts. A chart type
+// The following is to support rendering order for combo charts. A chart type
 // with a lower rendering order is rendered before (i.e., behind) a chart with a
 // higher rendering order. The rendering orders are based on rough guesses about
 // how much one chart (type) will obscure another chart (type). The intent is to
@@ -2901,8 +2902,8 @@ VSeriesPlotter* VSeriesPlotter::createSeriesPlotter(
         pRet = new NetChart(xChartTypeModel,nDimensionCount,false,std::make_unique<PolarPlottingPositionHelper>());
     else if( aChartType.equalsIgnoreAsciiCase(CHART2_SERVICE_NAME_CHARTTYPE_CANDLESTICK) )
         pRet = new CandleStickChart(xChartTypeModel,nDimensionCount);
-    else if( aChartType.equalsIgnoreAsciiCase(CHART2_SERVICE_NAME_CHARTTYPE_AREA) )
-        pRet = new AreaChart(xChartTypeModel,nDimensionCount,false,true);
+    else if( aChartType.equalsIgnoreAsciiCase(CHART2_SERVICE_NAME_CHARTTYPE_FUNNEL) )
+        pRet = new FunnelChart(xChartTypeModel,nDimensionCount);
     else
         pRet = new UnsupportedChart(xChartTypeModel);
     return pRet;

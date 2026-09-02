@@ -331,6 +331,7 @@ void SwTextFormatter::InsertPortion( SwTextFormatInfo &rInf,
     }
     else
     {
+        const IDocumentSettingAccess& rIDSA = GetTextFrame()->GetDoc().getIDocumentSettingAccess();
         pLast = rInf.GetLast();
         if( pLast->GetNextPortion() )
         {
@@ -342,15 +343,19 @@ void SwTextFormatter::InsertPortion( SwTextFormatInfo &rInf,
 
         rInf.SetOtherThanFootnoteInside( rInf.IsOtherThanFootnoteInside() || !pPor->IsFootnotePortion() );
 
-        // Adjust maxima
         if( m_pCurr->Height() < pPor->Height() )
-            m_pCurr->Height( pPor->Height(), pPor->IsTextPortion() );
+            m_pCurr->Height(pPor->Height(), pPor->IsUsedToCalcLineSpacingHeight(rIDSA));
+        else if (m_pCurr->GetLineSpacingBaseHeight() < pPor->Height()
+                 && pPor->IsUsedToCalcLineSpacingHeight(rIDSA))
+        {
+            m_pCurr->SetLineSpacingBaseHeight(pPor->Height());
+        }
         if( m_pCurr->GetAscent() < pPor->GetAscent() )
             m_pCurr->SetAscent( pPor->GetAscent() );
         if( m_pCurr->GetHangingBaseline() < pPor->GetHangingBaseline() )
             m_pCurr->SetHangingBaseline( pPor->GetHangingBaseline() );
 
-        if (GetTextFrame()->GetDoc().getIDocumentSettingAccess().get(DocumentSettingId::MS_WORD_COMP_MIN_LINE_HEIGHT_BY_FLY))
+        if (rIDSA.get(DocumentSettingId::MS_WORD_COMP_MIN_LINE_HEIGHT_BY_FLY))
         {
             // For DOCX with compat=14 the only shape in line defines height of the line in spite of used font
             if (pLast->IsFlyCntPortion() && pPor->IsTextPortion() && pPor->GetLen() == TextFrameIndex(0))
@@ -842,6 +847,47 @@ void SwTextFormatter::CalcAdjustLine( SwLineLayout *pCurrent )
 
 void SwTextFormatter::CalcAscent( SwTextFormatInfo &rInf, SwLinePortion *pPor )
 {
+    std::optional<bool> bShouldApplyCJKAdjustment;
+    auto fnShouldApplyCJKAdjustment = [&]
+    {
+        if (!bShouldApplyCJKAdjustment.has_value())
+        {
+            bShouldApplyCJKAdjustment = [&]
+            {
+                if (!GetTextFrame()->GetDoc().getIDocumentSettingAccess().get(
+                        DocumentSettingId::MS_WORD_COMP_GRID_METRICS))
+                {
+                    return false;
+                }
+
+                // tdf#171275: Do not add the CJK extra leading when grid is enabled
+                auto const* const pGrid = GetGridItem(m_pFrame->FindPageFrame());
+                if (pGrid && rInf.SnapToGrid())
+                {
+                    return false;
+                }
+
+                return rInf.FontHasCJKCodePages();
+            }();
+        }
+
+        return *bShouldApplyCJKAdjustment;
+    };
+
+    auto fnAdjustHeightAscent = [&](sal_uInt16 nHeight, sal_uInt16 nAscent)
+    {
+        if (fnShouldApplyCJKAdjustment())
+        {
+            // tdf#129808: For Word layout compatibility, adjust ascent for fonts
+            // advertising support for certain CJK code pages.
+            sal_uInt16 nAdjustedHeight = (nHeight * 127) / 100;
+            sal_uInt16 nAdjustedAscent = nAdjustedHeight - (nHeight - nAscent);
+            return std::make_tuple(nAdjustedHeight, nAdjustedAscent);
+        }
+
+        return std::make_tuple(nHeight, nAscent);
+    };
+
     bool bCalc = false;
     if ( pPor->InFieldGrp() && static_cast<SwFieldPortion*>(pPor)->GetFont() )
     {
@@ -849,8 +895,11 @@ void SwTextFormatter::CalcAscent( SwTextFormatInfo &rInf, SwLinePortion *pPor )
         // independent from hard attribute values
         SwFont* pFieldFnt = static_cast<SwFieldPortion*>(pPor)->m_pFont.get();
         SwFontSave aSave( rInf, pFieldFnt );
-        pPor->Height( rInf.GetTextHeight() );
-        pPor->SetAscent( rInf.GetAscent() );
+
+        auto [nAdjustedHeight, nAdjustedAscent]
+            = fnAdjustHeightAscent(rInf.GetTextHeight(), rInf.GetAscent());
+        pPor->Height(nAdjustedHeight);
+        pPor->SetAscent(nAdjustedAscent);
         bCalc = true;
     }
     // i#89179
@@ -923,8 +972,12 @@ void SwTextFormatter::CalcAscent( SwTextFormatInfo &rInf, SwLinePortion *pPor )
             || !rInf.GetLast()->InTextGrp() )
         {
             pPor->SetHangingBaseline( rInf.GetHangingBaseline() );
-            pPor->SetAscent( rInf.GetAscent()  );
-            pPor->Height(rInf.GetTextHeight());
+
+            auto [nAdjustedHeight, nAdjustedAscent]
+                = fnAdjustHeightAscent(rInf.GetTextHeight(), rInf.GetAscent());
+
+            pPor->SetAscent(nAdjustedAscent);
+            pPor->Height(nAdjustedHeight);
             bCalc = true;
         }
         else
@@ -2263,6 +2316,7 @@ void SwTextFormatter::RecalcRealHeight()
 
 void SwTextFormatter::CalcRealHeight( bool bNewLine )
 {
+    const IDocumentSettingAccess& rIDSA = m_pFrame->GetDoc().getIDocumentSettingAccess();
     SwTwips nLineHeight = m_pCurr->Height();
     m_pCurr->SetClipping( false );
 
@@ -2271,8 +2325,7 @@ void SwTextFormatter::CalcRealHeight( bool bNewLine )
     {
         // tdf#88752 tdf#167583: Grid base height is conditionally ignored for tables
         if (m_pFrame->IsInTab()
-            && !m_pFrame->GetDoc().getIDocumentSettingAccess().get(
-                DocumentSettingId::ADJUST_TABLE_LINE_HEIGHTS_TO_GRID_HEIGHT))
+            && !rIDSA.get(DocumentSettingId::ADJUST_TABLE_LINE_HEIGHTS_TO_GRID_HEIGHT))
         {
             m_pCurr->SetRealHeight(nLineHeight);
             return;
@@ -2362,7 +2415,7 @@ void SwTextFormatter::CalcRealHeight( bool bNewLine )
                     // shrink first line of paragraph too on spacing < 100%
                     if (IsParaLine() &&
                         pSpace->GetInterLineSpaceRule() == SvxInterLineSpaceRule::Prop
-                        && GetTextFrame()->GetDoc().getIDocumentSettingAccess().get(DocumentSettingId::PROP_LINE_SPACING_SHRINKS_FIRST_LINE))
+                        && rIDSA.get(DocumentSettingId::PROP_LINE_SPACING_SHRINKS_FIRST_LINE))
                     {
                         tools::Long nTmp = pSpace->GetPropLineSpace();
                         // Word will render < 50% too but it's just not readable
@@ -2434,8 +2487,15 @@ void SwTextFormatter::CalcRealHeight( bool bNewLine )
                         bool bPropLineShrinks = (nTmp < 100);
 
                         // extend line height by (nPropLineSpace - 100) percent of the font height
+                        const SwLineLayout* pTextHeightLine = m_pCurr;
+                        if (!m_pMulti && rIDSA.get(DocumentSettingId::LINE_SPACING_AS_GAP_BELOW))
+                        {
+                            // Like Microsoft Word, apply the line spacing gap after the line.
+                            // Since we always put it above a line, use the previous line's height.
+                            pTextHeightLine = GetPrev();
+                        }
                         nTmp -= 100;
-                        nTmp *= m_pCurr->GetTextHeight();
+                        nTmp *= pTextHeightLine->GetLineSpacingBaseHeight();
                         nTmp /= 100;
                         nTmp += nLineHeight;
                         if (nTmp < 1)
@@ -2446,7 +2506,7 @@ void SwTextFormatter::CalcRealHeight( bool bNewLine )
                         // adjusted above. In order to have consistent line spacing when rendering,
                         // the same adjustments must be made to the following lines.
                         if (bPropLineShrinks
-                            && GetTextFrame()->GetDoc().getIDocumentSettingAccess().get(
+                            && rIDSA.get(
                                 DocumentSettingId::PROP_LINE_SPACING_SHRINKS_FIRST_LINE))
                         {
                             SwTwips nAsc = (4 * nLineHeight) / 5; // 80%

@@ -214,6 +214,13 @@ bool SwTextFrame::CalcFollow(TextFrameIndex const nTextOfst)
             bOldInvaContent  = pPage->IsInvalidContent();
         }
 
+        // Some text of the follow moves back into this frame here. The footnotes of that text
+        // belong to this frame from now on. The follow is about to get a new, larger offset,
+        // and after that it does not cover the moved text any more, so it cannot find those
+        // footnotes any more either. Remove them now, while the old offset still covers them.
+        if (pMyFollow->GetOffset() < nTextOfst)
+            RemoveFootnote(pMyFollow->GetOffset(), nTextOfst - pMyFollow->GetOffset());
+
         pMyFollow->SetOffset_( nTextOfst );
         pMyFollow->SetFieldFollow( bFollowField );
         if( HasFootnote() || pMyFollow->HasFootnote() )
@@ -1159,6 +1166,10 @@ static bool hasAtPageFly(const SwFrame* pFrame)
 
 static bool isReallyEmptyMaster(const SwTextFrame* pFrame)
 {
+    // A non-last anchor of a split fly is empty by design, and its flys are registered in the
+    // master of the anchor chain, so the check below cannot see them.
+    if (pFrame->HasNonLastSplitFlyDrawObj())
+        return false;
     return pFrame->IsEmptyMaster() && (!pFrame->GetDrawObjs() || !pFrame->GetDrawObjs()->size());
 }
 
@@ -1838,7 +1849,7 @@ void SwTextFrame::Format_( SwTextFormatter &rLine, SwTextFormatInfo &rInf,
     rRepaint.Top( rLine.Y() );
     if( 0 >= rRepaint.Width() )
         rRepaint.Width(1);
-    WidowsAndOrphans aFrameBreak( this, rInf.IsTest() ? 1 : 0 );
+    WidowsAndOrphans aFrameBreak(this, rInf.IsTest() ? std::optional<SwTwips>(0) : std::nullopt);
 
     // rLine is now set to the first line which needs formatting.
     // The bFirst flag makes sure that Next() is not called.
@@ -2388,9 +2399,6 @@ void SwTextFrame::Format( vcl::RenderContext* pRenderContext, const SwBorderAttr
 
         const bool bNew = !m_xParaPortion;
         EnsurePara(); // force creation of m_xParaPortion
-        // We have to work with a shared_ptr here because code like CalcAdditionalFirstLineOffset
-        // wants to swap out and then restore the SwParaPortion underneath us.
-        std::shared_ptr<SwParaPortion> xPara = m_xParaPortion;
         const bool bSetOffset =
             (GetOffset() && GetOffset() > TextFrameIndex(GetText().getLength()));
 
@@ -2398,12 +2406,12 @@ void SwTextFrame::Format( vcl::RenderContext* pRenderContext, const SwBorderAttr
             ; // nothing
         // We return if already formatted, but if the TextFrame was just created
         // and does not have any format information
-        else if( !bNew && !xPara->GetReformat().Len() )
+        else if( !bNew && !EnsurePara()->GetReformat().Len() )
         {
             if (GetTextNodeForParaProps()->GetSwAttrSet().GetRegister().GetValue())
             {
-                xPara->SetPrepAdjust();
-                xPara->SetPrep();
+                EnsurePara()->SetPrepAdjust();
+                EnsurePara()->SetPrep();
                 CalcPreps();
             }
             SetWidow( false );
@@ -2448,7 +2456,7 @@ void SwTextFrame::Format( vcl::RenderContext* pRenderContext, const SwBorderAttr
                 {
                     nexts.push_back(pNext);
                 }
-                FormatImpl(pRenderContext, xPara.get(), intersectingObjs);
+                FormatImpl(pRenderContext, EnsurePara(), intersectingObjs);
                 if( pFootnoteBoss && nFootnoteHeight )
                 {
                     const SwFootnoteContFrame* pCont = pFootnoteBoss->FindFootnoteCont();

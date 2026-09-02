@@ -141,7 +141,8 @@ constexpr std::array<ScCharFlags, 128> makeCommonCharTable()
     a['='] = ScCharFlags::Char | ScCharFlags::Bool | ScCharFlags::WordSep | ScCharFlags::ValueSep;
     a['>'] = ScCharFlags::CharBool | ScCharFlags::Bool | ScCharFlags::WordSep | ScCharFlags::ValueSep;
     a['?'] = ScCharFlags::CharWord | ScCharFlags::Word | ScCharFlags::Name;
-    /* @ */ // FREE
+    // @ is the prefix operator that opts a formula out of auto-spill.
+    a['@'] = ScCharFlags::Char | ScCharFlags::WordSep | ScCharFlags::ValueSep;
 
     for (int i = 'A'; i <= 'Z'; i++)
         a[i] = ScCharFlags::CharWord | ScCharFlags::Word | ScCharFlags::CharIdent | ScCharFlags::Ident | ScCharFlags::CharName | ScCharFlags::Name;
@@ -211,7 +212,8 @@ constexpr std::array<ScCharFlags, 128> makeCharTable_XL()
     a['='] |= ScCharFlags::Word;
     a['>'] |= ScCharFlags::Word;
     /* ? */ // question really is not permitted in sheet name
-    a['@'] |= ScCharFlags::Word;
+    // @ stays an operator in the XL grammar too. Sheet names that contain
+    // @ have to be quoted.
     a['['] = ScCharFlags::Word;
     a[']'] = ScCharFlags::Word;
     a['{'] |= ScCharFlags::Word;
@@ -3080,7 +3082,13 @@ Label_MaskStateMachine:
 
 bool ScCompiler::ParseOpCode( const OUString& rName, bool bInArray )
 {
-    OpCodeHashMap::const_iterator iLook( mxSymbols->getHashMap().find( rName));
+    OUString aName( rName );
+    // A built-in function passed as a value, rather than called in place, is
+    // written with the _xleta. prefix in OOXML. Strip it so the plain function
+    // name resolves.
+    if (mxSymbols->isOOXML() && rName.startsWithIgnoreAsciiCase(u"_xleta."))
+        aName = rName.copy(7);
+    OpCodeHashMap::const_iterator iLook( mxSymbols->getHashMap().find( aName));
     bool bFound = (iLook != mxSymbols->getHashMap().end());
     if (bFound)
     {
@@ -3276,7 +3284,7 @@ bool ScCompiler::ParseOpCode( const OUString& rName, bool bInArray )
 bool ScCompiler::ParseOpCode2( std::u16string_view rName )
 {
     // If we have Pivot Table field names, means we are parsing a pivot table
-    // calculation field, which are not support any OpCode2 tokens, only there
+    // calculation field, which do not support any OpCode2 tokens, only their
     // own field names.
     if (!maPivotFieldNames.empty())
         return false;
@@ -3302,7 +3310,7 @@ static bool lcl_ParenthesisFollows( const sal_Unicode* p )
     return *p == '(';
 }
 
-bool ScCompiler::ParseValue( const OUString& rSym )
+bool ScCompiler::ParseValue(const OUString& rSym, bool bInArray)
 {
     const sal_Int32 nFormulaLanguage = FormulaGrammar::extractFormulaLanguage( GetGrammar());
     if (nFormulaLanguage == css::sheet::FormulaLanguage::ODFF || nFormulaLanguage == css::sheet::FormulaLanguage::OOXML)
@@ -3331,9 +3339,12 @@ bool ScCompiler::ParseValue( const OUString& rSym )
             if (eOpFunc != ocNone)
             {
                 maRawToken.SetOpCode(eOpFunc);
-                // add missing trailing parentheses
-                maPendingOpCodes.push(ocOpen);
-                maPendingOpCodes.push(ocClose);
+                if (!bInArray)
+                {
+                    // add missing trailing parentheses
+                    maPendingOpCodes.push(ocOpen);
+                    maPendingOpCodes.push(ocClose);
+                }
                 return true;
             }
             return false;
@@ -3358,6 +3369,27 @@ bool ScCompiler::ParseValue( const OUString& rSym )
             SetError( FormulaError::IllegalArgument );
         }
         maRawToken.SetDouble( fVal );
+        return true;
+    }
+
+    // Compile bare TRUE / FALSE as the ocTrue / ocFalse function
+    // call so the interpreter pushes a typed double tagged LOGICAL.
+    // Inside an inline array, leave the bare opcode for MergeArray
+    // to consume as element_boolean.
+    OpCode eBooleanOp = ocNone;
+    if (rSym.equalsIgnoreAsciiCase("TRUE"))
+        eBooleanOp = ocTrue;
+    else if (rSym.equalsIgnoreAsciiCase("FALSE"))
+        eBooleanOp = ocFalse;
+    if (eBooleanOp != ocNone
+        && !lcl_ParenthesisFollows(aFormula.getStr() + nSrcPos))
+    {
+        maRawToken.SetOpCode(eBooleanOp);
+        if (!bInArray)
+        {
+            maPendingOpCodes.push(ocOpen);
+            maPendingOpCodes.push(ocClose);
+        }
         return true;
     }
 
@@ -3390,7 +3422,7 @@ bool ScCompiler::ParseValue( const OUString& rSym )
     return true;
 }
 
-bool ScCompiler::ParseString()
+bool ScCompiler::ParseLiteralString()
 {
     if ( cSymbol[0] != '"' )
         return false;
@@ -3795,7 +3827,7 @@ bool ScCompiler::ParseMacro( const OUString& rName )
 
 const ScRangeData* ScCompiler::GetRangeData( SCTAB& rSheet, const OUString& rUpperName ) const
 {
-    // try local names first
+    // try sheet names first
     rSheet = aPos.Tab();
     const ScRangeName* pRangeName = rDoc.GetRangeName(rSheet);
     const ScRangeData* pData = nullptr;
@@ -3803,9 +3835,8 @@ const ScRangeData* ScCompiler::GetRangeData( SCTAB& rSheet, const OUString& rUpp
         pData = pRangeName->findByUpperName(rUpperName);
     if (!pData)
     {
-        pRangeName = rDoc.GetRangeName();
-        if (pRangeName)
-            pData = pRangeName->findByUpperName(rUpperName);
+        pRangeName = &rDoc.GetRangeName();
+        pData = pRangeName->findByUpperName(rUpperName);
         if (pData)
             rSheet = -1;
     }
@@ -3814,8 +3845,8 @@ const ScRangeData* ScCompiler::GetRangeData( SCTAB& rSheet, const OUString& rUpp
 
 bool ScCompiler::HasPossibleNamedRangeConflict( SCTAB nTab ) const
 {
-    const ScRangeName* pRangeName = rDoc.GetRangeName();
-    if (pRangeName && pRangeName->hasPossibleAddressConflict())
+    const ScRangeName* pRangeName = &rDoc.GetRangeName();
+    if (pRangeName->hasPossibleAddressConflict())
         return true;
     pRangeName = rDoc.GetRangeName(nTab);
     if (pRangeName && pRangeName->hasPossibleAddressConflict())
@@ -3827,7 +3858,7 @@ bool ScCompiler::ParseNamedRange( const OUString& rUpperName, bool onlyCheck )
 {
     // ParseNamedRange is called only from NextNewToken, with an upper-case string
     // If we have Pivot Table field names, means we are parsing a pivot table
-    // calculation field, which are not support any name based tokens, only there
+    // calculation field, which do not support any name-based tokens, only their
     // own field names.
     if (!maPivotFieldNames.empty())
         return false;
@@ -3861,24 +3892,68 @@ bool ScCompiler::ParseNamedRange( const OUString& rUpperName, bool onlyCheck )
     return false;
 }
 
-bool ScCompiler::ParseLambdaFuncName( const OUString& aOrg )
+bool ScCompiler::ParseLocalName( const OUString& aOrg )
 {
-    if (m_aLambda.bInLambdaFunction && !aOrg.isEmpty())
+    if (!maBindings.empty() && !aOrg.isEmpty())
     {
         OUString aName = aOrg;
+        // A required parameter carries the _xlpm. prefix and an optional one
+        // the _xlop. prefix. The body always uses the _xlpm. prefix. Strip
+        // either so the declaration and body share the bare name, and note if
+        // the parameter is optional.
+        bool bOptional = false;
         if (aOrg.startsWithIgnoreAsciiCase(u"_xlpm."))
             aName = aName.copy(6);
-
-        if (m_aLambda.nParaPos % 2 == 1 && m_aLambda.nParaCount > m_aLambda.nParaPos)
-            m_aLambda.aNameSet.insert(aName);
-        else
+        else if (aOrg.startsWithIgnoreAsciiCase(u"_xlop."))
         {
-            // should already exist the name
-            if (m_aLambda.aNameSet.find(aName) == m_aLambda.aNameSet.end())
+            aName = aName.copy(6);
+            bOptional = true;
+        }
+
+        bool bSearch = true;
+        if (mIsInBinding)
+        {
+            switch (maBindings.front().eOpCode)
+            {
+            case ocLet:
+                bSearch = (maBindings.front().nParaPos % 2 == 0 || maBindings.front().nParaPos == maBindings.front().nParaCount);
+                break;
+            case ocLambda:
+                bSearch = (maBindings.front().nParaPos == maBindings.front().nParaCount);
+                break;
+            default:
+                SAL_WARN( "sc.core", "OpCode: " << +maBindings.front().eOpCode);
+                assert(!"ScCompiler::ParseLocalName: someone forgot to add an OpCode case");
+            }
+        }
+
+        // Match local names without regard to case, like other Calc names. The
+        // token keeps the original spelling, while the binding layers are keyed
+        // on the upper-cased form.
+        OUString aKey = aName.toAsciiUpperCase();
+
+        if (bSearch)
+        {
+            // the name should already exist in (at least) one of the layers
+            auto aEnd = maBindings.end();
+            bool bFound = false;
+            for (auto aIter = maBindings.begin(); aIter != aEnd; ++aIter)
+            {
+                if ( aIter->aNameSet.find(aKey) != aIter->aNameSet.end() )
+                {
+                    bFound = true;
+                    break;
+                }
+            }
+            if (!bFound)
                 return false;
         }
+        else
+            maBindings.front().aNameSet.insert(aKey);
+
         svl::SharedString aSS = rDoc.GetSharedStringPool().intern(aName);
         maRawToken.SetStringName(aSS.getData(), aSS.getDataIgnoreCase());
+        mbOptionalLocalName = bOptional;
         return true;
     }
     return false;
@@ -3895,7 +3970,7 @@ bool ScCompiler::ParseExternalNamedRange( const OUString& rSymbol, bool& rbInval
     rbInvalidExternalNameRange = false;
 
     // If we have Pivot Table field names, means we are parsing a pivot table
-    // calculation field, which are not support any name based tokens, only there
+    // calculation field, which do not support any name-based tokens, only their
     // own field names.
     if (!maPivotFieldNames.empty())
         return false;
@@ -3933,7 +4008,7 @@ bool ScCompiler::ParseExternalNamedRange( const OUString& rSymbol, bool& rbInval
 bool ScCompiler::ParseDBRange( const OUString& rName )
 {
     // If we have Pivot Table field names, means we are parsing a pivot table
-    // calculation field, which are not support any name based tokens, only there
+    // calculation field, which do not support any name-based tokens, only their
     // own field names.
     if (!maPivotFieldNames.empty())
         return false;
@@ -3992,7 +4067,7 @@ bool ScCompiler::ParseDPFieldName( const OUString& rName )
 bool ScCompiler::ParseColRowName( const OUString& rName )
 {
     // If we have Pivot Table field names, means we are parsing a pivot table
-    // calculation field, which are not support any name based tokens, only there
+    // calculation field, which do not support any name-based tokens, only their
     // own field names.
     if (!maPivotFieldNames.empty())
         return false;
@@ -4244,20 +4319,6 @@ bool ScCompiler::ParseColRowName( const OUString& rName )
     {
         maRawToken.SetSingleReference( aRef );
         maRawToken.eOp = ocColRowName;
-        return true;
-    }
-    else
-        return false;
-}
-
-bool ScCompiler::ParseBoolean( const OUString& rName )
-{
-    OpCodeHashMap::const_iterator iLook( mxSymbols->getHashMap().find( rName ) );
-    if( iLook != mxSymbols->getHashMap().end() &&
-        ((*iLook).second == ocTrue ||
-         (*iLook).second == ocFalse) )
-    {
-        maRawToken.SetOpCode( (*iLook).second );
         return true;
     }
     else
@@ -4640,7 +4701,7 @@ bool ScCompiler::ToUpperAsciiOrI18nIsAscii( OUString& rUpper, const OUString& rO
     }
 }
 
-short ScCompiler::GetPossibleParaCount( std::u16string_view rLambdaFormula ) const
+short ScCompiler::GetPossibleParaCount( std::u16string_view rBindingFormula ) const
 {
     sal_Unicode cSep = mxSymbols->getSymbolChar(ocSep);
     sal_Unicode cOpen = mxSymbols->getSymbolChar(ocOpen);
@@ -4649,7 +4710,7 @@ short ScCompiler::GetPossibleParaCount( std::u16string_view rLambdaFormula ) con
     sal_Unicode cArrayClose = mxSymbols->getSymbolChar(ocArrayClose);
     short nBrackets = 0;
 
-    short nCount = std::count_if(rLambdaFormula.begin(), rLambdaFormula.end(),
+    short nCount = std::count_if(rBindingFormula.begin(), rBindingFormula.end(),
         [&](sal_Unicode c) {
             if (c == cOpen || c == cArrayOpen || c == '[') {
                 nBrackets++;
@@ -4679,7 +4740,6 @@ bool ScCompiler::NextNewToken( bool bInArray )
         return true;
     }
 
-    bool bAllowBooleans = bInArray;
     const std::vector<Whitespace> vSpaces = NextSymbol(bInArray);
 
     if (!cSymbol[0])
@@ -4744,7 +4804,18 @@ bool ScCompiler::NextNewToken( bool bInArray )
 
     if ( (cSymbol[0] == '#' || cSymbol[0] == '$') && cSymbol[1] == 0 &&
             !mbAutoCorrect )
-    {   // special case to speed up broken [$]#REF documents
+    {
+        // A bare # right after a reference or value is the spilled-range
+        // operator. It expands the preceding reference to the dynamic-
+        // array spill range whose origin lives at that cell.
+        if (cSymbol[0] == '#' && (meLastOp == ocColRowName || meLastOp == ocPush
+                || meLastOp == ocClose || meLastOp == ocMatRef
+                || meLastOp == ocPercentSign || meLastOp == ocSpill))
+        {
+            maRawToken.SetOpCode(ocSpill);
+            return true;
+        }
+        // special case to speed up broken [$]#REF documents
         /* FIXME: ISERROR(#REF!) would be valid and true and the formula to
          * be processed as usual. That would need some special treatment,
          * also in NextSymbol() because of possible combinations of
@@ -4757,28 +4828,31 @@ bool ScCompiler::NextNewToken( bool bInArray )
         return false;
     }
 
-    if( ParseString() )
+    if( ParseLiteralString() )
         return true;
 
-    bool bMayBeFuncName;
+    bool bMayBeName;
+    bool bParenFollows;
     bool bAsciiNonAlnum;    // operators, separators, ...
     if ( cSymbol[0] < 128 )
     {
-        bMayBeFuncName = rtl::isAsciiAlpha(cSymbol[0])
+        bMayBeName = rtl::isAsciiAlpha(cSymbol[0])
             || (cSymbol[0] == '_' && mxSymbols->isOOXML() && rtl::isAsciiAlpha(cSymbol[1]));
-        if (!bMayBeFuncName && (cSymbol[0] == '_' && cSymbol[1] == '_') && !comphelper::IsFuzzing())
+        if (!bMayBeName && (cSymbol[0] == '_' && cSymbol[1] == '_') && !comphelper::IsFuzzing())
         {
-            bMayBeFuncName = officecfg::Office::Common::Misc::ExperimentalMode::get();
+            bMayBeName = officecfg::Office::Common::Misc::ExperimentalMode::get();
         }
 
-        bAsciiNonAlnum = !bMayBeFuncName && !rtl::isAsciiDigit( cSymbol[0] );
+        bAsciiNonAlnum = !bMayBeName && !rtl::isAsciiDigit( cSymbol[0] );
     }
     else
     {
         OUString aTmpStr( cSymbol[0] );
-        bMayBeFuncName = pCharClass->isLetter( aTmpStr, 0 );
+        bMayBeName = pCharClass->isLetter( aTmpStr, 0 );
         bAsciiNonAlnum = false;
     }
+
+    bParenFollows = lcl_ParenthesisFollows( aFormula.getStr() + nSrcPos );
 
     // Within a TableRef anything except an unescaped '[' or ']' is an item
     // or a column specifier, do not attempt to recognize any other single
@@ -4791,15 +4865,6 @@ bool ScCompiler::NextNewToken( bool bInArray )
         // Shortcut for operators and separators that need no further checks or upper.
         if (ParseOpCode( OUString( cSymbol), bInArray ))
             return true;
-    }
-
-    if ( bMayBeFuncName )
-    {
-        // a function name must be followed by a parenthesis
-        const sal_Unicode* p = aFormula.getStr() + nSrcPos;
-        while( *p == ' ' )
-            p++;
-        bMayBeFuncName = ( *p == '(' );
     }
 
     // Italian ARCTAN.2 resulted in #REF! => ParseOpcode() before
@@ -4826,11 +4891,10 @@ Label_Rewind:
 
         mbRewind = false;
         aUpper.clear();
-        bAsciiUpper = false;
+        bAsciiUpper = ToUpperAsciiOrI18nIsAscii( aUpper, aOrg);
 
         if (bAsciiNonAlnum)
         {
-            bAsciiUpper = ToUpperAsciiOrI18nIsAscii( aUpper, aOrg);
             if (cSymbol[0] == '#')
             {
                 // Check for TableRef item specifiers first.
@@ -4854,99 +4918,208 @@ Label_Rewind:
                 return true;
         }
 
-        if (bMayBeFuncName)
+        // mbPreferLocalNames changes the priority of names detected by the compiler:
+        // 1. Locals in scope (bound with LET or LAMBDA)
+        // 2. Named ranges in scope
+        // 3. External names
+        // 4. DB ranges
+        // 5. Column and row names
+        // 6. Macros
+        // 7. Pivot Table DataPilot fields
+        // 8. Opcodes
+        // This priority is compatible with GSheets, but incompatible with Excel.
+        if (mbPreferLocalNames)
         {
-            if (aUpper.isEmpty())
-                bAsciiUpper = ToUpperAsciiOrI18nIsAscii( aUpper, aOrg);
-            if (ParseOpCode( aUpper, bInArray ))
-                return true;
-        }
 
-        // Column 'DM' ("Deutsche Mark", German currency) couldn't be
-        // referred => ParseReference() before ParseValue().
-        // Preserve case of file names in external references.
-        if (ParseReference( aOrg ))
-        {
-            if (mbRewind)   // Range operator, but no direct reference.
-                continue;   // do; up to range operator.
-            // If a syntactically correct reference was recognized but invalid
-            // e.g. because of non-existing sheet name => entire reference
-            // ocBad to preserve input instead of #REF!.A1
-            if (!maRawToken.IsValidReference(rDoc))
+            if (bMayBeName)
             {
-                aUpper = aOrg;          // ensure for ocBad
-                break;                  // do; create ocBad token or set error.
+                if (ParseLocalName( aOrg ))
+                    return true;
+
+                if (ParseNamedRange( aUpper ))
+                    return true;
+
+                // Preserve case of file names in external references.
+                bool bInvalidExternalNameRange;
+                if (ParseExternalNamedRange( aOrg, bInvalidExternalNameRange ))
+                    return true;
+                // Preserve case of file names in external references even when range
+                // is not valid and previous check failed tdf#89330
+                if (bInvalidExternalNameRange)
+                {
+                    // add ocBad but do not lowercase
+                    svl::SharedString aSS = rDoc.GetSharedStringPool().intern(aOrg);
+                    maRawToken.SetString(aSS.getData(), aSS.getDataIgnoreCase());
+                    maRawToken.NewOpCode( ocBad );
+                    return true;
+                }
+
+                if (ParseDBRange( aUpper ))
+                    return true;
+
+                // If followed by '(' (with or without space inbetween) it can not be a
+                // column/row label. Prevent arbitrary content detection.
+                if (!bParenFollows && ParseColRowName( aUpper ))
+                    return true;
+
+                if (ParseMacro( aUpper ))
+                    return true;
+
+                if (ParseOpCode( aUpper, bInArray ))
+                    return true;
+
+                if (ParseOpCode2( aUpper ))
+                    return true;
             }
-            return true;
+
+            // A local name is in scope here, and its name can make bMayBeName false
+            // (for example, the "_xlpm." prefix in non-OOXML grammars), so resolve
+            // it unconditionally. In expression positions, ParseLocalName only
+            // matches names that are actually bound in the current scope.
+            if (ParseLocalName( aOrg ))
+                return true;
+
+            // Parse Pivot Table DataPilot field names. A field name may be quoted
+            // (for example, 'Sales'), which makes bMayBeName false, so try this
+            // unconditionally after the name and opcode detection.
+            if (ParseDPFieldName(aUpper))
+                return true;
+
         }
-
-        if (aUpper.isEmpty())
-            bAsciiUpper = ToUpperAsciiOrI18nIsAscii( aUpper, aOrg);
-
-        // ParseBoolean() before ParseValue() to catch inline bools without the kludge
-        //    for inline arrays.
-        if (bAllowBooleans && ParseBoolean( aUpper ))
-            return true;
-
-        if (ParseValue( aUpper ))
-            return true;
-
-        // User defined names and such do need i18n upper also in ODF.
-        if (bAsciiUpper || mbCharClassesDiffer)
+        else
         {
-            // Use current system locale here because user defined symbols are
-            // more likely in that localized language than in the formula
-            // language. This in corner cases needs to continue to work for
-            // existing documents and environments.
-            // Do not change bAsciiUpper from here on for the lowercase() call
-            // below in the ocBad case to use the correct CharClass.
-            aUpper = ScGlobal::getCharClass().uppercase( aOrg );
-        }
 
-        if (ParseNamedRange( aUpper ))
-            return true;
+            // OpCodes are detected first only if they are called immediately
+            if (bMayBeName && bParenFollows)
+            {
+                if (ParseOpCode( aUpper, bInArray ))
+                    return true;
+            }
 
-        // Compiling a named expression during collecting them in import shall
-        // not match arbitrary names that otherwise if all named expressions
-        // were present would be recognized as named expression. Such name will
-        // flag an error below and will be recompiled in a second step later
-        // with ScRangeData::CompileUnresolvedXML()
-        if (meExtendedErrorDetection == EXTENDED_ERROR_DETECTION_NAME_NO_BREAK && rDoc.IsImportingXML())
-            break;  // while
+            // Column 'DM' ("Deutsche Mark", German currency) couldn't be
+            // referred => ParseReference() before ParseValue().
+            // Preserve case of file names in external references.
+            if (ParseReference( aOrg ))
+            {
+                if (mbRewind)   // Range operator, but no direct reference.
+                    continue;   // do; up to range operator.
+                // If a syntactically correct reference was recognized but invalid
+                // e.g. because of non-existing sheet name => entire reference
+                // ocBad to preserve input instead of #REF!.A1
+                if (!maRawToken.IsValidReference(rDoc))
+                {
+                    // A parenthesis after such a symbol makes it a range operator plus
+                    // a call, as in F25:IF(TRUE,F26) where IF also reads as a column.
+                    // Cut at the operator, so the reference stands alone and the call
+                    // follows.
+                    if (bParenFollows && mnRangeOpPosInSymbol > 0)
+                    {
+                        sal_Int32 nLen = mnRangeOpPosInSymbol;
+                        while (cSymbol[++nLen])
+                            ;
+                        cSymbol[mnRangeOpPosInSymbol] = 0;
+                        nSrcPos -= (nLen - mnRangeOpPosInSymbol);
+                        mnRangeOpPosInSymbol = -1;
+                        mbRewind = true;
+                        continue;   // do; up to range operator.
+                    }
+                    aUpper = aOrg;          // ensure for ocBad
+                    break;                  // do; create ocBad token or set error.
+                }
+                return true;
+            }
 
-        // Preserve case of file names in external references.
-        bool bInvalidExternalNameRange;
-        if (ParseExternalNamedRange( aOrg, bInvalidExternalNameRange ))
-            return true;
-        // Preserve case of file names in external references even when range
-        // is not valid and previous check failed tdf#89330
-        if (bInvalidExternalNameRange)
-        {
-            // add ocBad but do not lowercase
-            svl::SharedString aSS = rDoc.GetSharedStringPool().intern(aOrg);
-            maRawToken.SetString(aSS.getData(), aSS.getDataIgnoreCase());
-            maRawToken.NewOpCode( ocBad );
-            return true;
-        }
-        if (ParseDBRange( aUpper ))
-            return true;
-        // If followed by '(' (with or without space inbetween) it can not be a
-        // column/row label. Prevent arbitrary content detection.
-        if (!bMayBeFuncName && ParseColRowName( aUpper ))
-            return true;
-        if (bMayBeFuncName && ParseMacro( aUpper ))
-            return true;
-        if (bMayBeFuncName && ParseOpCode2( aUpper ))
-            return true;
+            if (ParseValue(aUpper, bInArray))
+                return true;
 
-        if (ParseLambdaFuncName( aOrg ))
-            return true;
+            // User defined names and such do need i18n upper also in ODF.
+            if (bAsciiUpper || mbCharClassesDiffer)
+            {
+                // Use current system locale here because user defined symbols are
+                // more likely in that localized language than in the formula
+                // language. This in corner cases needs to continue to work for
+                // existing documents and environments.
+                // Do not change bAsciiUpper from here on for the lowercase() call
+                // below in the ocBad case to use the correct CharClass.
+                aUpper = ScGlobal::getCharClass().uppercase( aOrg );
+            }
 
-        // Parse Pivot Table DataPilot field names.
-        // This is only true if the compiler is created with the actual
-        // Pivot Table Fields name
-        if (ParseDPFieldName(aUpper))
-            return true;
+            // A name that is followed by '(' and matches a Basic macro is a
+            // macro call. An XLSM can hold both a macro and a defined name for
+            // the same user-defined function, so in the call position the macro
+            // takes priority over a same-named defined name. A plain name
+            // reference still resolves as the named range.
+            if (bMayBeName && bParenFollows && ParseMacro(aUpper))
+                return true;
+
+            if (ParseNamedRange( aUpper ))
+                return true;
+
+            // Compiling a named expression during collecting them in import shall
+            // not match arbitrary names that otherwise if all named expressions
+            // were present would be recognized as named expression. Such name will
+            // flag an error below and will be recompiled in a second step later
+            // with ScRangeData::CompileUnresolvedXML()
+            if (meExtendedErrorDetection == EXTENDED_ERROR_DETECTION_NAME_NO_BREAK && rDoc.IsImportingXML())
+                break;  // while
+
+            // Preserve case of file names in external references.
+            bool bInvalidExternalNameRange;
+            if (ParseExternalNamedRange( aOrg, bInvalidExternalNameRange ))
+                return true;
+            // Preserve case of file names in external references even when range
+            // is not valid and previous check failed tdf#89330
+            if (bInvalidExternalNameRange)
+            {
+                // add ocBad but do not lowercase
+                svl::SharedString aSS = rDoc.GetSharedStringPool().intern(aOrg);
+                maRawToken.SetString(aSS.getData(), aSS.getDataIgnoreCase());
+                maRawToken.NewOpCode( ocBad );
+                return true;
+            }
+            if (ParseDBRange( aUpper ))
+                return true;
+            // If followed by '(' (with or without space inbetween) it can not be a
+            // column/row label. Prevent arbitrary content detection.
+            if (!bParenFollows && ParseColRowName( aUpper ))
+                return true;
+
+            if (bMayBeName)
+            {
+                if (ParseMacro( aUpper ))
+                    return true;
+
+                if (ParseLocalName( aOrg ))
+                    return true;
+
+                // A pivot field whose name matches a built-in function name
+                // (for example the field "B" and the function B) resolves to
+                // the field when it is not a direct call, so recognize a bare
+                // field name as a DataPilot field before opcode detection.
+                if (!bParenFollows && ParseDPFieldName(aUpper))
+                    return true;
+
+                if (ParseOpCode( aUpper, bInArray ))
+                    return true;
+
+                if (ParseOpCode2( aUpper ))
+                    return true;
+            }
+
+            // A local name is in scope here, and its name can make bMayBeName false
+            // (for example, the "_xlpm." prefix in non-OOXML grammars), so resolve
+            // it unconditionally. In expression positions, ParseLocalName only
+            // matches names that are actually bound in the current scope.
+            if (ParseLocalName(aOrg))
+                return true;
+
+            // Parse Pivot Table DataPilot field names. A field name may be quoted
+            // (for example, 'Sales'), which makes bMayBeName false, so try this
+            // unconditionally after the name and opcode detection.
+            if (ParseDPFieldName(aUpper))
+                return true;
+
+        } // !mbPreferLocalNames
 
     } while (mbRewind);
 
@@ -5079,12 +5252,48 @@ std::unique_ptr<ScTokenArray> ScCompiler::CompileString( const OUString& rFormul
         {
             case ocOpen:
             {
-                if (meLastOp == ocLet)
+                if (meLastOp == ocLet || meLastOp == ocLambda)
                 {
-                    m_aLambda.bInLambdaFunction = true;
-                    m_aLambda.nBracketPos = nBrackets;
-                    m_aLambda.nParaPos++;
-                    m_aLambda.nParaCount = GetPossibleParaCount(rFormula.subView(nSrcPos - 1));
+                    maBindings.push_front(BindingsLayer {
+                        meLastOp,
+                        nBrackets,
+                        1,
+                        GetPossibleParaCount(rFormula.subView(nSrcPos - 1)),
+                        std::unordered_set<OUString>(),
+                    });
+                }
+                else if (meLastOp == ocPush
+                    || meLastOp == ocStringName
+                    || meLastOp == ocName
+                    || meLastOp == ocClose
+                    || meLastOp == ocMacro
+                    || meLastOp == ocDBArea
+                    || meLastOp == ocTableRefClose
+                    || meLastOp == ocArrayClose
+                    || meLastOp == ocTableRef )
+                {
+                    // Where the intersection operator is a blank, a blank before the
+                    // parenthesis is that operator and opens a group, not an argument list.
+                    const sal_uInt16 nArrayLength = mpArr->GetLen();
+                    const bool bIntersectingBlank
+                        = (meLastOp == ocPush || meLastOp == ocClose)
+                          && FormulaGrammar::isExcelSyntax( meGrammar)
+                          && nArrayLength > 0
+                          && mpArr->TokenAt(nArrayLength - 1)->GetOpCode() == ocSpaces;
+                    if (!bIntersectingBlank)
+                    {
+                        // We're trying to call a function, it seems. Inject ocCall so the
+                        // compiler can see what's going on.
+                        ScRawToken aToken;
+                        aToken.SetOpCode( ocCall );
+                        FormulaToken* pNewToken = static_cast<ScTokenArray*>(mpArr)->Add(
+                            aToken.CreateToken(rDoc.GetSheetLimits()));
+                        if (!pNewToken)
+                        {
+                            SetError(FormulaError::CodeOverflow);
+                            goto OutsideLoop;
+                        }
+                    }
                 }
 
                 ++nBrackets;
@@ -5111,11 +5320,11 @@ std::unique_ptr<ScTokenArray> ScCompiler::CompileString( const OUString& rFormul
                 else
                 {
                     nBrackets--;
-                    if (m_aLambda.bInLambdaFunction && m_aLambda.nBracketPos == nBrackets)
+                    if (!maBindings.empty() && maBindings.front().nBracketPos == nBrackets)
                     {
-                        m_aLambda.bInLambdaFunction = false;
-                        m_aLambda.nBracketPos = nBrackets;
+                        maBindings.pop_front();
                     }
+                    mIsInBinding = (!maBindings.empty() && maBindings.front().nBracketPos + 1 == nBrackets);
                 }
                 if (bUseFunctionStack && nFunction)
                     --nFunction;
@@ -5126,8 +5335,8 @@ std::unique_ptr<ScTokenArray> ScCompiler::CompileString( const OUString& rFormul
                 if (bUseFunctionStack)
                     ++pFunctionStack[ nFunction ].nSep;
 
-                if (m_aLambda.bInLambdaFunction && m_aLambda.nBracketPos + 1 == nBrackets)
-                    m_aLambda.nParaPos++;
+                if (!maBindings.empty() && maBindings.front().nBracketPos + 1 == nBrackets)
+                    maBindings.front().nParaPos++;
             }
             break;
             case ocArrayOpen:
@@ -5167,20 +5376,32 @@ std::unique_ptr<ScTokenArray> ScCompiler::CompileString( const OUString& rFormul
             break;
             case ocTableRefOpen:
             {
-                // Don't count following item separator as parameter separator.
-                if (bUseFunctionStack)
+                // If we're expecting a lambda parameter name, enclosing it in [] makes it optional.
+                if (!(mIsInBinding
+                      && maBindings.front().eOpCode == ocLambda
+                      && maBindings.front().nParaPos < maBindings.front().nParaCount))
                 {
-                    ++nFunction;
-                    pFunctionStack[ nFunction ].eOp = eOp;
-                    pFunctionStack[ nFunction ].nSep = 0;
-                    nHighWatermark = nFunction;
+                    // Don't count following item separator as parameter separator.
+                    if (bUseFunctionStack)
+                    {
+                        ++nFunction;
+                        pFunctionStack[ nFunction ].eOp = eOp;
+                        pFunctionStack[ nFunction ].nSep = 0;
+                        nHighWatermark = nFunction;
+                    }
                 }
             }
             break;
             case ocTableRefClose:
             {
-                if (bUseFunctionStack && nFunction)
-                    --nFunction;
+                // If we're expecting a lambda parameter name, enclosing it in [] makes it optional.
+                if (!(mIsInBinding
+                      && maBindings.front().eOpCode == ocLambda
+                      && maBindings.front().nParaPos < maBindings.front().nParaCount))
+                {
+                    if (bUseFunctionStack && nFunction)
+                        --nFunction;
+                }
             }
             break;
             case ocColRowName:
@@ -5245,6 +5466,12 @@ std::unique_ptr<ScTokenArray> ScCompiler::CompileString( const OUString& rFormul
             }
         }
         FormulaToken* pNewToken = static_cast<ScTokenArray*>(mpArr)->Add( maRawToken.CreateToken(rDoc.GetSheetLimits()));
+        // A lambda parameter written with the _xlop. prefix is optional. Its
+        // byte records that, keeping an optional parameter distinct from a
+        // required _xlpm. one.
+        if (pNewToken && mbOptionalLocalName && pNewToken->GetOpCode() == ocStringName)
+            static_cast<FormulaStringOpToken*>(pNewToken)->SetByte(1);
+        mbOptionalLocalName = false;
         if (!pNewToken && eOp == ocArrayClose && mpArr->OpCodeBefore( mpArr->GetLen()) == ocArrayClose)
         {
             // Nested inline array or non-value/non-string in array. The
@@ -5274,32 +5501,39 @@ std::unique_ptr<ScTokenArray> ScCompiler::CompileString( const OUString& rFormul
                         FormulaTokenArray::ReplaceMode::CODE_ONLY);
             }
         }
-        switch (eOp)
+        if (!(mIsInBinding
+            && maBindings.front().eOpCode == ocLambda
+            && maBindings.front().nParaPos < maBindings.front().nParaCount))
         {
-            case ocTableRefOpen:
-                SAL_WARN_IF( maTableRefs.empty(), "sc.core", "ocTableRefOpen without TableRefEntry");
-                if (maTableRefs.empty())
-                    SetError(FormulaError::Pair);
-                else
-                    ++maTableRefs.back().mnLevel;
-                break;
-            case ocTableRefClose:
-                SAL_WARN_IF( maTableRefs.empty(), "sc.core", "ocTableRefClose without TableRefEntry");
-                if (maTableRefs.empty())
-                    SetError(FormulaError::Pair);
-                else
-                {
-                    if (--maTableRefs.back().mnLevel == 0)
-                        maTableRefs.pop_back();
-                }
-                break;
-            default:
-                break;
+            switch (eOp)
+            {
+                case ocTableRefOpen:
+                    SAL_WARN_IF( maTableRefs.empty(), "sc.core", "ocTableRefOpen without TableRefEntry");
+                    if (maTableRefs.empty())
+                        SetError(FormulaError::Pair);
+                    else
+                        ++maTableRefs.back().mnLevel;
+                    break;
+                case ocTableRefClose:
+                    SAL_WARN_IF( maTableRefs.empty(), "sc.core", "ocTableRefClose without TableRefEntry");
+                    if (maTableRefs.empty())
+                        SetError(FormulaError::Pair);
+                    else
+                    {
+                        if (--maTableRefs.back().mnLevel == 0)
+                            maTableRefs.pop_back();
+                    }
+                    break;
+                default:
+                    break;
+            }
         }
         meLastOp = maRawToken.GetOpCode();
         if ( mbAutoCorrect )
             maCorrectedFormula += maCorrectedSymbol;
+        mIsInBinding = (!maBindings.empty() && maBindings.front().nBracketPos + 1 == nBrackets);
     }
+OutsideLoop:
     if ( mbCloseBrackets )
     {
         if( bInArray )
@@ -5334,10 +5568,10 @@ std::unique_ptr<ScTokenArray> ScCompiler::CompileString( const OUString& rFormul
     if (pFunctionStack != &aFuncs[0])
         delete [] pFunctionStack;
 
-    // remember pArr, in case a subsequent CompileTokenArray() is executed.
+    // remember mpArr, in case a subsequent CompileTokenArray() is executed.
     std::unique_ptr<ScTokenArray> pNew(new ScTokenArray( std::move(aArr) ));
     pNew->GenHash();
-    // coverity[escape : FALSE] - ownership of pNew is retained by caller, so pArr remains valid
+    // coverity[escape : FALSE] - ownership of pNew is retained by caller, so mpArr remains valid
     mpArr = pNew.get();
     maArrIterator = FormulaTokenArrayPlainIterator(*mpArr);
 
@@ -5367,9 +5601,9 @@ std::unique_ptr<ScTokenArray> ScCompiler::CompileString( const OUString& rFormul
         ScTokenArray aTokenArray(rDoc);
         if( ScTokenConversion::ConvertToTokenArray( rDoc, aTokenArray, aTokenSeq ) )
         {
-            // remember pArr, in case a subsequent CompileTokenArray() is executed.
+            // remember mpArr, in case a subsequent CompileTokenArray() is executed.
             std::unique_ptr<ScTokenArray> pNew(new ScTokenArray( std::move(aTokenArray) ));
-            // coverity[escape : FALSE] - ownership of pNew is retained by caller, so pArr remains valid
+            // coverity[escape : FALSE] - ownership of pNew is retained by caller, so mpArr remains valid
             mpArr = pNew.get();
             maArrIterator = FormulaTokenArrayPlainIterator(*mpArr);
             return pNew;
@@ -5390,7 +5624,10 @@ ScRangeData* ScCompiler::GetRangeData( const FormulaIndexToken& rToken ) const
 bool ScCompiler::HandleStringName()
 {
     ScTokenArray* pNew = new ScTokenArray(rDoc);
-    pNew->AddStringName(static_cast<FormulaStringToken*>(mpToken.get())->GetString());
+    // The byte carries the optional marker set when an _xlop. lambda parameter
+    // was parsed, so the parameter name keeps that property in the code.
+    const bool bOptional = static_cast<FormulaStringOpToken*>(mpToken.get())->GetByte() != 0;
+    pNew->AddStringName(static_cast<FormulaStringToken*>(mpToken.get())->GetString(), bOptional);
     PushTokenArray(pNew, true);
     return GetToken();
 }
@@ -5681,7 +5918,11 @@ void ScCompiler::CreateStringFromExternal( OUStringBuffer& rBuffer, const Formul
         {
             FormulaToken* p = maArrIterator.PeekNextNoSpaces();
             OUString sName = static_cast<const ScExternalNameToken*>(t)->GetName().getString();
-            if (p && p->GetOpCode() == ocOpen)
+            // An external name used as a function is followed by an opening
+            // parenthesis, or by the call operator when the name is the callee
+            // of a first-class call. In both cases the OOXML form needs the
+            // user-defined function prefix.
+            if (p && (p->GetOpCode() == ocOpen || p->GetOpCode() == ocCall))
             {
                 OUString sUDPrefix = mxSymbols->getSymbol(ocUDExternal);
                 if (FormulaGrammar::isOOXML(meGrammar) && !sName.matchIgnoreAsciiCase(sUDPrefix))

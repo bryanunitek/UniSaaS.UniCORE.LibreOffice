@@ -944,6 +944,113 @@ CPPUNIT_TEST_FIXTURE(SvdrawTest, testVisualSignResize)
     CPPUNIT_ASSERT_LESS(static_cast<sal_Int32>(10000), xShape->getSize().Height);
 #endif
 }
+
+CPPUNIT_TEST_FIXTURE(SvdrawTest, testGraphicClipPolyPolygonRoundTrip)
+{
+    // Create a draw document with a graphic-object shape:
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    auto xFactory = mxComponent.queryThrow<lang::XMultiServiceFactory>();
+    auto xShape = xFactory->createInstance(u"com.sun.star.drawing.GraphicObjectShape"_ustr)
+                      .queryThrow<drawing::XShape>();
+    xShape->setPosition(awt::Point(1000, 1000));
+    xShape->setSize(awt::Size(5000, 4000));
+    auto xDrawPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                         ->getDrawPages()
+                         ->getByIndex(0)
+                         .queryThrow<drawing::XDrawPage>();
+    xDrawPage->add(xShape);
+    auto xShapeProps = xShape.queryThrow<beans::XPropertySet>();
+
+    // The default value of GraphicClipPolyPolygon is empty.
+    drawing::PolyPolygonBezierCoords aDefault;
+    xShapeProps->getPropertyValue(u"GraphicClipPolyPolygon"_ustr) >>= aDefault;
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(0), aDefault.Coordinates.getLength());
+
+    // When setting a clip polygon of two contours - an outer rectangle and a
+    // reverse-wound inner one, that is a frame with a hole:
+    drawing::PolyPolygonBezierCoords aClip;
+    aClip.Coordinates
+        = { { awt::Point(0, 0), awt::Point(5000, 0), awt::Point(5000, 4000), awt::Point(0, 4000) },
+            { awt::Point(1000, 1000), awt::Point(1000, 3000), awt::Point(4000, 3000),
+              awt::Point(4000, 1000) } };
+    aClip.Flags = { { drawing::PolygonFlags_NORMAL, drawing::PolygonFlags_NORMAL,
+                      drawing::PolygonFlags_NORMAL, drawing::PolygonFlags_NORMAL },
+                    { drawing::PolygonFlags_NORMAL, drawing::PolygonFlags_NORMAL,
+                      drawing::PolygonFlags_NORMAL, drawing::PolygonFlags_NORMAL } };
+    xShapeProps->setPropertyValue(u"GraphicClipPolyPolygon"_ustr, uno::Any(aClip));
+
+    // Then the property round-trips: the read-back polygon has the same
+    // contour count, point counts, and key coordinates in both contours.
+    drawing::PolyPolygonBezierCoords aRead;
+    xShapeProps->getPropertyValue(u"GraphicClipPolyPolygon"_ustr) >>= aRead;
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), aRead.Coordinates.getLength());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), aRead.Coordinates[0].getLength());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), aRead.Coordinates[1].getLength());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(5000), aRead.Coordinates[0][1].X);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(0), aRead.Coordinates[0][1].Y);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1000), aRead.Coordinates[1][0].X);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1000), aRead.Coordinates[1][0].Y);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4000), aRead.Coordinates[1][2].X);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(3000), aRead.Coordinates[1][2].Y);
+
+    // Clearing the property restores the default empty value.
+    xShapeProps->setPropertyValue(u"GraphicClipPolyPolygon"_ustr,
+                                  uno::Any(drawing::PolyPolygonBezierCoords()));
+    drawing::PolyPolygonBezierCoords aCleared;
+    xShapeProps->getPropertyValue(u"GraphicClipPolyPolygon"_ustr) >>= aCleared;
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(0), aCleared.Coordinates.getLength());
+}
+
+CPPUNIT_TEST_FIXTURE(SvdrawTest, testGraphicClipPolyPolygonODFRoundTrip)
+{
+    // Create a draw document with a graphic-object shape carrying a clip polygon:
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    auto xFactory = mxComponent.queryThrow<lang::XMultiServiceFactory>();
+    auto xShape = xFactory->createInstance(u"com.sun.star.drawing.GraphicObjectShape"_ustr)
+                      .queryThrow<drawing::XShape>();
+    xShape->setPosition(awt::Point(1000, 1000));
+    xShape->setSize(awt::Size(5000, 4000));
+    mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+        ->getDrawPages()
+        ->getByIndex(0)
+        .queryThrow<drawing::XDrawPage>()
+        ->add(xShape);
+    // Two contours - an outer rectangle and a reverse-wound inner one - so that the
+    // svg:d encoding of a second subpath after a close is exercised.
+    drawing::PolyPolygonBezierCoords aClip;
+    aClip.Coordinates
+        = { { awt::Point(0, 0), awt::Point(5000, 0), awt::Point(5000, 4000), awt::Point(0, 4000) },
+            { awt::Point(1000, 1000), awt::Point(1000, 3000), awt::Point(4000, 3000),
+              awt::Point(4000, 1000) } };
+    aClip.Flags = { { drawing::PolygonFlags_NORMAL, drawing::PolygonFlags_NORMAL,
+                      drawing::PolygonFlags_NORMAL, drawing::PolygonFlags_NORMAL },
+                    { drawing::PolygonFlags_NORMAL, drawing::PolygonFlags_NORMAL,
+                      drawing::PolygonFlags_NORMAL, drawing::PolygonFlags_NORMAL } };
+    xShape.queryThrow<beans::XPropertySet>()->setPropertyValue(u"GraphicClipPolyPolygon"_ustr,
+                                                               uno::Any(aClip));
+
+    // Save and reload as ODG; both contours survive the round-trip.
+    saveAndReload(TestFilter::ODG);
+    auto xReloadedShape = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                              ->getDrawPages()
+                              ->getByIndex(0)
+                              .queryThrow<drawing::XDrawPage>()
+                              ->getByIndex(0)
+                              .queryThrow<drawing::XShape>();
+    drawing::PolyPolygonBezierCoords aReloaded;
+    xReloadedShape.queryThrow<beans::XPropertySet>()->getPropertyValue(
+        u"GraphicClipPolyPolygon"_ustr)
+        >>= aReloaded;
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), aReloaded.Coordinates.getLength());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), aReloaded.Coordinates[0].getLength());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), aReloaded.Coordinates[1].getLength());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(5000), aReloaded.Coordinates[0][1].X);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(0), aReloaded.Coordinates[0][1].Y);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1000), aReloaded.Coordinates[1][0].X);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1000), aReloaded.Coordinates[1][0].Y);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4000), aReloaded.Coordinates[1][2].X);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(3000), aReloaded.Coordinates[1][2].Y);
+}
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

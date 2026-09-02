@@ -1797,6 +1797,7 @@ const sal_uInt16 WID_MODEL_INTEROPGRABBAG     = 14;
 const sal_uInt16 WID_MODEL_THEME = 15;
 const sal_uInt16 WID_MODEL_ALLOWLINKUPDATE    = 16;
 const sal_uInt16 WID_MODEL_SLIDESECTIONS      = 17;
+const sal_uInt16 WID_MODEL_ANIMATIONSOUNDLINK = 18;
 
 static const SvxItemPropertySet* ImplGetDrawModelPropertySet()
 {
@@ -1819,6 +1820,7 @@ static const SvxItemPropertySet* ImplGetDrawModelPropertySet()
         { u"Fonts"_ustr,                  WID_MODEL_FONTS,              cppu::UnoType<uno::Sequence<uno::Any>>::get(),                     beans::PropertyAttribute::READONLY, 0},
         { sUNO_Prop_InteropGrabBag,       WID_MODEL_INTEROPGRABBAG,     cppu::UnoType<uno::Sequence< beans::PropertyValue >>::get(),       0, 0},
         { u"SlideSections"_ustr,          WID_MODEL_SLIDESECTIONS,      cppu::UnoType<uno::Sequence< beans::PropertyValue >>::get(),       0, 0},
+        { u"HasExternalAnimationSoundLink"_ustr, WID_MODEL_ANIMATIONSOUNDLINK, cppu::UnoType<bool>::get(),       0, 0},
         { sUNO_Prop_Theme,                WID_MODEL_THEME,              cppu::UnoType<util::XTheme>::get(),       0, 0},
     };
     static SvxItemPropertySet aDrawModelPropertySet_Impl( aDrawModelPropertyMap_Impl, SdrObject::GetGlobalDrawObjectItemPool() );
@@ -2889,6 +2891,13 @@ void SAL_CALL SdXImpressDocument::setPropertyValue( const OUString& aPropertyNam
                 mpDoc->GetSectionManager().SetSectionsFromPropertyValues(aSections);
             break;
         }
+        case WID_MODEL_ANIMATIONSOUNDLINK:
+        {
+            bool bHasLink = false;
+            if (aValue >>= bHasLink)
+                mpDoc->SetMaybeHasAnimationSoundLinks(bHasLink);
+            break;
+        }
         case WID_MODEL_THEME:
             getSdrModelFromUnoModel().setTheme(model::Theme::FromAny(aValue));
             break;
@@ -3020,6 +3029,9 @@ uno::Any SAL_CALL SdXImpressDocument::getPropertyValue( const OUString& Property
             break;
         case WID_MODEL_SLIDESECTIONS:
             aAny <<= mpDoc->GetSectionManager().GetSectionsAsPropertyValues();
+            break;
+        case WID_MODEL_ANIMATIONSOUNDLINK:
+            aAny <<= mpDoc->MaybeHasAnimationSoundLinks();
             break;
         case WID_MODEL_THEME:
             if (auto const& pTheme = getSdrModelFromUnoModel().getTheme())
@@ -4202,7 +4214,18 @@ Size SdXImpressDocument::getPartSize(int part)
         return Size(0,0);
 
     const sal_uInt16 nSlideIndex = static_cast<sal_uInt16>(part);
-    SdPage* pPage = mpDoc ? mpDoc->GetSdPage(nSlideIndex, PageKind::Standard) : nullptr;
+    SdPage* pPage = nullptr;
+    if (mpDoc)
+    {
+        if (isMasterViewMode())
+            pPage = mpDoc->GetMasterSdPage(nSlideIndex, PageKind::Standard);
+        else
+        {
+            DrawViewShell* pViewSh = GetViewShell();
+            PageKind ePageKind = pViewSh ? pViewSh->GetPageKind() : PageKind::Standard;
+            pPage = mpDoc->GetSdPage(nSlideIndex, ePageKind);
+        }
+    }
 
     if (pPage == nullptr)
         return Size(0,0);
@@ -4252,6 +4275,12 @@ void SdXImpressDocument::getPostIts(::tools::JsonWriter& rJsonWriter)
             aRectangle = o3tl::toTwips(aRectangle, o3tl::Length::mm100);
             OString sRectangle = aRectangle.toString();
             rJsonWriter.put("rectangle", sRectangle.getStr());
+            if (xAnnotation->IsThreaded())
+            {
+                rJsonWriter.put("threaded", "true");
+                rJsonWriter.put("resolved", xAnnotation->IsResolved() ? "true" : "false");
+                rJsonWriter.put("parentId", xAnnotation->GetParentId());
+            }
         }
     }
 }

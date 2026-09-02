@@ -371,6 +371,11 @@ namespace tools_urlobj
                 CPPUNIT_ASSERT(!url.IsExoticProtocol());
             }
             {
+                INetURLObject url(u"vnd.sun.star.pkg://vnd.sun.star.expand%3Ahttp%3A%2F%2F127.0.0.1%2F%24%7BHOME%7D@example.com/x");
+                CPPUNIT_ASSERT_EQUAL(INetProtocol::VndSunStarPkg, url.GetProtocol());
+                CPPUNIT_ASSERT(url.IsExoticProtocol());
+            }
+            {
                 INetURLObject url(u"vnd.sun.star.zip://slot%3A0");
                 CPPUNIT_ASSERT_EQUAL(INetProtocol::Generic, url.GetProtocol());
                 CPPUNIT_ASSERT(url.IsExoticProtocol());
@@ -395,11 +400,22 @@ namespace tools_urlobj
                 CPPUNIT_ASSERT_EQUAL(INetProtocol::Generic, url.GetProtocol());
                 CPPUNIT_ASSERT(!url.IsExoticProtocol());
             }
+
+            // Follina, Microsoft Support Diagnostic Tool
+            CPPUNIT_ASSERT(INetURLObject(u"ms-msdt://http%3A%2F%2Fexample.net").IsExoticProtocol());
+
+            CPPUNIT_ASSERT(!INetURLObject(u"vnd.sun.star.webdav://example.org").IsExoticProtocol());
+            CPPUNIT_ASSERT(!INetURLObject(u"vnd.sun.star.webdavs://example.org").IsExoticProtocol());
+            CPPUNIT_ASSERT(!INetURLObject(u"webdav://example.org").IsExoticProtocol());
+            CPPUNIT_ASSERT(!INetURLObject(u"webdavs://example.org").IsExoticProtocol());
+            CPPUNIT_ASSERT(!INetURLObject(u"ftp://example.org").IsExoticProtocol());
+            CPPUNIT_ASSERT(!INetURLObject(u"vnd.libreoffice.image://example.org").IsExoticProtocol());
+            CPPUNIT_ASSERT(!INetURLObject(u"vnd.sun.star.extension://example.org").IsExoticProtocol());
         }
 
         // Change the following lines only, if you add, remove or rename
         // member functions of the current class,
-        // because these macros are need by auto register mechanism.
+        // because these macros are needed by auto register mechanism.
 
         CPPUNIT_TEST_SUITE( urlobjTest );
         CPPUNIT_TEST( urlobjTest_001 );
@@ -416,11 +432,11 @@ namespace tools_urlobj
         CPPUNIT_TEST( testParseSmart );
         CPPUNIT_TEST( testIsExoticProtocol );
         CPPUNIT_TEST_SUITE_END(  );
-    };                          // class createPool
+    };                          // class urlobjTest
 
 
     CPPUNIT_TEST_SUITE_REGISTRATION( urlobjTest );
-}                               // namespace rtl_random
+}                               // namespace tools_urlobj
 
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

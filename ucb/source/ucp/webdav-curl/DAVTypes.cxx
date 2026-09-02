@@ -123,7 +123,6 @@ bool DAVOptionsCache::getDAVOptions( const OUString & rURL, DAVOptions & rDAVOpt
             // if stale, remove from cache, do not restore
             m_aTheCache.erase( it );
             return false;
-            // return false instead
         }
         rDAVOptions = (*it).second;
         return true;
@@ -165,7 +164,7 @@ void DAVOptionsCache::addDAVOptions( DAVOptions & rDAVOptions, const sal_uInt32 
         if ( (*it).second.getRequestedTimeLife() == nLifeTime )
             return; // same lifetime, do nothing
 
-        // tdf#153642 keep cached Class1 bit at aDAVOptionsException to avoid of
+        // tdf#153642 keep cached Class1 bit at aDAVOptionsException to avoid
         // losing the ability to resave the document within the lifetime because
         // of disabled DAV detection in getResourceType()
         if ((*it).second.isClass1())

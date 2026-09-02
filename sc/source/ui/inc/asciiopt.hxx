@@ -21,6 +21,7 @@
 
 #include <rtl/ustring.hxx>
 #include <i18nlangtag/lang.h>
+#include <tools/stream.hxx>
 
 #include "csvcontrol.hxx"
 
@@ -39,10 +40,11 @@ private:
     bool        bSaveAsShown;
     bool        bSaveFormulas;
     bool        bIncludeBOM;
+    SvStreamEndian nEndianness;
     sal_Unicode cTextSep;
-    rtl_TextEncoding eCharSet;
+    rtl_TextEncoding eEncoding;
     LanguageType eLang;
-    bool        bCharSetSystem;
+    bool        bEncodingSystem;
     sal_Int32   nStartRow;
     std::vector<sal_Int32> mvColStart;
     std::vector<sal_uInt8> mvColFormat;
@@ -55,7 +57,7 @@ public:
     void            ReadFromString( std::u16string_view rString, SvStream* pStream4Detect = nullptr );
     OUString        WriteToString() const;
 
-    rtl_TextEncoding    GetCharSet() const      { return eCharSet; }
+    rtl_TextEncoding    GetEncoding() const      { return eEncoding; }
     const OUString&     GetFieldSeps() const    { return aFieldSeps; }
     bool                IsMergeSeps() const     { return bMergeFieldSeps; }
     bool                IsRemoveSpace() const   { return bRemoveSpace; }
@@ -65,6 +67,7 @@ public:
     bool                IsEvaluateFormulas() const    { return bEvaluateFormulas; }
     bool                IsSkipEmptyCells() const      { return bSkipEmptyCells; }
     bool                GetIncludeBOM() const   { return bIncludeBOM; }
+    SvStreamEndian      GetEndianness() const   { return nEndianness; }
     sal_Unicode         GetTextSep() const      { return cTextSep; }
     bool                IsFixedLen() const      { return bFixedLen; }
     sal_uInt16          GetInfoCount() const    { return mvColStart.size(); }
@@ -73,8 +76,8 @@ public:
     sal_Int32           GetStartRow() const     { return nStartRow; }
     LanguageType        GetLanguage() const     { return eLang; }
 
-    void    SetCharSet( rtl_TextEncoding eNew ) { eCharSet = eNew; }
-    void    SetCharSetSystem( bool bSet )       { bCharSetSystem = bSet; }
+    void    SetEncoding( rtl_TextEncoding eNew ) { eEncoding = eNew; }
+    void    SetEncodingSystem( bool bSet )       { bEncodingSystem = bSet; }
     void    SetFixedLen( bool bSet )            { bFixedLen = bSet; }
     void    SetFieldSeps( const OUString& rStr )  { aFieldSeps = rStr; }
     void    SetMergeSeps( bool bSet )           { bMergeFieldSeps = bSet; }
@@ -85,6 +88,7 @@ public:
     void    SetEvaluateFormulas(bool bSet)      { bEvaluateFormulas = bSet; }
     void    SetSkipEmptyCells(bool bSet)        { bSkipEmptyCells = bSet; }
     void    SetIncludeBOM(bool bVal)            { bIncludeBOM = bVal; }
+    void    SetEndianness(SvStreamEndian nSet)  { nEndianness = nSet; }
     void    SetTextSep( sal_Unicode c )         { cTextSep = c; }
     void    SetStartRow( sal_Int32 nRow)        { nStartRow= nRow; }
     void    SetLanguage(LanguageType e)         { eLang = e; }

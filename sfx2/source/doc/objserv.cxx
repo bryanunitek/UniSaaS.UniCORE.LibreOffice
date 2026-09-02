@@ -1297,8 +1297,9 @@ void SfxObjectShell::ExecFile_Impl(SfxRequest &rReq)
             if ( ( nId == SID_SAVEASDOC || nId == SID_SAVEASREMOTE ) && nErrorCode == ERRCODE_NONE )
             {
                 const SfxBoolItem* saveTo = rReq.GetArg(SID_SAVETO);
-                // IsReadOnly may still return true, e.g. when embedded fonts disallow editing
-                if ((saveTo == nullptr || !saveTo->GetValue()) && !IsReadOnly())
+                // Keep readonly mode if embedded fonts disallow editing
+                if ((saveTo == nullptr || !saveTo->GetValue())
+                    && pMedium != nullptr && !pMedium->HasRestrictedFonts())
                 {
                     if (SfxViewFrame* pFrame = GetFrame())
                         pFrame->RemoveInfoBar(u"readonly");
@@ -1756,6 +1757,7 @@ void SfxObjectShell::ShowLinkUpdateInfobar()
     rHelpBtn.connect_clicked(LINK(nullptr, LinkUpdateHelp, DispatchHelpLinksHdl));
 
     weld::Button& rBtn = pInfoBar->addButton();
+    rBtn.set_buildable_name(u"allowupdating"_ustr);
     rBtn.set_label(SfxResId(STR_INFOBAR_ALLOW_UPDATING));
     rBtn.set_tooltip_text(SfxResId(STR_INFOBAR_ALLOW_UPDATING_TOOLTIP));
     rBtn.connect_clicked(LINK(this, SfxObjectShell, AllowLinksUpdateHdl));

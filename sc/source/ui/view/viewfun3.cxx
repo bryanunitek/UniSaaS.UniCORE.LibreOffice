@@ -43,6 +43,7 @@
 #include <tabvwsh.hxx>
 #include <docsh.hxx>
 #include <docfunc.hxx>
+#include <dbdata.hxx>
 #include <undoblk.hxx>
 #include <refundo.hxx>
 #include <globstr.hrc>
@@ -1443,12 +1444,25 @@ bool ScViewFunc::PasteFromClip( InsertDeleteFlags nFlags, ScDocument* pClipDoc,
         rDoc.CopyToDocument( nStartCol, nStartRow, 0, nUndoEndCol, nUndoEndRow, nTabCount-1,
                               nUndoFlags, false, *pUndoDoc );
 
+        // A clip document carrying named tables can add a database range to
+        // this document during paste. Force the DB-range snapshot so that
+        // addition is undoable even when this document had no ranges yet -
+        // the general path skips an empty collection. The cut path always
+        // builds ScRefUndoData, and the flag extends its snapshot to the
+        // empty pre-state.
+        const bool bForceDBSnapshot = pClipDoc->GetDBCollection()
+                                      && !pClipDoc->GetDBCollection()->getNamedDBs().empty();
+
         if ( bCutMode )
         {
             pRefUndoDoc.reset(new ScDocument( SCDOCMODE_UNDO ));
             pRefUndoDoc->InitUndo( rDoc, 0, nTabCount-1 );
 
-            pUndoData.reset(new ScRefUndoData( rDoc ));
+            pUndoData.reset(new ScRefUndoData( rDoc, bForceDBSnapshot ));
+        }
+        else if (bForceDBSnapshot)
+        {
+            pUndoData.reset(new ScRefUndoData( rDoc, true ));
         }
     }
 
@@ -1498,9 +1512,13 @@ bool ScViewFunc::PasteFromClip( InsertDeleteFlags nFlags, ScDocument* pClipDoc,
     if (!bAsLink)
     {
         //  copy normally (original range)
+        //  keep the destination cells' own directly applied protection - an
+        //  interactive paste changes their content, not whether the user has
+        //  directly locked them (tdf#123974)
         rDoc.CopyFromClip( aUserRange, aFilteredMark, nNoObjFlags,
                 pRefUndoDoc.get(), pClipDoc, true, false, bIncludeFiltered,
-                bSkipEmptyCells, (bMarkIsFiltered ? &aRangeList : nullptr) );
+                bSkipEmptyCells, (bMarkIsFiltered ? &aRangeList : nullptr),
+                /*bPreserveDestProtection*/true );
 
         // adapt refs manually in case of transpose
         if ( bTranspose && bCutMode && (nFlags & InsertDeleteFlags::CONTENTS) )

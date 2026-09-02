@@ -21,8 +21,8 @@
 #include "PresenterSlideShowView.hxx"
 #include "PresenterCanvasHelper.hxx"
 #include "PresenterGeometryHelper.hxx"
+#include "PresenterHelper.hxx"
 #include "PresenterPaneContainer.hxx"
-#include <PresenterHelper.hxx>
 #include <DrawController.hxx>
 #include <framework/ConfigurationController.hxx>
 #include <strings.hrc>
@@ -45,7 +45,6 @@
 
 using namespace ::com::sun::star;
 using namespace ::com::sun::star::uno;
-using namespace ::com::sun::star::drawing::framework;
 
 namespace {
 /** Return the slide show controller of a running presentation that has
@@ -291,17 +290,6 @@ css::uno::Reference<css::drawing::XDrawPage> SAL_CALL PresenterSlideShowView::ge
     return mxCurrentSlide;
 }
 
-//----- CachablePresenterView -------------------------------------------------
-
-void PresenterSlideShowView::ReleaseView()
-{
-    if (mxSlideShow.is() && mbIsViewAdded)
-    {
-        mxSlideShow->removeView(this);
-        mbIsViewAdded = false;
-    }
-}
-
 //----- XSlideShowView --------------------------------------------------------
 
 Reference<rendering::XSpriteCanvas> SAL_CALL PresenterSlideShowView::getCanvas()
@@ -495,10 +483,6 @@ void SAL_CALL PresenterSlideShowView::disposing (const lang::EventObject& rEvent
 
 void SAL_CALL PresenterSlideShowView::windowPaint (const awt::PaintEvent& rEvent)
 {
-    // Deactivated views must not be painted.
-    if ( ! mbIsPresenterViewActive)
-        return;
-
     awt::Rectangle aViewWindowBox (mxViewWindow->getPosSize());
     if (aViewWindowBox.Width <= 0 || aViewWindowBox.Height <= 0)
         return;
@@ -620,8 +604,6 @@ bool PresenterSlideShowView::isAnchorOnly()
     return false;
 }
 
-//----- CachablePresenterView -------------------------------------------------
-
 void PresenterSlideShowView::ActivatePresenterView()
 {
     if (mxSlideShow.is() && ! mbIsViewAdded)
@@ -631,7 +613,7 @@ void PresenterSlideShowView::ActivatePresenterView()
     }
 }
 
-void PresenterSlideShowView::DeactivatePresenterView()
+void PresenterSlideShowView::ReleaseView()
 {
     if (mxSlideShow.is() && mbIsViewAdded)
     {
@@ -639,7 +621,6 @@ void PresenterSlideShowView::DeactivatePresenterView()
         mbIsViewAdded = false;
     }
 }
-
 
 void PresenterSlideShowView::PaintOuterWindow (const awt::Rectangle& rRepaintBox)
 {

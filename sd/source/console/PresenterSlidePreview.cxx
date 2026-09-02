@@ -27,7 +27,6 @@
 
 using namespace ::com::sun::star;
 using namespace ::com::sun::star::uno;
-using namespace ::com::sun::star::drawing::framework;
 
 namespace
 {
@@ -77,9 +76,7 @@ PresenterSlidePreview::PresenterSlidePreview (
     if (mpPresenterController)
         mnSlideAspectRatio = mpPresenterController->GetSlideAspectRatio();
 
-    Reference<lang::XMultiComponentFactory> xFactory = rxContext->getServiceManager();
-    if (xFactory.is())
-        mxPreviewRenderer = new sd::presenter::SlideRenderer();
+    mxPreviewRenderer = new sd::presenter::SlideRenderer();
     mpBitmaps = std::make_shared<PresenterBitmapContainer>(
             "PresenterScreenSettings/ScrollBar/Bitmaps",
             std::shared_ptr<PresenterBitmapContainer>(),

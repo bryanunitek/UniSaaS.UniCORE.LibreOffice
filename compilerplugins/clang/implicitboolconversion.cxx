@@ -79,7 +79,7 @@ QualType reconstructTemplateArgumentType(
 }
 
 bool areSameTypedef(QualType type1, QualType type2) {
-    // type1.getTypePtr() == typ2.getTypePtr() fails for e.g. ::sal_Bool vs.
+    // type1.getTypePtr() == type2.getTypePtr() fails for e.g. ::sal_Bool vs.
     // sal_Bool:
     auto t1 = type1->getAs<TypedefType>();
     auto t2 = type2->getAs<TypedefType>();
@@ -241,7 +241,15 @@ public:
         FilteringPlugin(data) {}
 
     virtual void run() override
-    { TraverseDecl(compiler.getASTContext().getTranslationUnitDecl()); }
+    {
+        std::string fn(handler.getMainFileName());
+        loplugin::normalizeDotDotInFilePath(fn);
+        if (loplugin::hasPathnamePrefix(fn, SRCDIR "/soltools/cpp")
+            || loplugin::hasPathnamePrefix(fn, SRCDIR "/soltools/mkdepend"))
+            return;
+
+        TraverseDecl(compiler.getASTContext().getTranslationUnitDecl());
+    }
 
     bool TraverseCallExpr(CallExpr * expr);
 

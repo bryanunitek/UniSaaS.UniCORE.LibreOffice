@@ -94,6 +94,8 @@
 #include <chartpos.hxx>
 #include <tablink.hxx>
 #include <drwlayer.hxx>
+#include <svx/fillbitmaplink.hxx>
+#include <svx/svdpage.hxx>
 #include <docoptio.hxx>
 #include <undostyl.hxx>
 #include <rangeseq.hxx>
@@ -211,10 +213,13 @@ void ScDocShell::ReloadAllLinks()
 
     m_pDocument->UpdateAreaLinks();
 
-    // update linked graphics from the draw layer
+    // Draw-layer fill bitmap host links are registered when SID_UPDATETABLINKS
+    // runs at load, so they are not re-scanned here, only updated.
     if (sfx2::LinkManager* pLinkMgr = m_pDocument->GetDocLinkManager().getLinkManager(false))
     {
-        pLinkMgr->UpdateAllLinks(false, nullptr, u""_ustr);
+        registerDeferredFormImageLinks(GetDeferredFormControlImages(), *pLinkMgr);
+        ClearDeferredFormControlImages();
+        pLinkMgr->UpdateAllLinks(false, u""_ustr);
     }
 }
 
@@ -236,6 +241,11 @@ void ScDocShell::PerformLinkUpdate()
     }
 
     ReloadAllLinks();
+}
+
+bool ScDocShell::HasExternalLinks() const
+{
+    return GetDocument().HasExternalLinks() || !GetDeferredFormControlImages().empty();
 }
 
 namespace
@@ -480,6 +490,15 @@ void ScDocShell::Execute( SfxRequest& rReq )
             break;
         case SID_UPDATETABLINKS:
             {
+                // Draw-layer fill bitmap links are registered as the shapes are
+                // imported, via the draw model's link tracker. Form control
+                // images are collected during import and registered here.
+                if (sfx2::LinkManager* pLinkMgr = m_pDocument->GetDocLinkManager().getLinkManager(false))
+                {
+                    registerDeferredFormImageLinks(GetDeferredFormControlImages(), *pLinkMgr);
+                    ClearDeferredFormControlImages();
+                }
+
                 ScLkUpdMode nSet = GetLinkUpdateModeState();
 
                 if (nSet == LM_ALWAYS)
@@ -490,6 +509,7 @@ void ScDocShell::Execute( SfxRequest& rReq )
                 else if (nSet == LM_NEVER)
                 {
                     getEmbeddedObjectContainer().setUserAllowsLinkUpdate(false);
+                    CheckPendingLinkUpdateInfobar();
                     rReq.Ignore();
                 }
                 else if (nSet == LM_ON_DEMAND)
@@ -545,7 +565,7 @@ void ScDocShell::Execute( SfxRequest& rReq )
 
                                     if ( bContinue )    // error at import -> abort
                                     {
-                                        //  internal operations, if some where saved
+                                        //  internal operations, if some were saved
 
                                         if ( rDBData.HasQueryParam() || rDBData.HasSortParam() ||
                                              rDBData.HasSubTotalParam() )
@@ -2171,8 +2191,8 @@ void ScDocShell::ExecutePageStyle( const SfxViewShell& rCaller,
                         auto xRequest = std::make_shared<SfxRequest>(rReq);
                         rReq.Ignore(); // the 'old' request is not relevant any more
                         pDlg->StartExecuteAsync([this, pDlg, xRequest=std::move(xRequest), pStyleSheet,
-                                                 xOldData=std::move(xOldData), aOldName, &rStyleSet,
-                                                 nCurTab, &rCaller, bUndo](sal_Int32 nResult) {
+                                                 xOldData=std::move(xOldData), aOldName,
+                                                 &rCaller, bUndo](sal_Int32 nResult) {
                             if ( nResult == RET_OK )
                             {
                                 const SfxItemSet* pOutSet = pDlg->GetOutputItemSet();
@@ -2194,8 +2214,6 @@ void ScDocShell::ExecutePageStyle( const SfxViewShell& rCaller,
                                 if ( pOutSet )
                                     m_pDocument->ModifyStyleSheet( *pStyleSheet, *pOutSet );
 
-                                // memorizing for GetState():
-                                GetPageOnFromPageStyleSet( &rStyleSet, nCurTab, m_bHeaderOn, m_bFooterOn );
                                 rCaller.GetViewFrame().GetBindings().Invalidate( SID_HFEDIT );
 
                                 ScStyleSaveData aNewData;
@@ -2252,75 +2270,23 @@ void ScDocShell::ExecutePageStyle( const SfxViewShell& rCaller,
                         {
                             case SvxPageUsage::Left:
                             case SvxPageUsage::Right:
-                            {
-                                if ( m_bHeaderOn && m_bFooterOn )
-                                    nResId = RID_SCDLG_HFEDIT;
-                                else if ( SvxPageUsage::Right == eUsage )
-                                {
-                                    if ( !m_bHeaderOn && m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_RIGHTFOOTER;
-                                    else if ( m_bHeaderOn && !m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_RIGHTHEADER;
-                                }
-                                else
-                                {
-                                    //  #69193a# respect "shared" setting
-                                    if ( !m_bHeaderOn && m_bFooterOn )
-                                        nResId = bShareFooter ?
-                                                    RID_SCDLG_HFEDIT_RIGHTFOOTER :
-                                                    RID_SCDLG_HFEDIT_LEFTFOOTER;
-                                    else if ( m_bHeaderOn && !m_bFooterOn )
-                                        nResId = bShareHeader ?
-                                                    RID_SCDLG_HFEDIT_RIGHTHEADER :
-                                                    RID_SCDLG_HFEDIT_LEFTHEADER;
-                                }
-                            }
-                            break;
+                                nResId = RID_SCDLG_HFEDIT;
+                                break;
 
                             case SvxPageUsage::Mirror:
                             case SvxPageUsage::All:
                             default:
                             {
                                 if ( !bShareHeader && !bShareFooter )
-                                {
-                                    if ( m_bHeaderOn && m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_ALL;
-                                    else if ( !m_bHeaderOn && m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_FOOTER;
-                                    else if ( m_bHeaderOn && !m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_HEADER;
-                                }
+                                    nResId = RID_SCDLG_HFEDIT_ALL;
                                 else if ( bShareHeader && bShareFooter )
-                                {
-                                    if ( m_bHeaderOn && m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT;
-                                    else
-                                    {
-                                        if ( !m_bHeaderOn && m_bFooterOn )
-                                            nResId = RID_SCDLG_HFEDIT_RIGHTFOOTER;
-                                        else if ( m_bHeaderOn && !m_bFooterOn )
-                                            nResId = RID_SCDLG_HFEDIT_RIGHTHEADER;
-                                    }
-                                }
+                                    nResId = RID_SCDLG_HFEDIT;
                                 else if ( !bShareHeader &&  bShareFooter )
-                                {
-                                    if ( m_bHeaderOn && m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_SFTR;
-                                    else if ( !m_bHeaderOn && m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_RIGHTFOOTER;
-                                    else if ( m_bHeaderOn && !m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_HEADER;
-                                }
+                                    nResId = RID_SCDLG_HFEDIT_SFTR;
                                 else if (  bShareHeader && !bShareFooter )
-                                {
-                                    if ( m_bHeaderOn && m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_SHDR;
-                                    else if ( !m_bHeaderOn && m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_FOOTER;
-                                    else if ( m_bHeaderOn && !m_bFooterOn )
-                                        nResId = RID_SCDLG_HFEDIT_RIGHTHEADER;
-                                }
+                                    nResId = RID_SCDLG_HFEDIT_SHDR;
                             }
+                            break;
                         }
 
                         ScAbstractDialogFactory* pFact = ScAbstractDialogFactory::Create();
@@ -2366,25 +2332,6 @@ void ScDocShell::GetStatePageStyle( SfxItemSet&     rSet,
         {
             case SID_STATUS_PAGESTYLE:
                 rSet.Put( SfxStringItem( nWhich, m_pDocument->GetPageStyle( nCurTab ) ) );
-                break;
-
-            case SID_HFEDIT:
-                {
-                    OUString            aStr        = m_pDocument->GetPageStyle( nCurTab );
-                    ScStyleSheetPool*   pStylePool  = m_pDocument->GetStyleSheetPool();
-                    SfxStyleSheetBase*  pStyleSheet = pStylePool->Find( aStr, SfxStyleFamily::Page );
-
-                    OSL_ENSURE( pStyleSheet, "PageStyle not found! :-/" );
-
-                    if ( pStyleSheet )
-                    {
-                        SfxItemSet& rStyleSet = pStyleSheet->GetItemSet();
-                        GetPageOnFromPageStyleSet( &rStyleSet, nCurTab, m_bHeaderOn, m_bFooterOn );
-
-                        if ( !m_bHeaderOn && !m_bFooterOn )
-                            rSet.DisableItem( nWhich );
-                    }
-                }
                 break;
         }
 
@@ -2828,42 +2775,6 @@ void ScDocShell::SnapVisArea( tools::Rectangle& rRect ) const
         ScDrawLayer::MirrorRectRTL( rRect );        // back to real rectangle
 }
 
-void ScDocShell::GetPageOnFromPageStyleSet( const SfxItemSet* pStyleSet,
-                                            SCTAB             nCurTab,
-                                            bool&             rbHeader,
-                                            bool&             rbFooter )
-{
-    if ( !pStyleSet )
-    {
-        ScStyleSheetPool*  pStylePool  = m_pDocument->GetStyleSheetPool();
-        SfxStyleSheetBase* pStyleSheet = pStylePool->
-                                            Find( m_pDocument->GetPageStyle( nCurTab ),
-                                                  SfxStyleFamily::Page );
-
-        OSL_ENSURE( pStyleSheet, "PageStyle not found! :-/" );
-
-        if ( pStyleSheet )
-            pStyleSet = &pStyleSheet->GetItemSet();
-        else
-            rbHeader = rbFooter = false;
-    }
-
-    OSL_ENSURE( pStyleSet, "PageStyle-Set not found! :-(" );
-    if (!pStyleSet)
-        return;
-
-    const SvxSetItem*   pSetItem = nullptr;
-    const SfxItemSet*   pSet     = nullptr;
-
-    pSetItem = &pStyleSet->Get( ATTR_PAGE_HEADERSET );
-    pSet     = &pSetItem->GetItemSet();
-    rbHeader = pSet->Get(ATTR_PAGE_ON).GetValue();
-
-    pSetItem = &pStyleSet->Get( ATTR_PAGE_FOOTERSET );
-    pSet     = &pSetItem->GetItemSet();
-    rbFooter = pSet->Get(ATTR_PAGE_ON).GetValue();
-}
-
 #if defined(_WIN32)
 bool ScDocShell::DdeGetData( const OUString& rItem,
                              const OUString& rMimeType,
@@ -2965,17 +2876,14 @@ bool ScDocShell::DdeSetData( const OUString& rItem,
 
     //  named range?
     OUString aPos = rItem;
-    ScRangeName* pRange = m_pDocument->GetRangeName();
-    if( pRange )
+    ScRangeName& rRange = m_pDocument->GetRangeName();
+    const ScRangeData* pData = rRange.findByUpperName(ScGlobal::getCharClass().uppercase(aPos));
+    if (pData)
     {
-        const ScRangeData* pData = pRange->findByUpperName(ScGlobal::getCharClass().uppercase(aPos));
-        if (pData)
-        {
-            if( pData->HasType( ScRangeData::Type::RefArea    )
-                || pData->HasType( ScRangeData::Type::AbsArea )
-                || pData->HasType( ScRangeData::Type::AbsPos  ) )
-                aPos = pData->GetSymbol();           // continue with the name's contents
-        }
+        if( pData->HasType( ScRangeData::Type::RefArea    )
+            || pData->HasType( ScRangeData::Type::AbsArea )
+            || pData->HasType( ScRangeData::Type::AbsPos  ) )
+            aPos = pData->GetSymbol();           // continue with the name's contents
     }
 
     // Address in DDE function must be always parsed as CONV_OOO so that it

@@ -16,7 +16,7 @@
 #include <vcl/glyphitemcache.hxx>
 
 #include <font/FontSelectPattern.hxx>
-#include <unx/fontmanager.hxx>
+#include <unx/font/fontmanager.hxx>
 
 using namespace ::com::sun::star;
 
@@ -38,7 +38,7 @@ public:
         vcl::font::FontSelectPattern aPattern(rFont, rFont.GetFamilyName(), aSize, fExactHeight,
                                               bNonAntialias);
         aPattern.maTargetName = rFont.GetFamilyName();
-        psp::PrintFontManager& rMgr = psp::PrintFontManager::get();
+        FontConfigManager& rMgr = FontConfigManager::get();
         OUString aMissingCodes;
 
         rMgr.Substitute(aPattern, aMissingCodes);

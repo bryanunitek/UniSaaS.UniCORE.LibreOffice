@@ -20,6 +20,7 @@ $(eval $(call gb_Module_add_targets,sc,\
 	Library_scd \
 	Library_scfilt \
 	Library_scui \
+	Library_solver \
 	$(call gb_Helper_optional,OPENCL,Package_opencl) \
 	Package_res_xml \
 	UIConfig_scalc \
@@ -27,6 +28,11 @@ $(eval $(call gb_Module_add_targets,sc,\
 
 $(eval $(call gb_Module_add_l10n_targets,sc,\
 	AllLangMoTarget_sc \
+))
+
+$(eval $(call gb_Module_add_check_targets,sc,\
+	CppunitTest_sc_solver \
+	$(if $(and $(filter INTEL,$(CPUNAME)),$(filter -fsanitize=%,$(gb_CXX))),,$(if $(filter SCRIPTING,$(BUILD_TYPE)),CppunitTest_sc_swarmsolvertest)) \
 ))
 
 ifneq ($(filter SCRIPTING,$(BUILD_TYPE)),)
@@ -51,6 +57,7 @@ $(eval $(call gb_Module_add_check_targets,sc,\
 	CppunitTest_sc_ucalc_tablestyles \
 	CppunitTest_sc_ucalc_formula \
 	CppunitTest_sc_ucalc_formula2 \
+	CppunitTest_sc_ucalc_spilled_range \
 	CppunitTest_sc_ucalc_parallelism \
 	CppunitTest_sc_ucalc_pivottable \
 	CppunitTest_sc_ucalc_rangelst \
@@ -60,6 +67,7 @@ $(eval $(call gb_Module_add_check_targets,sc,\
 	CppunitTest_sc_ucalc_solver \
 	CppunitTest_sc_ucalc_sort \
 	CppunitTest_sc_filters_test \
+	CppunitTest_sc_oox_helpers_test \
 	CppunitTest_sc_mark_test \
 	CppunitTest_sc_core \
 	CppunitTest_sc_basic_types_test \
@@ -81,6 +89,7 @@ endif
 
 $(eval $(call gb_Module_add_slowcheck_targets,sc, \
 	CppunitTest_sc_anchor_test \
+	CppunitTest_sc_color_scale_api \
 	CppunitTest_sc_cond_format \
 	CppunitTest_sc_cond_format_merge \
 	CppunitTest_sc_copypaste \
@@ -132,11 +141,13 @@ $(eval $(call gb_Module_add_slowcheck_targets,sc, \
 	CppunitTest_sc_datetime_functions_test \
 	CppunitTest_sc_financial_functions_test \
 	CppunitTest_sc_information_functions_test \
+	CppunitTest_sc_lambda_functions_test \
 	CppunitTest_sc_logical_functions_test \
 	CppunitTest_sc_mathematical_functions_test \
 	CppunitTest_sc_spreadsheet_functions_test \
 	CppunitTest_sc_statistical_functions_test \
 	CppunitTest_sc_text_functions_test \
+	CppunitTest_sc_dynamic_array_functions_test \
 	CppunitTest_sc_annotationobj \
 	CppunitTest_sc_annotationshapeobj \
 	CppunitTest_sc_annotationsobj \
@@ -255,8 +266,8 @@ $(eval $(call gb_Module_add_subsequentcheck_targets,sc,\
 	JunitTest_sc_unoapi_4 \
 	JunitTest_sc_unoapi_6 \
 	JunitTest_sc_unoapi_7 \
-	CppunitTest_sc_opencl-1 \
-	CppunitTest_sc_opencl-2 \
+	$(call gb_Helper_optional,OPENCL,CppunitTest_sc_opencl-1) \
+	$(call gb_Helper_optional,OPENCL,CppunitTest_sc_opencl-2) \
 ))
 
 $(eval $(call gb_Module_add_perfcheck_targets,sc,\
@@ -290,6 +301,7 @@ $(eval $(call gb_Module_add_uicheck_targets,sc,\
 	UITest_goalSeek \
 	UITest_protect \
 	UITest_sc_options \
+	UITest_sc_vba \
 	UITest_validity \
 	UITest_key_f4 \
 	UITest_textCase \
@@ -310,7 +322,7 @@ $(eval $(call gb_Module_add_uicheck_targets,sc,\
 	UITest_sc_styleui \
 ))
 
-ifneq ($(or $(ENABLE_LPSOLVE),$(ENABLE_COINMP)),)
+ifneq ($(ENABLE_COINMP),)
 $(eval $(call gb_Module_add_uicheck_targets,sc,\
 	UITest_solver \
 ))

@@ -177,6 +177,10 @@ namespace xmloff::token {
         XML_N_FIELD,
         XML_NP_FIELD,
 
+        // Collabora extensions
+        XML_NP_COL_EXT,
+        XML_N_COL_EXT,
+
         // units
         XML_UNIT_M,
         XML_UNIT_CM,
@@ -897,6 +901,8 @@ namespace xmloff::token {
         XML_FONT_STYLE_NAME_ASIAN,
         XML_FONT_STYLE_NAME_COMPLEX,
         XML_FONT_VARIATION_SETTINGS,
+        XML_FONT_VARIATION_SETTINGS_ASIAN,
+        XML_FONT_VARIATION_SETTINGS_COMPLEX,
         XML_FONT_VARIANT,
         XML_FONT_WEIGHT,
         XML_FONT_WEIGHT_ASIAN,
@@ -922,6 +928,7 @@ namespace xmloff::token {
         XML_FONTWORK_STYLE,
         XML_FOOTER,
         XML_FOOTER_FIRST,
+        XML_IS_FIRST_PAGE_FOOTER_ENABLED,
         XML_FOOTER_LEFT,
         XML_FOOTER_STYLE,
         XML_FOOTER_VISIBLE,
@@ -1005,6 +1012,7 @@ namespace xmloff::token {
         XML_GRADIENTTRANSFORM,
         XML_GRAND_TOTAL,
         XML_GRAPHIC,
+        XML_GRAPHIC_CLIP_POLY,
         XML_GRAY,
         XML_GREEN,
         XML_GREYSCALE,
@@ -1024,6 +1032,7 @@ namespace xmloff::token {
         XML_HATCHSTYLE_TRIPLE,
         XML_HEADER,
         XML_HEADER_FIRST,
+        XML_IS_FIRST_PAGE_HEADER_ENABLED,
         XML_HEADER_LEFT,
         XML_HEADER_STYLE,
         XML_HEADERS,
@@ -1082,6 +1091,7 @@ namespace xmloff::token {
         XML_HYPHENATION_ZONE_SPREAD,
         XML_HYPHENATION_COMPOUND_REMAIN_CHAR_COUNT,
         XML_HYPHENATION_COMPOUND_PUSH_CHAR_COUNT,
+        XML_HYPHENATION_LEVEL,
         XML_I,
         XML_ICON,
         XML_ICON_SET,
@@ -1488,6 +1498,7 @@ namespace xmloff::token {
         XML_OUTSET,
         XML_OUTSIDE,
         XML_OVERFLOW_BEHAVIOR,
+        XML_OVERFLOW_BIN_VALUE,
         XML_OVERLAP,
         XML_OVERLAY,
         XML_P,
@@ -1555,6 +1566,8 @@ namespace xmloff::token {
         XML_PHYSICS_ANIMATION_BOUNCINESS,
         XML_PIE_OFFSET,
         XML_PLACEHOLDER,
+        XML_PLACEHOLDER_CLASS,
+        XML_PLACEHOLDER_PROMPT,
         XML_PLACEHOLDER_TYPE,
         XML_PLACING,
         XML_PLAIN_NUMBER,
@@ -1855,6 +1868,7 @@ namespace xmloff::token {
         XML_SPECULAR_COLOR,
         XML_SPEED,
         XML_SPHERE,
+        XML_SPILL,
         XML_SPIRAL,
         XML_SPIRAL_IN,
         XML_SPIRAL_INWARD_LEFT,
@@ -2112,6 +2126,7 @@ namespace xmloff::token {
         XML_SUGGESTED_SIGNER_NAME,
         XML_SUGGESTED_SIGNER_TITLE,
         XML_WAVE,
+        XML_UNDERFLOW_BIN_VALUE,
         XML_UNFORMATTED_TEXT,
         XML_UNION,
         XML_UNIT,
@@ -2160,6 +2175,8 @@ namespace xmloff::token {
         XML_USER_INDEX_SOURCE,
         XML_USER_TRANSFORMED,
         XML_USERNAME,
+        XML_USE_OVERFLOW_BIN,
+        XML_USE_UNDERFLOW_BIN,
         XML_VALIDATION,
         XML_VALUE,
         XML_VALUE_TYPE,
@@ -3548,6 +3565,8 @@ namespace xmloff::token {
 
         XML_PAGE_CONTENT_BOTTOM,
         XML_MARGIN_GUTTER,
+        XML_MIN_PAGE_MARGIN_TOP,
+        XML_MIN_PAGE_MARGIN_BOTTOM,
 
         XML_LOCAL_URL,
         XML_TARGET_TYPE,
@@ -3610,6 +3629,8 @@ namespace xmloff::token {
         XML_LATIN,
         XML_ASIAN,
         XML_COMPLEX,
+
+        XML_HORIZONTAL_RULE,
 
         XML_TOKEN_END
     };

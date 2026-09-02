@@ -208,28 +208,46 @@ PhysicalFontFace* PhysicalFontFamily::FindBestFontFace( const vcl::font::FontSel
     if( maFontFaces.size() == 1)
         return maFontFaces[0].get();
 
-    // FontName+StyleName should map to FamilyName+StyleName
-    const OUString& rSearchName = rFSD.maTargetName;
-    OUString aTargetStyleName;
-    const OUString* pTargetStyleName = nullptr;
-    if((rSearchName.getLength() > maSearchName.getLength())
-        && rSearchName.startsWith( maSearchName ) )
-    {
-        aTargetStyleName = rSearchName.copy(maSearchName.getLength() + 1);
-        pTargetStyleName = &aTargetStyleName;
-    }
-
     // TODO: linear search improve!
     PhysicalFontFace* pBestFontFace = maFontFaces[0].get();
-    FontMatchStatus aFontMatchStatus = {0, pTargetStyleName};
+    int nBestMatch = 0;
     for (auto const& font : maFontFaces)
     {
         PhysicalFontFace* pFoundFontFace = font.get();
-        if( pFoundFontFace->IsBetterMatch( rFSD, aFontMatchStatus ) )
+        if( pFoundFontFace->IsBetterMatch( rFSD, nBestMatch ) )
             pBestFontFace = pFoundFontFace;
     }
 
     return pBestFontFace;
+}
+
+PhysicalFontFace*
+PhysicalFontFamily::FindFontFaceByLegacyName(std::u16string_view rEnglishSearchName,
+                                             FontWeight eWeight, FontItalic eItalic) const
+{
+    // Several subfamilies can share a legacy family name (name ID 1), e.g.
+    // Book/Bold/Oblique/ BoldOblique of "DejaVu Sans Condensed".
+    // Pick the face best matching the requested weight/posture so the right
+    // typographic name (name ID 17) is found.
+    PhysicalFontFace* pBest = nullptr;
+    int nBestScore = 0;
+    for (auto const& xFace : maFontFaces)
+    {
+        if (GetEnglishSearchFontName(xFace->GetName(NAME_ID_FONT_FAMILY)) != rEnglishSearchName)
+            continue;
+        int nScore = (eItalic == ITALIC_DONTKNOW || xFace->GetItalic() == eItalic) ? 100 : 0;
+        if (eWeight != WEIGHT_DONTKNOW)
+        {
+            int nDiff = static_cast<int>(xFace->GetWeight()) - static_cast<int>(eWeight);
+            nScore -= (nDiff < 0) ? -nDiff : nDiff;
+        }
+        if (!pBest || nScore > nBestScore)
+        {
+            nBestScore = nScore;
+            pBest = xFace.get();
+        }
+    }
+    return pBest;
 }
 
 // update device font list with unique font faces, with uniqueness

@@ -26,12 +26,23 @@
 #include <com/sun/star/script/browse/XBrowseNode.hpp>
 #include <com/sun/star/uno/XComponentContext.hpp>
 
+class SbModule;
+class SbMethod;
+
+namespace com::sun::star::script::browse
+{
+class XCopyableBrowseNode;
+}
+
 struct ScriptContainerInfo
 {
     css::script::browse::XBrowseNode* pBrowseNode;
+    css::uno::Reference<css::frame::XModel> xModel;
 
-    ScriptContainerInfo(css::script::browse::XBrowseNode* pObj)
+    ScriptContainerInfo(css::script::browse::XBrowseNode* pObj,
+                        const css::uno::Reference<css::frame::XModel>& xModel_)
         : pBrowseNode(pObj)
+        , xModel(xModel_)
     {
     }
 };
@@ -41,12 +52,14 @@ struct ScriptInfo
     css::script::browse::XBrowseNode* pBrowseNode;
     OUString sURL;
     OUString sDescription;
+    css::uno::Reference<css::frame::XModel> xModel;
 
     ScriptInfo(css::script::browse::XBrowseNode* pObj, const OUString& rsUrl,
-               const OUString& rsDesc)
+               const OUString& rsDesc, const css::uno::Reference<css::frame::XModel>& xModel_)
         : pBrowseNode(pObj)
         , sURL(rsUrl)
         , sDescription(rsDesc)
+        , xModel(xModel_)
     {
     }
 };
@@ -162,6 +175,7 @@ public:
     void ScriptContainerSelected();
 
     void Insert(const css::uno::Reference<css::script::browse::XBrowseNode>& xInsertNode,
+                const css::uno::Reference<css::frame::XModel>& xDocumentModel,
                 const weld::TreeIter* pParentEntry, const OUString& rsUiName,
                 const OUString& rsImage, bool bChildOnDemand = false, int nPos = -1,
                 weld::TreeIter* pRet = nullptr);
@@ -200,7 +214,12 @@ class MacroManagerDialog : public weld::GenericDialogController, public SfxListe
     std::unique_ptr<weld::Button> m_xMacroDeleteButton;
     std::unique_ptr<weld::Button> m_xMacroCreateButton;
     std::unique_ptr<weld::Button> m_xMacroRenameButton;
+    std::unique_ptr<weld::Button> m_xModuleCopyButton;
+    std::unique_ptr<weld::Button> m_xModulePasteButton;
     std::unique_ptr<weld::Button> m_xAssignButton;
+
+    // Node that is selected via the “copy” button to be later pasted with the “paste” button.
+    css::uno::Reference<css::script::browse::XCopyableBrowseNode> m_xCopiedNode;
 
     DECL_LINK(ClickHdl, weld::Button&, void);
     DECL_LINK(SelectHdl, weld::ItemView&, void);
@@ -216,6 +235,7 @@ class MacroManagerDialog : public weld::GenericDialogController, public SfxListe
     void BasicScriptsLibraryModuleDialogDelete(const basctl::ScriptDocument& rDocument);
     void BasicScriptsLibraryPassword(const basctl::ScriptDocument& rDocument);
     void BasicScriptsMacroEdit(const basctl::ScriptDocument& rDocument);
+    void BasicScriptsMacroDelete();
     bool IsLibraryReadOnlyOrFailedPasswordQuery(const basctl::ScriptDocument& rDocument,
                                                 const weld::TreeIter* pIter);
 
@@ -224,8 +244,8 @@ class MacroManagerDialog : public weld::GenericDialogController, public SfxListe
                                               const weld::TreeIter& rEntry);
     void ScriptingFrameworkScriptsDeleteEntry(weld::TreeView& rTreeView,
                                               const weld::TreeIter& rEntry);
-    static bool getBoolProperty(css::uno::Reference<css::beans::XPropertySet> const& xProps,
-                                OUString const& propName);
+    void ScriptingFrameworkScriptsPasteEntry(weld::TreeView& rTreeView,
+                                             const weld::TreeIter& rEntry);
     OUString getListOfChildren(const css::uno::Reference<css::script::browse::XBrowseNode>& node,
                                int depth);
 
@@ -235,6 +255,9 @@ class MacroManagerDialog : public weld::GenericDialogController, public SfxListe
     void UpdateUI();
     void CheckButtons();
 
+    SbModule* GetSelectedBasicModule() const;
+    SbMethod* GetSelectedBasicMethod() const;
+
     virtual void Notify(SfxBroadcaster&, const SfxHint& rHint) override;
 
 public:
@@ -243,6 +266,7 @@ public:
     virtual ~MacroManagerDialog() override;
 
     OUString GetScriptURL() const;
+    css::uno::Reference<css::frame::XModel> GetScriptModel() const;
 
     void SaveLastUsedMacro();
     void LoadLastUsedMacro();

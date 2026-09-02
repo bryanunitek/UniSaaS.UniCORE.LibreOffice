@@ -27,31 +27,16 @@
 
 #include <vector>
 
-enum class SvTabListBoxRole
-{
-    Unknown,
-    Tree,       // hierarchical, single-column
-    TreeGrid,   // hierarchical, multi-column
-    ListBox,    // flat, single-column
-    Grid        // flat, multi-column
-};
-
 class UNLESS_MERGELIBS_MORE(VCL_DLLPUBLIC) SvTabListBox : public SvTreeListBox
 {
 private:
     std::vector<SvLBoxTab>      mvTabList;
-    OUString                    aCurEntry;
-    SvTabListBoxRole            m_eRole;
 
     Link<SvTreeListEntry*, bool> m_aEditingEntryHdl;
     Link<const EntryItemText&, bool> m_aEditedEntryHdl;
 
 protected:
-    static std::u16string_view  GetToken( std::u16string_view sStr, sal_Int32 &nIndex );
-
     virtual void                SetTabs() override;
-    virtual void InitEntry(SvTreeListEntry& rEntry, const OUString&, const Image&,
-                           const Image&) override;
 
     OUString                    GetTabEntryText( sal_uInt32 nPos, sal_uInt16 nCol ) const;
     SvTreeListEntry*            GetEntryOnPos( sal_uInt32 _nEntryPos ) const;
@@ -93,16 +78,11 @@ public:
     // going to change the baseclass
     virtual DragDropMode NotifyStartDrag() override { return GetDragDropMode(); }
 
-    virtual SvTreeListEntry*    InsertEntry( const OUString& rText, SvTreeListEntry* pParent = nullptr,
-                                         bool bChildrenOnDemand = false,
-                                         sal_uInt32 nPos=TREELIST_APPEND, OUString* pUserData = nullptr ) override;
-
-    virtual SvTreeListEntry* InsertEntryToColumn( const OUString&, SvTreeListEntry* pParent,
-                                 sal_uInt32 nPos, sal_uInt16 nCol, OUString* pUserData = nullptr );
+    SvTreeListEntry& InsertEntry(const OUString& rText, SvTreeListEntry* pParent = nullptr,
+                                 sal_uInt32 nPos = TREELIST_APPEND);
 
     virtual OUString GetEntryText( SvTreeListEntry* pEntry ) const override;
     static OUString  GetEntryText( const SvTreeListEntry*, sal_uInt16 nCol );
-    OUString         GetEntryText( sal_uInt32 nPos, sal_uInt16 nCol = 0xffff ) const;
     using SvTreeListBox::SetEntryText;
     OUString         GetCellText( sal_uInt32 nPos, sal_uInt16 nCol ) const;
 
@@ -111,8 +91,6 @@ public:
     // Note that to make a tab visible, the width must also be set to a non-zero value
     void             SetTabVisible( sal_uInt16 nTab, bool bVisible );
     bool             GetTabVisible( sal_uInt16 nTab );
-
-    void             SetRole(SvTabListBoxRole e) { m_eRole = e; }
 };
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

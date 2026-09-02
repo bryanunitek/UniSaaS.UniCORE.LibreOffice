@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Generated with glade 3.38.2 -->
+<!-- Generated with glade 3.40.0 -->
 <interface domain="cui">
   <requires lib="gtk+" version="3.24"/>
   <object class="GtkImage" id="image1">
@@ -18,8 +18,6 @@
       <column type="gboolean"/>
       <!-- column-name check2 -->
       <column type="gboolean"/>
-      <!-- column-name check3 -->
-      <column type="gboolean"/>
       <!-- column-name text -->
       <column type="gchararray"/>
       <!-- column-name text1 -->
@@ -30,13 +28,9 @@
       <column type="gboolean"/>
       <!-- column-name checkvis2 -->
       <column type="gboolean"/>
-      <!-- column-name checkvis3 -->
-      <column type="gboolean"/>
       <!-- column-name checktri1 -->
       <column type="gboolean"/>
       <!-- column-name checktri2 -->
-      <column type="gboolean"/>
-      <!-- column-name checktri3 -->
       <column type="gboolean"/>
     </columns>
   </object>
@@ -148,112 +142,53 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkBox" id="box2">
+                  <object class="GtkComboBoxText" id="font1">
                     <property name="visible">True</property>
+                    <property name="sensitive">False</property>
                     <property name="can-focus">False</property>
-                    <property name="vexpand">True</property>
-                    <child>
-                      <object class="GtkScrolledWindow" id="checklbscroll">
-                        <property name="visible">True</property>
+                    <property name="hexpand">True</property>
+                    <property name="has-entry">True</property>
+                    <child internal-child="entry">
+                      <object class="GtkEntry">
                         <property name="can-focus">True</property>
-                        <property name="hexpand">True</property>
-                        <property name="vexpand">True</property>
-                        <property name="shadow-type">in</property>
-                        <child>
-                          <object class="GtkTreeView" id="checklb">
-                            <property name="visible">True</property>
-                            <property name="can-focus">True</property>
-                            <property name="receives-default">True</property>
-                            <property name="hexpand">True</property>
-                            <property name="vexpand">True</property>
-                            <property name="model">liststore1</property>
-                            <property name="search-column">0</property>
-                            <property name="show-expanders">False</property>
-                            <child internal-child="selection">
-                              <object class="GtkTreeSelection" id="Macro Library List-selection2"/>
-                            </child>
-                            <child>
-                              <object class="GtkTreeViewColumn" id="treeviewcolumn1">
-                                <property name="resizable">True</property>
-                                <property name="spacing">6</property>
-                                <property name="title" translatable="yes" context="optfontspage|always">Always</property>
-                                <child>
-                                  <object class="GtkCellRendererToggle" id="cellrenderer1"/>
-                                  <attributes>
-                                    <attribute name="visible">6</attribute>
-                                    <attribute name="active">0</attribute>
-                                  </attributes>
-                                </child>
-                                <child>
-                                  <object class="GtkCellRendererToggle" id="cellrenderer5"/>
-                                  <attributes>
-                                    <attribute name="visible">7</attribute>
-                                    <attribute name="active">1</attribute>
-                                  </attributes>
-                                </child>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkTreeViewColumn" id="treeviewcolumn7">
-                                <property name="resizable">True</property>
-                                <property name="spacing">6</property>
-                                <property name="title" translatable="yes" context="optfontspage|screenonly">Screen only</property>
-                                <child>
-                                  <object class="GtkCellRendererToggle" id="cellrenderer7"/>
-                                  <attributes>
-                                    <attribute name="visible">8</attribute>
-                                    <attribute name="active">2</attribute>
-                                  </attributes>
-                                </child>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkTreeViewColumn" id="treeviewcolumn5">
-                                <property name="resizable">True</property>
-                                <property name="spacing">6</property>
-                                <property name="title" translatable="yes" context="optfontspage|font">Font</property>
-                                <property name="clickable">True</property>
-                                <child>
-                                  <object class="GtkCellRendererText" id="cellrenderer4"/>
-                                  <attributes>
-                                    <attribute name="text">3</attribute>
-                                  </attributes>
-                                </child>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkTreeViewColumn" id="treeviewcolumn9">
-                                <property name="resizable">True</property>
-                                <property name="spacing">6</property>
-                                <property name="title" translatable="yes" context="optfontspage|replacewith">Replace with</property>
-                                <property name="clickable">True</property>
-                                <child>
-                                  <object class="GtkCellRendererText" id="cellrenderer9"/>
-                                  <attributes>
-                                    <attribute name="text">4</attribute>
-                                  </attributes>
-                                </child>
-                              </object>
-                            </child>
-                            <child internal-child="accessible">
-                              <object class="AtkObject" id="checklb-atkobject">
-                                <property name="AtkObject::accessible-description" translatable="yes" context="extended_tip | checklb">Lists the original font and the font that will replace it. Select Always to replace the font, even if the original font is installed on your system. Select Screen only to replace the screen font only and never replace the font for printing.</property>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
+                        <property name="activates-default">True</property>
+                        <property name="truncate-multiline">True</property>
                       </object>
-                      <packing>
-                        <property name="expand">True</property>
-                        <property name="fill">True</property>
-                        <property name="position">0</property>
-                      </packing>
+                    </child>
+                    <child internal-child="accessible">
+                      <object class="AtkObject" id="font1-atkobject">
+                        <property name="AtkObject::accessible-description" translatable="yes" context="extended_tip | font1">Enter or select the name of the font that you want to replace.</property>
+                      </object>
                     </child>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
-                    <property name="top-attach">2</property>
-                    <property name="width">4</property>
+                    <property name="top-attach">1</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkComboBoxText" id="font2">
+                    <property name="visible">True</property>
+                    <property name="sensitive">False</property>
+                    <property name="can-focus">False</property>
+                    <property name="hexpand">True</property>
+                    <property name="has-entry">True</property>
+                    <child internal-child="entry">
+                      <object class="GtkEntry">
+                        <property name="can-focus">True</property>
+                        <property name="activates-default">True</property>
+                        <property name="truncate-multiline">True</property>
+                      </object>
+                    </child>
+                    <child internal-child="accessible">
+                      <object class="AtkObject" id="font2-atkobject">
+                        <property name="AtkObject::accessible-description" translatable="yes" context="extended_tip | font2">Enter or select the name of the replacement font.</property>
+                      </object>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="left-attach">1</property>
+                    <property name="top-attach">1</property>
                   </packing>
                 </child>
                 <child>
@@ -297,53 +232,105 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkComboBoxText" id="font2">
+                  <object class="GtkBox" id="box2">
                     <property name="visible">True</property>
-                    <property name="sensitive">False</property>
                     <property name="can-focus">False</property>
-                    <property name="hexpand">True</property>
-                    <property name="has-entry">True</property>
-                    <child internal-child="entry">
-                      <object class="GtkEntry">
+                    <property name="vexpand">True</property>
+                    <child>
+                      <object class="GtkScrolledWindow" id="checklbscroll">
+                        <property name="visible">True</property>
                         <property name="can-focus">True</property>
-                        <property name="activates-default">True</property>
-                        <property name="truncate-multiline">True</property>
+                        <property name="hexpand">True</property>
+                        <property name="vexpand">True</property>
+                        <property name="shadow-type">in</property>
+                        <child>
+                          <object class="GtkTreeView" id="checklb">
+                            <property name="visible">True</property>
+                            <property name="can-focus">True</property>
+                            <property name="receives-default">True</property>
+                            <property name="hexpand">True</property>
+                            <property name="vexpand">True</property>
+                            <property name="model">liststore1</property>
+                            <property name="search-column">0</property>
+                            <property name="show-expanders">False</property>
+                            <child internal-child="selection">
+                              <object class="GtkTreeSelection" id="Macro Library List-selection2"/>
+                            </child>
+                            <child>
+                              <object class="GtkTreeViewColumn" id="treeviewcolumn1">
+                                <property name="resizable">True</property>
+                                <property name="spacing">6</property>
+                                <property name="title" translatable="yes" context="optfontspage|always">Always</property>
+                                <child>
+                                  <object class="GtkCellRendererToggle" id="cellrenderer1"/>
+                                  <attributes>
+                                    <attribute name="visible">5</attribute>
+                                    <attribute name="active">0</attribute>
+                                  </attributes>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkTreeViewColumn" id="treeviewcolumn7">
+                                <property name="resizable">True</property>
+                                <property name="spacing">6</property>
+                                <property name="title" translatable="yes" context="optfontspage|screenonly">Screen only</property>
+                                <child>
+                                  <object class="GtkCellRendererToggle" id="cellrenderer7"/>
+                                  <attributes>
+                                    <attribute name="visible">6</attribute>
+                                    <attribute name="active">1</attribute>
+                                  </attributes>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkTreeViewColumn" id="treeviewcolumn5">
+                                <property name="resizable">True</property>
+                                <property name="spacing">6</property>
+                                <property name="title" translatable="yes" context="optfontspage|font">Font</property>
+                                <property name="clickable">True</property>
+                                <child>
+                                  <object class="GtkCellRendererText" id="cellrenderer4"/>
+                                  <attributes>
+                                    <attribute name="text">2</attribute>
+                                  </attributes>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkTreeViewColumn" id="treeviewcolumn9">
+                                <property name="resizable">True</property>
+                                <property name="spacing">6</property>
+                                <property name="title" translatable="yes" context="optfontspage|replacewith">Replace with</property>
+                                <property name="clickable">True</property>
+                                <child>
+                                  <object class="GtkCellRendererText" id="cellrenderer9"/>
+                                  <attributes>
+                                    <attribute name="text">3</attribute>
+                                  </attributes>
+                                </child>
+                              </object>
+                            </child>
+                            <child internal-child="accessible">
+                              <object class="AtkObject" id="checklb-atkobject">
+                                <property name="AtkObject::accessible-description" translatable="yes" context="extended_tip | checklb">Lists the original font and the font that will replace it. Select Always to replace the font, even if the original font is installed on your system. Select Screen only to replace the screen font only and never replace the font for printing.</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
                       </object>
-                    </child>
-                    <child internal-child="accessible">
-                      <object class="AtkObject" id="font2-atkobject">
-                        <property name="AtkObject::accessible-description" translatable="yes" context="extended_tip | font2">Enter or select the name of the replacement font.</property>
-                      </object>
-                    </child>
-                  </object>
-                  <packing>
-                    <property name="left-attach">1</property>
-                    <property name="top-attach">1</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkComboBoxText" id="font1">
-                    <property name="visible">True</property>
-                    <property name="sensitive">False</property>
-                    <property name="can-focus">False</property>
-                    <property name="hexpand">True</property>
-                    <property name="has-entry">True</property>
-                    <child internal-child="entry">
-                      <object class="GtkEntry">
-                        <property name="can-focus">True</property>
-                        <property name="activates-default">True</property>
-                        <property name="truncate-multiline">True</property>
-                      </object>
-                    </child>
-                    <child internal-child="accessible">
-                      <object class="AtkObject" id="font1-atkobject">
-                        <property name="AtkObject::accessible-description" translatable="yes" context="extended_tip | font1">Enter or select the name of the font that you want to replace.</property>
-                      </object>
+                      <packing>
+                        <property name="expand">True</property>
+                        <property name="fill">True</property>
+                        <property name="position">0</property>
+                      </packing>
                     </child>
                   </object>
                   <packing>
                     <property name="left-attach">0</property>
-                    <property name="top-attach">1</property>
+                    <property name="top-attach">2</property>
+                    <property name="width">4</property>
                   </packing>
                 </child>
                 <child internal-child="accessible">

@@ -74,6 +74,8 @@
 #include <svx/sdr/contact/viewcontact.hxx>
 #include <svx/svdopath.hxx>
 #include <svx/svdpage.hxx>
+#include <drawdoc.hxx>
+#include <sdpage.hxx>
 #include <CustomAnimationEffect.hxx>
 #include <CustomAnimationPreset.hxx>
 #include <animations.hxx>
@@ -1441,6 +1443,20 @@ bool CustomAnimationEffect::setTransformationProperty( sal_Int32 nTransformType,
     return bChanged;
 }
 
+namespace
+{
+// Register the effect's external sound on the slide that owns it, so allowing
+// the link marks the audio node's source allowed.
+void lcl_registerEffectSoundLink(const CustomAnimationEffect& rEffect)
+{
+    SdrObject* pObj = SdrObject::getSdrObjectFromXShape(rEffect.getTargetShape());
+    SdrPage* pPage = pObj ? pObj->getSdrPageFromSdrObject() : nullptr;
+    if (pPage)
+        static_cast<SdDrawDocument&>(pPage->getSdrModelFromSdrPage())
+            .RegisterAnimationSoundLinks(static_cast<SdPage&>(*pPage));
+}
+}
+
 void CustomAnimationEffect::createAudio( const css::uno::Any& rSource )
 {
     DBG_ASSERT( !mxAudio.is(), "sd::CustomAnimationEffect::createAudio(), node already has an audio!" );
@@ -1455,11 +1471,20 @@ void CustomAnimationEffect::createAudio( const css::uno::Any& rSource )
         xAudio->setSource( rSource );
         xAudio->setVolume( 1.0 );
         setAudio( xAudio );
+        lcl_registerEffectSoundLink( *this );
     }
     catch( Exception& )
     {
         TOOLS_WARN_EXCEPTION( "sd", "sd::CustomAnimationEffect::createAudio()" );
     }
+}
+
+void CustomAnimationEffect::setAudioSource( const css::uno::Any& rSource )
+{
+    if( !mxAudio.is() )
+        return;
+    mxAudio->setSource( rSource );
+    lcl_registerEffectSoundLink( *this );
 }
 
 static Reference< XCommand > findCommandNode( const Reference< XAnimationNode >& xRootNode )
@@ -2228,40 +2253,7 @@ void EffectSequenceHelper::insertTextRange( const css::uno::Any& aTarget )
         rebuild();
 }
 
-static bool isParagraphTargetTextEmpty( ParagraphTarget aParaTarget )
-{
-    // get paragraph
-    Reference< XText > xText ( aParaTarget.Shape, UNO_QUERY );
-    if( xText.is() )
-    {
-        Reference< XEnumerationAccess > xEA( xText, UNO_QUERY );
-        if( xEA.is() )
-        {
-            Reference< XEnumeration > xEnumeration = xEA->createEnumeration();
-            if( xEnumeration.is() )
-            {
-                // advance to the Nth paragraph
-                sal_Int32 nPara = aParaTarget.Paragraph;
-                while( xEnumeration->hasMoreElements() && nPara-- )
-                    xEnumeration->nextElement();
-
-                // get Nth paragraph's text and check if it's empty
-                if( xEnumeration->hasMoreElements() )
-                {
-                    Reference< XTextRange > xRange( xEnumeration->nextElement(), UNO_QUERY );
-                    if( xRange.is() )
-                    {
-                        OUString text = xRange->getString();
-                        return text.isEmpty();
-                    }
-                }
-            }
-        }
-    }
-    return false;
-}
-
-void EffectSequenceHelper::disposeTextRange( const css::uno::Any& aTarget )
+void EffectSequenceHelper::disposeTextRange( const css::uno::Any& aTarget, bool bPreviousParagraphEmpty )
 {
     ParagraphTarget aParaTarget;
     if( !(aTarget >>= aParaTarget ) )
@@ -2289,11 +2281,10 @@ void EffectSequenceHelper::disposeTextRange( const css::uno::Any& aTarget )
     }
 
     // select effect to delete:
-    // if paragraph before target is blank, then delete its animation effect (if any) instead
-    ParagraphTarget aPreviousParagraph = aParaTarget;
-    --aPreviousParagraph.Paragraph;
-    bool bIsPreviousParagraphEmpty = isParagraphTargetTextEmpty( aPreviousParagraph );
-    sal_Int16 anParaNumToDelete = bIsPreviousParagraphEmpty ? aPreviousParagraph.Paragraph : aParaTarget.Paragraph;
+    // if the paragraph before the target is blank, delete its animation effect (if any) instead.
+    sal_Int16 anParaNumToDelete = aParaTarget.Paragraph;
+    if( bPreviousParagraphEmpty )
+        --anParaNumToDelete;
 
     // update effects
     for( const auto &pEffect : aTargetParagraphEffects )
@@ -3322,13 +3313,13 @@ void MainSequence::insertTextRange( const css::uno::Any& aTarget )
     }
 }
 
-void MainSequence::disposeTextRange( const css::uno::Any& aTarget )
+void MainSequence::disposeTextRange( const css::uno::Any& aTarget, bool bPreviousParagraphEmpty )
 {
-    EffectSequenceHelper::disposeTextRange( aTarget );
+    EffectSequenceHelper::disposeTextRange( aTarget, bPreviousParagraphEmpty );
 
     for (auto const& iterativeSequence : maInteractiveSequenceVector)
     {
-        iterativeSequence->disposeTextRange( aTarget );
+        iterativeSequence->disposeTextRange( aTarget, bPreviousParagraphEmpty );
     }
 }
 

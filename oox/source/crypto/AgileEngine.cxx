@@ -20,12 +20,12 @@
 
 #include <comphelper/hash.hxx>
 #include <comphelper/docpasswordhelper.hxx>
-#include <comphelper/random.hxx>
 #include <comphelper/processfactory.hxx>
 #include <comphelper/base64.hxx>
 #include <comphelper/sequence.hxx>
 
 #include <filter/msfilter/mscodec.hxx>
+#include <rtl/random.h>
 #include <tools/stream.hxx>
 #include <tools/XmlWriter.hxx>
 #include <sax/fastattribs.hxx>
@@ -318,12 +318,13 @@ namespace
 
 bool generateBytes(std::vector<sal_uInt8> & rBytes, sal_Int32 nSize)
 {
+    assert(0 <= nSize && o3tl::make_unsigned(nSize) <= rBytes.size());
+    if (nSize <= 0)
+        return false;
+
     size_t nMax = std::min(rBytes.size(), size_t(nSize));
 
-    for (size_t i = 0; i < nMax; ++i)
-    {
-        rBytes[i] = sal_uInt8(comphelper::rng::uniform_uint_distribution(0, 0xFF));
-    }
+    (void)rtl_random_getBytes(nullptr, rBytes.data(), nMax);
 
     return true;
 }
@@ -730,9 +731,7 @@ bool AgileEngine::encryptEncryptionKey(std::u16string_view rPassword)
 
 bool AgileEngine::setupEncryption(OUString const & rPassword)
 {
-    if (meEncryptionPreset == AgileEncryptionPreset::AES_128_SHA1)
-        setupEncryptionParameters({ 100000, 16, 128, 20, 16, u"AES"_ustr, u"ChainingModeCBC"_ustr, u"SHA1"_ustr });
-    else if (meEncryptionPreset == AgileEncryptionPreset::AES_128_SHA384)
+    if (meEncryptionPreset == AgileEncryptionPreset::AES_128_SHA384)
         setupEncryptionParameters({ 100000, 16, 128, 48, 16, u"AES"_ustr, u"ChainingModeCBC"_ustr, u"SHA384"_ustr });
     else if (meEncryptionPreset == AgileEncryptionPreset::AES_192_SHA384)
         setupEncryptionParameters({ 100000, 16, 192, 48, 16, u"AES"_ustr, u"ChainingModeCBC"_ustr, u"SHA384"_ustr });

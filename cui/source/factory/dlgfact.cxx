@@ -97,10 +97,11 @@
 #include <DiagramDialog.hxx>
 #include <fileextcheckdlg.hxx>
 #include <TextColumnsPage.hxx>
-#include <querydialog.hxx>
 #include <welcomedlg.hxx>
 
 #include <MacroManagerDialog.hxx>
+
+#include <svtools/querydialog.hxx>
 
 using namespace ::com::sun::star::frame;
 using namespace ::com::sun::star::container;
@@ -482,6 +483,7 @@ class AbstractScriptSelectorDialog_Impl final
 public:
     using AbstractDialogImpl_BASE::AbstractDialogImpl_BASE;
     OUString GetScriptURL() const override { return m_pDlg->GetScriptURL(); }
+    Reference<frame::XModel> GetScriptModel() const override { return m_pDlg->GetScriptModel(); }
     void SetRunLabel() override { m_pDlg->SetRunLabel(); }
 };
 }
@@ -501,6 +503,7 @@ class AbstractMacroManagerDialog_Impl final
 public:
     using AbstractDialogImpl_BASE::AbstractDialogImpl_BASE;
     OUString GetScriptURL() const override { return m_pDlg->GetScriptURL(); }
+    Reference<frame::XModel> GetScriptModel() const override { return m_pDlg->GetScriptModel(); }
     void LoadLastUsedMacro() const override { m_pDlg->LoadLastUsedMacro(); }
 };
 }
@@ -1547,28 +1550,5 @@ AbstractDialogFactory_Impl::CreateFileExtCheckDialog(weld::Window* pParent, cons
     return VclPtr<CuiAbstractController_Impl<FileExtCheckDialog>>::Create(pParent, sTitle, sMsg);
 }
 #endif
-
-namespace
-{
-class AbstractQueryDialog_Impl final
-    : public vcl::AbstractDialogImpl_Async<AbstractQueryDialog,
-                                           QueryDialog>
-{
-public:
-    using AbstractDialogImpl_BASE::AbstractDialogImpl_BASE;
-    bool DontShowAgain() const override { return m_pDlg->DontShowAgain(); }
-    void SetYesLabel(const OUString& sLabel) override { m_pDlg->SetYesLabel(sLabel); }
-    void SetNoLabel(const OUString& sLabel) override { m_pDlg->SetNoLabel(sLabel); }
-};
-}
-
-VclPtr<AbstractQueryDialog>
-AbstractDialogFactory_Impl::CreateQueryDialog(
-    weld::Window* pParent,
-    const OUString& sTitle, const OUString& sText, const OUString& sQuestion,
-    bool bShowAgain)
-{
-    return VclPtr<AbstractQueryDialog_Impl>::Create(pParent, sTitle, sText, sQuestion, bShowAgain);
-}
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

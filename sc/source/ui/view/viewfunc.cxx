@@ -131,7 +131,8 @@ static void lcl_PostRepaintSparkLine(sc::SparklineList* pSparklineList, const Sc
 
 ScViewFunc::ScViewFunc( vcl::Window* pParent, ScDocShell& rDocSh, ScTabViewShell* pViewShell ) :
     ScTabView( pParent, rDocSh, pViewShell ),
-    bFormatValid( false )
+    mbFormatValid( false ),
+    mbMultiInsert( false )
 {
 }
 
@@ -167,7 +168,7 @@ struct FormulaProcessingContext
     SCROW nRow;
     SCTAB nTab;
 
-    bool bMatrixExpand;
+    bool bAutoDynamicArray;
     bool bNumFmtChanged;
     bool bRecord;
 
@@ -215,12 +216,12 @@ void ScViewFunc::StartFormatArea()
 
     if (bOk)
     {
-        bFormatValid = true;
-        aFormatSource = aMarkRange.aStart;
-        aFormatArea = ScRange( aFormatSource );
+        mbFormatValid = true;
+        maFormatSource = aMarkRange.aStart;
+        maFormatArea = ScRange( maFormatSource );
     }
     else
-        bFormatValid = false;       // discard old range
+        mbFormatValid = false;       // discard old range
 }
 
 bool ScViewFunc::TestFormatArea( SCCOL nCol, SCROW nRow, SCTAB nTab, bool bAttrChanged )
@@ -240,39 +241,39 @@ bool ScViewFunc::TestFormatArea( SCCOL nCol, SCROW nRow, SCTAB nTab, bool bAttrC
     //! Test if cell empty ???
 
     bool bFound = false;
-    ScRange aNewRange = aFormatArea;
-    if ( bFormatValid && nTab == aFormatSource.Tab() )
+    ScRange aNewRange = maFormatArea;
+    if ( mbFormatValid && nTab == maFormatSource.Tab() )
     {
-        if ( nRow >= aFormatArea.aStart.Row() && nRow <= aFormatArea.aEnd.Row() )
+        if ( nRow >= maFormatArea.aStart.Row() && nRow <= maFormatArea.aEnd.Row() )
         {
             //  within range?
-            if ( nCol >= aFormatArea.aStart.Col() && nCol <= aFormatArea.aEnd.Col() )
+            if ( nCol >= maFormatArea.aStart.Col() && nCol <= maFormatArea.aEnd.Col() )
             {
                 bFound = true;          // do not change range
             }
             //  left ?
-            if ( nCol+1 == aFormatArea.aStart.Col() )
+            if ( nCol+1 == maFormatArea.aStart.Col() )
             {
                 bFound = true;
                 aNewRange.aStart.SetCol( nCol );
             }
             //  right ?
-            if ( nCol == aFormatArea.aEnd.Col()+1 )
+            if ( nCol == maFormatArea.aEnd.Col()+1 )
             {
                 bFound = true;
                 aNewRange.aEnd.SetCol( nCol );
             }
         }
-        if ( nCol >= aFormatArea.aStart.Col() && nCol <= aFormatArea.aEnd.Col() )
+        if ( nCol >= maFormatArea.aStart.Col() && nCol <= maFormatArea.aEnd.Col() )
         {
             //  top ?
-            if ( nRow+1 == aFormatArea.aStart.Row() )
+            if ( nRow+1 == maFormatArea.aStart.Row() )
             {
                 bFound = true;
                 aNewRange.aStart.SetRow( nRow );
             }
             //  bottom ?
-            if ( nRow == aFormatArea.aEnd.Row()+1 )
+            if ( nRow == maFormatArea.aEnd.Row()+1 )
             {
                 bFound = true;
                 aNewRange.aEnd.SetRow( nRow );
@@ -281,9 +282,9 @@ bool ScViewFunc::TestFormatArea( SCCOL nCol, SCROW nRow, SCTAB nTab, bool bAttrC
     }
 
     if (bFound)
-        aFormatArea = aNewRange;    // extend
+        maFormatArea = aNewRange;    // extend
     else
-        bFormatValid = false;       // outside of range -> break
+        mbFormatValid = false;       // outside of range -> break
 
     return bFound;
 }
@@ -295,7 +296,7 @@ void ScViewFunc::DoAutoAttributes( SCCOL nCol, SCROW nRow, SCTAB nTab,
     ScDocument& rDoc = pDocSh->GetDocument();
 
     const ScPatternAttr* pSource = rDoc.GetPattern(
-                            aFormatSource.Col(), aFormatSource.Row(), nTab );
+                            maFormatSource.Col(), maFormatSource.Row(), nTab );
     if ( !pSource->GetItem(ATTR_MERGE).IsMerged() )
     {
         ScRange aRange( nCol, nRow, nTab, nCol, nRow, nTab );
@@ -314,7 +315,7 @@ void ScViewFunc::DoAutoAttributes( SCCOL nCol, SCROW nRow, SCTAB nTab,
     }
 
     if ( bAttrChanged )                             // value entered with number format?
-        aFormatSource.Set( nCol, nRow, nTab );      // then set a new source
+        maFormatSource.Set( nCol, nRow, nTab );      // then set a new source
 }
 
 //      additional routines
@@ -530,28 +531,6 @@ void finalizeFormulaProcessing(const std::shared_ptr<FormulaProcessingContext>& 
             pScMod->SetAppOptions(aAppOpt);
         }
 
-        if (context->bMatrixExpand)
-        {
-            // If the outer function/operator returns an array/matrix then
-            // enter a matrix formula. ScViewFunc::EnterMatrix() takes care
-            // of selection/mark of the result dimensions or preselected
-            // mark. If the user wanted less or a single cell then should
-            // mark such prior to entering the formula.
-            const formula::FormulaToken* pToken = context->pArr->LastRPNToken();
-            if (pToken && (formula::FormulaCompiler::IsMatrixFunction( pToken->GetOpCode())
-                        || pToken->IsInForceArray()))
-            {
-                // Discard this (still empty here) Undo action,
-                // EnterMatrix() will create its own.
-                if (context->bRecord)
-                    context->GetDocFunc().EndListAction();
-
-                // Use corrected formula string.
-                context->rViewFunc.EnterMatrix( context->aFormula, context->GetDoc().GetGrammar());
-
-                return;
-            }
-        }
     }
 
     ScFormulaCell aCell(context->GetDoc(), *context->aPos, std::move(*context->pArr), formula::FormulaGrammar::GRAM_DEFAULT, ScMatrixMode::NONE);
@@ -579,6 +558,12 @@ void finalizeFormulaProcessing(const std::shared_ptr<FormulaProcessingContext>& 
         else
         {
             ScFormulaCell* pCell = new ScFormulaCell( aCell, context->GetDoc(), *(context->aPos) );
+            // Mark a freshly typed formula as eligible for auto-promotion
+            // to a dynamic-array master. The setter runs on the document-
+            // owned cell after the clone, since the copy constructor
+            // clears the bit.
+            if (context->bAutoDynamicArray)
+                pCell->SetAutoDynamicArrayEligible(true);
             if ( nError != FormulaError::NONE )
             {
                 pCell->GetCode()->DelRPN();
@@ -665,13 +650,13 @@ void runAutoCorrectQueryAsync(const std::shared_ptr<FormulaProcessingContext>& c
 
 } // end anonymous namespace
 
-void ScViewFunc::EnterDataToCurrentCell(const OUString& rString, const EditTextObject* pData, bool bMatrixExpand)
+void ScViewFunc::EnterDataToCurrentCell(const OUString& rString, const EditTextObject* pData, bool bAutoDynamicArray)
 {
     SCCOL nCol = GetViewData().GetCurX();
     SCROW nRow = GetViewData().GetCurY();
     SCTAB nTab = GetViewData().CurrentTabForData();
 
-    EnterData(nCol, nRow, nTab, rString, pData, bMatrixExpand);
+    EnterData(nCol, nRow, nTab, rString, pData, bAutoDynamicArray);
 }
 
 namespace
@@ -717,14 +702,19 @@ bool checkFormula(const ScDocument& rDoc, SCCOL nCol, SCROW nRow, SCTAB nTab, co
 
 void applyFormulaToCell(ScViewFunc& rViewFunc, SCCOL nCol, SCROW nRow, SCTAB nTab, OUString const& rString,
                         const EditTextObject* pData, const std::shared_ptr<ScDocShellModificator>& rModificator,
-                        ScMarkData const& rMark, bool bMatrixExpand, bool bRecord, bool& rbNumFmtChanged)
+                        ScMarkData const& rMark, bool bAutoDynamicArray, bool bRecord, bool& rbNumFmtChanged)
 {
     ScDocument& rDoc = rViewFunc.GetViewData().GetDocument();
 
     // formula, compile with autoCorrection
     auto xPosPtr = std::make_shared<ScAddress>(nCol, nRow, nTab);
-    auto xCompPtr = std::make_shared<ScCompiler>(rDoc, *xPosPtr, rDoc.GetGrammar(), true, false);
-    std::unique_ptr<EditTextObject> xTextObject(pData ? pData->Clone() : nullptr);
+    // Skip the compile-time implicit-intersection optimization for UI-typed
+    // formulas so range tokens survive as svDoubleRef in the RPN and the
+    // multi-cell intent is visible at interpret time. A formula that stays
+    // a plain single-cell cell still gets implicit intersection applied at
+    // runtime.
+    auto xCompPtr = std::make_shared<ScCompiler>(rDoc, *xPosPtr, rDoc.GetGrammar(), !bAutoDynamicArray, false);
+    std::unique_ptr<EditTextObject> xTextObject(pData ? std::make_unique<EditTextObject>(*pData) : nullptr);
 
     //2do: enable/disable autoCorrection via calcoptions
     xCompPtr->SetAutoCorrection( true );
@@ -739,7 +729,7 @@ void applyFormulaToCell(ScViewFunc& rViewFunc, SCCOL nCol, SCROW nRow, SCTAB nTa
         std::move(xPosPtr), std::move(xCompPtr),    rModificator, nullptr,
         nullptr,            std::move(xTextObject), rMark,        rViewFunc,
         OUString(),         aFormula,               rString,                 nCol,
-        nRow,               nTab,                   bMatrixExpand,           rbNumFmtChanged,
+        nRow,               nTab,                   bAutoDynamicArray,           rbNumFmtChanged,
         bRecord
     };
 
@@ -783,7 +773,7 @@ void applyText(ScViewFunc& rViewFunc, SCCOL nCol, SCROW nRow, SCTAB nTab, OUStri
 void ScViewFunc::EnterData( SCCOL nCol, SCROW nRow, SCTAB nTab,
                             const OUString& rString,
                             const EditTextObject* pData,
-                            bool bMatrixExpand )
+                            bool bAutoDynamicArray )
 {
     ScDocument& rDoc = GetViewData().GetDocument();
     ScMarkData aMark(GetViewData().GetMarkData());
@@ -817,7 +807,7 @@ void ScViewFunc::EnterData( SCCOL nCol, SCROW nRow, SCTAB nTab,
 
     if (bFormula)
     {
-        applyFormulaToCell(*this, nCol, nRow, nTab, rString, pData, xModificator, aMark, bMatrixExpand, bRecord, bNumFmtChanged);
+        applyFormulaToCell(*this, nCol, nRow, nTab, rString, pData, xModificator, aMark, bAutoDynamicArray, bRecord, bNumFmtChanged);
     }
     else
     {
@@ -948,7 +938,7 @@ void ScViewFunc::EnterData( SCCOL nCol, SCROW nRow, SCTAB nTab,
                 aOldValues.push_back(aOldValue);
             }
 
-            pUndoData = rData.Clone();
+            pUndoData = std::make_unique<EditTextObject>(rData);
         }
 
         //      enter data
@@ -961,7 +951,7 @@ void ScViewFunc::EnterData( SCCOL nCol, SCROW nRow, SCTAB nTab,
             if (bCommon)
                 AdjustRowHeight(nRow,nRow,true);
 
-            EnterData( nCol, nRow, nTab, aString, nullptr, true /*bMatrixExpand*/);
+            EnterData( nCol, nRow, nTab, aString, nullptr, true /*bAutoDynamicArray*/);
         }
         else
         {
@@ -1063,10 +1053,11 @@ void ScViewFunc::EnterMatrix( const OUString& rString, ::formula::FormulaGrammar
     if (rData.GetSimpleArea(aRange) == SC_MARK_SIMPLE)
     {
         ScDocShell* pDocSh = rData.GetDocShell();
-        // Auto expanded formulas (no explicit range selection) use spill checking
-        // to avoid overwriting non-empty cells.
+        // Ctrl+Shift+Enter always produces a static CSE master, whether the
+        // user selected the range or Calc auto-expanded it from a single
+        // cell. The dynamic-array flag stays off.
         bool bSuccess = pDocSh->GetDocFunc().EnterMatrix(
-            aRange, &rMark, nullptr, rString, false, false, OUString(), eGram, bAutoExpand);
+            aRange, &rMark, nullptr, rString, false, false, OUString(), eGram, false);
         if (bSuccess)
             pDocSh->UpdateOle(GetViewData());
         else
@@ -2302,7 +2293,7 @@ void ScViewFunc::DeleteContents( InsertDeleteFlags nFlags )
     if ( nFlags & InsertDeleteFlags::ATTRIB )
     {
         if ( nFlags & InsertDeleteFlags::CONTENTS )
-            bFormatValid = false;
+            mbFormatValid = false;
         else
             StartFormatArea();              // delete attribute is also attribute-change
     }
@@ -3145,7 +3136,7 @@ bool ScViewFunc::InsertName( const OUString& rName, const OUString& rSymbol,
     ScDocShell* pDocSh = GetViewData().GetDocShell();
     ScDocument& rDoc = pDocSh->GetDocument();
     SCTAB nTab = GetViewData().CurrentTabForData();
-    ScRangeName* pList = rDoc.GetRangeName();
+    ScRangeName& rList = rDoc.GetRangeName();
 
     ScRangeData::Type nType = ScRangeData::Type::Name;
     auto pNewEntry = std::make_unique<ScRangeData>(
@@ -3169,15 +3160,14 @@ bool ScViewFunc::InsertName( const OUString& rName, const OUString& rSymbol,
         rDoc.PreprocessRangeNameUpdate();
 
         // input available yet? Then remove beforehand (=change)
-        ScRangeData* pData = pList->findByUpperName(ScGlobal::getCharClass().uppercase(rName));
+        ScRangeData* pData = rList.findByUpperName(ScGlobal::getCharClass().uppercase(rName));
         if (pData)
         {                                   // take old Index
             pNewEntry->SetIndex(pData->GetIndex());
-            pList->erase(*pData);
+            rList.erase(*pData);
         }
 
-        // don't delete, insert took ownership, even on failure!
-        if ( pList->insert( pNewEntry.release() ) )
+        if ( rList.insert( std::move(pNewEntry) ) )
             bOk = true;
 
         rDoc.CompileHybridFormula();

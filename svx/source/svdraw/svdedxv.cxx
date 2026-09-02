@@ -437,6 +437,8 @@ void SdrObjEditView::ModelHasChanged()
             {
                 OutlinerView* pOLV = mpTextEditOutliner->GetView(nOV);
                 vcl::Window* pWin = pOLV->GetWindow();
+                if (!pWin || pWin->isDisposed())
+                    continue;
                 { // invalidate old OutlinerView area
                     tools::Rectangle aTmpRect(aOldArea);
                     sal_uInt16 nPixSiz = pOLV->GetInvalidateMore() + 1;
@@ -867,7 +869,7 @@ void SdrObjEditView::EditViewInvalidate(const tools::Rectangle&)
 }
 
 // callback from the active EditView, forward to evtl. existing instances of the
-// TextEditOverlayObject(s). This cvall *only* updates the selection visualization
+// TextEditOverlayObject(s). This call *only* updates the selection visualization
 // which is e.g. used when only the selection is changed, but not the text
 void SdrObjEditView::EditViewSelectionChange()
 {
@@ -1012,7 +1014,7 @@ void SdrObjEditView::ImpInvalidateOutlinerView(OutlinerView const& rOutlView) co
 {
     vcl::Window* pWin = rOutlView.GetWindow();
 
-    if (!pWin)
+    if (!pWin || pWin->isDisposed())
         return;
 
     const SdrTextObj* pText = GetTextEditObject();

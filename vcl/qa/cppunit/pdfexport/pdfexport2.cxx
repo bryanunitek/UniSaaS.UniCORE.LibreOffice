@@ -51,16 +51,13 @@
 #include <cmath>
 #include <libxml/xpathInternals.h>
 
-#if !defined _WIN32
 #include <set>
 static std::ostream& operator<<(std::ostream& rStream, const std::set<rtl::OString>& rSet);
-#endif
 
 #include <test/unoapi_test.hxx>
 
 using namespace ::com::sun::star;
 
-#if !defined _WIN32
 static std::ostream& operator<<(std::ostream& rStream, const std::set<OString>& rSet)
 {
     rStream << "{ ";
@@ -73,7 +70,6 @@ static std::ostream& operator<<(std::ostream& rStream, const std::set<OString>& 
     rStream << " }";
     return rStream;
 }
-#endif
 
 namespace
 {
@@ -903,6 +899,60 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf160196)
     aMediaDescriptor["FilterData"] <<= aFilterData;
     // Without the fix in place, the validation would have failed
     save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+}
+
+CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTaggedNestedTableInRepeatedHeaderRow)
+{
+    // Enable PDF/UA
+    uno::Sequence<beans::PropertyValue> aFilterData(
+        comphelper::InitPropertySequence({ { "PDFUACompliance", uno::Any(true) } }));
+    comphelper::SequenceAsHashMap aMediaDescriptor;
+    aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
+
+    // The outer table spans more than one page, so its header row, and the
+    // nested table it carries, are laid out once per page.
+    vcl::filter::PDFDocument aDocument;
+    loadFromFile(u"tagged-nested-table-in-repeated-header.fodt");
+    skipValidation();
+
+    // Tagging the nested table a second time aborted on the assert that each
+    // frame is tagged only once.
+    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+
+    SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
+    CPPUNIT_ASSERT(aDocument.Read(aStream));
+
+    // The counts do not depend on the page count: each body row and the nested
+    // table are tagged once, the repeated headers are artifacts.
+    int nTables(0);
+    int nRows(0);
+    int nParagraphs(0);
+    for (const auto& rDocElement : aDocument.GetElements())
+    {
+        auto pObject = dynamic_cast<vcl::filter::PDFObjectElement*>(rDocElement.get());
+        if (!pObject)
+            continue;
+        auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
+        if (!pType || pType->GetValue() != "StructElem")
+            continue;
+        auto pS = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("S"_ostr));
+        if (!pS)
+            continue;
+        if (pS->GetValue() == "Table")
+            ++nTables;
+        else if (pS->GetValue() == "TR")
+            ++nRows;
+        else if (pS->GetValue() == "Standard")
+            ++nParagraphs;
+    }
+
+    // The outer table and the one nested table.
+    CPPUNIT_ASSERT_EQUAL(2, nTables);
+    // One header row, four body rows, and the nested table's single row. A row
+    // per page for the nested table would mean it was tagged on each repeat.
+    CPPUNIT_ASSERT_EQUAL(6, nRows);
+    // One paragraph in the nested table and one in each of the four body rows.
+    CPPUNIT_ASSERT_EQUAL(5, nParagraphs);
 }
 
 CPPUNIT_TEST_FIXTURE(PdfExportTest2, testVersion20)
@@ -5239,8 +5289,6 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf152246)
 
 CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf155161)
 {
-// TODO: We seem to get a fallback font on Windows
-#ifndef _WIN32
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf155161.odt");
     save(TestFilter::PDF_WRITER);
@@ -5249,7 +5297,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf155161)
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
     CPPUNIT_ASSERT(aDocument.Read(aStream));
 
-    // Check that all fonts in the document are Type 3 fonts
+    // Check that all fonts in the document are not Type 3 fonts.
     std::set<OString> aFontNames;
     for (const auto& aElement : aDocument.GetElements())
     {
@@ -5262,7 +5310,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf155161)
             auto pSubtype
                 = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
             CPPUNIT_ASSERT(pSubtype);
-            CPPUNIT_ASSERT_EQUAL("Type1"_ostr, pSubtype->GetValue());
+            CPPUNIT_ASSERT("Type3"_ostr != pSubtype->GetValue());
             auto pName
                 = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("BaseFont"_ostr));
             CPPUNIT_ASSERT(pName);
@@ -5273,7 +5321,239 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf155161)
     // There must be two fonts
     std::set<OString> aExpected{ "Cantarell-Regular"_ostr, "Cantarell-Bold"_ostr };
     CPPUNIT_ASSERT_EQUAL(aExpected, aFontNames);
-#endif
+}
+
+CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTrueTypeCompositeFont)
+{
+    // Subsets of fonts with glyf outlines are embedded as composite fonts, so
+    // that the subset no longer needs a cmap of our own making.
+    vcl::filter::PDFDocument aDocument;
+    loadFromFile(u"SimpleTestDocument.fodt");
+    save(TestFilter::PDF_WRITER);
+    SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
+    CPPUNIT_ASSERT(aDocument.Read(aStream));
+
+    vcl::filter::PDFObjectElement* pType0 = nullptr;
+    vcl::filter::PDFObjectElement* pCIDFont = nullptr;
+    for (const auto& aElement : aDocument.GetElements())
+    {
+        auto pObject = dynamic_cast<vcl::filter::PDFObjectElement*>(aElement.get());
+        if (!pObject)
+            continue;
+        auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
+        if (!pType || pType->GetValue() != "Font")
+            continue;
+        auto pSubtype = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
+        CPPUNIT_ASSERT(pSubtype);
+        if (pSubtype->GetValue() == "Type0")
+            pType0 = pObject;
+        else if (pSubtype->GetValue() == "CIDFontType2")
+            pCIDFont = pObject;
+    }
+    CPPUNIT_ASSERT(pType0);
+    CPPUNIT_ASSERT(pCIDFont);
+
+    // The CIDs are the glyph IDs of the subset
+    auto pCIDToGIDMap
+        = dynamic_cast<vcl::filter::PDFNameElement*>(pCIDFont->Lookup("CIDToGIDMap"_ostr));
+    CPPUNIT_ASSERT(pCIDToGIDMap);
+    CPPUNIT_ASSERT_EQUAL("Identity"_ostr, pCIDToGIDMap->GetValue());
+
+    // and it is not a simple font any more
+    CPPUNIT_ASSERT(!pType0->Lookup("FirstChar"_ostr));
+    CPPUNIT_ASSERT(!pType0->Lookup("Widths"_ostr));
+
+    // The font program is still a TrueType one
+    auto pDescriptorRef
+        = dynamic_cast<vcl::filter::PDFReferenceElement*>(pCIDFont->Lookup("FontDescriptor"_ostr));
+    CPPUNIT_ASSERT(pDescriptorRef);
+    auto pDescriptor = pDescriptorRef->LookupObject();
+    CPPUNIT_ASSERT(pDescriptor);
+    CPPUNIT_ASSERT(pDescriptor->Lookup("FontFile2"_ostr));
+
+    // and the text can still be extracted
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
+    std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
+    CPPUNIT_ASSERT(pPdfPage);
+    std::unique_ptr<vcl::pdf::PDFiumTextPage> pPdfTextPage = pPdfPage->getTextPage();
+    CPPUNIT_ASSERT(pPdfTextPage);
+    int nChars = pPdfTextPage->countChars();
+    std::vector<sal_uInt32> aChars(nChars);
+    for (int i = 0; i < nChars; i++)
+        aChars[i] = pPdfTextPage->getUnicode(i);
+    CPPUNIT_ASSERT_EQUAL(u"This is a test document."_ustr, OUString(aChars.data(), aChars.size()));
+}
+
+CPPUNIT_TEST_FIXTURE(PdfExportTest2, testPDFA1CIDSet)
+{
+    // PDF/A-1 requires a CIDSet listing the CIDs of the font program.
+    uno::Sequence<beans::PropertyValue> aFilterData(comphelper::InitPropertySequence({
+        { "SelectPdfVersion", uno::Any(sal_Int32(1)) }, // PDF/A-1b
+    }));
+    comphelper::SequenceAsHashMap aMediaDescriptor;
+    aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
+
+    vcl::filter::PDFDocument aDocument;
+    loadFromFile(u"tdf171869.odt");
+    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
+    CPPUNIT_ASSERT(aDocument.Read(aStream));
+
+    vcl::filter::PDFObjectElement* pCIDFont = nullptr;
+    for (const auto& aElement : aDocument.GetElements())
+    {
+        auto pObject = dynamic_cast<vcl::filter::PDFObjectElement*>(aElement.get());
+        if (!pObject)
+            continue;
+        auto pSubtype = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
+        if (pSubtype && pSubtype->GetValue() == "CIDFontType0")
+            pCIDFont = pObject;
+    }
+    CPPUNIT_ASSERT(pCIDFont);
+
+    auto pDescriptorRef
+        = dynamic_cast<vcl::filter::PDFReferenceElement*>(pCIDFont->Lookup("FontDescriptor"_ostr));
+    CPPUNIT_ASSERT(pDescriptorRef);
+    auto pDescriptor = pDescriptorRef->LookupObject();
+    CPPUNIT_ASSERT(pDescriptor);
+
+    auto pCIDSetRef
+        = dynamic_cast<vcl::filter::PDFReferenceElement*>(pDescriptor->Lookup("CIDSet"_ostr));
+    CPPUNIT_ASSERT(pCIDSetRef);
+    auto pCIDSetObject = pCIDSetRef->LookupObject();
+    CPPUNIT_ASSERT(pCIDSetObject);
+    auto pCIDSetStream = pCIDSetObject->GetStream();
+    CPPUNIT_ASSERT(pCIDSetStream);
+
+    SvMemoryStream aCIDSet;
+    ZCodec aCIDSetCodec;
+    aCIDSetCodec.BeginCompression();
+    pCIDSetStream->GetMemory().Seek(0);
+    aCIDSetCodec.Decompress(pCIDSetStream->GetMemory(), aCIDSet);
+    CPPUNIT_ASSERT(aCIDSetCodec.EndCompression());
+
+    // The charset is identity, so the CIDs are those of the three glyphs of the
+    // subset: one byte with the top three bits set, and nothing else.
+    CPPUNIT_ASSERT_EQUAL(sal_uInt64(1), aCIDSet.GetSize());
+    CPPUNIT_ASSERT_EQUAL(sal_uInt8(0xE0), static_cast<const sal_uInt8*>(aCIDSet.GetData())[0]);
+}
+
+CPPUNIT_TEST_FIXTURE(PdfExportTest2, testNoCIDSetWithoutPDFA1)
+{
+    // Not PDF/A-1, so no CIDSet.
+    vcl::filter::PDFDocument aDocument;
+    loadFromFile(u"tdf171869.odt");
+    save(TestFilter::PDF_WRITER);
+    SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
+    CPPUNIT_ASSERT(aDocument.Read(aStream));
+
+    bool bSawDescriptor = false;
+    for (const auto& aElement : aDocument.GetElements())
+    {
+        auto pObject = dynamic_cast<vcl::filter::PDFObjectElement*>(aElement.get());
+        if (!pObject)
+            continue;
+        auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
+        if (!pType || pType->GetValue() != "FontDescriptor")
+            continue;
+        bSawDescriptor = true;
+        CPPUNIT_ASSERT(!pObject->Lookup("CIDSet"_ostr));
+    }
+    CPPUNIT_ASSERT(bSawDescriptor);
+}
+
+CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf171869)
+{
+    // Document using an embedded CID-keyed font (a Source Han Sans subset)
+    vcl::filter::PDFDocument aDocument;
+    loadFromFile(u"tdf171869.odt");
+    save(TestFilter::PDF_WRITER);
+
+    // Parse the export result.
+    SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
+    CPPUNIT_ASSERT(aDocument.Read(aStream));
+
+    // The only fonts must be a Type 0 wrapper and its CIDFontType0 descendant.
+    vcl::filter::PDFObjectElement* pType0 = nullptr;
+    vcl::filter::PDFObjectElement* pCIDFont = nullptr;
+    int nFonts = 0;
+    for (const auto& aElement : aDocument.GetElements())
+    {
+        auto pObject = dynamic_cast<vcl::filter::PDFObjectElement*>(aElement.get());
+        if (!pObject)
+            continue;
+        auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
+        if (!pType || pType->GetValue() != "Font")
+            continue;
+        nFonts++;
+        auto pSubtype = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
+        CPPUNIT_ASSERT(pSubtype);
+        if (pSubtype->GetValue() == "Type0")
+            pType0 = pObject;
+        else if (pSubtype->GetValue() == "CIDFontType0")
+            pCIDFont = pObject;
+    }
+    CPPUNIT_ASSERT_EQUAL(2, nFonts);
+    CPPUNIT_ASSERT(pType0);
+    CPPUNIT_ASSERT(pCIDFont);
+
+    auto pBaseFont = dynamic_cast<vcl::filter::PDFNameElement*>(pType0->Lookup("BaseFont"_ostr));
+    CPPUNIT_ASSERT(pBaseFont);
+    CPPUNIT_ASSERT_EQUAL("SourceHanSans-Regular"_ostr, pBaseFont->GetValue().copy(7));
+
+    // The font program is a bare CFF (CIDFontType0C)
+    auto pDescriptorRef
+        = dynamic_cast<vcl::filter::PDFReferenceElement*>(pCIDFont->Lookup("FontDescriptor"_ostr));
+    CPPUNIT_ASSERT(pDescriptorRef);
+    auto pDescriptor = pDescriptorRef->LookupObject();
+    CPPUNIT_ASSERT(pDescriptor);
+    auto pFontFileRef
+        = dynamic_cast<vcl::filter::PDFReferenceElement*>(pDescriptor->Lookup("FontFile3"_ostr));
+    CPPUNIT_ASSERT(pFontFileRef);
+    auto pFontFile = pFontFileRef->LookupObject();
+    CPPUNIT_ASSERT(pFontFile);
+    auto pFontFileSubtype
+        = dynamic_cast<vcl::filter::PDFNameElement*>(pFontFile->Lookup("Subtype"_ostr));
+    CPPUNIT_ASSERT(pFontFileSubtype);
+    CPPUNIT_ASSERT_EQUAL("CIDFontType0C"_ostr, pFontFileSubtype->GetValue());
+
+    auto pEncodingRef
+        = dynamic_cast<vcl::filter::PDFReferenceElement*>(pType0->Lookup("Encoding"_ostr));
+    CPPUNIT_ASSERT(pEncodingRef);
+    auto pEncoding = pEncodingRef->LookupObject();
+    CPPUNIT_ASSERT(pEncoding);
+    auto pEncodingStream = pEncoding->GetStream();
+    CPPUNIT_ASSERT(pEncodingStream);
+    SvMemoryStream aObjectStream;
+    ZCodec aZCodec;
+    aZCodec.BeginCompression();
+    pEncodingStream->GetMemory().Seek(0);
+    aZCodec.Decompress(pEncodingStream->GetMemory(), aObjectStream);
+    CPPUNIT_ASSERT(aZCodec.EndCompression());
+    std::string aCMap(static_cast<const char*>(aObjectStream.GetData()), aObjectStream.GetSize());
+
+    // The subset always has an identity charset, so the code of each glyph is
+    // also its CID.
+    CPPUNIT_ASSERT(aCMap.find("begincidrange\n"
+                              "<00> <02> 0\n"
+                              "endcidrange")
+                   != std::string::npos);
+
+    // Check the text can be extracted (i.e. the ToUnicode CMap works)
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
+    std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
+    CPPUNIT_ASSERT(pPdfPage);
+    std::unique_ptr<vcl::pdf::PDFiumTextPage> pPdfTextPage = pPdfPage->getTextPage();
+    CPPUNIT_ASSERT(pPdfTextPage);
+    int nChars = pPdfTextPage->countChars();
+    CPPUNIT_ASSERT_EQUAL(2, nChars);
+    std::vector<sal_uInt32> aChars(nChars);
+    for (int i = 0; i < nChars; i++)
+        aChars[i] = pPdfTextPage->getUnicode(i);
+    OUString aActualText(aChars.data(), aChars.size());
+    CPPUNIT_ASSERT_EQUAL(u"世솅"_ustr, aActualText);
 }
 
 CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf48707_1)
@@ -6405,9 +6685,9 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf166044ContFootnoteOnlyOnePgNum)
     CPPUNIT_ASSERT(pTextPage);
 
     int nPageObjectCount = pPdfPage->getObjectCount();
-    CPPUNIT_ASSERT_EQUAL(32, nPageObjectCount);
+    CPPUNIT_ASSERT_EQUAL(36, nPageObjectCount);
 
-    auto pContNoticeObject = pPdfPage->getObject(29);
+    auto pContNoticeObject = pPdfPage->getObject(33);
     CPPUNIT_ASSERT(pContNoticeObject);
     CPPUNIT_ASSERT_EQUAL(vcl::pdf::PDFPageObjectType::Text, pContNoticeObject->getType());
 
@@ -6416,7 +6696,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf166044ContFootnoteOnlyOnePgNum)
     // - Actual  : ມະນດ2
     CPPUNIT_ASSERT_EQUAL(u"ມະນດ"_ustr, pContNoticeObject->getText(pTextPage));
 
-    auto pPgNumObject = pPdfPage->getObject(30);
+    auto pPgNumObject = pPdfPage->getObject(34);
     CPPUNIT_ASSERT(pPgNumObject);
     CPPUNIT_ASSERT_EQUAL(vcl::pdf::PDFPageObjectType::Text, pPgNumObject->getType());
     CPPUNIT_ASSERT_EQUAL(u"2"_ustr, pPgNumObject->getText(pTextPage));
@@ -6646,6 +6926,50 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf117941RtlStrikeoutChars)
     CPPUNIT_ASSERT_EQUAL(u"XXXXXXXXX"_ustr, aText.at(7).trim());
     CPPUNIT_ASSERT_DOUBLES_EQUAL(353.1, aRect.at(7).getMinX(), /*delta*/ 1.0);
     CPPUNIT_ASSERT_DOUBLES_EQUAL(565.2, aRect.at(7).getMaxX(), /*delta*/ 1.0);
+}
+
+CPPUNIT_TEST_FIXTURE(PdfExportTest2, testDropCapPaint)
+{
+    loadFromFile(u"drop_fly_paint.fodt");
+    save(TestFilter::PDF_WRITER);
+
+    std::vector<OUString> aText;
+    std::vector<basegfx::B2DRectangle> aRect;
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+
+    CPPUNIT_ASSERT_EQUAL(size_t(7), aText.size());
+
+    // Rest of the drop-capped paragraph's 3 forced lines.
+    CPPUNIT_ASSERT_EQUAL(u"rop Cap Painting Test Document."_ustr, aText.at(0).trim());
+    CPPUNIT_ASSERT_EQUAL(u"Second forced line of the drop cap paragraph."_ustr, aText.at(1).trim());
+    CPPUNIT_ASSERT_EQUAL(u"Third forced line of the drop cap paragraph."_ustr, aText.at(2).trim());
+
+    // The drop cap glyph itself must be non-whitespace.
+    CPPUNIT_ASSERT_EQUAL(u"D"_ustr, aText.at(3).trim());
+
+    // Must be noticeably taller than a body line (spans 3 lines), not
+    // just present-but-same-height.
+    double nDropCapHeight = aRect.at(3).getMaxY() - aRect.at(3).getMinY();
+    double nBodyLineHeight = aRect.at(2).getMaxY() - aRect.at(2).getMinY();
+    CPPUNIT_ASSERT(nDropCapHeight > nBodyLineHeight * 2.5);
+
+    // Sits left of the wrapped text beside it, not overlapping/underneath.
+    CPPUNIT_ASSERT(aRect.at(3).getMaxX() < aRect.at(0).getMinX());
+
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(61.33, aRect.at(3).getMinX(), /*delta*/ 2.0);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(94.00, aRect.at(3).getMaxX(), /*delta*/ 2.0);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(696.45, aRect.at(3).getMinY(), /*delta*/ 2.0);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(734.43, aRect.at(3).getMaxY(), /*delta*/ 2.0);
+
+    // Second paragraph: text wrapping around the anchored fly frame.
+    CPPUNIT_ASSERT_EQUAL(u"Fly frame paragraph line one."_ustr, aText.at(4).trim());
+    CPPUNIT_ASSERT_EQUAL(u"Fly frame paragraph line two."_ustr, aText.at(5).trim());
+    CPPUNIT_ASSERT_EQUAL(u"Fly frame paragraph line three."_ustr, aText.at(6).trim());
+
+    // Every line starts well to the right of the drop-cap paragraph's own
+    // margin, confirming wrap="parallel" is actually pushing text aside.
+    CPPUNIT_ASSERT(aRect.at(4).getMinX() > aRect.at(0).getMinX() + 10.0);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(114.53, aRect.at(4).getMinX(), /*delta*/ 2.0);
 }
 
 } // end anonymous namespace

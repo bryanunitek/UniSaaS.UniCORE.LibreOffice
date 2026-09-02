@@ -354,7 +354,7 @@ void SheetDataBuffer::addColXfStyles()
         std::sort( s.begin(), s.end(), StyleRowRangeComp());
         s.erase( std::unique( s.begin(), s.end(),
                     [](const RowRangeStyle& lhs, const RowRangeStyle& rhs)
-                        // Synthetize operator== from operator < . Do not create an actual operator==
+                        // Synthesize operator== from operator < . Do not create an actual operator==
                         // as operator< is somewhat specific (see StyleRowRangeComp).
                         { return !StyleRowRangeComp()(lhs,rhs) && !StyleRowRangeComp()(rhs,lhs); } ),
             s.end());
@@ -761,7 +761,7 @@ void SheetDataBuffer::setCellFormat( const CellModel& rModel )
                 break;
             }
             else if (pLastRange->aStart.Row() > (rMergeRange.aEnd.Row() + 1))
-                break; // Un-necessary to check with any other rows
+                break; // Unnecessary to check with any other rows
         }
     }
     // update merged ranges for 'center across selection' and 'fill'

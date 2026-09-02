@@ -129,8 +129,7 @@ SvxAppearanceTabPage::SvxAppearanceTabPage(weld::Container* pPage,
     InitThemes();
     InitCustomization();
     InitIcons();
-
-    m_xVerticalToolbars->connect_toggled(LINK(this, SvxAppearanceTabPage, OnTabPosChange));
+    InitDialogs();
 }
 
 void SvxAppearanceTabPage::LoadSchemeList()
@@ -209,24 +208,14 @@ bool SvxAppearanceTabPage::FillItemSet(SfxItemSet* /* rSet */)
 
 void SvxAppearanceTabPage::Reset(const SfxItemSet* /* rSet */)
 {
+    // hide advanced controls
     auto& aProperties = getAdditionalProperties();
-    auto aIterator = aProperties.find(u"IsWelcomeDialog"_ustr);
+    auto aIterator = aProperties.find(u"HideAdvancedControls"_ustr);
     if (aIterator != aProperties.end())
     {
-        // hide advanced controls
         m_xSizeGrid->set_visible(false);
         m_xCustomizationFrame->set_visible(false);
         m_xDialogFrame->set_visible(false);
-
-        // default to vertical avoiding to check UseVerticalNotebookbar
-        m_xVerticalToolbars->set_active(true);
-    }
-    else
-    {
-        if (officecfg::Office::Common::Misc::UseVerticalNotebookbar::get())
-            m_xVerticalToolbars->set_active(true);
-        else
-            m_xHorizontalToolbars->set_active(true);
     }
 
     // reset scheme list
@@ -581,6 +570,16 @@ void SvxAppearanceTabPage::InitIcons()
         m_xIconsDropDown->append(installIconTheme.GetThemeId(), installIconTheme.GetDisplayName());
 }
 
+void SvxAppearanceTabPage::InitDialogs()
+{
+    if (officecfg::Office::Common::Misc::UseVerticalNotebookbar::get())
+        m_xVerticalToolbars->set_active(true);
+    else
+        m_xHorizontalToolbars->set_active(true);
+
+    m_xVerticalToolbars->connect_toggled(LINK(this, SvxAppearanceTabPage, OnTabPosChange));
+}
+
 IMPL_LINK_NOARG(SvxAppearanceTabPage, OnTabPosChange, weld::Toggleable&, void)
 {
     std::shared_ptr<comphelper::ConfigurationChanges> xChanges(
@@ -797,10 +796,6 @@ void SvxAppearanceTabPage::FillItemsList()
             { SQLCOMMENT, CuiResId(REG_SQLCOMMENT) },
             { WINDOWCOLOR, CuiResId(REG_WINDOWCOLOR) },
             { WINDOWTEXTCOLOR, CuiResId(REG_WINDOWTEXTCOLOR) },
-            { WRITERNOTEBOOKBARCOLOR, CuiResId(REG_WRITERNOTEBOOKBARCOLOR) },
-            { CALCNOTEBOOKBARCOLOR, CuiResId(REG_CALCNOTEBOOKBARCOLOR) },
-            { IMPRESSNOTEBOOKBARCOLOR, CuiResId(REG_IMPRESSNOTEBOOKBARCOLOR) },
-            { DRAWNOTEBOOKBARCOLOR, CuiResId(REG_DRAWNOTEBOOKBARCOLOR) },
             { BASECOLOR, CuiResId(REG_BASECOLOR) },
             { BUTTONCOLOR, CuiResId(REG_BUTTONCOLOR) },
             { BUTTONTEXTCOLOR, CuiResId(REG_BUTTONTEXTCOLOR) },

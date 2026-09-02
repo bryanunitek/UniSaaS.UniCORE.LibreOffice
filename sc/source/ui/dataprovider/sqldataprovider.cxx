@@ -9,6 +9,8 @@
 
 #include "sqldataprovider.hxx"
 #include <datatransformation.hxx>
+#include <sal/log.hxx>
+#include <tools/urlobj.hxx>
 #include <salhelper/thread.hxx>
 #include <com/sun/star/sdb/DatabaseContext.hpp>
 #include <com/sun/star/sdb/XCompletedConnection.hpp>
@@ -16,6 +18,8 @@
 #include <com/sun/star/sdbc/XRow.hpp>
 #include <com/sun/star/sdbc/XResultSetMetaDataSupplier.hpp>
 #include <com/sun/star/sdbc/XResultSetMetaData.hpp>
+#include <com/sun/star/sdbc/XDatabaseMetaData.hpp>
+#include <connectivity/dbtools.hxx>
 #include <dbdocutl.hxx>
 #include <datamapper.hxx>
 #include <utility>
@@ -63,6 +67,13 @@ void SQLFetchThread::execute()
     OUString aTable = maID.copy(0, nIndex);
     OUString aDatabase = maID.copy(nIndex + 1);
 
+    if (INetURLObject(aDatabase).IsExoticProtocol())
+    {
+        SAL_WARN("sc.ui",
+                 "SQLFetchThread::execute: blocked exotic protocol: \"" << aDatabase << "\"");
+        return;
+    }
+
     try
     {
         uno::Reference<sdb::XDatabaseContext> xContext
@@ -80,10 +91,13 @@ void SQLFetchThread::execute()
 
         uno::Reference<sdbc::XConnection> xConnection = xSource->connectWithCompletion(xHandler);
 
+        const OUString aQuote = xConnection->getMetaData()->getIdentifierQuoteString();
+        const OUString aQuotedTable = ::dbtools::quoteName(aQuote, aTable);
+
         uno::Reference<sdbc::XStatement> xStatement = xConnection->createStatement();
 
         uno::Reference<sdbc::XResultSet> xResult
-            = xStatement->executeQuery("SELECT * FROM " + aTable);
+            = xStatement->executeQuery("SELECT * FROM " + aQuotedTable);
 
         if (xResult.is())
         {

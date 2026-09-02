@@ -23,6 +23,7 @@
 #include <unordered_map>
 #include <vector>
 #include <optional>
+#include <forward_list>
 
 #include <com/sun/star/uno/Sequence.hxx>
 #include <formula/formuladllapi.h>
@@ -296,6 +297,13 @@ public:
     const FormulaToken* CreateStringFromToken( OUStringBuffer& rBuffer, const FormulaToken* pToken,
                                     bool bAllowArrAdvance = false );
 
+private:
+    // Write one token, or the error string that stands in for it, and
+    // advance rpToken. When this returns false, the buffer holds the
+    // error string that replaces the whole formula.
+    bool AppendTokenOrError(OUStringBuffer& rBuffer, const FormulaToken*& rpToken);
+public:
+
     void AppendBoolean( OUStringBuffer& rBuffer, bool bVal ) const;
     void AppendDouble( OUStringBuffer& rBuffer, double fVal ) const;
     static void AppendString( OUStringBuffer& rBuffer, const OUString & rStr );
@@ -324,6 +332,8 @@ public:
 
     /** Sets the matrix flag for the formula*/
     void SetMatrixFlag(bool bSet) { mbMatrixFlag = bSet; }
+
+    void SetPreferLocalNames(bool bSet) { mbPreferLocalNames = bSet; }
 
     /** Separators mapped when loading opcodes from the resource, values other
         than RESOURCE_BASE may override the resource strings. Used by OpCodeList
@@ -367,8 +377,10 @@ protected:
     void PutCode( FormulaTokenRef& );
     void Factor();
     void RangeLine();
+    void SpillOperator();
     void UnionLine();
     void IntersectionLine();
+    void CallLine();
     void UnaryLine();
     void PostOpLine();
     void PowLine();
@@ -425,14 +437,20 @@ protected:
     bool mbComputeII;  // whether to attempt computing implicit intersection ranges while building the RPN array.
     bool mbMatrixFlag; // whether the formula is a matrix formula (needed for II computation)
 
-    struct LambdaFunc
+    bool mbPreferLocalNames;   // Whether local names/bindings have priority over built-ins
+
+    struct BindingsLayer
     {
-        bool bInLambdaFunction = false;
-        short nBracketPos = 0;
-        short nParaPos = 0;
-        short nParaCount = 3; // minimum required parameter count: 3
-        std::unordered_set<OUString> aNameSet;
-    } m_aLambda;
+        OpCode eOpCode;                         // the OpCode that applies to this layer; should be ocLet or ocLambda
+        short  nBracketPos;                     // how deep the nesting is to reach this layer
+        short  nParaPos;                        // the current parameter position; starts at 1
+        short  nParaCount;                      // the number of parameters in this layer
+        std::unordered_set<OUString> aNameSet;  // a set of names bound in this layer
+    };
+
+    // a stack keeping track of names bound using LET or LAMBDA
+    std::forward_list<BindingsLayer> maBindings;
+    bool mIsInBinding = false;                  // true iff the layer we're currently working on is a binding layer
 
     // ODF version at time of saving. Set by ScXMLExport::WriteCell().
     std::optional< SvtSaveOptions::ODFSaneDefaultVersion > m_oODFSavingVersion;

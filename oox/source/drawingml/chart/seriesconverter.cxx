@@ -74,14 +74,14 @@ Reference< XLabeledDataSequence > lclCreateLabeledDataSequence(
         const ConverterRoot& rParent,
         DataSourceModel* pValues, const OUString& rRole,
         TextModel* pTitle = nullptr,
-        std::optional<DataSourceType> oDimType = std::nullopt )
+        DataSourceType eDimType = DataSourceType::UNKNOWN )
 {
     // create data sequence for values
     Reference< XDataSequence > xValueSeq;
     if( pValues )
     {
         DataSourceConverter aSourceConv( rParent, *pValues );
-        xValueSeq = aSourceConv.createDataSequence( rRole, oDimType );
+        xValueSeq = aSourceConv.createDataSequence( rRole, eDimType );
     }
 
     // create data sequence for title
@@ -1032,6 +1032,24 @@ Reference< XDataSeries > SeriesConverter::createDataSeries( const TypeGroupConve
             convertGeography(*rLPR->mxGeography, aSeriesProp);
         }
     }
+
+    // Chartex only: preserve the cx:axisId list from the series so export
+    // can emit the matching cx:axisId children and the right number of
+    // cx:axis elements.
+    if (!mrModel.maAxisIds.empty())
+    {
+        aSeriesProp.setProperty(PROP_ChartexAxisIds,
+            comphelper::containerToSequence(mrModel.maAxisIds));
+    }
+
+    // Chartex only: preserve cx:series/@ownerIdx so export emits the same
+    // attribute and suppresses cx:dataId for this series.
+    if (mrModel.monOwnerIdx.has_value())
+    {
+        aSeriesProp.setProperty(PROP_ChartexOwnerIdx,
+            mrModel.monOwnerIdx.value());
+    }
+
     return xDataSeries;
 }
 

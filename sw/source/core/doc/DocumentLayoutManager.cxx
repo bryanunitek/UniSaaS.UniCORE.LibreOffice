@@ -37,11 +37,9 @@
 #include <unoframe.hxx>
 #include <textboxhelper.hxx>
 #include <ndindex.hxx>
-#include <pam.hxx>
 #include <frameformats.hxx>
 #include <com/sun/star/embed/EmbedStates.hpp>
 #include <svx/svdobj.hxx>
-#include <svx/svdpage.hxx>
 #include <osl/diagnose.h>
 #include <vcl/scheduler.hxx>
 
@@ -490,6 +488,8 @@ void DocumentLayoutManager::ClearSwLayouterEntries()
     SwLayouter::ClearObjsTmpConsiderWrapInfluence( m_rDoc );
     // #i65250#
     SwLayouter::ClearMoveBwdLayoutInfo( m_rDoc );
+    // tdf#172156
+    SwLayouter::ClearAnchoredObjGrowInTabInfo( m_rDoc );
 }
 
 size_t DocumentLayoutManager::GetMovedFwdFramesCount() const

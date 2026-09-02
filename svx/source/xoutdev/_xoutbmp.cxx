@@ -54,6 +54,7 @@ constexpr OUStringLiteral FORMAT_PDF = u"pdf";
 constexpr OUString FORMAT_BMP = u"bmp"_ustr;
 constexpr OUString FORMAT_GIF = u"gif"_ustr;
 constexpr OUStringLiteral FORMAT_JPG = u"jpg";
+constexpr OUStringLiteral FORMAT_JXL = u"jxl";
 constexpr OUString FORMAT_PNG = u"png"_ustr;
 constexpr OUStringLiteral FORMAT_TIF = u"tif";
 constexpr OUStringLiteral FORMAT_WEBP = u"webp";
@@ -171,6 +172,8 @@ static OUString isKnownRasterFormat(const GfxLink& rLink, std::u16string_view rF
 
         case GfxLinkType::NativeJpg:
             return match(rFilter, FORMAT_JPG);
+        case GfxLinkType::NativeJxl:
+            return match(rFilter, FORMAT_JXL);
         case GfxLinkType::NativePng:
             return match(rFilter, FORMAT_PNG);
         case GfxLinkType::NativeTif:
@@ -206,7 +209,7 @@ ErrCode XOutBitmap::WriteGraphic( const Graphic& rGraphic, OUString& rFileName,
         aURL.setBase( aName );
     }
 
-    // #i121128# use shortcut to write Vector Graphic Data data in original form (if possible)
+    // #i121128# use shortcut to write Vector Graphic Data in original form (if possible)
     if (OUString aExt = isKnownVectorFormat(rGraphic, rFilterName); !aExt.isEmpty())
     {
         if (!(nFlags & XOutFlags::DontAddExtension))

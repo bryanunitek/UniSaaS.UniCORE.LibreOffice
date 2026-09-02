@@ -131,10 +131,10 @@ LOK_DOC_VIEW_DLLPUBLIC LibreOfficeKitDocument* lok_doc_view_get_document (LOKDoc
 /**
  * lok_doc_view_set_zoom:
  * @pDocView: The #LOKDocView instance
- * @fZoom: The new zoom level that pDocView must set it into.
+ * @fZoom: The new zoom level that pDocView must set it to.
  *
  * Sets the new zoom level for the widget. Does nothing if fZoom is equal to
- * existing zoom level. Values outside the range [0.25, 5.0] are clamped into
+ * existing zoom level. Values outside the range [0.25, 5.0] are clamped to
  * the nearest allowed value in the interval.
  */
 LOK_DOC_VIEW_DLLPUBLIC void    lok_doc_view_set_zoom               (LOKDocView* pDocView,
@@ -189,7 +189,7 @@ LOK_DOC_VIEW_DLLPUBLIC void    lok_doc_view_set_part               (LOKDocView* 
  * @pDocView: The #LOKDocView instance
  * @nPart:
  *
- * Returns: Get current part name of loaded document. Returns null if no
+ * Returns: Gets current part name of loaded document. Returns null if no
  * document is set, or document has been destroyed using lok_doc_view_destroy_document.
  */
 LOK_DOC_VIEW_DLLPUBLIC gchar*  lok_doc_view_get_part_name          (LOKDocView* pDocView,
@@ -248,10 +248,10 @@ LOK_DOC_VIEW_DLLPUBLIC void    lok_doc_view_post_command           (LOKDocView* 
  * @pDocView: the #LOKDocView instance
  * @pCommand: the command to issue to LO core
  *
- * Get a json mapping of the possible values for the given command.
+ * Gets a JSON mapping of the possible values for the given command.
  * In the form of: {commandName: unoCmd, commandValues: {possible_values}}
  *
- * Returns: A json mapping of the possible values for the given command
+ * Returns: A JSON mapping of the possible values for the given command
  */
 LOK_DOC_VIEW_DLLPUBLIC gchar * lok_doc_view_get_command_values     (LOKDocView* pDocView,
                                                                     const gchar* pCommand);
@@ -263,7 +263,7 @@ LOK_DOC_VIEW_DLLPUBLIC gchar * lok_doc_view_get_command_values     (LOKDocView* 
  * @bHighlightAll: Whether all the matches should be highlighted or not
  *
  * Highlights the next matching text in the view. `search-not-found` signal will
- * be emitted when no search is found
+ * be emitted when no match is found
  */
 LOK_DOC_VIEW_DLLPUBLIC void    lok_doc_view_find_next              (LOKDocView* pDocView,
                                                                     const gchar* pText,
@@ -276,7 +276,7 @@ LOK_DOC_VIEW_DLLPUBLIC void    lok_doc_view_find_next              (LOKDocView* 
  * @bHighlightAll: Whether all the matches should be highlighted or not
  *
  * Highlights the previous matching text in the view. `search-not-found` signal
- * will be emitted when no search is found
+ * will be emitted when no match is found
  */
 LOK_DOC_VIEW_DLLPUBLIC void    lok_doc_view_find_prev              (LOKDocView* pDocView,
                                                                     const gchar* pText,
@@ -288,7 +288,7 @@ LOK_DOC_VIEW_DLLPUBLIC void    lok_doc_view_find_prev              (LOKDocView* 
  * @pText: text to search for
  *
  * Highlights all matching texts in the view. `search-not-found` signal
- * will be emitted when no search is found
+ * will be emitted when no match is found
  */
 LOK_DOC_VIEW_DLLPUBLIC void    lok_doc_view_highlight_all          (LOKDocView* pDocView,
                                                                     const gchar* pText);

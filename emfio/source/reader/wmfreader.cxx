@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <comphelper/configuration.hxx>
 #include <o3tl/safeint.hxx>
 #include <o3tl/sprintf.hxx>
 #include <o3tl/unit_conversion.hxx>
@@ -278,7 +279,11 @@ namespace
         if (o3tl::make_unsigned(nWidthBytes) < nMinStride)
             return Bitmap();
 
-        std::vector<sal_uInt8> aBits(o3tl::make_unsigned(nWidthBytes) * o3tl::make_unsigned(nHeight), 0);
+        const sal_uInt64 nBitsSize = o3tl::make_unsigned(nWidthBytes) * o3tl::make_unsigned(nHeight);
+        if (nBitsSize > rStream.remainingSize())
+            return Bitmap();
+
+        std::vector<sal_uInt8> aBits(nBitsSize, 0);
         if (rStream.ReadBytes(aBits.data(), aBits.size()) != aBits.size())
             return Bitmap();
 
@@ -1108,11 +1113,11 @@ namespace emfio
                 if (nRecordSize != 2u * nNumberOfEntries + 5u)
                     bRecordOk = false;
                 SAL_INFO("emfio", "\t\t Start 0x" << std::hex << nStart << std::dec << ", Number of entries: " << nNumberOfEntries);
-                sal_uInt32 nPalleteEntry;
                 std::vector< Color > aPaletteColors;
-                for (sal_uInt16 i = 0; i < nNumberOfEntries; ++i)
+                for (sal_uInt16 i = 0; i < nNumberOfEntries && mpInputStream->good(); ++i)
                 {
                     //PALETTEENTRY: Values, Blue, Green, Red
+                    sal_uInt32 nPalleteEntry(0);
                     mpInputStream->ReadUInt32( nPalleteEntry );
                     SAL_INFO("emfio", "\t\t " << i << ". Palette entry: " << std::setw(10) << std::showbase <<std::hex << nPalleteEntry << std::dec );
                     aPaletteColors.emplace_back(static_cast<sal_uInt8>(nPalleteEntry), static_cast<sal_uInt8>(nPalleteEntry >> 8), static_cast<sal_uInt8>(nPalleteEntry >> 16));
@@ -1338,18 +1343,19 @@ namespace emfio
                                     mpInputStream->ReadBytes(pData.get(), nEscLen);
                                     nCheckSum = rtl_crc32(nCheckSum, pData.get(), nEscLen);
                                 }
-                                if (nCheck == nCheckSum)
+                                if (comphelper::IsFuzzing() || nCheck == nCheckSum)
                                 {
                                     switch (nEsc)
                                     {
                                         case PRIVATE_ESCAPE_UNICODE:
                                         {
                                             // we will use text instead of polygons only if we have the correct font
-                                            if (Application::GetDefaultDevice()->IsFontAvailable(
-                                                    GetFont().GetFamilyName()))
+                                            if (comphelper::IsFuzzing()
+                                                || Application::GetDefaultDevice()->IsFontAvailable(
+                                                       GetFont().GetFamilyName()))
                                             {
                                                 Point aPt;
-                                                sal_uInt32 nStringLen, nDXCount;
+                                                sal_uInt32 nStringLen(0), nDXCount(0);
                                                 KernArray aDXAry;
                                                 SvMemoryStream aMemoryStream(nEscLen);
                                                 aMemoryStream.WriteBytes(pData.get(), nEscLen);
@@ -1368,6 +1374,8 @@ namespace emfio
                                                     OUString aString = read_uInt16s_ToOUString(
                                                         aMemoryStream, nStringLen);
                                                     aMemoryStream.ReadUInt32(nDXCount);
+                                                    if (nDXCount < o3tl::make_unsigned(aString.getLength()))
+                                                        nDXCount = 0;
                                                     if ((static_cast<sal_uInt64>(nDXCount)
                                                         * sizeof(sal_Int32))
                                                         >= (nEscLen - aMemoryStream.Tell()))
@@ -1376,7 +1384,7 @@ namespace emfio
                                                         aDXAry.resize(nDXCount);
                                                     for (sal_uInt32 i = 0; i < nDXCount; i++)
                                                     {
-                                                        sal_Int32 val;
+                                                        sal_Int32 val(0);
                                                         aMemoryStream.ReadInt32(val);
                                                         aDXAry[i] = val;
                                                     }

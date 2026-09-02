@@ -16,6 +16,7 @@
 #include <vcl/qt/QtUtils.hxx>
 
 #include <QtWidgets/QHeaderView>
+#include <QtWidgets/QScrollBar>
 #include <QtWidgets/QToolTip>
 
 // Property used to store the supported roles for each of the columns
@@ -41,8 +42,17 @@ QtInstanceTreeView::QtInstanceTreeView(QTreeView* pTreeView)
     connect(m_pTreeView, &QTreeView::collapsed, this, &QtInstanceTreeView::signalCollapsing);
     connect(m_pTreeView, &QTreeView::expanded, this, &QtInstanceTreeView::signalExpanding);
 
+    if (QScrollBar* pVerticalScrollBar = m_pTreeView->verticalScrollBar())
+    {
+        connect(pVerticalScrollBar, &QScrollBar::valueChanged, this,
+                &QtInstanceTreeView::signalVisibleRangeChanged);
+    }
+
     assert(m_pTreeView->viewport());
     m_pTreeView->viewport()->installEventFilter(this);
+
+    assert(m_pTreeView->header() && m_pTreeView->header()->viewport());
+    m_pTreeView->header()->viewport()->installEventFilter(this);
 
     QtTreeViewItemDelegate* pDelegate = new QtTreeViewItemDelegate(
         m_pTreeView, [this](const QModelIndex& rIndex) { return signalEditingStarted(rIndex); },
@@ -59,9 +69,9 @@ void QtInstanceTreeView::do_insert(const weld::TreeIter* pParent, int nPos, cons
 {
     SolarMutexGuard g;
     GetQtInstance().RunInMainThread([&] {
-        const QModelIndex aParentIndex
+        const QPersistentModelIndex aParentIndex
             = pParent ? static_cast<const QtInstanceTreeIter*>(pParent)->modelIndex()
-                      : QModelIndex();
+                      : QPersistentModelIndex();
 
         if (nPos == -1)
             nPos = m_pModel->rowCount(aParentIndex);
@@ -71,7 +81,7 @@ void QtInstanceTreeView::do_insert(const weld::TreeIter* pParent, int nPos, cons
         if (aParentIndex.isValid() && m_pModel->columnCount(aParentIndex) == 0)
             m_pModel->insertColumns(0, m_pModel->columnCount(), aParentIndex);
 
-        const QModelIndex aIndex = modelIndex(nPos, 0, aParentIndex);
+        const QPersistentModelIndex aIndex = modelIndex(nPos, 0, aParentIndex);
         QStandardItem* pItem = itemFromIndex(aIndex);
         if (pStr)
             set_text(treeIter(nPos, aParentIndex), *pStr);
@@ -82,13 +92,6 @@ void QtInstanceTreeView::do_insert(const weld::TreeIter* pParent, int nPos, cons
             pItem->setIcon(loadQPixmapIcon(*pIconName));
         else if (pImageSurface)
             pItem->setIcon(toQPixmap(*pImageSurface));
-
-        if (m_bExtraToggleButtonsEnabled)
-        {
-            // avoid triggering signal_toggled via QtInstanceTreeView::handleDataChanged for new item
-            QSignalBlocker aSignalBlocker(m_pModel);
-            itemFromIndex(toggleButtonModelIndex(treeIter(aIndex)))->setCheckable(true);
-        }
 
         if (bChildrenOnDemand)
             m_pModel->setChildrenOnDemand(aIndex, true);
@@ -103,7 +106,7 @@ void QtInstanceTreeView::do_insert_separator(int, const OUString&)
     assert(false && "Not implemented yet");
 }
 
-void QtInstanceTreeView::enable_toggle_buttons(weld::ColumnToggleType)
+void QtInstanceTreeView::enable_toggle_buttons()
 {
     assert(m_pModel->rowCount() == 0 && "Must be called before inserting any data");
 
@@ -111,6 +114,8 @@ void QtInstanceTreeView::enable_toggle_buttons(weld::ColumnToggleType)
 
     m_pTreeView->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
 }
+
+void QtInstanceTreeView::set_toggle_button_type(weld::ColumnToggleType) {}
 
 void QtInstanceTreeView::set_clicks_to_toggle(int) { assert(false && "Not implemented yet"); }
 
@@ -194,15 +199,16 @@ int QtInstanceTreeView::find_id(const OUString& rId) const
 
 void QtInstanceTreeView::copy_iterator(const weld::TreeIter& rSource, weld::TreeIter& rDest) const
 {
-    const QModelIndex aModelIndex = static_cast<const QtInstanceTreeIter&>(rSource).modelIndex();
-    static_cast<QtInstanceTreeIter&>(rDest).setModelIndex(aModelIndex);
+    const QPersistentModelIndex& rModelIndex
+        = static_cast<const QtInstanceTreeIter&>(rSource).modelIndex();
+    static_cast<QtInstanceTreeIter&>(rDest).setModelIndex(rModelIndex);
 }
 
 bool QtInstanceTreeView::iter_previous_sibling(weld::TreeIter& rIter) const
 {
     QtInstanceTreeIter& rQtIter = static_cast<QtInstanceTreeIter&>(rIter);
-    const QModelIndex aIndex = rQtIter.modelIndex();
-    const QModelIndex aSiblingIndex = m_pModel->sibling(aIndex.row() - 1, 0, aIndex);
+    const QPersistentModelIndex& rIndex = rQtIter.modelIndex();
+    const QModelIndex aSiblingIndex = m_pModel->sibling(rIndex.row() - 1, 0, rIndex);
     if (!aSiblingIndex.isValid())
         return false;
 
@@ -246,7 +252,7 @@ int QtInstanceTreeView::get_iter_depth(const weld::TreeIter& rIter) const
     return nDepth;
 }
 
-int QtInstanceTreeView::iter_n_children(const weld::TreeIter& rIter) const
+int QtInstanceTreeView::do_iter_n_children(const weld::TreeIter& rIter) const
 {
     const QtInstanceTreeIter& rQtIter = static_cast<const QtInstanceTreeIter&>(rIter);
     return m_pModel->rowCount(rQtIter.modelIndex());
@@ -359,7 +365,7 @@ void QtInstanceTreeView::set_text_align(const weld::TreeIter& rIter, TxtAlign eA
     });
 }
 
-void QtInstanceTreeView::set_toggle(const weld::TreeIter& rIter, TriState eState, int nCol)
+void QtInstanceTreeView::do_set_toggle(const weld::TreeIter& rIter, TriState eState, int nCol)
 {
     SolarMutexGuard g;
 
@@ -474,9 +480,29 @@ void QtInstanceTreeView::all_foreach(const std::function<bool(weld::TreeIter&)>&
     }
 }
 
-void QtInstanceTreeView::visible_foreach(const std::function<bool(weld::TreeIter&)>&)
+void QtInstanceTreeView::visible_foreach(const std::function<bool(weld::TreeIter&)>& func)
 {
-    assert(false && "Not implemented yet");
+    SolarMutexGuard g;
+
+    GetQtInstance().RunInMainThread([&] {
+        const QModelIndex aFirstVisibleIndex = m_pTreeView->indexAt(QPoint(0, 0));
+        if (!aFirstVisibleIndex.isValid())
+            return;
+
+        const int nViewportHeight = m_pTreeView->viewport()->height();
+        QtInstanceTreeIter aIter = treeIter(aFirstVisibleIndex);
+        QRect aEntryRect = m_pTreeView->visualRect(aIter.modelIndex());
+        while (aEntryRect.isValid() && aEntryRect.y() < nViewportHeight)
+        {
+            if (func(aIter))
+                return;
+
+            if (!iter_next(aIter))
+                return;
+
+            aEntryRect = m_pTreeView->visualRect(aIter.modelIndex());
+        }
+    });
 }
 
 void QtInstanceTreeView::bulk_insert_for_each(
@@ -642,15 +668,49 @@ void QtInstanceTreeView::set_sort_order(bool bAscending)
     });
 }
 
-void QtInstanceTreeView::set_sort_indicator(TriState, int)
+void QtInstanceTreeView::set_sort_indicator(TriState eState, int nColumn)
 {
-    assert(false && "Not implemented yet");
+    SolarMutexGuard g;
+
+    GetQtInstance().RunInMainThread([&] {
+        switch (eState)
+        {
+            case TRISTATE_FALSE:
+                m_pTreeView->header()->setSortIndicator(nColumn, Qt::DescendingOrder);
+                break;
+            case TRISTATE_TRUE:
+                m_pTreeView->header()->setSortIndicator(nColumn, Qt::AscendingOrder);
+                break;
+            case TRISTATE_INDET:
+                if (m_pTreeView->header()->sortIndicatorSection() == nColumn)
+                {
+                    // unset sort indicator for all columns/sections
+                    m_pTreeView->header()->setSortIndicator(-1, Qt::AscendingOrder);
+                }
+                break;
+        }
+    });
 }
 
-TriState QtInstanceTreeView::get_sort_indicator(int) const
+TriState QtInstanceTreeView::get_sort_indicator(int nColumn) const
 {
-    assert(false && "Not implemented yet");
-    return TRISTATE_INDET;
+    SolarMutexGuard g;
+
+    TriState eRet = TRISTATE_INDET;
+    GetQtInstance().RunInMainThread([&] {
+        QHeaderView* pHeaderView = m_pTreeView->header();
+        assert(pHeaderView);
+        if (pHeaderView->sortIndicatorSection() != nColumn)
+        {
+            eRet = TRISTATE_INDET;
+            return;
+        }
+
+        eRet = pHeaderView->sortIndicatorOrder() == Qt::SortOrder::AscendingOrder ? TRISTATE_TRUE
+                                                                                  : TRISTATE_FALSE;
+    });
+
+    return eRet;
 }
 
 int QtInstanceTreeView::get_sort_column() const
@@ -719,7 +779,7 @@ int QtInstanceTreeView::get_column_width(int nCol) const
     return nWidth;
 }
 
-void QtInstanceTreeView::set_centered_column(int) { assert(false && "Not implemented yet"); }
+void QtInstanceTreeView::set_centered_column(int nCol) { m_pModel->setCenteredColumn(nCol); }
 
 OUString QtInstanceTreeView::get_column_title(int nColumn) const
 {
@@ -900,8 +960,17 @@ void QtInstanceTreeView::setColumnRoles(QTreeView& rTreeView,
 
 bool QtInstanceTreeView::eventFilter(QObject* pObject, QEvent* pEvent)
 {
+    if (pEvent->type() == QEvent::Resize && pObject == m_pTreeView->viewport())
+    {
+        handleResizeEvent();
+        return false;
+    }
+
     if (pEvent->type() == QEvent::ToolTip && pObject == m_pTreeView->viewport())
         return handleViewPortToolTipEvent(static_cast<QHelpEvent&>(*pEvent));
+
+    if (pObject == m_pTreeView->header()->viewport())
+        return handleHeaderViewportEvent(*pEvent);
 
     return QtInstanceWidget::eventFilter(pObject, pEvent);
 }
@@ -950,6 +1019,24 @@ void QtInstanceTreeView::setImage(const weld::TreeIter& rIter, const QPixmap& rP
     });
 }
 
+bool QtInstanceTreeView::handleHeaderViewportEvent(const QEvent& rEvent)
+{
+    if (rEvent.type() != QEvent::MouseButtonRelease)
+        return false;
+
+    const QMouseEvent& rMouseEvent = static_cast<const QMouseEvent&>(rEvent);
+    if (rMouseEvent.button() != Qt::MouseButton::LeftButton)
+        return false;
+
+    const int nColumnIndex = m_pTreeView->header()->logicalIndexAt(rMouseEvent.pos());
+    if (nColumnIndex < 0)
+        return false;
+
+    SolarMutexGuard g;
+    signal_column_header_clicked(nColumnIndex);
+    return true;
+}
+
 bool QtInstanceTreeView::handleViewPortToolTipEvent(const QHelpEvent& rHelpEvent)
 {
     QModelIndex aIndex = m_pTreeView->indexAt(rHelpEvent.pos());
@@ -985,7 +1072,7 @@ void QtInstanceTreeView::handleDataChanged(const QModelIndex& rTopLeft,
         // use special index of -1 for the "expander toggle"
         nColIndex = -1;
 
-    signal_toggled(iter_col(QtInstanceTreeIter(*this, rTopLeft), nColIndex));
+    signal_toggled(iter_col(treeIter(rTopLeft), nColIndex));
 }
 
 void QtInstanceTreeView::signalCollapsing(const QModelIndex& rIndex)
@@ -1000,6 +1087,13 @@ void QtInstanceTreeView::signalExpanding(const QModelIndex& rIndex)
     SolarMutexGuard g;
 
     signal_expanding(treeIter(rIndex));
+}
+
+void QtInstanceTreeView::signalVisibleRangeChanged()
+{
+    SolarMutexGuard g;
+
+    signal_visible_range_changed();
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab cinoptions=b1,g0,N-s cinkeys+=0=break: */

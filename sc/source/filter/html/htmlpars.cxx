@@ -51,6 +51,7 @@
 #include <vcl/outdev.hxx>
 #include <vcl/svapp.hxx>
 #include <tools/hostfilter.hxx>
+#include <tools/stream.hxx>
 #include <tools/urlobj.hxx>
 #include <osl/diagnose.h>
 #include <o3tl/string_view.hxx>
@@ -327,7 +328,8 @@ ScHTMLLayoutParser::ScHTMLLayoutParser(
         bFirstRow( true ),
         bTabInTabCell( false ),
         bInCell( false ),
-        bInTitle( false )
+        bInTitle( false ),
+        bInImg( false )
 {
     MakeColNoRef( xLocalColOffset.get(), 0, 0, 0, 0 );
     MakeColNoRef( &maColOffset, 0, 0, 0, 0 );
@@ -1003,6 +1005,11 @@ IMPL_LINK( ScHTMLLayoutParser, HTMLImportHdl, HtmlImportInfo&, rInfo, void )
             }
             while ( nTableLevel > 0 )
                 TableOff( &rInfo );      // close tables, if </TABLE> missing
+            if (bInImg)
+            {
+                CloseEntry( &rInfo );
+                bInImg = false;
+            }
             break;
         case HtmlImportState::SetAttr:
             break;
@@ -1344,7 +1351,7 @@ void ScHTMLLayoutParser::TableOff( const HtmlImportInfo* pInfo )
                     {   // Outer
                         for ( SCROW j=0; j < nRowSpan; j++ )
                         {
-                            sal_uLong nRowKey = nRow + j;
+                            SCROW nRowKey = nRow + j;
                             SCROW nR = (*pTab1)[ nRowKey ];
                             if ( !nR )
                                 (*pTab1)[ nRowKey ] = nRowsPerRow1;
@@ -1372,13 +1379,13 @@ void ScHTMLLayoutParser::TableOff( const HtmlImportInfo* pInfo )
                     if ( nRowsPerRow2 > 1 )
                     {   // Inner
                         if ( !pTab2 )
-                        {   // nRowsPerRow2 could be've been incremented
+                        {   // nRowsPerRow2 could have been incremented
                             pTab2 = new InnerMap;
                             (*pTables)[ nTable ].reset(pTab2);
                         }
                         for ( SCROW j=0; j < nRows; j++ )
                         {
-                            sal_uLong nRowKey = nRow + j;
+                            SCROW nRowKey = nRow + j;
                             (*pTab2)[ nRowKey ] = nRowsPerRow2;
                         }
                     }
@@ -1436,6 +1443,7 @@ void ScHTMLLayoutParser::TableOff( const HtmlImportInfo* pInfo )
 
 void ScHTMLLayoutParser::Image( HtmlImportInfo* pInfo )
 {
+    bInImg = true;
     mxActEntry->maImageList.push_back(std::make_unique<ScHTMLImage>());
     ScHTMLImage* pImage = mxActEntry->maImageList.back().get();
     const HTMLOptions& rOptions = static_cast<HTMLParser*>(pInfo->pParser)->GetOptions();
@@ -1498,8 +1506,21 @@ void ScHTMLLayoutParser::Image( HtmlImportInfo* pInfo )
     sal_uInt16 nFormat;
     std::optional<Graphic> oGraphic(std::in_place);
     GraphicFilter& rFilter = GraphicFilter::GetGraphicFilter();
-    if ( ERRCODE_NONE != GraphicFilter::LoadGraphic( pImage->aURL, pImage->aFilterName,
+    INetURLObject aGraphicURL(pImage->aURL);
+    if (aGraphicURL.GetProtocol() == INetProtocol::Data)
+    {
+        std::unique_ptr<SvMemoryStream> const pStream(aGraphicURL.getData());
+        if (!pStream)
+            return; // Bad luck - malformed data: URL
+        *oGraphic = rFilter.ImportUnloadedGraphic(*pStream);
+        pImage->aURL.clear();
+    }
+    else if ( ERRCODE_NONE == GraphicFilter::LoadGraphic( pImage->aURL, pImage->aFilterName,
             *oGraphic, &rFilter, &nFormat ) )
+    {
+        pImage->aFilterName = rFilter.GetImportFormatName( nFormat );
+    }
+    else
     {
         return ; // Bad luck
     }
@@ -1508,7 +1529,6 @@ void ScHTMLLayoutParser::Image( HtmlImportInfo* pInfo )
         mxActEntry->bHasGraphic = true;
         mxActEntry->aAltText.clear();
     }
-    pImage->aFilterName = rFilter.GetImportFormatName( nFormat );
     pImage->oGraphic = std::move( oGraphic );
     if ( !(pImage->aSize.Width() && pImage->aSize.Height()) )
     {

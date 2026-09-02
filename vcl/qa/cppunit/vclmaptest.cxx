@@ -27,8 +27,8 @@ public:
     // Expose protected methods using 'using'
     using OutputDevice::LogicHeightToDevicePixel;
     using OutputDevice::LogicWidthToDevicePixel;
-    using OutputDevice::SetOutOffXPixel;
-    using OutputDevice::SetOutOffYPixel;
+    using OutputDevice::SetDeviceOriginX;
+    using OutputDevice::SetDeviceOriginY;
 
     // Explicit wrapper if 'using' doesn't satisfy specific compiler strictness
     // (Optional, but 'using' is usually sufficient for access)
@@ -416,7 +416,7 @@ CPPUNIT_TEST_FIXTURE(CppUnit::TestFixture, testViewTransformation)
     ScopedVclPtr<TestVirtualDevice> pDev(VclPtr<TestVirtualDevice>::Create());
 
     pDev->SetMapMode(MapMode(MapUnit::Map100thMM));
-    pDev->SetOutOffXPixel(10);
+    pDev->SetDeviceOriginX(10);
 
     // Get transformation matrix via residual wrapper
     basegfx::B2DHomMatrix aMat = pDev->GetViewTransformation();
@@ -435,6 +435,41 @@ CPPUNIT_TEST_FIXTURE(CppUnit::TestFixture, testViewTransformation)
     // Offset is 10. 1000 100thMM is approx 37.8 pixels. Total ~47.8.
 
     CPPUNIT_ASSERT_DOUBLES_EQUAL(double(aPix.X()), aPt.getX(), 1.0);
+}
+
+CPPUNIT_TEST_FIXTURE(CppUnit::TestFixture, testB2DPolygonAsymmetricDPI)
+{
+    ScopedVclPtrInstance<VirtualDevice> pVDev;
+
+    // Setup asymmetric DPI (X=100, Y=200)
+    const tools::Long nDPIX = 100;
+    const tools::Long nDPIY = 200;
+    pVDev->SetDPIX(nDPIX);
+    pVDev->SetDPIY(nDPIY);
+
+    // Use 100th MM MapMode
+    // 1 inch = 2540 logical units.
+    // At 100 DPI, 2540 units should = 100 pixels.
+    // At 200 DPI, 2540 units should = 200 pixels.
+    pVDev->SetMapMode(MapMode(MapUnit::Map100thMM));
+
+    // Test Point Scaling (Public API)
+    Point aLogicPt(2540, 2540);
+    Point aPixelPt = pVDev->LogicToPixel(aLogicPt);
+
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("X-axis scaling failed", tools::Long(100), aPixelPt.X());
+
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("Y-axis scaling failed (check for X/Y mix-up in map.cxx)",
+                                 tools::Long(200), aPixelPt.Y());
+
+    // Test Size Scaling (Public API)
+    Size aLogicSize(2540, 2540);
+    Size aPixelSize = pVDev->LogicToPixel(aLogicSize);
+
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("Size Width scaling failed", tools::Long(100), aPixelSize.Width());
+
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("Size Height scaling failed", tools::Long(200),
+                                 aPixelSize.Height());
 }
 
 CPPUNIT_TEST_FIXTURE(CppUnit::TestFixture, testMapRelativeScaling)

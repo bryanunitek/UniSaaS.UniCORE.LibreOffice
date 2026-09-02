@@ -223,13 +223,13 @@ void FilterCache::load(EFillState eRequired)
             m_sActLocale = DEFAULT_OFFICELOCALE;
         }
 
-        // Support the old configuration support. Read it only one times during office runtime!
+        // Support the old configuration support. Read it only once during office runtime!
         impl_readOldFormat();
     }
 
 
     // b) If the required fill state was not reached
-    //    but std values was already loaded ...
+    //    but std values were already loaded ...
     //    we must load some further missing items.
     impl_load(eRequired);
     // <- SAFE
@@ -253,7 +253,7 @@ std::vector<OUString> FilterCache::getMatchingItemsByProps(      EItemType  eTyp
 
     // search for right list
     // An exception is thrown - "eType" is unknown.
-    // => rList will be valid everytimes next line is reached.
+    // => rList will be valid every time next line is reached.
     const CacheItemList& rList = impl_getItemList(eType);
 
     std::vector<OUString> lKeys;
@@ -284,7 +284,7 @@ bool FilterCache::hasItems(EItemType eType) const
 
     // search for right list
     // An exception is thrown - "eType" is unknown.
-    // => rList will be valid everytimes next line is reached.
+    // => rList will be valid every time next line is reached.
     const CacheItemList& rList = impl_getItemList(eType);
 
     return !rList.empty();
@@ -299,7 +299,7 @@ std::vector<OUString> FilterCache::getItemNames(EItemType eType) const
 
     // search for right list
     // An exception is thrown - "eType" is unknown.
-    // => rList will be valid everytimes next line is reached.
+    // => rList will be valid every time next line is reached.
     const CacheItemList& rList = impl_getItemList(eType);
 
     std::vector<OUString> lKeys;
@@ -320,7 +320,7 @@ bool FilterCache::hasItem(      EItemType        eType,
 
     // search for right list
     // An exception is thrown - "eType" is unknown.
-    // => rList will be valid everytimes next line is reached.
+    // => rList will be valid every time next line is reached.
     const CacheItemList& rList = impl_getItemList(eType);
 
     // if item could not be found - check if it can be loaded
@@ -361,7 +361,7 @@ CacheItem& FilterCache::impl_getItem(      EItemType        eType,
 {
     // search for right list
     // An exception is thrown if "eType" is unknown.
-    // => rList will be valid everytimes next line is reached.
+    // => rList will be valid every time next line is reached.
     CacheItemList& rList = impl_getItemList(eType);
 
     // check if item exists ...
@@ -410,7 +410,7 @@ void FilterCache::removeItem(      EItemType        eType,
 
     // search for right list
     // An exception is thrown - "eType" is unknown.
-    // => rList will be valid everytimes next line is reached.
+    // => rList will be valid every time next line is reached.
     CacheItemList& rList = impl_getItemList(eType);
 
     CacheItemList::iterator pItem = rList.find(sItem);
@@ -431,7 +431,7 @@ void FilterCache::setItem(      EItemType        eType ,
 
     // search for right list
     // An exception is thrown - "eType" is unknown.
-    // => rList will be valid everytimes next line is reached.
+    // => rList will be valid every time next line is reached.
     CacheItemList& rList = impl_getItemList(eType);
 
     // name must be part of the property set too ... otherwise our
@@ -494,7 +494,7 @@ css::uno::Any FilterCache::getItemWithStateProps(      EItemType        eType,
                         The default frame loader can't be located inside the normal set of frame loaders.
                         It's an atomic property inside the misc cfg package. So we can't retrieve the information
                         about FINALIZED and MANDATORY very easy ... :-(
-                        => set it to readonly/required everytimes :-)
+                        => set it to readonly/required every time :-)
                 */
                 css::uno::Any   aDirectValue       = impl_getDirectCFGValue(CFGDIRECTKEY_DEFAULTFRAMELOADER);
                 OUString sDefaultFrameLoader;
@@ -807,7 +807,7 @@ css::uno::Reference< css::uno::XInterface > FilterCache::impl_openConfig(EConfig
         }
         break;
 
-        default : throw css::uno::RuntimeException(u"These configuration node is not supported here for open!"_ustr, nullptr);
+        default : throw css::uno::RuntimeException(u"This configuration node is not supported here for open!"_ustr, nullptr);
     }
 
     {
@@ -1704,10 +1704,10 @@ CacheItemList::iterator FilterCache::impl_loadItemOnDemand(      EItemType      
     {
         if (pItemInCache != pList->end())
             pList->erase(pItemInCache);
-        // OK - this item does not exists inside configuration.
+        // OK - this item does not exist inside configuration.
         // And we already updated our internal cache.
         // But the outside code needs this NoSuchElementException
-        // to know, that this item does notexists.
+        // to know, that this item does not exist.
         // Nobody checks the iterator!
         throw css::container::NoSuchElementException();
     }

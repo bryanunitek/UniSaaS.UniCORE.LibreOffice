@@ -47,6 +47,7 @@
 #include <fmtftn.hxx>
 #include <fmtsrnd.hxx>
 #include <fmtcntnt.hxx>
+#include <fmthdft.hxx>
 #include <ftnfrm.hxx>
 #include <tabfrm.hxx>
 #include <rowfrm.hxx>
@@ -744,7 +745,7 @@ void SwFrame::InvalidatePage( const SwPageFrame *pPage ) const
                     pFly->GetAnchorFrame()->InvalidatePage();
                 }
                 else
-                    pPage->InvalidateFlyLayout();
+                    pPage->InvalidateFlyLayout( pFly );
             }
         }
         else
@@ -1328,8 +1329,9 @@ void SwContentFrame::Cut()
         return;
     }
 
-    if (pMasterTab
-        && !pMasterTab->GetFollow()->GetFirstNonHeadlineRow()->ContainsContent())
+    if (const SwRowFrame* pFollowRow
+        = pMasterTab ? pMasterTab->GetFollow()->GetFirstNonHeadlineRow() : nullptr;
+        pFollowRow && !pFollowRow->ContainsContent())
     {   // only do this if there's no content in other cells of the row!
         pMasterTab->InvalidatePos_();
         pMasterTab->SetRemoveFollowFlowLinePending(true);
@@ -2198,7 +2200,7 @@ SwTwips SwContentFrame::GrowFrame(SwTwips nDist, SwResizeLimitReason& reason, bo
             }
             // #i28701# - Due to the new object positioning the
             // frame on the next page/column can flow backward (e.g. it was moved forward
-            // due to the positioning of its objects ). Thus, invalivate this next frame,
+            // due to the positioning of its objects ). Thus, invalidate this next frame,
             // if document compatibility option 'Consider wrapping style influence on
             // object positioning' is ON.
             else if ( GetUpper()->GetFormat()->getIDocumentSettingAccess().get(DocumentSettingId::CONSIDER_WRAP_ON_OBJECT_POSITION) )
@@ -2273,7 +2275,7 @@ SwTwips SwContentFrame::GrowFrame(SwTwips nDist, SwResizeLimitReason& reason, bo
 
     // #i28701# - Due to the new object positioning the
     // frame on the next page/column can flow backward (e.g. it was moved forward
-    // due to the positioning of its objects ). Thus, invalivate this next frame,
+    // due to the positioning of its objects ). Thus, invalidate this next frame,
     // if document compatibility option 'Consider wrapping style influence on
     // object positioning' is ON.
     if ( !bTst )
@@ -2631,6 +2633,8 @@ void SwContentFrame::UpdateAttr_( const SfxPoolItem* pOld, const SfxPoolItem* pN
         case RES_CHRATR_NOHYPHEN:
         case RES_CHRATR_OPTICAL_SIZING:
         case RES_CHRATR_FONT_VARIATIONS:
+        case RES_CHRATR_CJK_FONT_VARIATIONS:
+        case RES_CHRATR_CTL_FONT_VARIATIONS:
         case RES_PARATR_NUMRULE:
             rInvFlags |= SwContentFrameInvFlags::SetCompletePaint;
             break;
@@ -3630,6 +3634,8 @@ void SwLayoutFrame::Format( vcl::RenderContext* /*pRenderContext*/, const SwBord
         return;
 
     bool bHideWhitespace = false;
+    ::std::optional<sal_uInt16> oMinTop;
+    ::std::optional<sal_uInt16> oMinBottom;
     if (IsPageFrame())
     {
         SwViewShell* pShell = getRootFrame()->GetCurrShell();
@@ -3641,13 +3647,32 @@ void SwLayoutFrame::Format( vcl::RenderContext* /*pRenderContext*/, const SwBord
             // height already.
             bHideWhitespace = true;
         }
+        // check the format, `Format()` is called before header frame is created
+        if (!GetFormat()->GetHeader().IsActive())
+        {   // else: rely on "HeaderHeight" item SID_ATTR_PAGE_SIZE on header
+            if (auto const*const pTopItem{
+                    pAttrs->GetAttrSet().GetItemIfSet(RES_FRMATR_PAGE_MIN_TOP)})
+            {
+                oMinTop.emplace(pTopItem->GetValue());
+            }
+        }
+        if (!GetFormat()->GetFooter().IsActive())
+        {
+            if (auto const*const pBottomItem{
+                    pAttrs->GetAttrSet().GetItemIfSet(RES_FRMATR_PAGE_MIN_BOTTOM)})
+            {
+                oMinBottom.emplace(pBottomItem->GetValue());
+            }
+        }
     }
 
     const sal_uInt16 nLeft = o3tl::narrowing<sal_uInt16>(pAttrs->CalcLeft(this));
-    const sal_uInt16 nUpper = bHideWhitespace ? 0 : pAttrs->CalcTop();
+    const sal_uInt16 nUpper = bHideWhitespace ? 0
+        : oMinTop ? ::std::max(pAttrs->CalcTop(), *oMinTop) : pAttrs->CalcTop();
 
     const sal_uInt16 nRight = o3tl::narrowing<sal_uInt16>(pAttrs->CalcRight(this));
-    const sal_uInt16 nLower = bHideWhitespace ? 0 : pAttrs->CalcBottom();
+    const sal_uInt16 nLower = bHideWhitespace ? 0
+        : oMinBottom ? ::std::max(pAttrs->CalcBottom(), *oMinBottom) : pAttrs->CalcBottom();
 
     SwRectFnSet fnRect(IsVertical() && !IsPageFrame(), IsVertLR(), IsVertLRBT());
     if ( !isFramePrintAreaValid() )

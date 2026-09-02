@@ -19,53 +19,25 @@
 
 #pragma once
 
-#include <vcl/weld/Button.hxx>
-#include <vcl/weld/ComboBox.hxx>
 #include <vcl/weld/DialogController.hxx>
-#include <svx/SvxColorValueSet.hxx>
-#include <svx/PaletteManager.hxx>
+#include <svx/colorbox.hxx>
 
 class ScTabBgColorDlg : public weld::GenericDialogController
 {
 public:
     ScTabBgColorDlg(weld::Window* pParent,
                     const OUString& rTitle,
-                    const OUString& rTabBgColorNoColorText,
                     const Color& rDefaultColor);
     virtual ~ScTabBgColorDlg() override;
 
     Color GetSelectedColor() const;
 
-    class ScTabBgColorValueSet : public SvxColorValueSet
-    {
-    public:
-        ScTabBgColorValueSet(std::unique_ptr<weld::ScrolledWindow> pWindow);
-        virtual ~ScTabBgColorValueSet() override;
-
-        void SetDialog(ScTabBgColorDlg* pTabBgColorDlg)
-        {
-            m_pTabBgColorDlg = pTabBgColorDlg;
-        }
-
-        virtual bool KeyInput( const KeyEvent& rKEvt ) override;
-    private:
-        ScTabBgColorDlg* m_pTabBgColorDlg;
-    };
-
 private:
-    PaletteManager          m_aPaletteManager;
-    Color                   m_aTabBgColor;
+    Color                         m_aTabBgColor;
+    std::unique_ptr<weld::Container> m_xColorContainer;
+    std::unique_ptr<ColorListBox> m_xColorListBox;
 
-    std::unique_ptr<weld::ComboBox> m_xSelectPalette;
-    std::unique_ptr<ScTabBgColorValueSet> m_xTabBgColorSet;
-    std::unique_ptr<weld::CustomWeld> m_xTabBgColorSetWin;
-    std::unique_ptr<weld::Button> m_xBtnOk;
-
-    void FillPaletteLB();
-
-    DECL_LINK(SelectPaletteLBHdl, weld::ComboBox&, void);
-    DECL_LINK(TabBgColorDblClickHdl_Impl, ValueSet*, void);
-    DECL_LINK(TabBgColorOKHdl_Impl, weld::Button&, void);
+    DECL_LINK(ColorSelectedHdl, ColorListBox&, void);
 };
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

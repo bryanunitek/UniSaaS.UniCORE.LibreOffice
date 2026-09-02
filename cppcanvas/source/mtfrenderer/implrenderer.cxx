@@ -789,16 +789,16 @@ namespace cppcanvas::internal
             if( nFontWidthLog != 0 )
             {
                 vcl::Font aTestFont = rFont;
-                aTestFont.SetAverageFontWidth( 0 );
-                sal_Int32 nNormalWidth = rParms.mrVDev.GetFontMetric( aTestFont ).GetAverageFontWidth();
+                aTestFont.SetFontWidth( 0 );
+                sal_Int32 nNormalWidth = rParms.mrVDev.GetFontMetric( aTestFont ).GetFontWidth();
                 if( nNormalWidth != nFontWidthLog )
                     if( nNormalWidth )
                         aFontMatrix.m00 = static_cast<double>(nFontWidthLog) / nNormalWidth;
             }
 
             // #i52608# apply map mode scale also to font matrix - an
-            // anisotrophic mapmode must be reflected in an
-            // anisotrophic font matrix scale.
+            // anisotropic mapmode must be reflected in an
+            // anisotropic font matrix scale.
             const OutDevState& rState( rParms.mrStates.getState() );
             if( !::basegfx::fTools::equal(
                     rState.mapModeTransform.get(0,0),

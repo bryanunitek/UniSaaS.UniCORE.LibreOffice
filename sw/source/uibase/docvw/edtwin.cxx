@@ -163,7 +163,7 @@
 using namespace sw::mark;
 using namespace ::com::sun::star;
 
-#define SCROLL_TIMER_RETARD_LIMIT 5
+constexpr sal_uInt32 SCROLL_TIMER_RETARD_LIMIT = 5;
 
 /**
  * Globals
@@ -189,8 +189,7 @@ static SdrHdlKind g_eSdrMoveHdl   = SdrHdlKind::User;
 
 QuickHelpData* SwEditWin::s_pQuickHlpData = nullptr;
 
-tools::Long    SwEditWin::s_nDDStartPosY = 0;
-tools::Long    SwEditWin::s_nDDStartPosX = 0;
+Point SwEditWin::s_aDDStartPos;
 
 static SfxShell* lcl_GetTextShellFromDispatcher( SwView const & rView );
 
@@ -2963,6 +2962,14 @@ static bool lcl_urlOverBackground(SwWrtShell& rSh, const Point& rDocPos)
     return rSh.GetContentAtPos(rDocPos, aSwContentAtPos) && pSelectableObj->GetLayer() == rSh.GetDoc()->getIDocumentDrawModelAccess().GetHellId();
 }
 
+void SwEditWin::ArmFrameDrag(SwWrtShell& rSh, const Point& rDocPos)
+{
+    // the mode has to be (re-)entered here: a drag counts from where it was entered
+    rSh.EnterSelFrameMode(&rDocPos);
+    s_aDDStartPos = rDocPos;
+    g_bFrameDrag = true;
+}
+
 void SwEditWin::MoveCursor( SwWrtShell &rSh, const Point& rDocPos,
                             const bool bOnlyText, bool bLockView )
 {
@@ -3056,6 +3063,7 @@ void SwEditWin::MouseButtonDown(const MouseEvent& _rMEvt)
     bool bOverFly = false;
     bool bPageAnchored = false;
     bool bOverHeaderFooterFly = IsOverHeaderFooterFly( aDocPos, eControl, bOverFly, bPageAnchored );
+    bool bOverHeaderFooter = IsInHeaderFooter( aDocPos, eControl );
 
     bool bIsViewReadOnly = m_rView.GetDocShell()->IsReadOnly() || (rSh.GetSfxViewShell() && rSh.GetSfxViewShell()->IsLokReadOnlyView());
     if (bOverHeaderFooterFly && (!bIsViewReadOnly && rSh.GetCurField()))
@@ -3063,7 +3071,7 @@ void SwEditWin::MouseButtonDown(const MouseEvent& _rMEvt)
         bOverHeaderFooterFly = false;
 
     // Are we clicking on a blank header/footer area?
-    if ( IsInHeaderFooter( aDocPos, eControl ) || bOverHeaderFooterFly )
+    if ( bOverHeaderFooter || bOverHeaderFooterFly )
     {
         const SwPageFrame* pPageFrame = rSh.GetLayout()->GetPageAtPos( aDocPos );
 
@@ -3126,7 +3134,9 @@ void SwEditWin::MouseButtonDown(const MouseEvent& _rMEvt)
                 rSh.SetShowHeaderFooterSeparator( FrameControlType::Header, eControl == FrameControlType::Header );
                 rSh.SetShowHeaderFooterSeparator( FrameControlType::Footer, eControl == FrameControlType::Footer );
 
-                if ( !rSh.IsHeaderFooterEdit() )
+                // Only switch to Header/Footer edit mode when clicking over Header/Footer
+                // To avoid selecting objects anchored in Header/Footer when editing body
+                if ( bOverHeaderFooter && !rSh.IsHeaderFooterEdit() )
                     rSh.ToggleHeaderFooterEdit();
             }
         }
@@ -3346,8 +3356,7 @@ void SwEditWin::MouseButtonDown(const MouseEvent& _rMEvt)
                                 if (!bHitHandle)
                                 {
                                     StartDDTimer();
-                                    SwEditWin::s_nDDStartPosY = aDocPos.Y();
-                                    SwEditWin::s_nDDStartPosX = aDocPos.X();
+                                    s_aDDStartPos = aDocPos;
                                 }
                                 g_bFrameDrag = true;
                             }
@@ -3386,8 +3395,7 @@ void SwEditWin::MouseButtonDown(const MouseEvent& _rMEvt)
                 if (1 == nNumberOfClicks)
                 {
                     UpdatePointer(aDocPos, aMEvt.GetModifier());
-                    SwEditWin::s_nDDStartPosY = aDocPos.Y();
-                    SwEditWin::s_nDDStartPosX = aDocPos.X();
+                    s_aDDStartPos = aDocPos;
 
                     // hit a URL in DrawText object?
                     if (bExecHyperlinks && pSdrView)
@@ -3749,10 +3757,7 @@ void SwEditWin::MouseButtonDown(const MouseEvent& _rMEvt)
                             else
                             {   if ( rSh.SelectObj( aDocPos, SW_ADD_SELECT | SW_ENTER_GROUP ) )
                                 {
-                                    rSh.EnterSelFrameMode( &aDocPos );
-                                    SwEditWin::s_nDDStartPosY = aDocPos.Y();
-                                    SwEditWin::s_nDDStartPosX = aDocPos.X();
-                                    g_bFrameDrag = true;
+                                    ArmFrameDrag(rSh, aDocPos);
                                     return;
                                 }
                             }
@@ -3792,10 +3797,7 @@ void SwEditWin::MouseButtonDown(const MouseEvent& _rMEvt)
                             else
                             {   if ( rSh.SelectObj( aDocPos, SW_ENTER_GROUP ) )
                                 {
-                                    rSh.EnterSelFrameMode( &aDocPos );
-                                    SwEditWin::s_nDDStartPosY = aDocPos.Y();
-                                    SwEditWin::s_nDDStartPosX = aDocPos.X();
-                                    g_bFrameDrag = true;
+                                    ArmFrameDrag(rSh, aDocPos);
                                     return;
                                 }
                             }
@@ -3873,10 +3875,7 @@ void SwEditWin::MouseButtonDown(const MouseEvent& _rMEvt)
                             else
                             {   if ( rSh.SelectObj( aDocPos ) )
                                 {
-                                    rSh.EnterSelFrameMode( &aDocPos );
-                                    SwEditWin::s_nDDStartPosY = aDocPos.Y();
-                                    SwEditWin::s_nDDStartPosX = aDocPos.X();
-                                    g_bFrameDrag = true;
+                                    ArmFrameDrag(rSh, aDocPos);
                                     return;
                                 }
                             }
@@ -3900,10 +3899,7 @@ void SwEditWin::MouseButtonDown(const MouseEvent& _rMEvt)
                             if ( rSh.IsSelFrameMode() &&
                                  rSh.IsInsideSelectedObj( aDocPos ) )
                             {
-                                rSh.EnterSelFrameMode( &aDocPos );
-                                SwEditWin::s_nDDStartPosY = aDocPos.Y();
-                                SwEditWin::s_nDDStartPosX = aDocPos.X();
-                                g_bFrameDrag = true;
+                                ArmFrameDrag(rSh, aDocPos);
                                 return;
                             }
                             if ( rSh.IsSelFrameMode() )
@@ -4342,8 +4338,7 @@ void SwEditWin::MouseMove(const MouseEvent& _rMEvt)
     // a MB-Move is called immediately.
     if( g_bDDTimerStarted )
     {
-        Point aDD( SwEditWin::s_nDDStartPosX, SwEditWin::s_nDDStartPosY );
-        aDD = LogicToPixel( aDD );
+        Point aDD = LogicToPixel(s_aDDStartPos);
         tools::Rectangle aRect( aDD.X()-3, aDD.Y()-3, aDD.X()+3, aDD.Y()+3 );
         if ( !aRect.Contains( aPixPt ) )
             StopDDTimer( &rSh, aDocPt );
@@ -5712,9 +5707,7 @@ bool SwEditWin::EnterDrawMode(const MouseEvent& rMEvt, const Point& aDocPos)
             rSh.LeaveSelFrameMode();
         else
         {
-            SwEditWin::s_nDDStartPosY = aDocPos.Y();
-            SwEditWin::s_nDDStartPosX = aDocPos.X();
-            g_bFrameDrag = true;
+            ArmFrameDrag(rSh, aDocPos);
         }
         if( bUnLockView )
             rSh.LockView( false );
@@ -6621,29 +6614,29 @@ void QuickHelpData::Stop( SwWrtShell& rSh )
 
 void QuickHelpData::FillStrArr( SwWrtShell const & rSh, const OUString& rWord )
 {
-    enum Capitalization { CASE_LOWER, CASE_UPPER, CASE_SENTENCE, CASE_OTHER };
+    enum class Capitalization { Lower, Upper, Sentence, Other };
 
     // Determine word capitalization
     const CharClass& rCC = GetAppCharClass();
     const OUString sWordLower = rCC.lowercase( rWord );
-    Capitalization aWordCase = CASE_OTHER;
+    Capitalization aWordCase = Capitalization::Other;
     if ( !rWord.isEmpty() )
     {
         if ( rWord[0] == sWordLower[0] )
         {
             if ( rWord == sWordLower )
-                aWordCase = CASE_LOWER;
+                aWordCase = Capitalization::Lower;
         }
         else
         {
             // First character is not lower case i.e. assume upper or title case
             OUString sWordSentence = sWordLower.replaceAt( 0, 1, rtl::OUStringChar(rWord[0]) );
             if ( rWord == sWordSentence )
-                aWordCase = CASE_SENTENCE;
+                aWordCase = Capitalization::Sentence;
             else
             {
                 if ( rWord == rCC.uppercase( rWord ) )
-                    aWordCase = CASE_UPPER;
+                    aWordCase = Capitalization::Upper;
             }
         }
     }
@@ -6670,11 +6663,11 @@ void QuickHelpData::FillStrArr( SwWrtShell const & rSh, const OUString& rWord )
                 else
                     sStr = rStr; // to be added if no case conversion is performed below
 
-                if ( aWordCase == CASE_LOWER )
+                if ( aWordCase == Capitalization::Lower)
                     sStr = rCC.lowercase(rStr);
-                else if ( aWordCase == CASE_SENTENCE )
+                else if ( aWordCase == Capitalization::Sentence)
                     sStr = rCC.lowercase(rStr).replaceAt(0, 1, rtl::OUStringChar(rStr[0]));
-                else if ( aWordCase == CASE_UPPER )
+                else if ( aWordCase == Capitalization::Upper)
                     sStr = rCC.uppercase(rStr);
 
                 if (!sStr.isEmpty())
@@ -6720,12 +6713,12 @@ void QuickHelpData::FillStrArr( SwWrtShell const & rSh, const OUString& rWord )
         else
             sStr = aCompletedString; // to be added if no case conversion is performed below
 
-        if (aWordCase == CASE_LOWER)
+        if (aWordCase == Capitalization::Lower)
             sStr = rCC.lowercase(aCompletedString);
-        else if (aWordCase == CASE_SENTENCE)
+        else if (aWordCase == Capitalization::Sentence)
             sStr = rCC.lowercase(aCompletedString)
                        .replaceAt(0, 1, rtl::OUStringChar(aCompletedString[0]));
-        else if (aWordCase == CASE_UPPER)
+        else if (aWordCase == Capitalization::Upper)
             sStr = rCC.uppercase(aCompletedString);
 
         if (!sStr.isEmpty())

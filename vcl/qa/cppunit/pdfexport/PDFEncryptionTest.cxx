@@ -20,7 +20,10 @@
 
 #include <vcl/filter/PDFiumLibrary.hxx>
 
+#include <com/sun/star/beans/XPropertySet.hpp>
 #include <com/sun/star/frame/XStorable.hpp>
+#include <com/sun/star/text/XTextCursor.hpp>
+#include <com/sun/star/text/XTextDocument.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -102,6 +105,48 @@ CPPUNIT_TEST_FIXTURE(PDFEncryptionTest, testEncryptionRoundtrip_PDF_2_0)
     CPPUNIT_ASSERT_EQUAL(20, nFileVersion);
 }
 
+CPPUNIT_TEST_FIXTURE(PDFEncryptionTest, testEncryptionRoundtrip_PDF_2_0_PaddingBlockBoundary)
+{
+    loadFromURL(u"private:factory/swriter"_ustr);
+
+    // 16 characters are exactly one cipher block
+    const OUString aLinkURL = u"http://16.by/tes"_ustr;
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(16), aLinkURL.getLength());
+
+    uno::Reference<text::XTextDocument> xTextDocument(mxComponent, uno::UNO_QUERY_THROW);
+    uno::Reference<text::XText> xText = xTextDocument->getText();
+    xText->setString(u"link"_ustr);
+    uno::Reference<text::XTextCursor> xCursor = xText->createTextCursor();
+    xCursor->gotoStart(false);
+    xCursor->gotoEnd(true);
+    uno::Reference<beans::XPropertySet> xCursorProperties(xCursor, uno::UNO_QUERY_THROW);
+    xCursorProperties->setPropertyValue(u"HyperLinkURL"_ustr, uno::Any(aLinkURL));
+
+    // Save PDF
+    uno::Reference<frame::XStorable> xStorable(mxComponent, uno::UNO_QUERY);
+    maMediaDescriptor[u"FilterName"_ustr] <<= u"writer_pdf_Export"_ustr;
+    uno::Sequence<beans::PropertyValue> aFilterData = comphelper::InitPropertySequence(
+        { { "SelectPdfVersion", uno::Any(sal_Int32(20)) },
+          { "EncryptFile", uno::Any(true) },
+          { "DocumentOpenPassword", uno::Any(u"secret"_ustr) } });
+    maMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
+    xStorable->storeToURL(maTempFile.GetURL(), maMediaDescriptor.getAsConstPropertyValueList());
+
+    // Load the exported result in PDFium and read the link target back
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport("secret"_ostr);
+    CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
+    std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(0);
+    CPPUNIT_ASSERT(pPdfPage);
+
+    int nLinkIndex = 0;
+    std::unique_ptr<vcl::pdf::PDFiumLink> pLink
+        = pPdfPage->enumerateLink(&nLinkIndex, pPdfDocument.get());
+    CPPUNIT_ASSERT(pLink);
+    // the problem was that the padding on the encrypted string was wrong
+    // so it could not be read
+    CPPUNIT_ASSERT_EQUAL(aLinkURL, pLink->getURIPath());
+}
+
 CPPUNIT_TEST_FIXTURE(PDFEncryptionTest, testComputeHashForR6)
 {
     const sal_uInt8 pOwnerPass[] = { 'T', 'e', 's', 't' };
@@ -148,6 +193,32 @@ CPPUNIT_TEST_FIXTURE(PDFEncryptionTest, testComputeHashForR6)
             std::string("e4507a474cefbba1af76ba0eb40ec322c91c1900d3fd65fec98b873ba19b27f8"),
             comphelper::hashToString(RO));
     }
+}
+
+CPPUNIT_TEST_FIXTURE(PDFEncryptionTest, testComputeHashForR6LoopEndCondition)
+{
+    sal_uInt8 const pPassword[] = { 'T', 'e', 's', 't' };
+
+    // This should be 80 rounds.
+    std::vector<sal_uInt8> aValidationSalt = parseHex("6A5260B509E42E4F");
+    CPPUNIT_ASSERT_EQUAL(
+        std::string("058d0adf871eaedf549963a8a60499af48c647abacf32605bf69518d4366dfe9"),
+        comphelper::hashToString(vcl::pdf::computeHashR6(pPassword, 4, aValidationSalt)));
+
+    // This should be 69 rounds.
+    aValidationSalt = parseHex("B8B897AF2CB52F00");
+    CPPUNIT_ASSERT_EQUAL(
+        std::string("e9f540fad0c2531781e7d9671da52527ab281497cb0d51bf0e986dffa0e9e323"),
+        comphelper::hashToString(vcl::pdf::computeHashR6(pPassword, 4, aValidationSalt)));
+
+    // Test the owner key generation, taking additional U argument.
+    // This should be 69 rounds.
+    std::vector<sal_uInt8> U = parseHex("7BD210807A0277FECC52C261C442F02E1AD62C1A23553348B8F8AF7320"
+                                        "DC9978FAB7E65E1BF4CA76F4BE5E6D2AA8C7D5");
+    aValidationSalt = parseHex("35A0F8DF2F495D23");
+    CPPUNIT_ASSERT_EQUAL(
+        std::string("a8a6e16751faebf5f8aef5d02eae8ddd8885fa3fe9d29e132ff9abe86bd4d0c8"),
+        comphelper::hashToString(vcl::pdf::computeHashR6(pPassword, 4, aValidationSalt, U)));
 }
 
 CPPUNIT_TEST_FIXTURE(PDFEncryptionTest, testGenerateUandUE)
@@ -276,8 +347,26 @@ CPPUNIT_TEST_FIXTURE(PDFEncryptionTest, testPadding)
     size_t nPaddedSize = vcl::pdf::addPaddingToVector(aVector, constBlockSize);
     CPPUNIT_ASSERT_EQUAL(size_t(constBlockSize), aVector.size());
     CPPUNIT_ASSERT_EQUAL(size_t(constBlockSize), nPaddedSize);
-    for (size_t i = 6; i < constBlockSize; i++)
+    for (size_t i = 5; i < constBlockSize; i++)
         CPPUNIT_ASSERT_EQUAL(sal_uInt8(0x0B), aVector[i]);
+}
+
+CPPUNIT_TEST_FIXTURE(PDFEncryptionTest, testPaddingBlockBoundary)
+{
+    // Data that already ends on a block boundary gets a whole block of padding
+    constexpr size_t constBlockSize = 16;
+    std::vector<sal_uInt8> aVector(constBlockSize, 'T');
+    size_t nPaddedSize = vcl::pdf::addPaddingToVector(aVector, constBlockSize);
+    CPPUNIT_ASSERT_EQUAL(size_t(2 * constBlockSize), aVector.size());
+    CPPUNIT_ASSERT_EQUAL(size_t(2 * constBlockSize), nPaddedSize);
+    for (size_t i = constBlockSize; i < 2 * constBlockSize; i++)
+        CPPUNIT_ASSERT_EQUAL(sal_uInt8(constBlockSize), aVector[i]);
+
+    // The encrypted size that is written as the stream length has to account
+    // for that block as well
+    vcl::pdf::PDFEncryptorR6 aEncryptor;
+    CPPUNIT_ASSERT_EQUAL(sal_uInt64(48), aEncryptor.calculateSizeIncludingHeader(16));
+    CPPUNIT_ASSERT_EQUAL(sal_uInt64(32), aEncryptor.calculateSizeIncludingHeader(5));
 }
 
 CPPUNIT_TEST_FIXTURE(PDFEncryptionTest, testFileDecryption)

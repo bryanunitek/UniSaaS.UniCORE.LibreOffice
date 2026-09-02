@@ -47,7 +47,7 @@ import lib.TestParameters;
 * <ul>
 *  <li> <code>'FIELDSAMOUNT'</code> (of type <code>Integer</code>):
 *   to have number of fields </li>
-* <ul> <p>
+* </ul> <p>
 * @see com.sun.star.sheet.XDataPilotDescriptor
 */
 public class _XDataPilotDescriptor {
@@ -161,11 +161,11 @@ public class _XDataPilotDescriptor {
 
     /**
     * Test calls the method , checks returned value, compares
-    * number of fields goten from returned value and obtained by object
+    * number of fields gotten from returned value and obtained by object
     * relation <code>'FIELDSAMOUNT'</code> and set property
     * <code>Orientation</code> to one of DataPilotFieldOrientation values. <p>
     * Has <b> OK </b> status if returned value isn't null, number of fields
-    * goten from returned value is less than number of fields obtained by relation
+    * gotten from returned value is less than number of fields obtained by relation
     * and no exceptions were thrown. <p>
      */
     public boolean _getDataPilotFields(){
@@ -180,7 +180,7 @@ public class _XDataPilotDescriptor {
 
         int fieldsAmount = IA.getCount();
         if (fieldsAmount < tEnvFieldsAmount) {
-            System.out.println("Number of fields is less than number goten by relation.");
+            System.out.println("Number of fields is less than number gotten by relation.");
             return false;
         } else {System.out.println("count of returned fields -- OK");}
 
@@ -406,7 +406,7 @@ public class _XDataPilotDescriptor {
             e.printStackTrace();
             return false ;
         }
-        System.out.println(" - FAILED (field " + fieldsNames[rem] + " was not found.") ;
+        System.out.println(" - FAILED (field " + fieldsNames[rem] + " was not found.)") ;
         return false ;
     }
 

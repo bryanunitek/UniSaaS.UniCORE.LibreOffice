@@ -28,7 +28,7 @@
 // the GNU General Public License.
 
 // This is derived from the C++ ABI for IA-64.  Where we diverge
-// for cross-architecture compatibility are noted with "@@@".
+// for cross-architecture compatibility is noted with "@@@".
 
 #pragma once
 
@@ -43,7 +43,6 @@
 
 typedef unsigned _Unwind_Word __attribute__((__mode__(__word__)));
 typedef signed   _Unwind_Sword __attribute__((__mode__(__word__)));
-typedef unsigned _Unwind_Word __attribute__((__mode__(__word__)));
 typedef unsigned _Unwind_Ptr __attribute__((__mode__(__pointer__)));
 #if !defined __IPHONE_16_4 || __IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_16_4
 typedef unsigned _Unwind_Exception_Class __attribute__((__mode__(__DI__)));
@@ -117,7 +116,7 @@ struct __cxa_exception
 #if !__LP64__
 	// This is a new field to support C++ 0x exception_ptr.
 	// For binary compatibility it is placed where the compiler
-	// previously adding padded to 64-bit align unwindHeader.
+	// previously added padding to 64-bit align unwindHeader.
   size_t referenceCount;
 #endif
 

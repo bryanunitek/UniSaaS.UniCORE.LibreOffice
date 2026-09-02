@@ -2908,7 +2908,7 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest2, testTdf137771)
 
     // This was the content of the next <text> (missing deletion on margin)
     // or only the first character of the deleted character sequence
-    assertXPathContent(pXmlDoc, "/metafile/push/push/push/textarray[9]/text", u" saved.");
+    assertXPathContent(pXmlDoc, "/metafile/push/push/push/textarray[11]/text", u" saved.");
 
     // this would crash due to bad redline range
     for (int i = 0; i < 6; ++i)
@@ -2995,11 +2995,11 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest2, testTdf142196)
     assertXPath(pXmlDoc, "//line", 3);
 
     // check line color
-    assertXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/push[3]/push[1]/push[1]/linecolor", 1);
+    assertXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/push[4]/push[1]/push[1]/linecolor", 1);
     // tdf#142128 This was NON_PRINTING_CHARACTER_COLOR (#268bd2)
     assertXPath(
         pXmlDoc,
-        "/metafile/push[1]/push[1]/push[1]/push[3]/push[1]/push[1]/linecolor[@color='#268bd2']", 0);
+        "/metafile/push[1]/push[1]/push[1]/push[4]/push[1]/push[1]/linecolor[@color='#268bd2']", 0);
 
     // reject deletion of the image
     IDocumentRedlineAccess& rIDRA(pDoc->getIDocumentRedlineAccess());
@@ -3236,6 +3236,71 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest2, testConditionalHiddenSectionIssue)
             CPPUNIT_ASSERT_EQUAL(true, pNode->GetSection().IsCondHidden());
         }
     }
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest2, testUndoTrackedSplitParagraphNumbering)
+{
+    // Insert a paragraph into a numbered bullet list with change tracking is on, and
+    // undo the changes. The resulted numbers must be the same, even for the origin
+    // numbers (displayed as without the tracked changes)
+    createSwDoc("undoBullet.odt");
+    SwDoc* pDoc = getSwDoc();
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    CPPUNIT_ASSERT(pWrtShell);
+    SwRootFrame* pLayout = pWrtShell->GetLayout();
+
+    auto findTextNode = [pDoc](std::u16string_view rText) -> SwTextNode* {
+        for (SwNodeOffset i(0); i < pDoc->GetNodes().Count(); ++i)
+        {
+            SwTextNode* pTextNode = pDoc->GetNodes()[i]->GetTextNode();
+            if (pTextNode && pTextNode->GetText() == rText)
+                return pTextNode;
+        }
+        return nullptr;
+    };
+
+    SwTextNode* pCcc = findTextNode(u"ccc");
+    CPPUNIT_ASSERT(pCcc);
+
+    // The changed and the non-changed numbers are the same ("1.2.1")
+    OUString aHidden1 = pCcc->GetNumString(true, MAXLEVEL, pLayout, SwListRedlineType::HIDDEN);
+    OUString aOrig1 = pCcc->GetNumString(true, MAXLEVEL, pLayout, SwListRedlineType::ORIGTEXT);
+    CPPUNIT_ASSERT_EQUAL(aHidden1, aOrig1);
+
+    const SwRedlineTable::size_type nRedlinesBefore
+        = pDoc->getIDocumentRedlineAccess().GetRedlineTable().size();
+
+    // Insert a paragraph at the end of "bbb" as a tracked change.
+    SwTextNode* pBbb = findTextNode(u"bbb");
+    CPPUNIT_ASSERT(pBbb);
+    pWrtShell->GetCursor()->DeleteMark();
+    pWrtShell->GetCursor()->GetPoint()->Assign(*pBbb, pBbb->Len());
+    pWrtShell->SplitNode();
+
+    // The split must have been tracked as an insertion.
+    CPPUNIT_ASSERT_GREATER(nRedlinesBefore,
+                           pDoc->getIDocumentRedlineAccess().GetRedlineTable().size());
+
+    // The changed number increased to "1.3.1".
+    // while the original number (without change)is the same ("1.2.1")
+    OUString aHidden2 = pCcc->GetNumString(true, MAXLEVEL, pLayout, SwListRedlineType::HIDDEN);
+    OUString aOrig2 = pCcc->GetNumString(true, MAXLEVEL, pLayout, SwListRedlineType::ORIGTEXT);
+    CPPUNIT_ASSERT(aHidden2 != aOrig2);
+
+    // Undo this tracked change.
+    pWrtShell->Undo();
+
+    // make sure that we are on the same node.
+    pCcc = findTextNode(u"ccc");
+    CPPUNIT_ASSERT(pCcc);
+
+    OUString aHidden3 = pCcc->GetNumString(true, MAXLEVEL, pLayout, SwListRedlineType::HIDDEN);
+    OUString aOrig3 = pCcc->GetNumString(true, MAXLEVEL, pLayout, SwListRedlineType::ORIGTEXT);
+
+    // Undo must fully restore the numbering state, not just the changed, but the original too.
+    CPPUNIT_ASSERT_EQUAL(aHidden1, aHidden3);
+    CPPUNIT_ASSERT_EQUAL(aOrig1, aOrig3);
+    CPPUNIT_ASSERT_EQUAL(aHidden3, aOrig3);
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

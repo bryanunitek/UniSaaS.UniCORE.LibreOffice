@@ -320,6 +320,8 @@ inline constexpr OUString UNO_NAME_EDIT_CHAR_FONTPITCH = u"CharFontPitch"_ustr;
 inline constexpr OUString UNO_NAME_EDIT_CHAR_POSTURE = u"CharPosture"_ustr;
 inline constexpr OUString UNO_NAME_EDIT_CHAR_WEIGHT = u"CharWeight"_ustr;
 inline constexpr OUString UNO_NAME_EDIT_CHAR_FONTVARIATIONS = u"CharFontVariations"_ustr;
+inline constexpr OUString UNO_NAME_EDIT_CHAR_FONTVARIATIONS_ASIAN = u"CharFontVariationsAsian"_ustr;
+inline constexpr OUString UNO_NAME_EDIT_CHAR_FONTVARIATIONS_COMPLEX = u"CharFontVariationsComplex"_ustr;
 inline constexpr OUString UNO_NAME_EDIT_CHAR_OPTICALSIZING = u"CharOpticalSizing"_ustr;
 inline constexpr OUString UNO_NAME_EDIT_CHAR_LOCALE = u"CharLocale"_ustr;
 
@@ -382,6 +384,7 @@ inline constexpr OUString UNO_NAME_GRAPHIC_GAMMA = u"Gamma"_ustr;
 inline constexpr OUString UNO_NAME_GRAPHIC_TRANSPARENCY = u"Transparency"_ustr;
 inline constexpr OUString UNO_NAME_GRAPHIC_COLOR_MODE = u"GraphicColorMode"_ustr;
 inline constexpr OUString UNO_NAME_GRAPHIC_GRAPHICCROP = u"GraphicCrop"_ustr;
+inline constexpr OUString UNO_NAME_GRAPHIC_GRAPHICCLIPPOLYPOLYGON = u"GraphicClipPolyPolygon"_ustr;
 
 inline constexpr OUString UNO_NAME_OBJ_ISEMPTYPRESOBJ = u"IsEmptyPresentationObject"_ustr;
 

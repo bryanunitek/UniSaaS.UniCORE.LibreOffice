@@ -129,11 +129,6 @@ struct LibreOfficeKitClassStruct
                      LibreOfficeKitWakeCallback pWakeCallback,
                      void* pData);
 
-    /// @see lok::Office::sendDialogEvent
-    void (*sendDialogEvent) (LibreOfficeKit* pThis,
-                            unsigned long long int nLOKWindowId,
-                            const char* pArguments);
-
     /// @see lok::Office::setOption
     void (*setOption) (LibreOfficeKit* pThis, const char* pOption, const char* pValue);
 
@@ -399,7 +394,7 @@ struct LibreOfficeKitDocumentClassStruct
     /// @see lok::Document::getPartInfo().
     char* (*getPartInfo) (LibreOfficeKitDocument* pThis, int nPart);
 
-    /// Paints window with given id to the buffer with the give DPI scale
+    /// Paints window with given id to the buffer with the given DPI scale
     /// (every pixel is dpiscale-times larger).
     /// @see lok::Document::paintWindow().
     void (*paintWindowDPI) (LibreOfficeKitDocument* pThis, unsigned nWindowId,
@@ -475,11 +470,6 @@ struct LibreOfficeKitDocumentClassStruct
                                unsigned nWindowId,
                                int nBefore,
                                int nAfter);
-
-    /// @see lok::Document::sendDialogEvent
-    void (*sendDialogEvent) (LibreOfficeKitDocument* pThis,
-                            unsigned long long int nLOKWindowId,
-                            const char* pArguments);
 
     /// @see lok::Document::renderFontOrientation().
     unsigned char* (*renderFontOrientation) (LibreOfficeKitDocument* pThis,
@@ -557,9 +547,6 @@ struct LibreOfficeKitDocumentClassStruct
     /// @see lok::Document::setViewReadOnly().
     void (*setViewReadOnly) (LibreOfficeKitDocument* pThis, int nId, const bool readOnly);
 
-    /// @see lok::Document::setAllowChangeComments().
-    void (*setAllowChangeComments) (LibreOfficeKitDocument* pThis, int nId, const bool allow);
-
     /// @see lok::Document::getPresentationInfo
     char* (*getPresentationInfo) (LibreOfficeKitDocument* pThis);
 
@@ -582,9 +569,6 @@ struct LibreOfficeKitDocumentClassStruct
 
     /// @see lok::Document::setColorPreviewState().
     void (*setColorPreviewState) (LibreOfficeKitDocument* pThis, int nId, bool nEnabled);
-
-    /// @see lok::Document::setAllowManageRedlines().
-    void (*setAllowManageRedlines)(LibreOfficeKitDocument* pThis, int nId, bool allow);
 
 #endif // defined LOK_USE_UNSTABLE_API || defined LIBO_INTERNAL_ONLY
 };

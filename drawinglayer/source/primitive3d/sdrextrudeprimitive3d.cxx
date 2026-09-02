@@ -203,7 +203,7 @@ namespace drawinglayer::primitive3d
                         //
                         // Unfortunately there is no bezier polygon provided by the chart module; one reason is
                         // that the API for extrude wants a 3D polygon geometry (for historical reasons, i guess)
-                        // and those have no beziers. Another reason is that he chart module uses self-created
+                        // and those have no beziers. Another reason is that the chart module uses self-created
                         // stuff to create the 2D geometry (in ShapeFactory::createPieSegment), but this geometry
                         // does not contain bezier infos, either. The only way which is possible for now is to 'detect'
                         // candidates for vertical edges of pie segments by looking for the angles in the polygon.
@@ -487,7 +487,7 @@ namespace drawinglayer::primitive3d
                     std::unique_lock aGuard( m_aMutex );
 
                     // conditions of last local decomposition with reduced lines have changed. Remember
-                    // new one and clear current decompositiopn
+                    // new one and clear current decomposition
                     SdrExtrudePrimitive3D* pThat = const_cast< SdrExtrudePrimitive3D* >(this);
                     pThat->setBuffered3DDecomposition(Primitive3DContainer());
                     pThat->mpLastRLGViewInformation = rViewInformation;

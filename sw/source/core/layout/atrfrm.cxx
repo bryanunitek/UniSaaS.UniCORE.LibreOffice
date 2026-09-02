@@ -309,7 +309,7 @@ bool SwFormatFrameSize::QueryValue( uno::Any& rVal, sal_uInt8 nMemberId ) const
         case MID_FRMSIZE_HEIGHT:
             // #95848# returned size should never be zero.
             // (there was a bug that allowed for setting height to 0.
-            // Thus there some documents existing with that not allowed
+            // Thus there are some documents existing with that not allowed
             // attribute value which may cause problems on import.)
             rVal <<= static_cast<sal_Int32>(convertTwipToMm100(GetHeight() < MINLAY ? MINLAY : GetHeight() ));
         break;
@@ -2591,7 +2591,7 @@ void SwTextGridItem::SwitchPaperMode(bool bNew)
         return;
     }
 
-    // use default value when grid is disable
+    // use default value when grid is disabled
     if (m_eGridType == SwTextGrid::NONE)
     {
         m_bSquaredMode = bNew;
@@ -2682,7 +2682,7 @@ SwFrameFormat::~SwFrameFormat()
     if (Which() == RES_FLYFRMFMT)
         m_pOtherTextBoxFormats->DelTextBox(this);
 
-    // This is a draw-frame-format what belongs to
+    // This is a draw-frame-format that belongs to
     // a shape with textbox(es). Delete all of them.
     if (Which() == RES_DRAWFRMFMT)
         m_pOtherTextBoxFormats->ClearAll();
@@ -3217,22 +3217,8 @@ void SwFlyFrameFormat::MakeFrames()
             }
         }
 
-        if (bAdd && pFrame->GetDrawObjs())
-        {
-            // #i28701# - new type <SwSortedObjs>
-            SwSortedObjs &rObjs = *pFrame->GetDrawObjs();
-            for(SwAnchoredObject* pObj : rObjs)
-            {
-                // #i28701# - consider changed type of
-                // <SwSortedObjs> entries.
-                if( pObj->DynCastFlyFrame() !=  nullptr &&
-                    (pObj->GetFrameFormat()) == this )
-                {
-                    bAdd = false;
-                    break;
-                }
-            }
-        }
+        if (bAdd && ::FindFlyFrameOfFormat(*pFrame, *this))
+            bAdd = false;
 
         if( bAdd )
         {
@@ -3409,7 +3395,7 @@ bool SwFlyFrameFormat::IsBackgroundTransparent() const
     }
 
     // NOTE: If background color is "no fill"/"auto fill" (COL_TRANSPARENT)
-    //     and there is no background graphic, it "inherites" the background
+    //     and there is no background graphic, it "inherits" from the background
     //     from its anchor.
     std::unique_ptr<SvxBrushItem> aBackground(makeBackgroundBrushItem());
     if ( aBackground->GetColor().IsTransparent() &&

@@ -3,34 +3,6 @@
 <oor:component-data xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:install="http://openoffice.org/2004/installation" oor:name="CalcCommands" oor:package="org.openoffice.Office.UI">
   <node oor:name="UserInterface">
     <node oor:name="Commands">
-      <node oor:name=".uno:InsertAnnotation" oor:op="replace">
-        <prop oor:name="Label" oor:type="xs:string">
-          <value xml:lang="en-US">~Note</value>
-        </prop>
-        <prop oor:name="PopupLabel" oor:type="xs:string">
-          <value xml:lang="en-US">Insert Note</value>
-        </prop>
-        <prop oor:name="TooltipLabel" oor:type="xs:string">
-          <value xml:lang="en-US">Insert Note</value>
-        </prop>
-        <prop oor:name="Properties" oor:type="xs:int">
-          <value>1</value>
-        </prop>
-      </node>
-      <node oor:name=".uno:InsertThreadedComment" oor:op="replace">
-        <prop oor:name="Label" oor:type="xs:string">
-          <value xml:lang="en-US">Comme~nt</value>
-        </prop>
-        <prop oor:name="PopupLabel" oor:type="xs:string">
-          <value xml:lang="en-US">Insert Comment</value>
-        </prop>
-        <prop oor:name="TooltipLabel" oor:type="xs:string">
-          <value xml:lang="en-US">Insert Comment</value>
-        </prop>
-        <prop oor:name="Properties" oor:type="xs:int">
-          <value>1</value>
-        </prop>
-      </node>
       <node oor:name=".uno:InsertObjectStarMath" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">~Formula Object...</value>
@@ -2220,6 +2192,7 @@
       <node oor:name=".uno:AutoOutline" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">~AutoOutline</value>
+          <value xml:lang="x-comment">Outline refers to an automatic grouping of cells</value>
         </prop>
         <prop oor:name="Properties" oor:type="xs:int">
           <value>1</value>
@@ -2660,6 +2633,79 @@
           <value>1</value>
         </prop>
       </node>
+      <node oor:name=".uno:AcceptFormula" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Accept Formula</value>
+        </prop>
+        <prop oor:name="TooltipLabel" oor:type="xs:string">
+          <value xml:lang="en-US">Finalizes the formula entered in the formula bar</value>
+        </prop>
+        <prop oor:name="Properties" oor:type="xs:int">
+          <value>1</value>
+        </prop>
+      </node>
+      <node oor:name=".uno:StartFormula" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Start Formula</value>
+        </prop>
+        <prop oor:name="TooltipLabel" oor:type="xs:string">
+          <value xml:lang="en-US">Set input focus on the formula bar, if open</value>
+        </prop>
+        <prop oor:name="Properties" oor:type="xs:int">
+          <value>1</value>
+        </prop>
+      </node>
+      <node oor:name=".uno:Orientation" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Orientation</value>
+        </prop>
+        <prop oor:name="TooltipLabel" oor:type="xs:string">
+          <value xml:lang="en-US">Change page orientation to portrait or landscape</value>
+        </prop>
+        <prop oor:name="Properties" oor:type="xs:int">
+          <value>1</value>
+        </prop>
+      </node>
+      <node oor:name=".uno:TogglePrintGrid" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Grid Lines</value>
+          <value xml:lang="x-comment">Used in the print tab of the Calc tabbed UI when looking at a print preview</value>
+        </prop>
+        <prop oor:name="TooltipLabel" oor:type="xs:string">
+          <value xml:lang="en-US">Print grid lines</value>
+          <value xml:lang="x-comment">Used in the print tab of the Calc tabbed UI when looking at a print preview</value>
+        </prop>
+      </node>
+      <node oor:name=".uno:TogglePrintColRowHeader" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Col/Row Header</value>
+          <value xml:lang="x-comment">Used in the print tab of the Calc tabbed UI when looking at a print preview</value>
+        </prop>
+        <prop oor:name="TooltipLabel" oor:type="xs:string">
+          <value xml:lang="en-US">Print column and row header</value>
+          <value xml:lang="x-comment">Used in the print tab of the Calc tabbed UI when looking at a print preview</value>
+        </prop>
+      </node>
+      <node oor:name=".uno:TogglePrintComments" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Comments</value>
+          <value xml:lang="x-comment">Used in the print tab of the Calc tabbed UI when looking at a print preview</value>
+        </prop>
+        <prop oor:name="TooltipLabel" oor:type="xs:string">
+          <value xml:lang="en-US">Print comments</value>
+          <value xml:lang="x-comment">Used in the print tab of the Calc tabbed UI when looking at a print preview</value>
+        </prop>
+      </node>
+      <node oor:name=".uno:TogglePrintZeroValues" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Zero Values</value>
+          <value xml:lang="x-comment">Used in the print tab of the Calc tabbed UI when looking at a print preview</value>
+        </prop>
+        <prop oor:name="TooltipLabel" oor:type="xs:string">
+          <value xml:lang="en-US">Print zero values</value>
+          <value xml:lang="x-comment">Used in the print tab of the Calc tabbed UI when looking at a print preview</value>
+        </prop>
+      </node>
     </node>
     <node oor:name="Popups">
       <node oor:name=".uno:InsertFieldMenu" oor:op="replace">
@@ -2756,6 +2802,7 @@
       <node oor:name=".uno:GroupOutlineMenu" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">~Group and Outline</value>
+          <value xml:lang="x-comment">Outline refers to an automatic grouping of cells</value>
         </prop>
         <prop oor:name="Properties" oor:type="xs:int">
           <value>1</value>
@@ -2825,22 +2872,6 @@
       <node oor:name=".uno:RemoveSheetView" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">Remove Sheet View</value>
-        </prop>
-        <prop oor:name="Properties" oor:type="xs:int">
-          <value>1</value>
-        </prop>
-      </node>
-      <node oor:name=".uno:SwitchToNextSheetView" oor:op="replace">
-        <prop oor:name="Label" oor:type="xs:string">
-          <value xml:lang="en-US">Switch To Next Sheet View</value>
-        </prop>
-        <prop oor:name="Properties" oor:type="xs:int">
-          <value>1</value>
-        </prop>
-      </node>
-      <node oor:name=".uno:SwitchToPreviousSheetView" oor:op="replace">
-        <prop oor:name="Label" oor:type="xs:string">
-          <value xml:lang="en-US">Switch To Previous Sheet View</value>
         </prop>
         <prop oor:name="Properties" oor:type="xs:int">
           <value>1</value>
@@ -3258,6 +3289,14 @@
       <node oor:name=".uno:SidebarDeck.ScFunctionsDeck" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">Open the Functions Deck</value>
+        </prop>
+      </node>
+      <node oor:name=".uno:FindText" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Find Values</value>
+        </prop>
+        <prop oor:name="TooltipLabel" oor:type="xs:string">
+          <value xml:lang="en-US">Find text in values, to search in formulas use the dialog</value>
         </prop>
       </node>
     </node>

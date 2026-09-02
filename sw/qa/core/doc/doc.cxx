@@ -745,6 +745,19 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTableNameCollisionUpdatesChart)
     assertXPath(pXmlDoc, "//draw:object", "notify-on-update-of-ranges", u"Table3");
 }
 
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTableNameWithSpaceUpdatesChart)
+{
+    createSwDoc("tdf171549.fodt");
+
+    SwFrameFormat* pFrameFormat = getSwDoc()->FindTableFormatByName(UIName("Table1"));
+    getSwDocShell()->GetEditShell()->SetTableName(*pFrameFormat, UIName("Renamed Table"));
+
+    saveAndReload(TestFilter::ODT);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"content.xml"_ustr);
+    assertXPath(pXmlDoc, "//draw:object", "notify-on-update-of-ranges", u"Renamed Table");
+}
+
 CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTableNameUpdatePropagatedToFormulas)
 {
     createSwDoc("tdf83196.fodt");
@@ -1357,6 +1370,19 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTableAutoFormats)
     CPPUNIT_ASSERT_EQUAL(
         awt::FontSlant_ITALIC,
         getProperty<awt::FontSlant>(getParagraphOfText(1, xCell->getText()), u"CharPosture"_ustr));
+}
+
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testCloseDocWithFillBitmapLinkTracker)
+{
+    // Closing a freshly created document must not crash while its fill-bitmap
+    // link tracker is torn down.
+    createSwDoc();
+    CPPUNIT_ASSERT(mxComponent.is());
+
+    // Without the accompanying fix in place, this crashed in
+    // ~FillBitmapLinkTracker as the document was destroyed.
+    mxComponent->dispose();
+    mxComponent.clear();
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

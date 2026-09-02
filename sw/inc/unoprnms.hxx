@@ -76,6 +76,7 @@ inline constexpr OUString UNO_NAME_PARA_HYPHENATION_COMPOUND_MIN_LEADING_CHARS
     = u"ParaHyphenationCompoundMinLeadingChars"_ustr;
 inline constexpr OUString UNO_NAME_PARA_HYPHENATION_COMPOUND_MIN_TRAILING_CHARS
     = u"ParaHyphenationCompoundMinTrailingChars"_ustr;
+inline constexpr OUString UNO_NAME_PARA_HYPHENATION_LEVEL = u"ParaHyphenationLevel"_ustr;
 inline constexpr OUString UNO_NAME_PARA_HYPHENATION_MAX_HYPHENS = u"ParaHyphenationMaxHyphens"_ustr;
 inline constexpr OUString UNO_NAME_PARA_HYPHENATION_MIN_WORD_LENGTH
     = u"ParaHyphenationMinWordLength"_ustr;
@@ -153,6 +154,8 @@ inline constexpr OUString UNO_NAME_CHAR_ESCAPEMENT_HEIGHT = u"CharEscapementHeig
 inline constexpr OUString UNO_NAME_CHAR_TRANSPARENCE = u"CharTransparence"_ustr;
 inline constexpr OUString UNO_NAME_CHAR_OPTICAL_SIZING = u"CharOpticalSizing"_ustr;
 inline constexpr OUString UNO_NAME_CHAR_FONT_VARIATIONS = u"CharFontVariations"_ustr;
+inline constexpr OUString UNO_NAME_CHAR_CJK_FONT_VARIATIONS = u"CharFontVariationsAsian"_ustr;
+inline constexpr OUString UNO_NAME_CHAR_CTL_FONT_VARIATIONS = u"CharFontVariationsComplex"_ustr;
 inline constexpr OUString UNO_NAME_HIDE_TAB_LEADER_AND_PAGE_NUMBERS
     = u"HideTabLeaderAndPageNumber"_ustr;
 inline constexpr OUString UNO_NAME_TAB_IN_TOC = u"TabInTOC"_ustr;
@@ -887,6 +890,8 @@ inline constexpr OUString UNO_NAME_LINE_WIDTH = u"LineWidth"_ustr;
 inline constexpr OUString UNO_NAME_PARA_CONTEXT_MARGIN = u"ParaContextMargin"_ustr;
 inline constexpr OUString UNO_NAME_PARAGRAPH_STYLE_NAME = u"ParagraphStyleName"_ustr;
 inline constexpr OUString UNO_NAME_FIRST_IS_SHARED = u"FirstIsShared"_ustr;
+inline constexpr OUString UNO_NAME_HEADER_NO_FIRST = u"HeaderNoFirst"_ustr;
+inline constexpr OUString UNO_NAME_FOOTER_NO_FIRST = u"FooterNoFirst"_ustr;
 inline constexpr OUString UNO_NAME_HEADER_TEXT_FIRST = u"HeaderTextFirst"_ustr;
 inline constexpr OUString UNO_NAME_FOOTER_TEXT_FIRST = u"FooterTextFirst"_ustr;
 inline constexpr OUString UNO_NAME_INITIALS = u"Initials"_ustr;

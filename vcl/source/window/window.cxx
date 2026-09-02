@@ -1128,13 +1128,10 @@ void Window::ImplInit( vcl::Window* pParent, WinBits nStyle, SystemParentData* p
         // the correct size before we display the window
         if ( nStyle & (WB_MOVEABLE | WB_SIZEABLE | WB_APP) )
         {
-            tools::Long nWidth;
-            tools::Long nHeight;
+            const Size aSize = mpWindowImpl->mpFrame->GetClientSize();
 
-            mpWindowImpl->mpFrame->GetClientSize(nWidth, nHeight);
-
-            mpWindowImpl->mxOutDev->SetOutputWidthPixel(nWidth);
-            mpWindowImpl->mxOutDev->SetOutputHeightPixel(nHeight);
+            mpWindowImpl->mxOutDev->SetOutputWidthPixel(aSize.Width());
+            mpWindowImpl->mxOutDev->SetOutputHeightPixel(aSize.Height());
         }
     }
     else
@@ -1414,15 +1411,15 @@ bool Window::ImplUpdatePos()
 
     if ( ImplIsOverlapWindow() )
     {
-        GetOutDev()->SetOutOffXPixel(mpWindowImpl->mnX);
-        GetOutDev()->SetOutOffYPixel(mpWindowImpl->mnY);
+        GetOutDev()->SetDeviceOriginX(mpWindowImpl->mnX);
+        GetOutDev()->SetDeviceOriginY(mpWindowImpl->mnY);
     }
     else
     {
         vcl::Window* pParent = ImplGetParent();
 
-        GetOutDev()->SetOutOffXPixel(mpWindowImpl->mnX + pParent->GetOutDev()->GetOutOffXPixel());
-        GetOutDev()->SetOutOffYPixel(mpWindowImpl->mnY + pParent->GetOutDev()->GetOutOffYPixel());
+        GetOutDev()->SetDeviceOriginX(mpWindowImpl->mnX + pParent->GetOutDev()->GetDeviceOriginX());
+        GetOutDev()->SetDeviceOriginY(mpWindowImpl->mnY + pParent->GetOutDev()->GetDeviceOriginY());
     }
 
     VclPtr< vcl::Window > pChild = mpWindowImpl->mpFirstChild;
@@ -1442,7 +1439,7 @@ bool Window::ImplUpdatePos()
 void Window::ImplUpdateSysObjPos()
 {
     if ( mpWindowImpl->mpSysObj )
-        mpWindowImpl->mpSysObj->SetPosSize( GetOutDev()->GetOutOffXPixel(), GetOutDev()->GetOutOffYPixel(), GetOutDev()->GetOutputWidthPixel(), GetOutDev()->GetOutputHeightPixel() );
+        mpWindowImpl->mpSysObj->SetPosSize( GetOutDev()->GetDeviceOriginX(), GetOutDev()->GetDeviceOriginY(), GetOutDev()->GetOutputWidthPixel(), GetOutDev()->GetOutputHeightPixel() );
 
     VclPtr< vcl::Window > pChild = mpWindowImpl->mpFirstChild;
     while ( pChild )
@@ -1458,8 +1455,8 @@ void Window::ImplPosSizeWindow( tools::Long nX, tools::Long nY,
     bool    bNewPos         = false;
     bool    bNewSize        = false;
     bool    bCopyBits       = false;
-    tools::Long    nOldOutOffX     = GetOutDev()->GetOutOffXPixel();
-    tools::Long    nOldOutOffY     = GetOutDev()->GetOutOffYPixel();
+    tools::Long    nOldOutOffX     = GetOutDev()->GetDeviceOriginX();
+    tools::Long    nOldOutOffY     = GetOutDev()->GetDeviceOriginY();
     tools::Long    nOldOutWidth    = GetOutDev()->GetOutputWidthPixel();
     tools::Long    nOldOutHeight   = GetOutDev()->GetOutputHeightPixel();
     std::unique_ptr<vcl::Region> pOverlapRegion;
@@ -1513,7 +1510,7 @@ void Window::ImplPosSizeWindow( tools::Long nX, tools::Long nY,
     if ( nFlags & PosSizeFlags::X )
     {
         tools::Long nOrgX = nX;
-        Point aPtDev( nX+GetOutDev()->GetOutOffXPixel(), 0 );
+        Point aPtDev( nX+GetOutDev()->GetDeviceOriginX(), 0 );
         OutputDevice *pOutDev = GetOutDev();
         if( pOutDev->HasMirroredGraphics() )
         {
@@ -1658,7 +1655,7 @@ void Window::ImplPosSizeWindow( tools::Long nX, tools::Long nY,
                     ImplClipBoundaries( aRegion, false, true );
                     if ( !pOverlapRegion->IsEmpty() )
                     {
-                        pOverlapRegion->Move( GetOutDev()->GetOutOffXPixel() - nOldOutOffX, GetOutDev()->GetOutOffYPixel() - nOldOutOffY );
+                        pOverlapRegion->Move( GetOutDev()->GetDeviceOriginX() - nOldOutOffX, GetOutDev()->GetDeviceOriginY() - nOldOutOffY );
                         aRegion.Exclude( *pOverlapRegion );
                     }
                     if ( !aRegion.IsEmpty() )
@@ -1666,7 +1663,7 @@ void Window::ImplPosSizeWindow( tools::Long nX, tools::Long nY,
                         // adapt Paint areas
                         ImplMoveAllInvalidateRegions( tools::Rectangle( Point( nOldOutOffX, nOldOutOffY ),
                                                                  Size( nOldOutWidth, nOldOutHeight ) ),
-                                                      GetOutDev()->GetOutOffXPixel() - nOldOutOffX, GetOutDev()->GetOutOffYPixel() - nOldOutOffY,
+                                                      GetOutDev()->GetDeviceOriginX() - nOldOutOffX, GetOutDev()->GetDeviceOriginY() - nOldOutOffY,
                                                       true );
                         SalGraphics* pGraphics = ImplGetFrameGraphics();
                         if ( pGraphics )
@@ -1676,7 +1673,7 @@ void Window::ImplPosSizeWindow( tools::Long nX, tools::Long nY,
                             const bool bSelectClipRegion = pOutDev->SelectClipRegion( aRegion, pGraphics );
                             if ( bSelectClipRegion )
                             {
-                                pGraphics->CopyArea( GetOutDev()->GetOutOffXPixel(), GetOutDev()->GetOutOffYPixel(),
+                                pGraphics->CopyArea( GetOutDev()->GetDeviceOriginX(), GetOutDev()->GetDeviceOriginY(),
                                                      nOldOutOffX, nOldOutOffY,
                                                      nOldOutWidth, nOldOutHeight,
                                                      *GetOutDev() );
@@ -1731,7 +1728,7 @@ void Window::ImplPosSizeWindow( tools::Long nX, tools::Long nY,
     if ( bUpdateSysObjPos )
         ImplUpdateSysObjPos();
     if ( bNewSize && mpWindowImpl->mpSysObj )
-        mpWindowImpl->mpSysObj->SetPosSize( GetOutDev()->GetOutOffXPixel(), GetOutDev()->GetOutOffYPixel(), GetOutDev()->GetOutputWidthPixel(), GetOutDev()->GetOutputHeightPixel() );
+        mpWindowImpl->mpSysObj->SetPosSize( GetOutDev()->GetDeviceOriginX(), GetOutDev()->GetDeviceOriginY(), GetOutDev()->GetOutputWidthPixel(), GetOutDev()->GetOutputHeightPixel() );
 }
 
 void Window::ImplNewInputContext()
@@ -2373,10 +2370,8 @@ void Window::Show(bool bVisible, ShowFlags nFlags)
             // a system resize
             if ( mpWindowImpl->mbWaitSystemResize )
             {
-                tools::Long nOutWidth;
-                tools::Long nOutHeight;
-                mpWindowImpl->mpFrame->GetClientSize( nOutWidth, nOutHeight );
-                ImplHandleResize( this, nOutWidth, nOutHeight );
+                const Size aOutSize = mpWindowImpl->mpFrame->GetClientSize();
+                ImplHandleResize(this, aOutSize.Width(), aOutSize.Height());
             }
 
             if (mpWindowImpl->mpFrameData->mpBuffer && mpWindowImpl->mpFrameData->mpBuffer->GetOutputSizePixel() != GetOutputSizePixel())
@@ -2706,7 +2701,7 @@ void Window::setPosSizePixel( tools::Long nX, tools::Long nY,
             nSysFlags |= SAL_FRAME_POSSIZE_X;
             if( pWinParent && (pWindow->GetStyle() & WB_SYSTEMCHILDWINDOW) )
             {
-                nX += pWinParent->GetOutDev()->GetOutOffXPixel();
+                nX += pWinParent->GetOutDev()->GetDeviceOriginX();
             }
             if( pParent && pParent->GetOutDev()->ImplIsAntiparallel() )
             {
@@ -2748,7 +2743,7 @@ void Window::setPosSizePixel( tools::Long nX, tools::Long nY,
             nSysFlags |= SAL_FRAME_POSSIZE_Y;
             if( pWinParent && (pWindow->GetStyle() & WB_SYSTEMCHILDWINDOW) )
             {
-                nY += pWinParent->GetOutDev()->GetOutOffYPixel();
+                nY += pWinParent->GetOutDev()->GetDeviceOriginY();
             }
         }
 
@@ -2778,13 +2773,13 @@ void Window::setPosSizePixel( tools::Long nX, tools::Long nY,
 
         // Adjust resize with the hack of different client size and frame geometries to fix
         // native menu bars. Eventually this should be replaced by proper mnTopBorder usage.
-        pWindow->mpWindowImpl->mpFrame->GetClientSize(nWidth, nHeight);
+        const Size aClientSize = pWindow->mpWindowImpl->mpFrame->GetClientSize();
 
         // Resize should be called directly. If we haven't
         // set the correct size, we get a second resize from
         // the system with the correct size. This can be happened
         // if the size is too small or too large.
-        ImplHandleResize( pWindow, nWidth, nHeight );
+        ImplHandleResize(pWindow, aClientSize.getWidth(), aClientSize.Height());
     }
     else
     {
@@ -2809,31 +2804,31 @@ AbsoluteScreenPixelRectangle Window::GetDesktopRectPixel() const
 Point Window::OutputToScreenPixel( const Point& rPos ) const
 {
     // relative to top level parent
-    return Point( rPos.X() + GetOutDev()->GetOutOffXPixel(), rPos.Y() + GetOutDev()->GetOutOffYPixel() );
+    return Point( rPos.X() + GetOutDev()->GetDeviceOriginX(), rPos.Y() + GetOutDev()->GetDeviceOriginY() );
 }
 
 Point Window::ScreenToOutputPixel( const Point& rPos ) const
 {
     // relative to top level parent
-    return Point( rPos.X() - GetOutDev()->GetOutOffXPixel(), rPos.Y() - GetOutDev()->GetOutOffYPixel() );
+    return Point( rPos.X() - GetOutDev()->GetDeviceOriginX(), rPos.Y() - GetOutDev()->GetDeviceOriginY() );
 }
 
 tools::Long Window::ImplGetUnmirroredOutOffX() const
 {
-    // revert GetOutOffXPixel() changes that were potentially made in ImplPosSizeWindow
-    tools::Long offx = GetOutDev()->GetOutOffXPixel();
+    // revert GetDeviceOriginX() changes that were potentially made in ImplPosSizeWindow
+    tools::Long offx = GetOutDev()->GetDeviceOriginX();
     const OutputDevice *pOutDev = GetOutDev();
     if( pOutDev->HasMirroredGraphics() )
     {
         if( mpWindowImpl->mpParent && !mpWindowImpl->mpParent->mpWindowImpl->mbFrame && mpWindowImpl->mpParent->GetOutDev()->ImplIsAntiparallel() )
         {
             if ( !ImplIsOverlapWindow() )
-                offx -= mpWindowImpl->mpParent->GetOutDev()->GetOutOffXPixel();
+                offx -= mpWindowImpl->mpParent->GetOutDev()->GetDeviceOriginX();
 
             offx = mpWindowImpl->mpParent->GetOutDev()->GetOutputWidthPixel() - GetOutDev()->GetOutputWidthPixel() - offx;
 
             if ( !ImplIsOverlapWindow() )
-                offx += mpWindowImpl->mpParent->GetOutDev()->GetOutOffXPixel();
+                offx += mpWindowImpl->mpParent->GetOutDev()->GetDeviceOriginX();
 
         }
     }
@@ -2845,14 +2840,14 @@ Point Window::OutputToNormalizedScreenPixel( const Point& rPos ) const
 {
     // relative to top level parent
     tools::Long offx = ImplGetUnmirroredOutOffX();
-    return Point( rPos.X()+offx, rPos.Y() + GetOutDev()->GetOutOffYPixel() );
+    return Point( rPos.X()+offx, rPos.Y() + GetOutDev()->GetDeviceOriginY() );
 }
 
 Point Window::NormalizedScreenToOutputPixel( const Point& rPos ) const
 {
     // relative to top level parent
     tools::Long offx = ImplGetUnmirroredOutOffX();
-    return Point( rPos.X()-offx, rPos.Y() - GetOutDev()->GetOutOffYPixel() );
+    return Point( rPos.X()-offx, rPos.Y() - GetOutDev()->GetDeviceOriginY() );
 }
 
 AbsoluteScreenPixelPoint Window::OutputToAbsoluteScreenPixel( const Point& rPos ) const
@@ -3265,103 +3260,6 @@ VclPtr<vcl::Window> Window::GetParentWithLOKNotifier()
     return pWindow;
 }
 
-namespace
-{
-
-std::string_view windowTypeName(WindowType nWindowType)
-{
-    switch (nWindowType)
-    {
-        case WindowType::NONE:                      return "none";
-        case WindowType::MESSBOX:                   return "messagebox";
-        case WindowType::INFOBOX:                   return "infobox";
-        case WindowType::WARNINGBOX:                return "warningbox";
-        case WindowType::ERRORBOX:                  return "errorbox";
-        case WindowType::QUERYBOX:                  return "querybox";
-        case WindowType::WINDOW:                    return "window";
-        case WindowType::WORKWINDOW:                return "workwindow";
-        case WindowType::CONTAINER:                 return "container";
-        case WindowType::FLOATINGWINDOW:            return "floatingwindow";
-        case WindowType::DIALOG:                    return "dialog";
-        case WindowType::MODELESSDIALOG:            return "modelessdialog";
-        case WindowType::CONTROL:                   return "control";
-        case WindowType::PUSHBUTTON:                return "pushbutton";
-        case WindowType::OKBUTTON:                  return "okbutton";
-        case WindowType::CANCELBUTTON:              return "cancelbutton";
-        case WindowType::HELPBUTTON:                return "helpbutton";
-        case WindowType::IMAGEBUTTON:               return "imagebutton";
-        case WindowType::MENUBUTTON:                return "menubutton";
-        case WindowType::MOREBUTTON:                return "morebutton";
-        case WindowType::SPINBUTTON:                return "spinbutton";
-        case WindowType::RADIOBUTTON:               return "radiobutton";
-        case WindowType::CHECKBOX:                  return "checkbox";
-        case WindowType::TRISTATEBOX:               return "tristatebox";
-        case WindowType::EDIT:                      return "edit";
-        case WindowType::MULTILINEEDIT:             return "multilineedit";
-        case WindowType::COMBOBOX:                  return "combobox";
-        case WindowType::LISTBOX:                   return "listbox";
-        case WindowType::MULTILISTBOX:              return "multilistbox";
-        case WindowType::FIXEDTEXT:                 return "fixedtext";
-        case WindowType::FIXEDLINE:                 return "fixedline";
-        case WindowType::FIXEDBITMAP:               return "fixedbitmap";
-        case WindowType::FIXEDIMAGE:                return "fixedimage";
-        case WindowType::GROUPBOX:                  return "groupbox";
-        case WindowType::SCROLLBAR:                 return "scrollbar";
-        case WindowType::SCROLLBARBOX:              return "scrollbarbox";
-        case WindowType::SPLITTER:                  return "splitter";
-        case WindowType::SPLITWINDOW:               return "splitwindow";
-        case WindowType::SPINFIELD:                 return "spinfield";
-        case WindowType::PATTERNFIELD:              return "patternfield";
-        case WindowType::METRICFIELD:               return "metricfield";
-        case WindowType::FORMATTEDFIELD:            return "formattedfield";
-        case WindowType::CURRENCYFIELD:             return "currencyfield";
-        case WindowType::DATEFIELD:                 return "datefield";
-        case WindowType::TIMEFIELD:                 return "timefield";
-        case WindowType::PATTERNBOX:                return "patternbox";
-        case WindowType::NUMERICBOX:                return "numericbox";
-        case WindowType::METRICBOX:                 return "metricbox";
-        case WindowType::CURRENCYBOX:               return "currencybox";
-        case WindowType::DATEBOX:                   return "datebox";
-        case WindowType::TIMEBOX:                   return "timebox";
-        case WindowType::LONGCURRENCYBOX:           return "longcurrencybox";
-        case WindowType::SCROLLWINDOW:              return "scrollwindow";
-        case WindowType::TOOLBOX:                   return "toolbox";
-        case WindowType::DOCKINGWINDOW:             return "dockingwindow";
-        case WindowType::STATUSBAR:                 return "statusbar";
-        case WindowType::TABPAGE:                   return "tabpage";
-        case WindowType::TABCONTROL:                return "tabcontrol";
-        case WindowType::TABDIALOG:                 return "tabdialog";
-        case WindowType::BORDERWINDOW:              return "borderwindow";
-        case WindowType::BUTTONDIALOG:              return "buttondialog";
-        case WindowType::SYSTEMCHILDWINDOW:         return "systemchildwindow";
-        case WindowType::SLIDER:                    return "slider";
-        case WindowType::MENUBARWINDOW:             return "menubarwindow";
-        case WindowType::TREELISTBOX:               return "treelistbox";
-        case WindowType::HELPTEXTWINDOW:            return "helptextwindow";
-        case WindowType::INTROWINDOW:               return "introwindow";
-        case WindowType::LISTBOXWINDOW:             return "listboxwindow";
-        case WindowType::DOCKINGAREA:               return "dockingarea";
-        case WindowType::RULER:                     return "ruler";
-        case WindowType::HEADERBAR:                 return "headerbar";
-        case WindowType::VERTICALTABCONTROL:        return "verticaltabcontrol";
-        case WindowType::PROGRESSBAR:               return "progressbar";
-        case WindowType::LINK_BUTTON:               return "linkbutton";
-
-        // nothing to do here, but for completeness
-        case WindowType::TOOLKIT_FRAMEWINDOW:       return "toolkit_framewindow";
-        case WindowType::TOOLKIT_SYSTEMCHILDWINDOW: return "toolkit_systemchildwindow";
-    }
-
-    return "none";
-}
-
-}
-
-std::string_view Window::GetTypeName() const
-{
-    return windowTypeName(GetType());
-}
-
 void Window::ImplCallDeactivateListeners( vcl::Window *pNew )
 {
     // no deactivation if the newly activated window is my child
@@ -3569,7 +3467,7 @@ Reference< css::rendering::XCanvas > WindowOutputDevice::ImplGetCanvas( bool bSp
     // common: first any is VCL pointer to window (for VCL canvas)
     Sequence< Any > aArg{
         Any(reinterpret_cast<sal_Int64>(this)),
-        Any(css::awt::Rectangle( GetOutOffXPixel(), GetOutOffYPixel(), GetOutputWidthPixel(), GetOutputHeightPixel() )),
+        Any(css::awt::Rectangle( GetDeviceOriginX(), GetDeviceOriginY(), GetOutputWidthPixel(), GetOutputHeightPixel() )),
         Any(mxOwnerWindow->mpWindowImpl->mbAlwaysOnTop),
         Any(Reference< css::awt::XWindow >(
                              mxOwnerWindow->GetComponentInterface(),

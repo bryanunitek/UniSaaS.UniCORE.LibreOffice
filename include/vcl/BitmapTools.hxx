@@ -17,8 +17,12 @@
 #if ENABLE_CAIRO_CANVAS
 #include <vcl/cairo.hxx>
 #endif
+#include <vcl/Scanline.hxx>
 #include <basegfx/range/b2drectangle.hxx>
 #include <array>
+#include <cstddef>
+#include <optional>
+#include <vector>
 
 class AlphaMask;
 class BitmapColor;
@@ -44,6 +48,31 @@ VCL_DLLPUBLIC lookup_table const & get_unpremultiply_table();
 VCL_DLLPUBLIC sal_uInt8 unpremultiply(sal_uInt8 c, sal_uInt8 a);
 VCL_DLLPUBLIC sal_uInt8 premultiply(sal_uInt8 c, sal_uInt8 a);
 
+/** Byte offsets channels within a 4-byte pixel. */
+struct ScanlineChannelOffsets
+{
+    sal_uInt8 nBlue;
+    sal_uInt8 nGreen;
+    sal_uInt8 nRed;
+    sal_uInt8 nAlpha;
+};
+
+/** For a premultiplied 32-bit truecolor scanline format (ABGR/ARGB/BGRA/RGBA), return the byte offsets */
+VCL_DLLPUBLIC std::optional<ScanlineChannelOffsets>
+get32BitTcChannelOffsets(ScanlineFormat eFormat);
+
+/** Reduce an index modulo nEntryCount, so the result is below nEntryCount.
+
+    A count of zero has no valid index to give, so the index comes back as it came in.
+*/
+sal_uInt8 sanitizePaletteIndex(sal_uInt8 nIndex, std::size_t nEntryCount);
+
+/** The colour that nIndex names in rvPalette, with the index reduced to fit the palette.
+
+    An empty palette names no colour, so black stands in.
+*/
+const Color& sanitizedPaletteColor(std::vector<Color> const& rvPalette, sal_uInt8 nIndex);
+
 Bitmap VCL_DLLPUBLIC loadFromName(const OUString& rFileName, const ImageLoadFlags eFlags = ImageLoadFlags::NONE);
 
 void loadFromSvg(SvStream& rStream, const OUString& sPath, Bitmap& rBitmap, double fScaleFactor);
@@ -61,7 +90,9 @@ Bitmap VCL_DLLPUBLIC CreateFromData(sal_uInt8 const *pData,
                                       sal_Int8 nBitsPerPixel,
                                       bool bReversColors = false, bool bReverseAlpha = false);
 
+#if defined(_WIN32) && !USE_HEADLESS_CODE
 void VCL_DLLPUBLIC fillWithData(sal_uInt8* pData, Bitmap const& rBitmap);
+#endif
 
 Bitmap VCL_DLLPUBLIC CreateFromData( RawBitmap && data );
 

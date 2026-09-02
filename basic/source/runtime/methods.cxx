@@ -462,8 +462,7 @@ void implStepRenameUCB( const OUString& aSource, const OUString& aDest )
         OUString aSourceFullPath = getFullPath( aSource );
         if( !xSFI->exists( aSourceFullPath ) )
         {
-            StarBASIC::Error( ERRCODE_BASIC_FILE_NOT_FOUND );
-            return;
+            return StarBASIC::Error( ERRCODE_BASIC_FILE_NOT_FOUND );
         }
 
         OUString aDestFullPath = getFullPath( aDest );
@@ -541,8 +540,7 @@ void SbRtl_Kill(StarBASIC *, SbxArray & rPar, bool)
             OUString aFullPath = getFullPath( aFileSpec );
             if( !xSFI->exists( aFullPath ) || xSFI->isFolder( aFullPath ) )
             {
-                StarBASIC::Error( ERRCODE_BASIC_FILE_NOT_FOUND );
-                return;
+                return StarBASIC::Error( ERRCODE_BASIC_FILE_NOT_FOUND );
             }
             try
             {
@@ -951,7 +949,7 @@ void SbRtl_Int(StarBASIC *, SbxArray & rPar, bool)
 
 void SbRtl_Fix(StarBASIC *, SbxArray & rPar, bool)
 {
-    if (rPar.Count() < 2)
+    if (rPar.Count() != 2)
         return StarBASIC::Error( ERRCODE_BASIC_BAD_ARGUMENT );
 
     SbxVariableRef pArg = rPar.Get(1);
@@ -1273,7 +1271,7 @@ void SbRtl_RTrim(StarBASIC *, SbxArray & rPar, bool)
 
 void SbRtl_Sgn(StarBASIC *, SbxArray & rPar, bool)
 {
-    if (rPar.Count() < 2)
+    if (rPar.Count() != 2)
         return StarBASIC::Error( ERRCODE_BASIC_BAD_ARGUMENT );
 
     double aDouble = rPar.Get(1)->GetDouble();
@@ -1942,19 +1940,16 @@ void SbRtl_TimeValue(StarBASIC *, SbxArray & rPar, bool)
     bool bSuccess = pFormatter->IsNumberFormat(rPar.Get(1)->GetOUString(),
                                                nIndex, fResult );
     SvNumFormatType nType = pFormatter->GetType(nIndex);
-    if(bSuccess && (nType==SvNumFormatType::TIME||nType==SvNumFormatType::DATETIME))
+    if (!bSuccess || (nType != SvNumFormatType::TIME && nType != SvNumFormatType::DATETIME))
     {
-        if ( nType == SvNumFormatType::DATETIME )
-        {
-            // cut days
-            fResult = fmod( fResult, 1 );
-        }
-        rPar.Get(0)->PutDate(fResult);
+        return StarBASIC::Error( ERRCODE_BASIC_CONVERSION );
     }
-    else
+    if ( nType == SvNumFormatType::DATETIME )
     {
-        StarBASIC::Error( ERRCODE_BASIC_CONVERSION );
+        // cut days
+        fResult = fmod( fResult, 1 );
     }
+    rPar.Get(0)->PutDate(fResult);
 }
 
 void SbRtl_Day(StarBASIC *, SbxArray & rPar, bool)
@@ -2686,18 +2681,16 @@ void SbRtl_GetAttr(StarBASIC *, SbxArray & rPar, bool)
         OUString aPath;
         FileBase::getSystemPathFromFileURL( aPathURL, aPath );
         DWORD nRealFlags = GetFileAttributesW (o3tl::toW(aPath.getStr()));
-        if (nRealFlags != 0xffffffff)
-        {
-            if (nRealFlags == FILE_ATTRIBUTE_NORMAL)
-            {
-                nRealFlags = 0;
-            }
-            nFlags = static_cast<sal_Int16>(nRealFlags);
-        }
-        else
+        if (nRealFlags == 0xffffffff)
         {
             StarBASIC::Error( ERRCODE_BASIC_FILE_NOT_FOUND );
+            return;
         }
+        if (nRealFlags == FILE_ATTRIBUTE_NORMAL)
+        {
+            nRealFlags = 0;
+        }
+        nFlags = static_cast<sal_Int16>(nRealFlags);
         rPar.Get(0)->PutInteger(nFlags);
 
         return;
@@ -3601,12 +3594,10 @@ void SbRtl_DDEInitiate(StarBASIC *, SbxArray & rPar, bool)
     ErrCode nDdeErr = pDDE->Initiate( aApp, aTopic, nChannel );
     if( nDdeErr )
     {
-        StarBASIC::Error( nDdeErr );
+        return StarBASIC::Error( nDdeErr );
     }
-    else
-    {
-        rPar.Get(0)->PutInteger(static_cast<sal_Int16>(nChannel));
-    }
+
+    rPar.Get(0)->PutInteger(static_cast<sal_Int16>(nChannel));
 }
 
 void SbRtl_DDETerminate(StarBASIC *, SbxArray & rPar, bool)
@@ -3615,8 +3606,7 @@ void SbRtl_DDETerminate(StarBASIC *, SbxArray & rPar, bool)
     int nArgs = static_cast<int>(rPar.Count());
     if ( nArgs != 2 )
     {
-        StarBASIC::Error( ERRCODE_BASIC_BAD_ARGUMENT );
-        return;
+        return StarBASIC::Error( ERRCODE_BASIC_BAD_ARGUMENT );
     }
     size_t nChannel = rPar.Get(1)->GetInteger();
     SbiDdeControl* pDDE = GetSbData()->pInst->GetDdeControl();

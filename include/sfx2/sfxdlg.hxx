@@ -115,6 +115,9 @@ protected:
 public:
     virtual OUString       GetScriptURL() const = 0;
     virtual void                SetRunLabel() = 0;
+    // Return the model containing the selected script, or a null reference if the script isn’t
+    // embedded in a document.
+    virtual css::uno::Reference<css::frame::XModel> GetScriptModel() const = 0;
 };
 
 class AbstractMacroManagerDialog : virtual public VclAbstractDialog
@@ -125,6 +128,9 @@ protected:
 public:
     virtual OUString GetScriptURL() const = 0;
     virtual void LoadLastUsedMacro() const = 0;
+    // Return the model containing the selected script, or a null reference if the script isn’t
+    // embedded in a document.
+    virtual css::uno::Reference<css::frame::XModel> GetScriptModel() const = 0;
 };
 
 namespace com::sun::star::frame { class XFrame; }

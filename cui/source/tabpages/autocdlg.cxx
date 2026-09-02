@@ -217,7 +217,7 @@ OfaAutocorrOptionsPage::OfaAutocorrOptionsPage(weld::Container* pPage, weld::Dia
     , m_sAccidentalCaps(CuiResId(RID_CUISTR_CORRECT_ACCIDENTAL_CAPS_LOCK))
     , m_xCheckLB(m_xBuilder->weld_tree_view(u"checklist"_ustr))
 {
-    m_xCheckLB->enable_toggle_buttons(weld::ColumnToggleType::Check);
+    m_xCheckLB->enable_toggle_buttons();
     m_xCheckLB->set_size_request(-1, m_xCheckLB->get_height_rows(10));
 }
 
@@ -922,7 +922,7 @@ void OfaAutocorrReplacePage::RefillReplaceBox(bool bFromReset,
     }
 
     SfxViewShell* pViewShell = SfxViewShell::Current();
-    if (pViewShell && pViewShell->HasSelection())
+    if (pViewShell && pViewShell->HasSelection(/*MustHaveText=*/true))
     {
         bHasSelectionText = true;
         const OUString sSelection( pViewShell->GetSelectionText() );
@@ -1122,7 +1122,7 @@ bool OfaAutocorrReplacePage::NewDelHdl(const weld::Widget* pBtn)
     return true;
 }
 
-IMPL_LINK(OfaAutocorrReplacePage, ModifyHdl, weld::Entry&, rEdt, void)
+IMPL_LINK(OfaAutocorrReplacePage, ModifyHdl, weld::TextWidget&, rEdt, void)
 {
     std::unique_ptr<weld::TreeIter> xFirstSel = m_xReplaceTLB->get_selected();
     bool bFirstSelIterSet = bool(xFirstSel);
@@ -1540,7 +1540,7 @@ IMPL_LINK(OfaAutocorrExceptPage, SelectHdl, weld::ItemView&, rBox, void)
     }
 }
 
-IMPL_LINK(OfaAutocorrExceptPage, ModifyHdl, weld::Entry&, rEdt, void)
+IMPL_LINK(OfaAutocorrExceptPage, ModifyHdl, weld::TextWidget&, rEdt, void)
 {
     const OUString sEntry = rEdt.get_text();
     bool bEntryLen = !sEntry.isEmpty();
@@ -1634,7 +1634,7 @@ OfaQuoteTabPage::OfaQuoteTabPage(weld::Container* pPage, weld::DialogController*
     }
     else
     {
-        m_xCheckLB->enable_toggle_buttons(weld::ColumnToggleType::Check);
+        m_xCheckLB->enable_toggle_buttons();
         m_xSwCheckLB->hide();
     }
 
@@ -2203,7 +2203,7 @@ OfaSmartTagOptionsTabPage::OfaSmartTagOptionsTabPage(weld::Container* pPage, wel
     m_xSmartTagTypesLB->set_size_request(m_xSmartTagTypesLB->get_approximate_digit_width() * 50,
                                          m_xSmartTagTypesLB->get_height_rows(6));
 
-    m_xSmartTagTypesLB->enable_toggle_buttons(weld::ColumnToggleType::Check);
+    m_xSmartTagTypesLB->enable_toggle_buttons();
 
     // set the handlers:
     m_xMainCB->connect_toggled(LINK(this, OfaSmartTagOptionsTabPage, CheckHdl));

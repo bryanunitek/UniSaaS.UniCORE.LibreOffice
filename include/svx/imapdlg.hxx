@@ -53,9 +53,8 @@ typedef ::std::vector< OUString > TargetList;
 
 class SVX_DLLPUBLIC SvxIMapDlgChildWindow final : public SfxChildWindow
 {
- public:
-
-    SvxIMapDlgChildWindow( vcl::Window*, sal_uInt16, SfxBindings*, SfxChildWinInfo const * );
+public:
+    SvxIMapDlgChildWindow(vcl::Window*, sal_uInt16, SfxBindings&, const SfxChildWinInfo&);
 
     SFX_DECL_CHILDWINDOW_WITHID( SvxIMapDlgChildWindow );
 
@@ -111,7 +110,7 @@ class SVX_DLLPUBLIC SvxIMapDlg final : public SfxModelessDialogController
     DECL_DLLPRIVATE_LINK( MousePosHdl, GraphCtrl*, void );
     DECL_DLLPRIVATE_LINK( GraphSizeHdl, GraphCtrl*, void );
     DECL_DLLPRIVATE_LINK( URLModifyHdl, weld::ComboBox&, void );
-    DECL_DLLPRIVATE_LINK( EntryModifyHdl, weld::Entry&, void );
+    DECL_DLLPRIVATE_LINK(EntryModifyHdl, weld::TextWidget&, void);
     DECL_DLLPRIVATE_LINK( URLLoseFocusHdl, weld::Widget&, void );
     DECL_DLLPRIVATE_LINK( UpdateHdl, Timer *, void );
     DECL_DLLPRIVATE_LINK( StateHdl, GraphCtrl*, void );

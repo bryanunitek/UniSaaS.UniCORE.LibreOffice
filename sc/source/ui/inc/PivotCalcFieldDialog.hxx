@@ -67,7 +67,6 @@ private:
     ScPivotParam maPivotParameters;
     std::vector<OUString> maDeletedFieldNames;
 
-    void Init();
     void ErrorBox(const OUString& rString);
     bool IsExistingField(std::u16string_view rName) const;
     std::shared_ptr<ScTokenArray> ValidateFormula(const OUString& rFormula,
@@ -90,7 +89,7 @@ private:
     DECL_LINK(DoubleClickHdl, const weld::TreeIter&, bool);
     DECL_LINK(FieldListSelected, weld::ItemView&, void);
     DECL_LINK(CalcFieldNameSelected, weld::ComboBox&, void);
-    DECL_LINK(CalcEntryChanged, weld::TextView&, void);
+    DECL_LINK(CalcEntryChanged, weld::TextWidget&, void);
 };
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

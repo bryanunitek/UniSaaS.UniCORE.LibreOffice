@@ -417,7 +417,7 @@ static void lcl_HidePrint( const ScTableInfo& rTabInfo, SCCOL nX1, SCCOL nX2 )
             ScCellInfo& rCellInfo = pThisRowInfo->cellInfo(nX);
             ScBasicCellInfo& rBasicCellInfo = pThisRowInfo->basicCellInfo(nX);
             if (!rBasicCellInfo.bEmptyCellText)
-                if (rCellInfo.pPatternAttr->
+                if (rCellInfo.getPatternAttr()->
                             GetItem(ATTR_PROTECTION, rCellInfo.pConditionSet).GetHidePrint())
                 {
                     rCellInfo.maCell.clear();
@@ -539,9 +539,7 @@ void ScPrintFunc::DrawToDev(ScDocument& rDoc, OutputDevice* pDev, double /* nPri
 
     //  If no lines, still leave space for grid lines
     //  (would be elseways cut away)
-    // tdf#135891 - adjust the x position to ensure the correct starting point
-    const Size aOnePixel = pDev->PixelToLogic(Size(1, 1));
-    nScrX += aOnePixel.Width();
+    nScrX += 1;
     nScrY += 1;
 
     ScOutputData aOutputData( pDev, OUTTYPE_PRINTER, aTabInfo, &rDoc, nTab,
@@ -716,7 +714,7 @@ bool ScPrintFunc::AdjustPrintArea( bool bNew )
         bool bForcedChangeRow = false;
 
         // #i53558# Crop entire column of old row limit to real print area with
-        // some fuzzyness.
+        // some fuzziness.
         if (!bChangeRow && nStartRow == 0)
         {
             SCROW nPAEndRow;
@@ -1018,6 +1016,11 @@ void ScPrintFunc::InitParam( const ScPrintOptions* pOptions )
         aAreaParam.aPrintArea.aStart.SetTab(nPrintTab);
         aAreaParam.aPrintArea.aEnd.SetTab(nPrintTab);
     }
+    else if (!rDoc.IsVisible(nPrintTab))
+    {
+        aAreaParam.bPrintArea = true;
+        bPrintCurrentTable = false;
+    }
     else if (bHasPrintRange)
     {
         if ( pPrintArea )                               // at least one set?
@@ -1030,24 +1033,14 @@ void ScPrintFunc::InitParam( const ScPrintOptions* pOptions )
         }
         else
         {
-            // do not print hidden sheets with "Print entire sheet" flag
-            bPrintCurrentTable = rDoc.IsPrintEntireSheet( nPrintTab ) && rDoc.IsVisible( nPrintTab );
+            bPrintCurrentTable = rDoc.IsPrintEntireSheet(nPrintTab);
             aAreaParam.bPrintArea = !bPrintCurrentTable;    // otherwise the table is always counted
         }
     }
     else
     {
-        //  don't print hidden tables if there's no print range defined there
-        if ( rDoc.IsVisible( nPrintTab ) )
-        {
-            aAreaParam.bPrintArea = false;
-            bPrintCurrentTable = true;
-        }
-        else
-        {
-            aAreaParam.bPrintArea = true;   // otherwise the table is always counted
-            bPrintCurrentTable = false;
-        }
+        aAreaParam.bPrintArea = false;
+        bPrintCurrentTable = true;
     }
 
     if ( oRepeatCol )

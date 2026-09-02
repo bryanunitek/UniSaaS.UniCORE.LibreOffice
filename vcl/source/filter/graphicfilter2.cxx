@@ -62,6 +62,7 @@ bool GraphicDescriptor::Detect( bool bExtendedInfo )
 
         if      ( ImpDetectGIF( rStm, bExtendedInfo ) ) bRet = true;
         else if ( ImpDetectJPG( rStm, bExtendedInfo ) ) bRet = true;
+        else if ( ImpDetectJXL( rStm, bExtendedInfo ) ) bRet = true;
         else if ( ImpDetectBMP( rStm, bExtendedInfo ) ) bRet = true;
         else if ( ImpDetectPNG( rStm, bExtendedInfo ) ) bRet = true;
         else if ( ImpDetectTIF( rStm, bExtendedInfo ) ) bRet = true;
@@ -118,7 +119,7 @@ static sal_uInt8 ImpDetectJPG_GetNextMarker( SvStream& rStm )
         {
             rStm.ReadUChar( nByte );
             if (!rStm.good())   // as 0 is not allowed as marker,
-                return 0;       // we can use it as errorcode
+                return 0;       // we can use it as error code
         }
         while ( nByte != 0xff );
         do
@@ -298,6 +299,15 @@ bool GraphicDescriptor::ImpDetectJPG( SvStream& rStm,  bool bExtendedInfo )
         }
     }
     rStm.Seek( nStmPos );
+    return bRet;
+}
+
+bool GraphicDescriptor::ImpDetectJXL( SvStream& rStm, bool bExtendedInfo )
+{
+    vcl::GraphicFormatDetector aDetector( rStm, aPathExt, bExtendedInfo );
+    bool bRet = aDetector.detect() && aDetector.checkJXL();
+    if ( bRet )
+        aMetadata = aDetector.getMetadata();
     return bRet;
 }
 

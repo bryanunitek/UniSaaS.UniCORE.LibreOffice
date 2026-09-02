@@ -83,7 +83,7 @@ SwFieldDlg::SwFieldDlg(SfxBindings* pB, SwChildWinWrapper* /*pCW*/, weld::Window
         utl::OConfigurationTreeRoot aCfgRoot
             = utl::OConfigurationTreeRoot::createWithComponentContext(
                 ::comphelper::getProcessComponentContext(),
-                u"/org.openoffice.Office.DataAccess/Policies/Features/Writer"_ustr, -1,
+                u"/org.openoffice.Office.DataAccess/Policies/Features/Writer"_ustr,
                 utl::OConfigurationTreeRoot::CM_READONLY);
 
 #if HAVE_FEATURE_DBCONNECTIVITY && !ENABLE_FUZZERS
@@ -126,10 +126,7 @@ void SwFieldDlg::Close()
 
 void SwFieldDlg::Initialize(SfxChildWinInfo const *pInfo)
 {
-    OUString aWinState = pInfo->aWinState;
-    if (aWinState.isEmpty())
-        return;
-    m_xDialog->set_window_state(aWinState);
+    m_xDialog->set_window_state(pInfo->aWinState);
 }
 
 SfxItemSet* SwFieldDlg::CreateInputItemSet(const OUString& rID)

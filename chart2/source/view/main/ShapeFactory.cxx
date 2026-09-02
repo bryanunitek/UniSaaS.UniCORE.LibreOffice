@@ -312,7 +312,7 @@ static uno::Any createPolyPolygon_Cone( double fHeight, double fRadius, double f
     OSL_PRECOND(fRadius>0, "The radius of a cone needs to be > 0");
 
     //for stacked charts we need cones without top -> fTopHeight != 0 resp. bTopless == true
-    //fTopHeight indicates the high of the cutted top only (not the full height)
+    //fTopHeight indicates the height of the cut top only (not the full height)
     bool bTopless = !::rtl::math::approxEqual( fHeight, fHeight + fTopHeight );
 
     double r1= 0.0, r2 = fRadius;
@@ -800,7 +800,7 @@ static drawing::PolyPolygonBezierCoords getCircularArcBezierCoords(
     for(sal_Int32 nSegment=0; nSegment<nSegmentCount; nSegment++)
     {
         double fCurrentSegmentAngle = fAngleSubdivisionRadian;
-        if(nSegment==0)//first segment gets only a smaller peace until the next subdivision
+        if(nSegment==0)//first segment gets only a smaller piece until the next subdivision
             fCurrentSegmentAngle = fFirstSegmentAngle;
         else if(nSegment==(nSegmentCount-1)) //the last segment gets the rest angle that does not fit into equal pieces
             fCurrentSegmentAngle = fLastSegmentAngle;
@@ -2419,7 +2419,7 @@ OUString ShapeFactory::getStackedString( const OUString& rString, bool bStacked 
     OUStringBuffer aStackStr;
 
     //add a newline after each letter
-    //as we do not no letters here add a newline after each char
+    //as we do not know letters here add a newline after each char
     for( sal_Int32 nPosSrc=0; nPosSrc < nLen; nPosSrc++ )
     {
         if( nPosSrc )

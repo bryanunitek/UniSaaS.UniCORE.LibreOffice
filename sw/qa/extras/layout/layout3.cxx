@@ -13,7 +13,9 @@
 #include <editeng/unolingu.hxx>
 
 #include <wrtsh.hxx>
+#include <ndtxt.hxx>
 #include <rootfrm.hxx>
+#include <editeng/brushitem.hxx>
 #include <IDocumentLayoutAccess.hxx>
 
 namespace
@@ -252,6 +254,598 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTdf119908)
               .toInt32();
     // This was 5806 (not real portion width, but stripped to the line width)
     CPPUNIT_ASSERT_GREATER(sal_Int32(5840), nPortionWidth);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTdf119908_smart_hyphenation)
+{
+    uno::Reference<linguistic2::XHyphenator> xHyphenator = LinguMgr::GetHyphenator();
+    if (!xHyphenator->hasLocale(lang::Locale(u"en"_ustr, u"US"_ustr, OUString())))
+        return;
+
+    createSwDoc("tdf119908_smart_hyphenation.odt");
+    // Ensure that all text portions are calculated before testing.
+    SwViewShell* pViewShell = getSwDoc()->getIDocumentLayoutAccess().GetCurrentViewShell();
+
+    CPPUNIT_ASSERT(pViewShell);
+    pViewShell->Reformat();
+
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+
+    // 14 hyphenations on 4 pages (hyphenation slider with default setting)
+
+    // 2 hyphenations on page 1
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[6]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Whereas it is essential to promote the development of friendly relations between na");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[6]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[9]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Whereas a common understanding of these rights and freedoms is of the greatest im");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[9]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 2);
+
+    // delete first page to update hyphenation on the next page
+
+    SwWrtShell* const pWrtShell = getSwDocShell()->GetWrtShell();
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/true, 2836, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 3 hyphenations on page 2
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"No one shall be held in slavery or servitude; slavery and the slave trade shall be pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"All are equal before the law and are entitled without any discrimination to equal pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[24]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"political crimes or from acts contrary to the purposes and principles of the United Na");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[24]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 3);
+
+    // delete second page to update hyphenation on the next page
+
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/false, 2336, /*bBasicCall=*/false);
+    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 2336, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 5 hyphenations on page 3
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"The family is the natural and fundamental group unit of society and is entitled to pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to freedom of thought, conscience and religion; this right in");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"cludes freedom to change his religion or belief, and freedom, either alone or in com");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[3]", "portion",
+                u"munity with others and in public or private, to manifest his religion or belief "
+                u"in teach");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[3]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to freedom of opinion and expression; this right includes free");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 5);
+
+    // delete second page to update hyphenation on the next page
+
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/false, 2646, /*bBasicCall=*/false);
+    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 2646, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 4 hyphenations on page 4
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to form and to join trade unions for the protection of his inter");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"himself and of his family, including food, clothing, housing and medical care and nec");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[8]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"and fundamental stages. Elementary education shall be compulsory. Technical and pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[8]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[18]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"In the exercise of his rights and freedoms, everyone shall be subject only to such limi");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[18]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 4);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTdf119908_DOCX_smart_hyphenation)
+{
+    uno::Reference<linguistic2::XHyphenator> xHyphenator = LinguMgr::GetHyphenator();
+    if (!xHyphenator->hasLocale(lang::Locale(u"en"_ustr, u"US"_ustr, OUString())))
+        return;
+
+    createSwDoc("tdf119908_smart_hyphenation.docx");
+    // Ensure that all text portions are calculated before testing.
+    SwViewShell* pViewShell = getSwDoc()->getIDocumentLayoutAccess().GetCurrentViewShell();
+
+    CPPUNIT_ASSERT(pViewShell);
+    pViewShell->Reformat();
+
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+
+    // 14 hyphenations on 4 pages (hyphenation slider with default setting)
+
+    // 2 hyphenations on page 1
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[6]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Whereas it is essential to promote the development of friendly relations between na");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[6]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[9]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Whereas a common understanding of these rights and freedoms is of the greatest im");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[9]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 2);
+
+    // delete first page to update hyphenation on the next page
+
+    SwWrtShell* const pWrtShell = getSwDocShell()->GetWrtShell();
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/true, 2836, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 3 hyphenations on page 2
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"No one shall be held in slavery or servitude; slavery and the slave trade shall be pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"All are equal before the law and are entitled without any discrimination to equal pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[24]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"political crimes or from acts contrary to the purposes and principles of the United Na");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[24]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 3);
+
+    // delete second page to update hyphenation on the next page
+
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/false, 2336, /*bBasicCall=*/false);
+    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 2336, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 5 hyphenations on page 3
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"The family is the natural and fundamental group unit of society and is entitled to pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to freedom of thought, conscience and religion; this right in");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"cludes freedom to change his religion or belief, and freedom, either alone or in com");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[3]", "portion",
+                u"munity with others and in public or private, to manifest his religion or belief "
+                u"in teach");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[3]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to freedom of opinion and expression; this right includes free");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 5);
+
+    // delete second page to update hyphenation on the next page
+
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/false, 2646, /*bBasicCall=*/false);
+    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 2646, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 4 hyphenations on page 4
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to form and to join trade unions for the protection of his inter");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"himself and of his family, including food, clothing, housing and medical care and nec");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[8]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"and fundamental stages. Elementary education shall be compulsory. Technical and pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[8]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[18]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"In the exercise of his rights and freedoms, everyone shall be subject only to such limi");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[18]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 4);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTdf172674_better_spacing)
+{
+    uno::Reference<linguistic2::XHyphenator> xHyphenator = LinguMgr::GetHyphenator();
+    if (!xHyphenator->hasLocale(lang::Locale(u"en"_ustr, u"US"_ustr, OUString())))
+        return;
+
+    createSwDoc("tdf172674_better_spacing.odt");
+    // Ensure that all text portions are calculated before testing.
+    SwViewShell* pViewShell = getSwDoc()->getIDocumentLayoutAccess().GetCurrentViewShell();
+
+    CPPUNIT_ASSERT(pViewShell);
+    pViewShell->Reformat();
+
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+
+    // 22 hyphenations on 4 pages (hyphenation slider with maximum better spacing)
+
+    // 2 hyphenations on page 1
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[6]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Whereas it is essential to promote the development of friendly relations between na");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[6]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[9]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Whereas a common understanding of these rights and freedoms is of the greatest im");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[9]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 2);
+
+    // delete first page to update hyphenation on the next page
+
+    SwWrtShell* const pWrtShell = getSwDocShell()->GetWrtShell();
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/true, 2836, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 7 hyphenations on page 2
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"No one shall be held in slavery or servitude; slavery and the slave trade shall be pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[3]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"No one shall be subjected to torture or to cruel, inhuman or degrading treatment or pun");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[3]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"All are equal before the law and are entitled without any discrimination to equal pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[2]", "portion",
+                u"tection of the law. All are entitled to equal protection against any "
+                u"discrimination in vio");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[13]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"impartial tribunal, in the determination of his rights and obligations and of any crimi");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[13]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[23]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to seek and to enjoy in other countries asylum from persecu");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[23]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[24]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"political crimes or from acts contrary to the purposes and principles of the United Na");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[24]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 7);
+
+    // delete second page to update hyphenation on the next page
+
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/false, 2336, /*bBasicCall=*/false);
+    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 2336, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 6 hyphenations on page 3
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"The family is the natural and fundamental group unit of society and is entitled to pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to freedom of thought, conscience and religion; this right in");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"cludes freedom to change his religion or belief, and freedom, either alone or in com");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[3]", "portion",
+                u"munity with others and in public or private, to manifest his religion or belief "
+                u"in teach");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[3]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to freedom of opinion and expression; this right includes free");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[21]/SwParaPortion/SwLineLayout[1]", "portion",
+                u"Everyone, as a member of society, has the right to social security and is "
+                u"entitled to real");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[21]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 6);
+
+    // delete second page to update hyphenation on the next page
+
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/false, 2646, /*bBasicCall=*/false);
+    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 2646, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 7 hyphenations on page 4
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone has the right to form and to join trade unions for the protection of his inter");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"himself and of his family, including food, clothing, housing and medical care and nec");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[8]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"and fundamental stages. Elementary education shall be compulsory. Technical and pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[8]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[1]", "portion",
+                u"Everyone has the right freely to participate in the cultural life of the "
+                u"community, to en");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[15]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Everyone is entitled to a social and international order in which the rights and free");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[18]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"In the exercise of his rights and freedoms, everyone shall be subject only to such limi");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[18]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[21]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"Nothing in this Declaration may be interpreted as implying for any State, group or per");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[21]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 7);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTdf172674_less_hyphenation)
+{
+    uno::Reference<linguistic2::XHyphenator> xHyphenator = LinguMgr::GetHyphenator();
+    if (!xHyphenator->hasLocale(lang::Locale(u"en"_ustr, u"US"_ustr, OUString())))
+        return;
+
+    createSwDoc("tdf172674_less_hyphenation.odt");
+    // Ensure that all text portions are calculated before testing.
+    SwViewShell* pViewShell = getSwDoc()->getIDocumentLayoutAccess().GetCurrentViewShell();
+
+    CPPUNIT_ASSERT(pViewShell);
+    pViewShell->Reformat();
+
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+
+    // only 8 hyphenations on 4 pages (hyphenation slider with maximum less hyphenation)
+
+    // 0 hyphenation on page 1
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 0);
+
+    // delete first page to update hyphenation on the next page
+
+    SwWrtShell* const pWrtShell = getSwDocShell()->GetWrtShell();
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/true, 2836, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 2 hyphenations on page 2
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]", "portion",
+                u"No one shall be held in slavery or servitude; slavery and the slave trade shall "
+                u"be prohib");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[1]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[1]", "portion",
+                u"All are equal before the law and are entitled without any discrimination to "
+                u"equal protec");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[7]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 2);
+
+    // delete second page to update hyphenation on the next page
+
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/false, 2336, /*bBasicCall=*/false);
+    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 2336, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 3 hyphenations on page 3
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[1]", "portion",
+                u"The family is the natural and fundamental group unit of society and is entitled "
+                u"to protec");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"includes freedom to change his religion or belief, and freedom, either alone or in com");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[10]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"freedom to hold opinions without interference and to seek, receive and impart informa");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[12]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 3);
+
+    // delete second page to update hyphenation on the next page
+
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/false, 2646, /*bBasicCall=*/false);
+    pWrtShell->Left(SwCursorSkipMode::Chars, /*bSelect=*/true, 2646, /*bBasicCall=*/false);
+    pWrtShell->Delete();
+
+    // 3 hyphenations on page 4
+
+    pViewShell->Reformat();
+    pXmlDoc = parseLayoutDump();
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"himself and of his family, including food, clothing, housing and medical care and nec");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[5]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[8]/SwParaPortion/SwLineLayout[2]", "portion",
+        u"and fundamental stages. Elementary education shall be compulsory. Technical and pro");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[8]/SwParaPortion/SwLineLayout[2]/SwHyphPortion",
+                1);
+
+    assertXPath(
+        pXmlDoc, "/root/page[1]/body/txt[18]/SwParaPortion/SwLineLayout[1]", "portion",
+        u"In the exercise of his rights and freedoms, everyone shall be subject only to such limi");
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt[18]/SwParaPortion/SwLineLayout[1]/SwHyphPortion",
+                1);
+
+    assertXPath(pXmlDoc, "/root/page[1]/body/txt/SwParaPortion/SwLineLayout/SwHyphPortion", 3);
 }
 
 CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTdf158333)
@@ -1771,6 +2365,456 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testDropVertical)
     assertXPath(pXmlDoc,
                 "//fly/txt/SwParaPortion/SwLineLayout[1]/SwLinePortion[@type='PortionType::Drop']",
                 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testHeaderImageAlignment)
+{
+    createSwDoc("testHeaderImageAlignment.docx");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // The logo is a floating text frame anchored in the first header paragraph.
+    assertXPath(pXmlDoc, "/root/page/header/txt", 4);
+    assertXPath(pXmlDoc, "/root/page/header/txt[1]/anchored/fly", 1);
+
+    // Without the fix there was no fly portion and the text ran under the logo.
+    assertXPath(pXmlDoc,
+                "/root/page/header/txt[1]/SwParaPortion/SwLineLayout/"
+                "SwFixPortion[@type='PortionType::Fly']",
+                1);
+
+    const sal_Int32 nFlyGap = getXPath(pXmlDoc,
+                                       "/root/page/header/txt[1]/SwParaPortion/SwLineLayout/"
+                                       "SwFixPortion[@type='PortionType::Fly']",
+                                       "width")
+                                  .toInt32();
+    CPPUNIT_ASSERT_GREATER(sal_Int32(1000), nFlyGap);
+
+    // The separator paragraph stays BELOW the logo instead of riding up across it.
+    const sal_Int32 nLogoBottom
+        = getXPath(pXmlDoc, "/root/page/header/txt[1]/anchored/fly/infos/bounds", "bottom")
+              .toInt32();
+    const sal_Int32 nSeparatorTop
+        = getXPath(pXmlDoc, "/root/page/header/txt[4]/infos/bounds", "top").toInt32();
+    CPPUNIT_ASSERT_GREATER(nLogoBottom, nSeparatorTop);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testSmallCapsLigature)
+{
+    // Trigger bCaseMapLengthDiffers layout math using the ﬄ -> FFL character
+    createSwDoc("smallcaps_ligature.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // The first line must contain the ffl ligature intact.
+    // A regression in bCaseMapLengthDiffers would corrupt this portion string.
+    assertXPath(pXmlDoc, "/root/page/body/txt/SwParaPortion/SwLineLayout[1]", "portion", u"Maﬄb");
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testHiddenTextFieldExpansion)
+{
+    // Trigger the base class SwExpandPortion logic
+    // A Hidden Text field that evaluates to false is replaced with an empty SwExpandPortion.
+    createSwDoc("hidden_text_field.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // We expect the layout engine to process the field as a generic Portion
+    // Because it is hidden, its width must be zero.
+    assertXPath(pXmlDoc,
+                "/root/page/body/txt/SwParaPortion/SwLineLayout"
+                "/SwFieldPortion[@type='PortionType::Hidden' and @width='0']",
+                1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testDoubleLineBrackets)
+{
+    // Trigger SwDoubleLinePortion initialization for Asian "Two Lines in One" layout.
+    createSwDoc("double_line_bracket.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // Assert that the layout engine successfully created the Double Line Portion
+    // for the full "Hello World" run.
+    assertXPath(pXmlDoc, "//SwMultiPortion[contains(@symbol, 'SwDoubleLinePortion')]", 1);
+
+    // Verify it correctly split the content into its 2 stacked SwLineLayout rows
+    // ("Hello " / "World"), confirming the two-lines-in-one layout was built.
+    assertXPath(pXmlDoc, "//SwMultiPortion[contains(@symbol, 'SwDoubleLinePortion')]/SwLineLayout",
+                2);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testHardBlankOverflow)
+{
+    createSwDoc("hard_blank_overflow.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // Assert that the layout engine successfully processed the overflow
+    // by breaking it into at least two SwLineLayout lines
+    assertXPath(pXmlDoc, "/root/page/body/txt/SwParaPortion/SwLineLayout", 3);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testDropAdjustCenter)
+{
+    createSwDoc("drop_adjust_center.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // Assert that the layout engine successfully processed the Drop Portion
+    assertXPath(pXmlDoc,
+                "/root/page/body/txt/SwParaPortion/SwLineLayout[1]/"
+                "SwLinePortion[@type='PortionType::Drop']",
+                1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testCombinedCharacters5)
+{
+    // Trigger SwCombinedPortion::Format for > 4 characters
+    createSwDoc("combined_chars_5.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // Assert that the layout engine successfully processed the Combined Portion
+    assertXPath(pXmlDoc,
+                "/root/page/body/txt[1]/SwParaPortion/SwLineLayout[1]/"
+                "SwFieldPortion[@type='PortionType::Combined']",
+                1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testWarichuInterrupted)
+{
+    createSwDoc("warichu_interrupted.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // The ruby portion sandwiched between the two double-line portions must have
+    // successfully formatted its nested field portion.
+    assertXPath(pXmlDoc, "//SwMultiPortion[contains(@symbol, 'SwRubyPortion')]//SwFieldPortion", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testWarichuToggleInterrupted)
+{
+    createSwDoc("warichu_toggle.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // "Middle Portion " is correctly split into 2 stacked SwLineLayout rows.
+    assertXPath(pXmlDoc,
+                "//SwMultiPortion[contains(@symbol, 'SwDoubleLinePortion')][@portion='Middle "
+                "Portion ']/SwLineLayout",
+                2);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testRotateWarichuInterrupted)
+{
+    createSwDoc("rotate_warichu_interrupted.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // Both rotated portions survive alongside the double-line portion.
+    assertXPath(pXmlDoc, "//SwMultiPortion[contains(@symbol, 'SwRotatedPortion')]", 2);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testWarichuFieldWrapRestPortion)
+{
+    createSwDoc("warichu_field_wrap.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // Trigger SwTextFormatter::MakeRestPortion for a Warichu (double-line)
+    // block wrapping a long field across lines.
+    assertXPath(
+        pXmlDoc,
+        "//SwMultiPortion[contains(@symbol, 'SwDoubleLinePortion')][@length='44']/SwLineLayout", 2);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testRubyWrapRestPortion)
+{
+    createSwDoc("ruby_wrap.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // separate ruby portions (one per wrapped word) survive the wrap.
+    assertXPath(pXmlDoc, "//SwMultiPortion[contains(@symbol, 'SwRubyPortion')]", 5);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testJustifyWarichu)
+{
+    createSwDoc("justify_warichu.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // Both Warichu blocks received their own justification glue portion, proving
+    // CalcAdjustLine correctly stretched content inside the double-line portions.
+    assertXPath(pXmlDoc,
+                "//SwMultiPortion[contains(@symbol, 'SwDoubleLinePortion')]//SwGluePortion", 2);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testCenterFlyWarichuTab)
+{
+    createSwDoc("center_fly_warichu_tab.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // The tab inside the Warichu block is correctly resolved on both of its
+    // stacked internal lines despite the fly frame intersecting the paragraph.
+    assertXPath(pXmlDoc,
+                "//SwMultiPortion[contains(@symbol, "
+                "'SwDoubleLinePortion')]//SwFixPortion[@type='PortionType::TabLeft']",
+                2);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testThaiJustifyPortxt)
+{
+    // Trigger Thai/CTL justification handling in portxt.cxx. Thai script has no
+    // spaces to break on, so justified Thai text must be measured/compressed as a
+    // single run rather than incorrectly split into word-like portions.
+    createSwDoc("thai_justify_portxt.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // The full 21-character Thai string stays intact as one SwTextPortion.
+    assertXPath(pXmlDoc,
+                "//SwLineLayout/SwLinePortion[contains(@symbol, 'SwTextPortion')][@length='21']",
+                1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testRefPageGetField)
+{
+    createSwDoc("ref_page_get_field.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // The "Get" field must resolve and expand to its computed value ("1"),
+    // proving RefPageGet correctly evaluated the set/get + page-adjust logic
+    // rather than rendering blank or unresolved.
+    assertXPath(pXmlDoc, "//SwFieldPortion[contains(@symbol, 'SwFieldPortion')][@expand='1']", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testInputFieldName)
+{
+    // Load document with an Input Field
+    createSwDoc("input_field_name.fodt");
+
+    // Grab the Writer Shell to modify the view options
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    CPPUNIT_ASSERT(pWrtShell);
+
+    // Simulate pressing Ctrl+F9 (View -> Field Names)
+    SwViewOption aViewOptions(*pWrtShell->GetViewOptions());
+    aViewOptions.SetFieldName(true);
+    pWrtShell->ApplyViewOptions(aViewOptions);
+
+    // Dump the layout. The engine MUST evaluate IsFieldName() == true
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // With field names shown, the input field must render its name ("Input field")
+    // instead of the typed content ("*User Typed This*").
+    assertXPath(pXmlDoc,
+                "//SwFieldPortion[contains(@symbol, 'SwFieldPortion')][@expand='Input field']", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTextNodeGetDropLenAsian)
+{
+    // Hit the ASIAN script branch in SwTextNode::GetDropLen.
+    // The paragraph is a single 7-character katakana word (リブレオフィス) with a
+    // word-length drop cap, so GetDropLen must return the full word length.
+    createSwDoc("drop_asian_word.fodt");
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    CPPUNIT_ASSERT(pWrtShell);
+    SwTextNode* pNode = pWrtShell->GetCursor()->GetPoint()->GetNode().GetTextNode();
+    CPPUNIT_ASSERT(pNode);
+
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(7), pNode->GetDropLen(0));
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTextNodeGetDropLenComplex)
+{
+    // Hit the COMPLEX (CTL) script branch in SwTextNode::GetDropLen.
+    // The paragraph is a single Bengali word (লিব্রেঅফিস, 10 UTF-16 code units)
+    // with a word-length drop cap; GetDropLen returns the full code-unit length.
+    createSwDoc("drop_complex_word.fodt");
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    CPPUNIT_ASSERT(pWrtShell);
+    SwTextNode* pNode = pWrtShell->GetCursor()->GetPoint()->GetNode().GetTextNode();
+    CPPUNIT_ASSERT(pNode);
+
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(10), pNode->GetDropLen(0));
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTextNodeGetDropLenDefault)
+{
+    // Hit the DEFAULT (Latin/English) script branch in SwTextNode::GetDropLen.
+    // Word-length drop cap over the paragraph's first word, "Proin" (5 chars).
+    createSwDoc("drop_fly_overlap.fodt");
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    CPPUNIT_ASSERT(pWrtShell);
+    SwTextNode* pNode = pWrtShell->GetCursor()->GetPoint()->GetNode().GetTextNode();
+    CPPUNIT_ASSERT(pNode);
+
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(5), pNode->GetDropLen(0));
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTextNodeGetDropSize)
+{
+    // Direct C++ unit test for SwTextNode::GetDropSize.
+    createSwDoc("drop_asian_word.fodt");
+
+    // Ensure that all text portions are calculated before testing, so that
+    // GetDropSize() below is deterministic.
+    SwViewShell* pViewShell = getSwDoc()->getIDocumentLayoutAccess().GetCurrentViewShell();
+    CPPUNIT_ASSERT(pViewShell);
+    pViewShell->Reformat();
+
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    CPPUNIT_ASSERT(pWrtShell);
+    SwTextNode* pNode = pWrtShell->GetCursor()->GetPoint()->GetNode().GetTextNode();
+    CPPUNIT_ASSERT(pNode);
+
+    int nFontHeight = 0;
+    int nDropHeight = 0;
+    int nDropDescent = 0;
+    bool bHasDropSize = pNode->GetDropSize(nFontHeight, nDropHeight, nDropDescent);
+
+    // With layout fully reformatted, GetDropSize should reliably succeed and
+    // report a real, positive font height with a non-negative drop height.
+    CPPUNIT_ASSERT(bHasDropSize);
+    CPPUNIT_ASSERT_GREATER(0, nFontHeight);
+    CPPUNIT_ASSERT_GREATEREQUAL(0, nDropHeight);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testTextNodeGetDropSizeUnformatted)
+{
+    // Force the fallback "guessing" branch in GetDropSize by
+    // querying it before the frame has ever been formatted.
+    createSwDoc();
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    CPPUNIT_ASSERT(pWrtShell);
+    SwTextNode* pNode = pWrtShell->GetCursor()->GetPoint()->GetNode().GetTextNode();
+    CPPUNIT_ASSERT(pNode);
+
+    SwFormatDrop aDrop;
+    aDrop.SetLines(3);
+    aDrop.SetChars(1);
+    pNode->SetAttr(aDrop);
+
+    int nFontHeight = 0;
+    int nDropHeight = 0;
+    int nDropDescent = 0;
+
+    // Deliberately no parseLayoutDump()/formatting call here — the frame must
+    // stay unformatted so rFontHeight/rDropHeight start at 0, forcing the
+    // fallback estimation logic to run instead of reading real frame metrics.
+    bool bRet = pNode->GetDropSize(nFontHeight, nDropHeight, nDropDescent);
+
+    // Returns false to signal it's an estimate, not a measured value...
+    CPPUNIT_ASSERT(!bRet);
+    // ...but still produces a usable non-zero guessed height.
+    CPPUNIT_ASSERT_GREATER(0, nDropHeight);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testBackgroundAttrChangeNotification)
+{
+    // Trigger the pAttrSetChangeHint notification containing RES_BACKGROUND,
+    // forcing SwTextFrame to react to a paragraph background color change.
+    createSwDoc("drop_fly_overlap.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    CPPUNIT_ASSERT(pWrtShell);
+
+    // Change the paragraph's background color; this sends the RES_BACKGROUND hint.
+    SvxBrushItem aBrush(COL_RED, RES_BACKGROUND);
+    pWrtShell->SetAttrItem(aBrush);
+
+    // Re-dump the layout to confirm the invalidation/reformat completes cleanly.
+    pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // The paragraph's attribute set now actually carries the new background
+    // color — proving the change notification was correctly applied to the
+    // model, not just silently accepted or lost during the reformat.
+    SwTextNode* pNode = pWrtShell->GetCursor()->GetPoint()->GetNode().GetTextNode();
+    CPPUNIT_ASSERT(pNode);
+
+    const SvxBrushItem* pBrush = pNode->GetSwAttrSet().GetItem<SvxBrushItem>(RES_BACKGROUND);
+    CPPUNIT_ASSERT(pBrush);
+    CPPUNIT_ASSERT_EQUAL(COL_RED, pBrush->GetColor());
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testErgoSumFootnoteContinuation)
+{
+    // Trigger a footnote splitting across two pages, forming the follow/master
+    // frame chain that SwErgoSumPortion construction depends on.
+    createSwDoc("ergo_sum_footnote.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    // The footnote body is split into a master frame (page 1) and a linked
+    // follow frame (page 2), proving the footnote successfully broke across pages.
+    assertXPath(pXmlDoc, "//ftn[contains(@symbol, 'SwFootnoteFrame')]", 2);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testQuoVadisFootnoteContinuation)
+{
+    // Trigger SwTextFormatter::FormatQuoVadis by forcing a footnote to break
+    // across a short page, forming the same follow/master frame chain.
+    createSwDoc("quo_vadis_footnote.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    assertXPath(pXmlDoc, "//ftn[contains(@symbol, 'SwFootnoteFrame')]", 2);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testLinkPortion)
+{
+    createSwDoc("link.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // The hyperlink run must show up as its own text portion with the
+    // expanded text "link".
+    assertXPath(pXmlDoc, "//SwLinePortion[@portion='link']", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testPageNumberFieldPortion)
+{
+    createSwDoc("pagenumber.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // The page-number field portion must expand to "1".
+    assertXPath(pXmlDoc, "//SwFieldPortion[@expand='1']", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testFootnoteBodyPortion)
+{
+    createSwDoc("footnote.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // The anchor text in the body paragraph must be laid out correctly.
+    assertXPath(pXmlDoc, "//body/txt//SwLinePortion[@portion='This is a footnote']", 1);
+    // The footnote body text must be laid out in the footnote container.
+    assertXPath(pXmlDoc, "//ftncont/ftn/txt//SwLinePortion[@portion='test']", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testRubyPortion)
+{
+    createSwDoc("ruby.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // The ruby base/text pair must be formatted as a SwMultiPortion backed
+    // by a SwRubyPortion, with base text "Ruby".
+    assertXPath(pXmlDoc, "//SwMultiPortion[contains(@symbol, 'SwRubyPortion')][@portion='Ruby']",
+                1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter3, testAsCharShapePortion)
+{
+    createSwDoc("shape.fodt");
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    CPPUNIT_ASSERT(pXmlDoc);
+    // Shape's SdrObject must survive layout, regardless of container.
+    assertXPath(pXmlDoc, "//SdrObject[@name='Shape 1']", 1);
 }
 
 } // end of anonymous namespace

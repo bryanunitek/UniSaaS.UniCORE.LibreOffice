@@ -28,6 +28,7 @@
 #include <tools/zcodec.hxx>
 #include <tools/fract.hxx>
 #include <tools/mapunit.hxx>
+#include <filter/JxlReader.hxx>
 #include <filter/WebpReader.hxx>
 #include "igif/gifread.hxx"
 #include <vcl/TypeSerializer.hxx>
@@ -73,7 +74,7 @@ bool peekGraphicFormat(SvStream& rStream, OUString& rFormatExtension, bool bTest
     // go through the MET test. These problems are of course not only in MET and BMP.
     // Therefore, in the case of a format check (bTest == true)  we only test *exactly* this
     // format. Everything else could have fatal consequences, for example if the user says it is
-    // a BMP file (and it is a BMP) file, and the file would go through the MET test ...
+    // a BMP file (and it is a BMP file), and the file would go through the MET test ...
 
     if (!bTest || rFormatExtension.startsWith("MET"))
     {
@@ -160,6 +161,16 @@ bool peekGraphicFormat(SvStream& rStream, OUString& rFormatExtension, bool bTest
     {
         bSomethingTested = true;
         if (aDetector.checkJPG())
+        {
+            rFormatExtension = getImportFormatShortName(aDetector.getMetadata().mnFormat);
+            return true;
+        }
+    }
+
+    if (!bTest || rFormatExtension.startsWith("JXL"))
+    {
+        bSomethingTested = true;
+        if (aDetector.checkJXL())
         {
             rFormatExtension = getImportFormatShortName(aDetector.getMetadata().mnFormat);
             return true;
@@ -980,6 +991,20 @@ bool GraphicFormatDetector::checkJPG()
     return false;
 }
 
+bool GraphicFormatDetector::checkJXL()
+{
+    if ((maFirstBytes[0] == 0xFF && maFirstBytes[1] == 0x0A)
+        || (maFirstBytes[0] == 0x00 && maFirstBytes[1] == 0x00 && maFirstBytes[2] == 0x00
+            && maFirstBytes[3] == 0x0C && maFirstBytes[4] == 0x4A && maFirstBytes[5] == 0x58
+            && maFirstBytes[6] == 0x4C && maFirstBytes[7] == 0x20 && maFirstBytes[8] == 0x0D
+            && maFirstBytes[9] == 0x0A && maFirstBytes[10] == 0x87 && maFirstBytes[11] == 0x0A))
+    {
+        maMetadata.mnFormat = GraphicFileFormat::JXL;
+        return true;
+    }
+    return false;
+}
+
 bool GraphicFormatDetector::checkSVM()
 {
     sal_uInt32 n32 = 0;
@@ -1322,7 +1347,7 @@ bool GraphicFormatDetector::checkSVG()
     // extended search for svg element
     if (!bIsSvg)
     {
-        // it's a xml, look for '<svg' in full file. Should not happen too
+        // it's an XML, look for '<svg' in full file. Should not happen too
         // often since the tests above will handle most cases, but can happen
         // with Svg files containing big comment headers or Svg as the host
         // language

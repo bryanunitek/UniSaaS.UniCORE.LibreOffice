@@ -85,7 +85,7 @@ namespace cairocanvas
 
         const tools::Long nNewWidth = ::basegfx::fround( aSize.Width() * fStretch );
 
-        maFont->SetAverageFontWidth( nNewWidth );
+        maFont->SetFontWidth( nNewWidth );
 
         pOutDev->EnableMapMode(bOldMapState);
     }
@@ -117,24 +117,6 @@ namespace cairocanvas
     rendering::FontRequest SAL_CALL  CanvasFont::getFontRequest(  )
     {
         return maFontRequest;
-    }
-
-    rendering::FontMetrics SAL_CALL  CanvasFont::getFontMetrics(  )
-    {
-        // TODO(F1)
-        return rendering::FontMetrics();
-    }
-
-    uno::Sequence< double > SAL_CALL  CanvasFont::getAvailableSizes(  )
-    {
-        // TODO(F1)
-        return uno::Sequence< double >();
-    }
-
-    uno::Sequence< beans::PropertyValue > SAL_CALL  CanvasFont::getExtraFontProperties(  )
-    {
-        // TODO(F1)
-        return uno::Sequence< beans::PropertyValue >();
     }
 
     OUString SAL_CALL CanvasFont::getImplementationName()

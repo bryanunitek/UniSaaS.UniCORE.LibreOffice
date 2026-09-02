@@ -725,7 +725,6 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 
 $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_internal,\
 	Lib/pip/_internal/__init__.py \
-	Lib/pip/_internal/build_env.py \
 	Lib/pip/_internal/cache.py \
 	Lib/pip/_internal/configuration.py \
 	Lib/pip/_internal/exceptions.py \
@@ -733,6 +732,15 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 	Lib/pip/_internal/pyproject.py \
 	Lib/pip/_internal/self_outdated_check.py \
 	Lib/pip/_internal/wheel_builder.py \
+))
+
+$(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_internal/build_env,\
+	Lib/pip/_internal/build_env/__init__.py \
+	Lib/pip/_internal/build_env/base.py \
+	Lib/pip/_internal/build_env/installer.py \
+	Lib/pip/_internal/build_env/noop.py \
+	Lib/pip/_internal/build_env/venv.py \
+	Lib/pip/_internal/build_env/virtual.py \
 ))
 
 $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_internal/cli,\
@@ -959,16 +967,6 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 	Lib/pip/_vendor/certifi/core.py \
 ))
 
-$(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/dependency_groups,\
-	Lib/pip/_vendor/dependency_groups/LICENSE.txt \
-	Lib/pip/_vendor/dependency_groups/__init__.py \
-	Lib/pip/_vendor/dependency_groups/__main__.py \
-	Lib/pip/_vendor/dependency_groups/_implementation.py \
-	Lib/pip/_vendor/dependency_groups/_lint_dependency_groups.py \
-	Lib/pip/_vendor/dependency_groups/_pip_wrapper.py \
-	Lib/pip/_vendor/dependency_groups/_toml_compat.py \
-))
-
 $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/distlib,\
 	Lib/pip/_vendor/distlib/LICENSE.txt \
 	Lib/pip/_vendor/distlib/__init__.py \
@@ -992,6 +990,8 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 
 $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/idna,\
 	Lib/pip/_vendor/idna/__init__.py \
+	Lib/pip/_vendor/idna/__main__.py \
+	Lib/pip/_vendor/idna/cli.py \
 	Lib/pip/_vendor/idna/codec.py \
 	Lib/pip/_vendor/idna/compat.py \
 	Lib/pip/_vendor/idna/core.py \
@@ -1016,6 +1016,9 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 	Lib/pip/_vendor/packaging/_parser.py \
 	Lib/pip/_vendor/packaging/_structures.py \
 	Lib/pip/_vendor/packaging/_tokenizer.py \
+	Lib/pip/_vendor/packaging/dependency_groups.py \
+	Lib/pip/_vendor/packaging/direct_url.py \
+	Lib/pip/_vendor/packaging/errors.py \
 	Lib/pip/_vendor/packaging/markers.py \
 	Lib/pip/_vendor/packaging/metadata.py \
 	Lib/pip/_vendor/packaging/pylock.py \
@@ -1038,6 +1041,7 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/platformdirs,\
 	Lib/pip/_vendor/platformdirs/__init__.py \
 	Lib/pip/_vendor/platformdirs/__main__.py \
+	Lib/pip/_vendor/platformdirs/_xdg.py \
 	Lib/pip/_vendor/platformdirs/android.py \
 	Lib/pip/_vendor/platformdirs/api.py \
 	Lib/pip/_vendor/platformdirs/macos.py \
@@ -1098,6 +1102,7 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 	Lib/pip/_vendor/requests/__init__.py \
 	Lib/pip/_vendor/requests/__version__.py \
 	Lib/pip/_vendor/requests/_internal_utils.py \
+	Lib/pip/_vendor/requests/_types.py \
 	Lib/pip/_vendor/requests/adapters.py \
 	Lib/pip/_vendor/requests/api.py \
 	Lib/pip/_vendor/requests/auth.py \
@@ -1234,7 +1239,9 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/urllib3,\
 	Lib/pip/_vendor/urllib3/LICENSE.txt \
 	Lib/pip/_vendor/urllib3/__init__.py \
+	Lib/pip/_vendor/urllib3/_base_connection.py \
 	Lib/pip/_vendor/urllib3/_collections.py \
+	Lib/pip/_vendor/urllib3/_request_methods.py \
 	Lib/pip/_vendor/urllib3/_version.py \
 	Lib/pip/_vendor/urllib3/connection.py \
 	Lib/pip/_vendor/urllib3/connectionpool.py \
@@ -1242,42 +1249,33 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 	Lib/pip/_vendor/urllib3/fields.py \
 	Lib/pip/_vendor/urllib3/filepost.py \
 	Lib/pip/_vendor/urllib3/poolmanager.py \
-	Lib/pip/_vendor/urllib3/request.py \
 	Lib/pip/_vendor/urllib3/response.py \
 ))
 
 $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/urllib3/contrib,\
 	Lib/pip/_vendor/urllib3/contrib/__init__.py \
-	Lib/pip/_vendor/urllib3/contrib/_appengine_environ.py \
-	Lib/pip/_vendor/urllib3/contrib/appengine.py \
-	Lib/pip/_vendor/urllib3/contrib/ntlmpool.py \
 	Lib/pip/_vendor/urllib3/contrib/pyopenssl.py \
-	Lib/pip/_vendor/urllib3/contrib/securetransport.py \
 	Lib/pip/_vendor/urllib3/contrib/socks.py \
 ))
 
-$(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/urllib3/contrib/_securetransport,\
-	Lib/pip/_vendor/urllib3/contrib/_securetransport/__init__.py \
-	Lib/pip/_vendor/urllib3/contrib/_securetransport/bindings.py \
-	Lib/pip/_vendor/urllib3/contrib/_securetransport/low_level.py \
+$(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/urllib3/contrib/emscripten,\
+	Lib/pip/_vendor/urllib3/contrib/emscripten/__init__.py \
+	Lib/pip/_vendor/urllib3/contrib/emscripten/connection.py \
+	Lib/pip/_vendor/urllib3/contrib/emscripten/fetch.py \
+	Lib/pip/_vendor/urllib3/contrib/emscripten/request.py \
+	Lib/pip/_vendor/urllib3/contrib/emscripten/response.py \
 ))
 
-$(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/urllib3/packages,\
-	Lib/pip/_vendor/urllib3/packages/__init__.py \
-	Lib/pip/_vendor/urllib3/packages/six.py \
-))
-
-$(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/urllib3/packages/backports,\
-	Lib/pip/_vendor/urllib3/packages/backports/__init__.py \
-	Lib/pip/_vendor/urllib3/packages/backports/makefile.py \
-	Lib/pip/_vendor/urllib3/packages/backports/weakref_finalize.py \
+$(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/urllib3/http2,\
+	Lib/pip/_vendor/urllib3/http2/__init__.py \
+	Lib/pip/_vendor/urllib3/http2/connection.py \
+	Lib/pip/_vendor/urllib3/http2/probe.py \
 ))
 
 $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/python-core-$(PYTHON_VERSION)/lib/pip/_vendor/urllib3/util,\
 	Lib/pip/_vendor/urllib3/util/__init__.py \
 	Lib/pip/_vendor/urllib3/util/connection.py \
 	Lib/pip/_vendor/urllib3/util/proxy.py \
-	Lib/pip/_vendor/urllib3/util/queue.py \
 	Lib/pip/_vendor/urllib3/util/request.py \
 	Lib/pip/_vendor/urllib3/util/response.py \
 	Lib/pip/_vendor/urllib3/util/retry.py \
@@ -1286,6 +1284,7 @@ $(eval $(call gb_ExternalPackage_add_unpacked_files,python3,$(LIBO_BIN_FOLDER)/p
 	Lib/pip/_vendor/urllib3/util/ssltransport.py \
 	Lib/pip/_vendor/urllib3/util/timeout.py \
 	Lib/pip/_vendor/urllib3/util/url.py \
+	Lib/pip/_vendor/urllib3/util/util.py \
 	Lib/pip/_vendor/urllib3/util/wait.py \
 ))
 

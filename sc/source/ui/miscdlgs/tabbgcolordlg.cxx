@@ -21,43 +21,30 @@
 
 #include <tabbgcolordlg.hxx>
 
-#include <tools/color.hxx>
-#include <vcl/event.hxx>
+#include <svx/colorwindow.hxx>
 #include <vcl/weld/Builder.hxx>
-#include <vcl/weld/ScrolledWindow.hxx>
 #include <vcl/weld/Dialog.hxx>
 
-#include <officecfg/Office/Common.hxx>
-
 ScTabBgColorDlg::ScTabBgColorDlg(weld::Window* pParent, const OUString& rTitle,
-    const OUString& rTabBgColorNoColorText, const Color& rDefaultColor)
-    : GenericDialogController(pParent, u"modules/scalc/ui/tabcolordialog.ui"_ustr, u"TabColorDialog"_ustr)
+                                 const Color& rDefaultColor)
+    : GenericDialogController(pParent, u"modules/scalc/ui/tabcolordialog.ui"_ustr,
+                              u"TabColorDialog"_ustr)
     , m_aTabBgColor(rDefaultColor)
-    , m_xSelectPalette(m_xBuilder->weld_combo_box(u"paletteselector"_ustr))
-    , m_xTabBgColorSet(new ScTabBgColorValueSet(m_xBuilder->weld_scrolled_window(u"colorsetwin"_ustr, true)))
-    , m_xTabBgColorSetWin(new weld::CustomWeld(*m_xBuilder, u"colorset"_ustr, *m_xTabBgColorSet))
-    , m_xBtnOk(m_xBuilder->weld_button(u"ok"_ustr))
+    , m_xColorContainer(m_xBuilder->weld_container(u"colorcontainer"_ustr))
+    , m_xColorListBox(new ColorListBox(m_xBuilder->weld_menu_button(u"colorlistbox"_ustr),
+                                       [pParent] { return pParent; }))
 {
-    m_xTabBgColorSet->SetDialog(this);
-    m_xTabBgColorSet->SetColCount(SvxColorValueSet::getColumnCount());
-
     m_xDialog->set_title(rTitle);
+    m_xColorListBox->SetSlotId(0, /*bShowNoneButton=*/true);
 
-    const WinBits nBits(m_xTabBgColorSet->GetStyle() | WB_NAMEFIELD | WB_ITEMBORDER | WB_NONEFIELD | WB_3DLOOK | WB_NO_DIRECTSELECT);
-    m_xTabBgColorSet->SetStyle(nBits);
-    m_xTabBgColorSet->SetText(rTabBgColorNoColorText);
+    // tdf#163838 - select the current tab color when reopening the dialog
+    if (rDefaultColor != COL_AUTO)
+        m_xColorListBox->SelectEntry(rDefaultColor);
 
-    const sal_uInt32 nColCount = SvxColorValueSet::getColumnCount();
-    const sal_uInt32 nRowCount(10);
-    const sal_uInt32 nLength = SvxColorValueSet::getEntryEdgeLength();
-    Size aSize(m_xTabBgColorSet->CalcWindowSizePixel(Size(nLength, nLength), nColCount, nRowCount));
-    m_xTabBgColorSetWin->set_size_request(aSize.Width() + 8, aSize.Height() + 8);
+    m_xColorListBox->SetSelectHdl(LINK(this, ScTabBgColorDlg, ColorSelectedHdl));
 
-    FillPaletteLB();
-
-    m_xSelectPalette->connect_changed(LINK(this, ScTabBgColorDlg, SelectPaletteLBHdl));
-    m_xTabBgColorSet->SetDoubleClickHdl(LINK(this, ScTabBgColorDlg, TabBgColorDblClickHdl_Impl));
-    m_xBtnOk->connect_clicked(LINK(this, ScTabBgColorDlg, TabBgColorOKHdl_Impl));
+    // tdf#163785 - embed the color picker content inline without any popup
+    m_xColorListBox->EmbedColorWindowContent(m_xColorContainer.get());
 }
 
 ScTabBgColorDlg::~ScTabBgColorDlg()
@@ -69,76 +56,11 @@ Color ScTabBgColorDlg::GetSelectedColor() const
     return m_aTabBgColor;
 }
 
-void ScTabBgColorDlg::FillPaletteLB()
+IMPL_LINK_NOARG(ScTabBgColorDlg, ColorSelectedHdl, ColorListBox&, void)
 {
-    m_xSelectPalette->clear();
-    std::vector<OUString> aPaletteList = m_aPaletteManager.GetPaletteList();
-    for (auto const& palette : aPaletteList)
-    {
-        m_xSelectPalette->append_text(palette);
-    }
-    OUString aPaletteName( officecfg::Office::Common::UserColors::PaletteName::get() );
-    m_xSelectPalette->set_active_text(aPaletteName);
-    if (m_xSelectPalette->get_active() != -1)
-    {
-        SelectPaletteLBHdl(*m_xSelectPalette);
-    }
-}
-
-IMPL_LINK_NOARG(ScTabBgColorDlg, SelectPaletteLBHdl, weld::ComboBox&, void)
-{
-    m_xTabBgColorSet->Clear();
-    sal_Int32 nPos = m_xSelectPalette->get_active();
-    m_aPaletteManager.SetPalette( nPos );
-    m_aPaletteManager.ReloadColorSet(*m_xTabBgColorSet);
-    m_xTabBgColorSet->Resize();
-    m_xTabBgColorSet->SelectItem(0);
-}
-
-//    Handler, called when color selection is changed
-IMPL_LINK_NOARG(ScTabBgColorDlg, TabBgColorDblClickHdl_Impl, ValueSet*, void)
-{
-    sal_uInt16 nItemId = m_xTabBgColorSet->GetSelectedItemId();
-    Color aColor = nItemId ? ( m_xTabBgColorSet->GetItemColor( nItemId ) ) : COL_AUTO;
-    m_aTabBgColor = aColor;
+    Color aColor = m_xColorListBox->GetSelectEntryColor();
+    m_aTabBgColor = aColor == COL_NONE_COLOR ? COL_AUTO : aColor;
     m_xDialog->response(RET_OK);
-}
-
-//    Handler, called when the OK button is pushed
-IMPL_LINK_NOARG(ScTabBgColorDlg, TabBgColorOKHdl_Impl, weld::Button&, void)
-{
-    sal_uInt16 nItemId = m_xTabBgColorSet->GetSelectedItemId();
-    Color aColor = nItemId ? ( m_xTabBgColorSet->GetItemColor( nItemId ) ) : COL_AUTO;
-    m_aTabBgColor = aColor;
-    m_xDialog->response(RET_OK);
-}
-
-ScTabBgColorDlg::ScTabBgColorValueSet::ScTabBgColorValueSet(std::unique_ptr<weld::ScrolledWindow> pWindow)
-    : SvxColorValueSet(std::move(pWindow))
-    , m_pTabBgColorDlg(nullptr)
-{
-}
-
-ScTabBgColorDlg::ScTabBgColorValueSet::~ScTabBgColorValueSet()
-{
-}
-
-bool ScTabBgColorDlg::ScTabBgColorValueSet::KeyInput( const KeyEvent& rKEvt )
-{
-    switch ( rKEvt.GetKeyCode().GetCode() )
-    {
-        case KEY_SPACE:
-        case KEY_RETURN:
-        {
-            sal_uInt16 nItemId = GetSelectedItemId();
-            const Color aColor = nItemId ? ( GetItemColor( nItemId ) ) : COL_AUTO;
-            m_pTabBgColorDlg->m_aTabBgColor = aColor;
-            m_pTabBgColorDlg->response(RET_OK);
-            return true;
-        }
-        break;
-    }
-    return SvxColorValueSet::KeyInput(rKEvt);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

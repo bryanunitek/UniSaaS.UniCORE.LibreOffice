@@ -98,13 +98,13 @@ tools::Rectangle AccessibleListBoxEntry::GetBoundingBox_Impl() const
     SvTreeListEntry* pEntry = m_pTreeListBox->GetEntryFromPath( m_aEntryPath );
     if ( pEntry )
     {
-        aRect = m_pTreeListBox->GetBoundingRect( pEntry );
+        aRect = m_pTreeListBox->GetBoundingRect(*pEntry);
         SvTreeListEntry* pParent = m_pTreeListBox->GetParent( pEntry );
         if ( pParent )
         {
             // position relative to parent entry
             Point aTopLeft = aRect.TopLeft();
-            aTopLeft -= m_pTreeListBox->GetBoundingRect( pParent ).TopLeft();
+            aTopLeft -= m_pTreeListBox->GetBoundingRect(*pParent).TopLeft();
             aRect = tools::Rectangle( aTopLeft, aRect.GetSize() );
         }
     }
@@ -439,8 +439,8 @@ sal_Int64 SAL_CALL AccessibleListBoxEntry::getAccessibleStateSet(  )
                 nStateSet |= AccessibleStateType::ENABLED;
                 nStateSet |= AccessibleStateType::FOCUSABLE;
                 nStateSet |= AccessibleStateType::SELECTABLE;
-                SvViewDataEntry* pViewDataNewCur = m_pTreeListBox->GetViewDataEntry(pEntry);
-                if (pViewDataNewCur && pViewDataNewCur->HasFocus())
+                SvViewDataEntry& rViewDataNewCur = m_pTreeListBox->GetViewDataEntry(*pEntry);
+                if (rViewDataNewCur.HasFocus())
                     nStateSet |= AccessibleStateType::FOCUSED;
             }
         }
@@ -650,7 +650,7 @@ sal_Bool SAL_CALL AccessibleListBoxEntry::doAccessibleAction( sal_Int32 nIndex )
             if ( m_pTreeListBox->IsExpanded( pEntry ) )
                 m_pTreeListBox->Collapse( pEntry );
             else
-                m_pTreeListBox->Expand( pEntry );
+                m_pTreeListBox->Expand(*pEntry);
             bRet = true;
         }
     }
@@ -1075,7 +1075,7 @@ SvTreeListEntry* AccessibleListBoxEntry::GetRealChild(sal_Int32 nIndex)
         pEntry = m_pTreeListBox->GetEntry( pParent, nIndex );
         if ( !pEntry && getAccessibleChildCount() > 0 )
         {
-            m_pTreeListBox->RequestingChildren(pParent);
+            m_pTreeListBox->RequestingChildren(*pParent);
             pEntry = m_pTreeListBox->GetEntry( pParent, nIndex );
         }
     }

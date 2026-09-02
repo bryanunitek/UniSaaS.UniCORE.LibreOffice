@@ -669,7 +669,11 @@ void SwFont::SetDiffFnt( const SfxItemSet *pAttrSet,
         if( const SvxOpticalSizingItem* pItem = pAttrSet->GetItemIfSet( RES_CHRATR_OPTICAL_SIZING ) )
             SetOpticalSizing( pItem->GetValue() );
         if( const SvxFontVariationsItem* pItem = pAttrSet->GetItemIfSet( RES_CHRATR_FONT_VARIATIONS ) )
-            SetVariations( pItem->GetVariations() );
+            SetVariations( pItem->GetVariations(), SwFontScript::Latin );
+        if( const SvxFontVariationsItem* pItem = pAttrSet->GetItemIfSet( RES_CHRATR_CJK_FONT_VARIATIONS ) )
+            SetVariations( pItem->GetVariations(), SwFontScript::CJK );
+        if( const SvxFontVariationsItem* pItem = pAttrSet->GetItemIfSet( RES_CHRATR_CTL_FONT_VARIATIONS ) )
+            SetVariations( pItem->GetVariations(), SwFontScript::CTL );
     }
     else
     {
@@ -1011,6 +1015,12 @@ sal_uInt16 SwSubFont::GetHangingBaseline( SwViewShell const *pSh, const OutputDe
 {
     SwFntAccess aFntAccess( m_nFontCacheId, m_nFontIndex, this, pSh );
     return aFntAccess.Get()->GetFontHangingBaseline( pSh, rOut );
+}
+
+bool SwSubFont::HasCJKCodePages(SwViewShell const* pSh, const OutputDevice& rOut)
+{
+    SwFntAccess aFntAccess(m_nFontCacheId, m_nFontIndex, this, pSh);
+    return aFntAccess.Get()->GetFontHasCJKCodePages(pSh, rOut);
 }
 
 Size SwSubFont::GetTextSize_( SwDrawTextInfo& rInf )

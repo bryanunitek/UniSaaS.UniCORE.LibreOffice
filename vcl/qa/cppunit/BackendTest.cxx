@@ -503,7 +503,6 @@ public:
 
     void testDrawMask24bpp()
     {
-#if !ENABLE_CAIRO_RGBA
         if (getDefaultDeviceBitCount() < 24)
             return;
         vcl::test::OutputDeviceTestBitmap aOutDevTest;
@@ -512,7 +511,6 @@ public:
         exportImage(u"08-05_mask_test_24bpp.png"_ustr, aBitmap);
         if (SHOULD_ASSERT)
             CPPUNIT_ASSERT(eResult != vcl::test::TestResult::Failed);
-#endif
     }
 
     void testDrawBlend24bpp()
@@ -1375,7 +1373,7 @@ public:
         CPPUNIT_ASSERT_EQUAL(COL_WHITE, device->GetPixel(Point(51, 20)));
     }
 
-    void testTdf136171()
+    void testTdf136171_draw_opaque_bitmap_with_alpha()
     {
         if (getDefaultDeviceBitCount() < 24)
             return;
@@ -1620,7 +1618,7 @@ public:
     CPPUNIT_TEST(testDrawOpenBezierWithPolyLineB2D);
 
     CPPUNIT_TEST(testTdf124848);
-    CPPUNIT_TEST(testTdf136171);
+    CPPUNIT_TEST(testTdf136171_draw_opaque_bitmap_with_alpha);
     CPPUNIT_TEST(testTdf145811);
 
     CPPUNIT_TEST_SUITE_END();

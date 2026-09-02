@@ -28,122 +28,6 @@
 #include <vcl/salnativewidgets.hxx>
 #include <vcl/settings.hxx>
 
-SvLBoxButtonData::SvLBoxButtonData(const Control& rControlForSettings, bool _bRadioBtn)
-    : m_pEntry(nullptr)
-    , m_pBox(nullptr)
-    , m_bShowRadioButton(false)
-{
-    bDataOk = false;
-    m_bShowRadioButton = _bRadioBtn;
-
-    SetDefaultImages(rControlForSettings);
-}
-
-SvLBoxButtonData::~SvLBoxButtonData()
-{
-}
-
-void SvLBoxButtonData::CallLink()
-{
-    aLink.Call( this );
-}
-
-SvBmp SvLBoxButtonData::GetIndex( SvItemStateFlags nItemState )
-{
-    SvBmp nIdx;
-    if (nItemState == SvItemStateFlags::UNCHECKED)
-        nIdx = SvBmp::UNCHECKED;
-    else if (nItemState == SvItemStateFlags::CHECKED)
-        nIdx = SvBmp::CHECKED;
-    else if (nItemState == SvItemStateFlags::TRISTATE)
-        nIdx = SvBmp::TRISTATE;
-    else if (nItemState == (SvItemStateFlags::UNCHECKED | SvItemStateFlags::HIGHLIGHTED))
-        nIdx = SvBmp::HIUNCHECKED;
-    else if (nItemState == (SvItemStateFlags::CHECKED | SvItemStateFlags::HIGHLIGHTED))
-        nIdx = SvBmp::HICHECKED;
-    else if (nItemState == (SvItemStateFlags::TRISTATE | SvItemStateFlags::HIGHLIGHTED))
-        nIdx = SvBmp::HITRISTATE;
-    else
-        nIdx = SvBmp::UNCHECKED;
-    return nIdx;
-}
-
-const Size & SvLBoxButtonData::GetSize()
-{
-    if (!bDataOk)
-        SetWidthAndHeight();
-
-    return m_aSize;
-}
-
-void SvLBoxButtonData::SetWidthAndHeight()
-{
-    m_aSize = aBmps.at(SvBmp::UNCHECKED).GetSizePixel();
-    bDataOk = true;
-}
-
-void SvLBoxButtonData::StoreButtonState(SvTreeListEntry* pActEntry, SvLBoxButton* pActBox)
-{
-    m_pEntry = pActEntry;
-    m_pBox = pActBox;
-}
-
-SvButtonState SvLBoxButtonData::ConvertToButtonState( SvItemStateFlags nItemFlags )
-{
-    nItemFlags &= SvItemStateFlags::UNCHECKED |
-                  SvItemStateFlags::CHECKED |
-                  SvItemStateFlags::TRISTATE;
-    switch( nItemFlags )
-    {
-        case SvItemStateFlags::UNCHECKED:
-            return SvButtonState::Unchecked;
-        case SvItemStateFlags::CHECKED:
-            return SvButtonState::Checked;
-        case SvItemStateFlags::TRISTATE:
-            return SvButtonState::Tristate;
-        default:
-            return SvButtonState::Unchecked;
-    }
-}
-
-SvTreeListEntry* SvLBoxButtonData::GetActEntry() const
-{
-    return m_pEntry;
-}
-
-SvLBoxButton* SvLBoxButtonData::GetActBox() const
-{
-    return m_pBox;
-}
-
-void SvLBoxButtonData::SetDefaultImages(const Control& rCtrl)
-{
-    const AllSettings& rSettings = rCtrl.GetSettings();
-
-    if (m_bShowRadioButton)
-    {
-        aBmps[SvBmp::UNCHECKED] = RadioButton::GetRadioImage(rSettings, DrawButtonFlags::Default);
-        aBmps[SvBmp::CHECKED] = RadioButton::GetRadioImage(rSettings, DrawButtonFlags::Checked);
-        aBmps[SvBmp::HICHECKED] = RadioButton::GetRadioImage(rSettings, DrawButtonFlags::Checked | DrawButtonFlags::Pressed);
-        aBmps[SvBmp::HIUNCHECKED] = RadioButton::GetRadioImage(rSettings, DrawButtonFlags::Default | DrawButtonFlags::Pressed);
-        aBmps[SvBmp::TRISTATE] = RadioButton::GetRadioImage(rSettings, DrawButtonFlags::DontKnow);
-        aBmps[SvBmp::HITRISTATE] = RadioButton::GetRadioImage(rSettings, DrawButtonFlags::DontKnow | DrawButtonFlags::Pressed);
-    }
-    else
-    {
-        aBmps[SvBmp::UNCHECKED] = CheckBox::GetCheckImage( rSettings, DrawButtonFlags::Default);
-        aBmps[SvBmp::CHECKED] = CheckBox::GetCheckImage( rSettings, DrawButtonFlags::Checked);
-        aBmps[SvBmp::HICHECKED] = CheckBox::GetCheckImage( rSettings, DrawButtonFlags::Checked | DrawButtonFlags::Pressed);
-        aBmps[SvBmp::HIUNCHECKED] = CheckBox::GetCheckImage( rSettings, DrawButtonFlags::Default | DrawButtonFlags::Pressed);
-        aBmps[SvBmp::TRISTATE] = CheckBox::GetCheckImage( rSettings, DrawButtonFlags::DontKnow);
-        aBmps[SvBmp::HITRISTATE] = CheckBox::GetCheckImage( rSettings, DrawButtonFlags::DontKnow | DrawButtonFlags::Pressed);
-    }
-}
-
-bool SvLBoxButtonData::IsRadio() const {
-    return m_bShowRadioButton;
-}
-
 // ***************************************************************
 // class SvLBoxString
 // ***************************************************************
@@ -213,24 +97,24 @@ void SvLBoxString::Paint(
             case TxtAlign::Left:
             {
                 nStyle |= DrawTextFlags::Left;
-                aSize.setWidth(GetWidth(rDev, &rEntry));
+                aSize.setWidth(GetWidth(rDev, rEntry));
                 break;
             }
             case TxtAlign::Center:
             {
                 nStyle |= DrawTextFlags::Center;
-                aSize.setWidth(rDev.GetBoundingRect(&rEntry).getOpenWidth());
+                aSize.setWidth(rDev.GetBoundingRect(rEntry).getOpenWidth());
                 break;
             }
             case TxtAlign::Right:
             {
                 nStyle |= DrawTextFlags::Right;
-                aSize.setWidth(rDev.GetBoundingRect(&rEntry).getOpenWidth());
+                aSize.setWidth(rDev.GetBoundingRect(rEntry).getOpenWidth());
                 break;
             }
         }
     }
-    aSize.setHeight(GetHeight(rDev, &rEntry));
+    aSize.setHeight(GetHeight(rDev, rEntry));
 
     if (mbEmphasized)
     {
@@ -264,13 +148,13 @@ std::unique_ptr<SvLBoxItem> SvLBoxString::Clone(SvLBoxItem const * pSource) cons
     return std::unique_ptr<SvLBoxItem>(pNew.release());
 }
 
-void SvLBoxString::InitViewData(SvTreeListBox& rView, SvTreeListEntry* pEntry,
+void SvLBoxString::InitViewData(SvTreeListBox& rView, SvTreeListEntry& rEntry,
                                 SvViewDataItem* pViewData)
 {
     if( !pViewData )
-        pViewData = &rView.GetViewDataItem(pEntry, *this);
+        pViewData = &rView.GetViewDataItem(rEntry, *this);
 
-    if (pEntry->IsSeparator())
+    if (rEntry.IsSeparator())
     {
         pViewData->mnWidth = -1;
         pViewData->mnHeight = 0;
@@ -287,7 +171,7 @@ void SvLBoxString::InitViewData(SvTreeListBox& rView, SvTreeListEntry* pEntry,
 
     if (mbCustom)
     {
-        Size aSize = rView.MeasureCustomEntry(*rView.GetOutDev(), *pEntry);
+        Size aSize = rView.MeasureCustomEntry(*rView.GetOutDev(), rEntry);
         pViewData->mnWidth = aSize.Width();
         pViewData->mnHeight = aSize.Height();
     }
@@ -307,146 +191,12 @@ int SvLBoxString::CalcWidth(const SvTreeListBox& rView) const
 }
 
 // ***************************************************************
-// class SvLBoxButton
-// ***************************************************************
-
-
-SvLBoxButton::SvLBoxButton( SvLBoxButtonData* pBData )
-    : isVis(true)
-    , pData(pBData)
-    , nItemFlags(SvItemStateFlags::NONE)
-{
-    SetStateUnchecked();
-}
-
-SvLBoxButton::SvLBoxButton()
-    : isVis(false)
-    , pData(nullptr)
-    , nItemFlags(SvItemStateFlags::NONE)
-{
-    SetStateUnchecked();
-}
-
-SvLBoxButton::~SvLBoxButton()
-{
-}
-
-SvLBoxItemType SvLBoxButton::GetType() const
-{
-    return SvLBoxItemType::Button;
-}
-
-void SvLBoxButton::ClickHdl( SvTreeListEntry* pEntry )
-{
-    if ( IsStateChecked() )
-        SetStateUnchecked();
-    else
-        SetStateChecked();
-    pData->StoreButtonState(pEntry, this);
-    pData->CallLink();
-}
-
-void SvLBoxButton::Paint(
-    const Point& rPos, SvTreeListBox& rDev, vcl::RenderContext& rRenderContext,
-    const SvViewDataEntry* /*pView*/, const SvTreeListEntry& /*rEntry*/)
-{
-    SvBmp nIndex = SvLBoxButtonData::GetIndex(nItemFlags);
-    DrawImageFlags nStyle = (rDev.IsEnabled() && !mbDisabled) ? DrawImageFlags::NONE : DrawImageFlags::Disable;
-
-    //Native drawing
-    bool bNativeOK = false;
-    ControlType eCtrlType = (pData->IsRadio())? ControlType::Radiobutton : ControlType::Checkbox;
-    if ( rRenderContext.IsNativeControlSupported( eCtrlType, ControlPart::Entire) )
-    {
-        Size aSize = pData->GetSize();
-        ImplAdjustBoxSize(aSize, eCtrlType, rRenderContext);
-        ImplControlValue aControlValue;
-        tools::Rectangle aCtrlRegion( rPos, aSize );
-        ControlState nState = ControlState::NONE;
-
-        //states ControlState::DEFAULT, ControlState::PRESSED and ControlState::ROLLOVER are not implemented
-        if (IsStateHilighted())
-            nState |= ControlState::FOCUSED;
-        if (nStyle != DrawImageFlags::Disable)
-            nState |= ControlState::ENABLED;
-        if (IsStateChecked())
-            aControlValue.setTristateVal(ButtonValue::On);
-        else if (IsStateUnchecked())
-            aControlValue.setTristateVal(ButtonValue::Off);
-        else if (IsStateTristate())
-            aControlValue.setTristateVal( ButtonValue::Mixed );
-
-        if (isVis)
-            bNativeOK = rRenderContext.DrawNativeControl(eCtrlType, ControlPart::Entire,
-                                                         aCtrlRegion, nState, aControlValue, OUString());
-    }
-
-    if (!bNativeOK && isVis)
-        rRenderContext.DrawImage(rPos, pData->GetImage(nIndex), nStyle);
-}
-
-std::unique_ptr<SvLBoxItem> SvLBoxButton::Clone(SvLBoxItem const * pSource) const
-{
-    std::unique_ptr<SvLBoxButton> pNew(new SvLBoxButton);
-    pNew->pData = static_cast<SvLBoxButton const *>(pSource)->pData;
-    return pNew;
-}
-
-void SvLBoxButton::ImplAdjustBoxSize(Size& io_rSize, ControlType i_eType, vcl::RenderContext const & rRenderContext)
-{
-    if (!rRenderContext.IsNativeControlSupported( i_eType, ControlPart::Entire) )
-        return;
-
-    ImplControlValue    aControlValue;
-    tools::Rectangle    aCtrlRegion( Point( 0, 0 ), io_rSize );
-
-    aControlValue.setTristateVal( ButtonValue::On );
-
-    tools::Rectangle aNativeBounds, aNativeContent;
-    bool bNativeOK = rRenderContext.GetNativeControlRegion( i_eType,
-                                                        ControlPart::Entire,
-                                                        aCtrlRegion,
-                                                        ControlState::ENABLED,
-                                                        aControlValue,
-                                                        aNativeBounds,
-                                                        aNativeContent );
-    if( bNativeOK )
-    {
-        Size aContentSize( aNativeContent.GetSize() );
-        // leave a little space around the box image (looks better)
-        if( aContentSize.Height() + 2 > io_rSize.Height() )
-            io_rSize.setHeight( aContentSize.Height() + 2 );
-        if( aContentSize.Width() + 2 > io_rSize.Width() )
-            io_rSize.setWidth( aContentSize.Width() + 2 );
-    }
-}
-
-void SvLBoxButton::InitViewData(SvTreeListBox& rView, SvTreeListEntry* pEntry,
-                                SvViewDataItem* pViewData)
-{
-    if( !pViewData )
-        pViewData = &rView.GetViewDataItem(pEntry, *this);
-    Size aSize = pData->GetSize();
-
-    ControlType eCtrlType = (pData->IsRadio())? ControlType::Radiobutton : ControlType::Checkbox;
-    ImplAdjustBoxSize(aSize, eCtrlType, *rView.GetOutDev());
-    pViewData->mnWidth = aSize.Width();
-    pViewData->mnHeight = aSize.Height();
-}
-
-// ***************************************************************
 // class SvLBoxContextBmp
 // ***************************************************************
 
-SvLBoxContextBmp::SvLBoxContextBmp(const Image& aBmp1, const Image& aBmp2, bool bExpanded)
+SvLBoxContextBmp::SvLBoxContextBmp(const Image& aBmp1, const Image& aBmp2)
     : m_aImage1(aBmp1)
     , m_aImage2(aBmp2)
-    , m_bExpanded(bExpanded)
-{
-}
-
-SvLBoxContextBmp::SvLBoxContextBmp()
-    : m_bExpanded(false)
 {
 }
 
@@ -459,11 +209,11 @@ SvLBoxItemType SvLBoxContextBmp::GetType() const
     return SvLBoxItemType::ContextBmp;
 }
 
-void SvLBoxContextBmp::InitViewData(SvTreeListBox& rView, SvTreeListEntry* pEntry,
+void SvLBoxContextBmp::InitViewData(SvTreeListBox& rView, SvTreeListEntry& rEntry,
                                     SvViewDataItem* pViewData)
 {
     if( !pViewData )
-        pViewData = &rView.GetViewDataItem(pEntry, *this);
+        pViewData = &rView.GetViewDataItem(rEntry, *this);
     Size aSize = m_aImage1.GetSizePixel();
     pViewData->mnWidth = aSize.Width();
     pViewData->mnHeight = aSize.Height();
@@ -475,7 +225,7 @@ void SvLBoxContextBmp::Paint(
 {
 
     // get the image.
-    const Image& rImage = pView->IsExpanded() != m_bExpanded ? m_aImage1 : m_aImage2;
+    const Image& rImage = !pView->IsExpanded() ? m_aImage1 : m_aImage2;
 
     bool _bSemiTransparent = bool( SvTLEntryFlags::SEMITRANSPARENT & rEntry.GetFlags( ) );
     // draw
@@ -487,11 +237,8 @@ void SvLBoxContextBmp::Paint(
 
 std::unique_ptr<SvLBoxItem> SvLBoxContextBmp::Clone(SvLBoxItem const * pSource) const
 {
-    std::unique_ptr<SvLBoxContextBmp> pNew(new SvLBoxContextBmp);
-    pNew->m_aImage1 = static_cast<SvLBoxContextBmp const*>(pSource)->m_aImage1;
-    pNew->m_aImage2 = static_cast<SvLBoxContextBmp const*>(pSource)->m_aImage2;
-    pNew->m_bExpanded = static_cast<SvLBoxContextBmp const*>(pSource)->m_bExpanded;
-    return std::unique_ptr<SvLBoxItem>(pNew.release());
+    const SvLBoxContextBmp* pContextBmp = static_cast<const SvLBoxContextBmp*>(pSource);
+    return std::make_unique<SvLBoxContextBmp>(pContextBmp->m_aImage1, pContextBmp->m_aImage2);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

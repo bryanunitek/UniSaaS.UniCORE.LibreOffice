@@ -86,8 +86,6 @@ class SAL_DLLPUBLIC_RTTI ScDocShell final: public SfxObjectShell, public SfxList
     std::unique_ptr<DocShell_Impl> m_pImpl;
     std::unique_ptr<ScDocFunc> m_pDocFunc;
 
-    bool                m_bHeaderOn;
-    bool                m_bFooterOn;
     bool                m_bIsInplace:1;         // Is set by the View
     bool                m_bIsEmpty:1;
     bool                m_bIsInUndo:1;
@@ -161,7 +159,7 @@ class SAL_DLLPUBLIC_RTTI ScDocShell final: public SfxObjectShell, public SfxList
 
 public:
                     SFX_DECL_INTERFACE(SCID_DOC_SHELL)
-   SC_DLLPUBLIC static SfxObjectFactory&    Factory();                                  \
+   SC_DLLPUBLIC static SfxObjectFactory&    Factory();
    virtual SfxObjectFactory&   GetFactory() const override { return Factory(); }
 
 private:
@@ -305,6 +303,9 @@ public:
     virtual void    ReconnectDdeLink(SfxObjectShell& rServer) override;
     void            UpdateLinks() override;
     void            PerformLinkUpdate() override;
+    /** The document's HasExternalLinks together with the deferred form-control
+        images the shell keeps itself. */
+    bool            HasExternalLinks() const;
     SC_DLLPUBLIC void SetInitialLinkUpdate( const SfxMedium* pMedium );
     void            AllowLinkUpdate();
     SC_DLLPUBLIC void ReloadAllLinks();
@@ -365,10 +366,6 @@ public:
 
     void            CalcOutputFactor();
     double          GetOutputFactor() const { return m_nPrtToScreenFactor;}
-    void            GetPageOnFromPageStyleSet( const SfxItemSet* pStyleSet,
-                                               SCTAB             nCurTab,
-                                               bool&             rbHeader,
-                                               bool&             rbFooter );
 
 #if defined(_WIN32)
     virtual bool DdeGetData( const OUString& rItem, const OUString& rMimeType,

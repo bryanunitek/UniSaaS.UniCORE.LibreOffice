@@ -425,7 +425,7 @@ public:
 
 SwSavePaintStatics::SwSavePaintStatics()
 {
-    // Saving globales
+    // Saving globals
     bSFlyMetafile = gProp.bSFlyMetafile;
     pSGlobalShell = gProp.pSGlobalShell;
     pSFlyMetafileOut = gProp.pSFlyMetafileOut;
@@ -447,7 +447,7 @@ SwSavePaintStatics::SwSavePaintStatics()
     aSScaleX = gProp.aSScaleX;
     aSScaleY = gProp.aSScaleY;
 
-    // Restoring globales to default
+    // Restoring globals to default
     gProp.bSFlyMetafile = false;
     gProp.pSFlyMetafileOut = nullptr;
     gProp.pSRetoucheFly  = nullptr;
@@ -461,7 +461,7 @@ SwSavePaintStatics::SwSavePaintStatics()
 
 SwSavePaintStatics::~SwSavePaintStatics()
 {
-    // Restoring globales to saved one
+    // Restoring globals to saved one
     gProp.pSGlobalShell       = pSGlobalShell;
     gProp.bSFlyMetafile       = bSFlyMetafile;
     gProp.pSFlyMetafileOut    = pSFlyMetafileOut;
@@ -1478,12 +1478,12 @@ static void lcl_SubtractFlys( const SwFrame *pFrame, const SwPageFrame *pPage,
             // have not to be subtracted from given region.
             // But, if method is called for a fly frame and
             // <pFly> is a direct lower of this fly frame and
-            // <pFly> inherites its transparent background brush from its parent,
+            // <pFly> inherits from its transparent background brush from its parent,
             // then <pFly> frame area have to be subtracted from given region.
             // NOTE: Because in Status Quo transparent backgrounds can only be
             //     assigned to fly frames, the handle of this special case
             //     avoids drawing of transparent areas more than once, if
-            //     a fly frame inherites a transparent background from its
+            //     a fly frame inherits from a transparent background from its
             //     parent fly frame.
             if (pFrame->IsFlyFrame() &&
                 (pFly->GetAnchorFrame()->FindFlyFrame() == pFrame) &&
@@ -1835,12 +1835,7 @@ void DrawGraphic(
     {
         if( rSh.GetViewOptions()->IsGraphic() )
         {
-            OUString referer;
-            SfxObjectShell * sh = rSh.GetDoc()->GetPersist();
-            if (sh != nullptr && sh->HasName()) {
-                referer = sh->GetMedium()->GetName();
-            }
-            const Graphic* pGrf = pBrush->GetGraphic(referer);
+            const Graphic* pGrf = pBrush->GetGraphic(rSh.GetDoc()->GetLinkReferer());
             if( pGrf && GraphicType::NONE != pGrf->GetType() )
             {
                 ePos = pBrush->GetGraphicPos();
@@ -4606,7 +4601,12 @@ void SwTextFrame::PaintParagraphStylesHighlighting() const
     {
         SwRect aFrameAreaRect(getFrameArea());
 
-        if (IsRightToLeft())
+        if (IsVertical())
+        {
+            aFrameAreaRect.AddTop(-375);
+            aFrameAreaRect.Bottom(aFrameAreaRect.Top() + 300);
+        }
+        else if (IsRightToLeft())
         {
             aFrameAreaRect.AddRight(75);
             aFrameAreaRect.Left(aFrameAreaRect.Right() + 300);
@@ -7877,10 +7877,7 @@ Color SwPageFrame::GetDrawBackgroundColor() const
             OUString referer;
             SwViewShell * sh1 = getRootFrame()->GetCurrShell();
             if (sh1 != nullptr) {
-                SfxObjectShell * sh2 = sh1->GetDoc()->GetPersist();
-                if (sh2 != nullptr && sh2->HasName()) {
-                    referer = sh2->GetMedium()->GetName();
-                }
+                referer = sh1->GetDoc()->GetLinkReferer();
             }
             const Graphic* pGraphic = pBrushItem->GetGraphic(referer);
 

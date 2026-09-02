@@ -850,7 +850,7 @@ void ScInterpreter::ScGetDateDif()
         // and months from the difference of dates. Birthday-like 23 years
         // and 10 months and 19 days.
 
-        // Algorithm's roll-over behavior extracted from Excel by try and
+        // Algorithm's roll-over behavior extracted from Excel by trial and
         // error...
         // If day1 <= day2 then simply day2 - day1.
         // If day1 > day2 then set month1 to month2-1 and year1 to
@@ -1100,7 +1100,7 @@ void ScInterpreter::ScRoundSignificant()
 /** tdf69552 ODFF1.2 function CEILING and Excel function CEILING.MATH
     In essence, the difference between the two is that ODFF-CEILING needs to
     have arguments value and significance of the same sign and with
-    CEILING.MATH the sign of argument significance is irrevelevant.
+    CEILING.MATH the sign of argument significance is irrelevant.
     This is why ODFF-CEILING is exported to Excel as CEILING.MATH and
     CEILING.MATH is imported in Calc as CEILING.MATH
  */
@@ -1188,7 +1188,7 @@ void ScInterpreter::ScCeil_Precise()
 /** tdf69552 ODFF1.2 function FLOOR and Excel function FLOOR.MATH
     In essence, the difference between the two is that ODFF-FLOOR needs to
     have arguments value and significance of the same sign and with
-    FLOOR.MATH the sign of argument significance is irrevelevant.
+    FLOOR.MATH the sign of argument significance is irrelevant.
     This is why ODFF-FLOOR is exported to Excel as FLOOR.MATH and
     FLOOR.MATH is imported in Calc as FLOOR.MATH
  */
@@ -2059,7 +2059,7 @@ bool ScInterpreter::RateIteration( double fNper, double fPayment, double fPv,
     // See also #i15090#
     // Newton-Raphson method: x(i+1) = x(i) - f(x(i)) / f'(x(i))
     // This solution handles integer and non-integer values of Nper different.
-    // If ODFF will constraint Nper to integer, the distinction of cases can be
+    // If ODFF will constrain Nper to integer, the distinction of cases can be
     // removed; only the integer-part is needed then.
     bool bValid = true, bFound = false;
     double fX, fXnew, fTerm, fTermDerivation;
@@ -2408,8 +2408,8 @@ void ScInterpreter::ScMod()
 
 void ScInterpreter::ScIntersect()
 {
-    formula::FormulaConstTokenRef p2nd = PopToken();
-    formula::FormulaConstTokenRef p1st = PopToken();
+    formula::FormulaConstTokenRef p2nd = PopReferenceOperand();
+    formula::FormulaConstTokenRef p1st = PopReferenceOperand();
 
     if (nGlobalError != FormulaError::NONE || !p2nd || !p1st)
     {
@@ -2551,8 +2551,8 @@ void ScInterpreter::ScIntersect()
 
 void ScInterpreter::ScRangeFunc()
 {
-    formula::FormulaConstTokenRef x2 = PopToken();
-    formula::FormulaConstTokenRef x1 = PopToken();
+    formula::FormulaConstTokenRef x2 = PopReferenceOperand();
+    formula::FormulaConstTokenRef x1 = PopReferenceOperand();
 
     if (nGlobalError != FormulaError::NONE || !x2 || !x1)
     {
@@ -2571,12 +2571,15 @@ void ScInterpreter::ScRangeFunc()
 
 void ScInterpreter::ScUnionFunc()
 {
-    formula::FormulaConstTokenRef p2nd = PopToken();
-    formula::FormulaConstTokenRef p1st = PopToken();
+    formula::FormulaConstTokenRef p2nd = PopReferenceOperand();
+    formula::FormulaConstTokenRef p1st = PopReferenceOperand();
 
     if (nGlobalError != FormulaError::NONE || !p2nd || !p1st)
     {
-        PushIllegalArgument();
+        // An error in one of the parts, for example an error constant written into
+        // the list, becomes the result of the whole list.
+        PushError(nGlobalError != FormulaError::NONE ? nGlobalError
+                                                     : FormulaError::IllegalArgument);
         return;
     }
 
@@ -2585,7 +2588,9 @@ void ScInterpreter::ScUnionFunc()
     if ((sv1 != svSingleRef && sv1 != svDoubleRef && sv1 != svRefList) ||
         (sv2 != svSingleRef && sv2 != svDoubleRef && sv2 != svRefList))
     {
-        PushIllegalArgument();
+        // A union joins references, so a value part like A1% leaves
+        // nothing to join and gives #VALUE!.
+        PushError( FormulaError::NoValue);
         return;
     }
 
@@ -2805,7 +2810,7 @@ void ScInterpreter::ScDde()
         //decision
         if (!mrDoc.HasLinkFormulaNeedingCheck())
         {
-                                //TODO: evaluate asynchron ???
+                                //TODO: evaluate asynchronously ???
             pLink->TryUpdate(); //  TryUpdate doesn't call Update multiple times
         }
 
@@ -2918,7 +2923,7 @@ void ScInterpreter::ScBase()
 #if 0
                 // =BASIS(1e308;36) => GPF with
                 // nDig = (size_t) ::rtl::math::approxFloor( fVal - fMult );
-                // in spite off previous test if fVal >= fMult
+                // in spite of previous test if fVal >= fMult
                 double fDebug1 = fVal - fMult;
                 // fVal    := 7,5975311883090e+290
                 // fMult   := 7,5975311883090e+290

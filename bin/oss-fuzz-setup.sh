@@ -95,8 +95,12 @@ curl --no-progress-meter -S \
     -C - -O https://raw.githubusercontent.com/google/fuzzing/master/dictionaries/webp.dict \
     -C - -O https://raw.githubusercontent.com/google/fuzzing/master/dictionaries/zip.dict \
     -C - -O https://raw.githubusercontent.com/google/fuzzing/master/dictionaries/mathml.dict
-# upstream rtf.dict has an unescaped \h on line 90 that libFuzzer's ParseDictionaryFile rejects
-sed -i '/"\\headerr"/d' rtf.dict
+# Every backslash in rtf.dict stands for the backslash that starts an RTF control
+# word, and libFuzzer wants each one written as a pair. A few entries are written
+# with a single backslash, which libFuzzer rejects. First turn every run of
+# backslashes into one backslash, then write each one as a pair.
+sed -i -e 's/\\\\*/\\/g' rtf.dict
+sed -i -e 's/\\/\\\\/g' rtf.dict
 # build our own fuzz dict for odf, following the pattern of svg.dict
 echo "# Keywords taken from libreoffice/schema/odf1.3/OpenDocument-v1.3-schema.rng" > odf.dict
 echo "# and libreoffice/schema/libreoffice/OpenDocument-v1.4+libreoffice-schema.rng" >> odf.dict
@@ -129,7 +133,7 @@ git clone --depth 1 --filter=blob:none --sparse https://github.com/harfbuzz/harf
     cp -r harfbuzz/test/shape/data/in-house/fonts $SRC/sample-sft-fonts/harfbuzz && rm -rf harfbuzz
 # exclude very large fonts that are slow to process under sanitizers
 find $SRC/sample-sft-fonts -size +1M -delete
-zip -qr $SRC/sftfuzzer_seed_corpus.zip $SRC/sample-sft-fonts
+zip -qr $SRC/eotfuzzer_seed_corpus.zip $SRC/sample-sft-fonts
 
 # PDF
 git clone --depth 1 https://github.com/strongcourage/fuzzing-corpus.git && \
@@ -188,7 +192,6 @@ cp fodtfuzzer_seed_corpus.zip fodt2pdffuzzer_seed_corpus.zip
 cp rtffuzzer_seed_corpus.zip rtf2pdffuzzer_seed_corpus.zip
 cp fodsfuzzer_seed_corpus.zip fods2xlsfuzzer_seed_corpus.zip
 cp htmlfuzzer_seed_corpus.zip schtmlfuzzer_seed_corpus.zip
-cp sftfuzzer_seed_corpus.zip eotfuzzer_seed_corpus.zip
 cp pdffuzzer_seed_corpus.zip pdf2fodgfuzzer_seed_corpus.zip
 
 echo end downloading dependencies at `date -u`

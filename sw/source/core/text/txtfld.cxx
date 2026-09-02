@@ -328,7 +328,7 @@ SwLinePortion *SwTextFormatter::NewExtraPortion( SwTextFormatInfo &rInf )
 
 /**
  * OOXML spec says that w:rPr inside w:pPr specifies formatting for the paragraph mark symbol (i.e. the control
- * character than can be configured to be shown). However, in practice MSO also uses it as direct formatting
+ * character that can be configured to be shown). However, in practice MSO also uses it as direct formatting
  * for numbering in that paragraph. I don't know if the problem is in the spec or in MSWord.
  */
 static void checkApplyParagraphMarkFormatToNumbering(SwFont* pNumFnt, SwTextFormatInfo& rInf,
@@ -542,10 +542,7 @@ SwNumberPortion *SwTextFormatter::NewNumberPortion( SwTextFormatInfo &rInf ) con
             OUString referer;
             if (auto const sh1 = rInf.GetVsh()) {
                 if (auto const doc = sh1->GetDoc()) {
-                    auto const sh2 = doc->GetPersist();
-                    if (sh2 != nullptr && sh2->HasName()) {
-                        referer = sh2->GetMedium()->GetName();
-                    }
+                    referer = doc->GetLinkReferer();
                 }
             }
             pRet = new SwGrfNumPortion( pTextNd->GetLabelFollowedBy(),

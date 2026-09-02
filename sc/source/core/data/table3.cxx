@@ -35,6 +35,7 @@
 #include <refdata.hxx>
 #include <table.hxx>
 #include <scitems.hxx>
+#include <attrib.hxx>
 #include <formulacell.hxx>
 #include <document.hxx>
 #include <globstr.hrc>
@@ -609,7 +610,7 @@ void fillSortedColumnArray(
                     break;
                     case CELLTYPE_EDIT:
                         assert(rCell.mpAttr);
-                        rCellStore.push_back(rCell.maCell.getEditText()->Clone().release());
+                        rCellStore.push_back(new EditTextObject(*rCell.maCell.getEditText()));
                     break;
                     case CELLTYPE_FORMULA:
                         {
@@ -3050,6 +3051,13 @@ bool ScTable::HasColHeader( SCCOL nStartCol, SCROW nStartRow, SCCOL nEndCol, SCR
         /* XXX NOTE: previous behavior still checked this one row and could
          * evaluate it has header row, but that doesn't make much sense. */
         return false;
+
+    // A first row holding autofilter or pivot table buttons is a header row,
+    // whatever cell types it holds.
+    for (SCCOL nCol=nStartCol; nCol<=nEndCol; nCol++)
+        if (GetAttr(nCol, nStartRow, ATTR_MERGE_FLAG)->GetValue()
+                & (ScMF::Auto | ScMF::Button | ScMF::ButtonPopup | ScMF::ButtonPopup2))
+            return true;
 
     for (SCCOL nCol=nStartCol; nCol<=nEndCol; nCol++)
     {

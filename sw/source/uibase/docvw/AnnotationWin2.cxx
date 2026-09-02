@@ -118,7 +118,7 @@ namespace sw::annotation {
 void SwAnnotationWin::PaintTile(vcl::RenderContext& rRenderContext, const tools::Rectangle& rRect)
 {
     bool bMenuButtonVisible = mxMenuButton->get_visible();
-    // No point in showing this button till click on it are not handled.
+    // No point in showing this button until clicks on it are handled.
     if (bMenuButtonVisible)
         mxMenuButton->hide();
 
@@ -177,7 +177,7 @@ void SwAnnotationWin::DrawForPage(OutputDevice* pDev, const Point& rPt)
     }
 
     auto lclSizePixelToLogic = [this](Size szs) {
-        // In LOK without tiled annotations, SwAnnotationWin desn't have the
+        // In LOK without tiled annotations, SwAnnotationWin doesn't have the
         // right conversion when printing to PDF but mxSidebarTextControl does
         if (comphelper::LibreOfficeKit::isActive()
             && !comphelper::LibreOfficeKit::isTiledAnnotations())
@@ -187,7 +187,7 @@ void SwAnnotationWin::DrawForPage(OutputDevice* pDev, const Point& rPt)
     };
 
     auto lclPointPixelToLogic = [this](Point pnt) {
-        // In LOK without tiled annotations, SwAnnotationWin desn't have the
+        // In LOK without tiled annotations, SwAnnotationWin doesn't have the
         // right conversion when printing to PDF but mxSidebarTextControl does
         if (comphelper::LibreOfficeKit::isActive()
             && !comphelper::LibreOfficeKit::isTiledAnnotations())
@@ -536,7 +536,7 @@ void SwAnnotationWin::Rescale()
 {
     // On Android, this method leads to invoke ImpEditEngine::UpdateViews
     // which hides the text cursor. Moreover it causes sudden document scroll
-    // when modifying a commented text. Not clear the root cause,
+    // when modifying a commented text. The root cause is not clear,
     // anyway skipping this method fixes the problem, and there should be
     // no side effect, since the client has disabled annotations rendering.
     if (comphelper::LibreOfficeKit::isActive() && !comphelper::LibreOfficeKit::isTiledAnnotations())
@@ -1376,7 +1376,7 @@ void SwAnnotationWin::SetViewState(ViewState bViewState)
                 }
             }
             if (mpShadow)
-                mpShadow->SetShadowState(SS_EDIT);
+                mpShadow->SetShadowState(ShadowState::Edit);
             break;
         }
         case ViewState::VIEW:
@@ -1390,7 +1390,7 @@ void SwAnnotationWin::SetViewState(ViewState bViewState)
                 }
             }
             if (mpShadow)
-                mpShadow->SetShadowState(SS_VIEW);
+                mpShadow->SetShadowState(ShadowState::View);
             break;
         }
         case ViewState::NORMAL:
@@ -1430,7 +1430,7 @@ void SwAnnotationWin::SetViewState(ViewState bViewState)
             }
             if ( mpShadow )
             {
-                mpShadow->SetShadowState(SS_NORMAL);
+                mpShadow->SetShadowState(ShadowState::Normal);
             }
             break;
         }

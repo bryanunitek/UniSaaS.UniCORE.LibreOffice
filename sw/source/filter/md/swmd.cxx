@@ -43,7 +43,6 @@
 #include <frmatr.hxx>
 #include <fmtanchr.hxx>
 #include <fmtfsize.hxx>
-#include <unotools/securityoptions.hxx>
 #include <vcl/graph.hxx>
 #include <vcl/graphicfilter.hxx>
 #include <comphelper/random.hxx>
@@ -65,20 +64,6 @@
 #include <unotextrange.hxx>
 
 #include "swmd.hxx"
-
-namespace
-{
-bool allowAccessLink(const SwDoc& rDoc)
-{
-    OUString sReferer;
-    SfxObjectShell* sh = rDoc.GetPersist();
-    if (sh != nullptr && sh->HasName())
-    {
-        sReferer = sh->GetMedium()->GetName();
-    }
-    return !SvtSecurityOptions::isUntrustedReferer(sReferer);
-}
-}
 
 SwNumRuleItem SwMarkdownParser::GetNumRuleItem(const UIName& rName, sal_uInt8 nLevel) const
 {
@@ -688,7 +673,7 @@ void SwMarkdownParser::InsertImage(const MDImage& rImg)
     }
 
     Size aGrfSz(0, 0);
-    if (allowAccessLink(*m_xDoc) && !aGraphicURL.IsExoticProtocol() && !sGrfNm.isEmpty())
+    if (m_xDoc->AllowAccessLink() && !aGraphicURL.IsExoticProtocol() && !sGrfNm.isEmpty())
     {
         GraphicDescriptor aDescriptor(aGraphicURL);
         if (aDescriptor.Detect(true))
@@ -889,6 +874,24 @@ ErrCodeMsg MarkdownReader::Read(SwDoc& rDoc, const OUString& rBaseURL, SwPaM& rP
 
     if (m_bInsertMode)
     {
+        if (aPasteInfo.m_bStartAtEndOfPara)
+        {
+            // If the paste created an empty paragraph at the end, join that empty node with the
+            // previous one here.
+            SwNodeIndex aLast(*aPasteInfo.m_pSttNdIdx2, -1);
+            if (aLast.GetIndex() > aPasteInfo.m_pSttNdIdx->GetIndex() + 1)
+            {
+                SwTextNode* pLast = aLast.GetNode().GetTextNode();
+                if (pLast && pLast->GetText().isEmpty())
+                {
+                    // Keep the formatting of pPrev (has content) and drop aLast (no content).
+                    SwNodeIndex aPrev(aLast, -1);
+                    if (SwTextNode* pPrev = aPrev.GetNode().GetTextNode())
+                        pPrev->JoinNext();
+                }
+            }
+        }
+
         EndPaste(aPasteInfo);
     }
 

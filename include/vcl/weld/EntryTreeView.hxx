@@ -24,7 +24,7 @@ class VCL_DLLPUBLIC EntryTreeView : virtual public ComboBox
 {
 private:
     DECL_DLLPRIVATE_LINK(ClickHdl, weld::ItemView&, void);
-    DECL_DLLPRIVATE_LINK(ModifyHdl, weld::Entry&, void);
+    DECL_DLLPRIVATE_LINK(ModifyHdl, weld::TextWidget&, void);
 
 protected:
     std::unique_ptr<Entry> m_xEntry;
@@ -35,6 +35,8 @@ protected:
     {
         m_xTreeView->insert(pos, rStr, pId, pIconName, pImageSurface);
     }
+
+    virtual void do_set_entry_text(const OUString& rStr) override { m_xEntry->set_text(rStr); }
 
 public:
     EntryTreeView(std::unique_ptr<Entry> xEntry, std::unique_ptr<TreeView> xTreeView);
@@ -88,7 +90,6 @@ public:
     {
         m_xEntry->set_message_type(eType);
     }
-    virtual void set_entry_text(const OUString& rStr) override { m_xEntry->set_text(rStr); }
     virtual void set_entry_width_chars(int nChars) override { m_xEntry->set_width_chars(nChars); }
     virtual void set_entry_max_length(int nChars) override { m_xEntry->set_max_length(nChars); }
     virtual void select_entry_region(int nStartPos, int nEndPos) override

@@ -121,8 +121,7 @@ DomainMapper::DomainMapper( const uno::Reference< uno::XComponentContext >& xCon
     LoggedTable("DomainMapper"),
     LoggedStream("DomainMapper"),
     m_pImpl(new DomainMapper_Impl(*this, xContext, xModel, eDocumentType, rMediaDesc)),
-    mbHasControls(false),
-    mbWasShapeInPara(false)
+    mbHasControls(false)
 {
     if (m_pImpl->IsNewDoc())
     {
@@ -516,7 +515,9 @@ void DomainMapper::lcl_attribute(Id nName, const Value & val)
         break;
         case NS_ooxml::LN_CT_Spacing_before:
             m_pImpl->appendGrabBag(m_pImpl->m_aSubInteropGrabBag, u"before"_ustr, OUString::number(nIntValue));
-            if (m_pImpl->GetTopContext())
+            // `w:before` is defined by ST_TwipsMeasure,
+            // it can't be negative ([22.9.2.14] ISO-IEC-29500-1 2016)
+            if (m_pImpl->GetTopContext() && nIntValue >= 0)
                 // Don't overwrite NS_ooxml::LN_CT_Spacing_beforeAutospacing.
                 m_pImpl->GetTopContext()->Insert(
                     PROP_PARA_TOP_MARGIN,
@@ -532,7 +533,9 @@ void DomainMapper::lcl_attribute(Id nName, const Value & val)
             break;
         case NS_ooxml::LN_CT_Spacing_after:
             m_pImpl->appendGrabBag(m_pImpl->m_aSubInteropGrabBag, u"after"_ustr, OUString::number(nIntValue));
-            if (m_pImpl->GetTopContext())
+            // `w:after` is defined by ST_TwipsMeasure,
+            // it can't be negative ([22.9.2.14] ISO-IEC-29500-1 2016)
+            if (m_pImpl->GetTopContext() && nIntValue >= 0)
             {
                 // Don't overwrite NS_ooxml::LN_CT_Spacing_afterAutospacing.
                 m_pImpl->GetTopContext()->Insert(PROP_PARA_BOTTOM_MARGIN, uno::Any( ConversionHelper::convertTwipToMm100_Limited( nIntValue ) ), false);
@@ -1683,7 +1686,6 @@ void DomainMapper::sprmWithProps( Sprm& rSprm, const PropertyMapPtr& rContext )
         {
             assert(!m_pImpl->GetTopContext());
             assert(m_pImpl->GetIsFirstParagraphInShape());
-            assert(mbWasShapeInPara);
             assert(m_pImpl->GetIsFirstParagraphInSection());
             assert(m_pImpl->IsOutsideAParagraph());
             if (m_pImpl->GetSettingsTable()->GetDisplayBackgroundShape())
@@ -1729,7 +1731,6 @@ void DomainMapper::sprmWithProps( Sprm& rSprm, const PropertyMapPtr& rContext )
             xComponent->dispose();
 
             m_pImpl->SetIsFirstParagraphInShape(false);
-            mbWasShapeInPara = false;
         }
         return;
     }
@@ -3035,7 +3036,12 @@ void DomainMapper::sprmWithProps( Sprm& rSprm, const PropertyMapPtr& rContext )
             // Add the property if the style exists, but do not add it elements in TOC:
             // they will receive later another style references from TOC
             if ( bExists && m_pImpl->GetTopContext() && !m_pImpl->IsInTOC())
+            {
                 m_pImpl->GetTopContext()->Insert( PROP_CHAR_STYLE_NAME, uno::Any( sConvertedName ) );
+
+                if (!m_pImpl->GetSdtStarts().empty())
+                    m_pImpl->m_pSdtHelper->SetPlaceholderCharStyle(sConvertedName);
+            }
         }
     break;
     case NS_ooxml::LN_CT_TblPrBase_tblCellMar: //cell margins
@@ -3462,7 +3468,7 @@ void DomainMapper::sprmWithProps( Sprm& rSprm, const PropertyMapPtr& rContext )
     {
         if (nSprmId == NS_ooxml::LN_CT_SdtPr_dataBinding)
         {
-            // Although the absense of a <w:text/> element should mean that the control is richText,
+            // Although the absence of a <w:text/> element should mean that the control is richText,
             // in practice, the presence of a dataBinding element makes it plainText
             if (m_pImpl->m_pSdtHelper->getControlType() == SdtControlType::richText)
                 m_pImpl->m_pSdtHelper->setControlType(SdtControlType::plainText);
@@ -4111,8 +4117,6 @@ void DomainMapper::lcl_startParagraphGroup()
                     pContext->Insert(PROP_PARA_TOP_MARGIN, uno::Any(sal_uInt32(0)));
                 }
             }
-
-            mbWasShapeInPara = false;
         }
         m_pImpl->clearDeferredBreaks();
     }
@@ -4188,7 +4192,6 @@ void DomainMapper::lcl_startShape(uno::Reference<drawing::XShape> const& xShape)
     }
 
     m_pImpl->SetIsFirstParagraphInShape(true);
-    mbWasShapeInPara = true;
 }
 
 void DomainMapper::lcl_endShape( )
@@ -4207,6 +4210,7 @@ void DomainMapper::lcl_endShape( )
     m_pImpl->PopShapeContext( );
     // A shape is always inside a paragraph (anchored or inline).
     m_pImpl->SetIsOutsideAParagraph(false);
+    m_pImpl->SetIsFirstRun(false);
 }
 
 void DomainMapper::lcl_startTextBoxContent()
@@ -4455,6 +4459,10 @@ void DomainMapper::lcl_positivePercentage(const OUString& rText)
 
 void DomainMapper::lcl_checkId(const sal_Int32 nId)
 {
+    // tdf#171002
+    if (!m_pImpl->IsInFootOrEndnote())
+        return;
+
     if (m_pImpl->IsInFootnote())
     {
         m_pImpl->m_aFootnoteIds.push_back(nId);
@@ -4775,7 +4783,8 @@ void DomainMapper::lcl_utext(const sal_Unicode *const data_, size_t len)
             const bool bSingleParagraphAfterRedline = m_pImpl->GetIsFirstParagraphInSection(/*bAfterRedline=*/true) &&
                     m_pImpl->GetIsLastParagraphInSection();
             PropertyMapPtr pContext = m_pImpl->GetTopContextOfType(CONTEXT_PARAGRAPH);
-            if (!m_pImpl->GetFootnoteContext() && !m_pImpl->IsInShape() && !m_pImpl->IsInComments())
+            if (!m_pImpl->GetFootnoteContext() && !m_pImpl->IsInShape() && !m_pImpl->IsInComments()
+                && !m_pImpl->IsInHeaderFooter())
             {
                 if (m_pImpl->isBreakDeferred(PAGE_BREAK))
                 {
@@ -4868,7 +4877,8 @@ void DomainMapper::lcl_utext(const sal_Unicode *const data_, size_t len)
         {
             // GetTopContext() is changed by inserted breaks, but we want to keep the current context
             PropertyMapPtr pContext = m_pImpl->GetTopContext();
-            if (!m_pImpl->GetFootnoteContext() && !m_pImpl->IsInShape() && !m_pImpl->IsInComments())
+            if (!m_pImpl->GetFootnoteContext() && !m_pImpl->IsInShape() && !m_pImpl->IsInComments()
+                && !m_pImpl->IsInHeaderFooter())
             {
                 auto pPara = static_cast<ParagraphPropertyMap*>(m_pImpl->GetTopContextOfType(CONTEXT_PARAGRAPH).get());
                 if (m_pImpl->isBreakDeferred(PAGE_BREAK))
@@ -4894,7 +4904,7 @@ void DomainMapper::lcl_utext(const sal_Unicode *const data_, size_t len)
                 }
                 else if (m_pImpl->isBreakDeferred(COLUMN_BREAK))
                 {
-                    if (m_pImpl->GetIsFirstParagraphInSection() || !m_pImpl->IsFirstRun() || mbWasShapeInPara)
+                    if (m_pImpl->GetIsFirstParagraphInSection() || !m_pImpl->IsFirstRun())
                     {
                         m_pImpl->m_bIsSplitPara = true;
                         finishParagraph();
@@ -5132,13 +5142,13 @@ void DomainMapper::handleParaJustification(const sal_Int32 nIntValue,
         if ( GetSettingsTable()->GetWordCompatibilityMode() >= 15 )
         {
             rContext->Insert( PROP_PARA_WORD_SPACING_MINIMUM, uno::Any( sal_uInt16(75) ) );
-            rContext->Insert( PROP_PARA_WORD_SPACING_MAXIMUM, uno::Any( sal_uInt16(133) ) );
+            rContext->Insert( PROP_PARA_WORD_SPACING_MAXIMUM, uno::Any( sal_uInt16(150) ) );
         }
         break;
     case NS_ooxml::LN_Value_ST_Jc_lowKashida:
         nAdjust = style::ParagraphAdjust_BLOCK;
         // modify this value also in sw/source/filter/ww8/docxattributeoutput.cxx
-        nWordSpacing = 133;
+        nWordSpacing = 150;
         break;
     case NS_ooxml::LN_Value_ST_Jc_mediumKashida:
         nAdjust = style::ParagraphAdjust_BLOCK;

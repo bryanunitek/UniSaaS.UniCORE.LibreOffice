@@ -108,7 +108,7 @@ class DocxExport : public MSWordExportBase
     /// ActiveX controls counter
     sal_Int32 m_nActiveXControls;
 
-    ///Footer and Header counter in Section properties
+    /// Footer and Header counter in Section properties
     sal_Int32 m_nHeadersFootersInSection;
 
     /// Exporter of the VML shapes.
@@ -152,7 +152,7 @@ public:
     /// Access to the derived attribute output class.
     DocxAttributeOutput& DocxAttrOutput() const;
 
-    /// Access to the sections/headers/footres.
+    /// Access to the sections/headers/footers.
     virtual MSWordSections& Sections() const override;
 
     virtual bool FieldsQuoted() const override { return true; }
@@ -169,12 +169,14 @@ public:
     virtual void AppendBookmarks( const SwTextNode& rNode, sal_Int32 nCurrentPos, sal_Int32 nLen, const SwRedlineData* pRedlineData = nullptr ) override;
 
     virtual void AppendBookmark( const OUString& rName ) override;
+    virtual void AppendBookmarkStart(const OUString& rName) override;
+    virtual void AppendBookmarkEnd(const OUString& rName, bool bIsFinal) override;
 
     virtual void AppendAnnotationMarks( const SwWW8AttrIter& rAttrs, sal_Int32 nCurrentPos, sal_Int32 nLen ) override;
 
     virtual void ExportGrfBullet(const SwTextNode&) override;
 
-    /// Returns the relationd id
+    /// Returns the relation id
     OString AddRelation( const OUString& rType, std::u16string_view rTarget );
 
     virtual void WriteCR( ww8::WW8TableNodeInfoInner::Pointer_t /*pTableTextNodeInfoInner = ww8::WW8TableNodeInfoInner::Pointer_t()*/ ) override { /* FIXME no-op for docx, most probably should not even be in MSWordExportBase */ }
@@ -206,7 +208,7 @@ public:
 
     virtual sal_uInt64 ReplaceCr( sal_uInt8 nChar ) override;
 
-    /// Returns the relationd id
+    /// Returns the relation id
     OString OutputChart( css::uno::Reference< css::frame::XModel > const & xModel, sal_Int32 nCount, ::sax_fastparser::FSHelperPtr const & m_pSerializer );
     OString WriteOLEObject(SwOLEObj& rObject, OUString & io_rProgID);
     std::pair<OString,OString> WriteActiveXObject(const uno::Reference<css::drawing::XShape>& rxShape,
@@ -293,6 +295,9 @@ private:
 
     /// Write customXml/item[n].xml and customXml/itemProps[n].xml
     void WriteCustomXml();
+
+    /// Write word/webSettings.xml
+    void WriteWebSettings();
 
     /// Write word/embeddings/Worksheet[n].xlsx
     void WriteEmbeddings();

@@ -29,6 +29,7 @@
 #include <vcl/metaact.hxx>
 #include <vcl/virdev.hxx>
 
+#include <CoordinateMapper.hxx>
 #include <drawmode.hxx>
 #include <salgdi.hxx>
 
@@ -49,7 +50,7 @@ bool OutputDevice::TransformAndReduceBitmapExToTargetRange(
         return false;
     }
 
-    // now get discrete target pixels; start with OutDev pixel size and evtl.
+    // now get discrete target pixels; start with OutDev pixel size and possibly
     // intersect with active clipping area
     basegfx::B2DRange aOutPixel(
         0.0,
@@ -239,7 +240,7 @@ void OutputDevice::DrawTransformedBitmapEx(
     // tdf#130768 CAUTION(!) using GetViewTransformation() is *not* enough here, it may
     // be that mnOutOffX/mnOutOffY is used - see AOO bug 75163, mentioned at
     // ImplGetDeviceTransformation declaration
-    basegfx::B2DHomMatrix aFullTransform(ImplGetDeviceTransformation() * rTransformation);
+    basegfx::B2DHomMatrix aFullTransform(mpMapper->GetDeviceTransformation() * rTransformation);
 
     // First try to handle additional alpha blending, either directly, or modify the bitmap.
     if(!rtl::math::approxEqual( fAlpha, 1.0 ))
@@ -257,7 +258,7 @@ void OutputDevice::DrawTransformedBitmapEx(
         AlphaMask aAlpha( bitmap.GetSizePixel(), &nTransparency );
         if( bitmap.HasAlpha())
             aAlpha.BlendWith( bitmap.CreateAlphaMask());
-        bitmap = Bitmap( bitmap.CreateColorBitmap(), aAlpha );
+        bitmap = Bitmap(bitmap, aAlpha);
     }
 
     // If the backend's implementation is known to not need any optimizations here, pass to it directly.
@@ -382,13 +383,13 @@ void OutputDevice::DrawTransformedBitmapEx(
     // get logic object target range
     aTargetRange.transform(rTransformation);
 
-    // get from unified/relative VisibleRange to logoc one
+    // get from unified/relative VisibleRange to logic one
     aVisibleRange.transform(
         basegfx::utils::createScaleTranslateB2DHomMatrix(
             aTargetRange.getRange(),
             aTargetRange.getMinimum()));
 
-    // extract point and size; do not remove size, the bitmap may have been prepared reduced by purpose
+    // extract point and size; do not remove size, the bitmap may have been prepared reduced on purpose
     // #i124580# the correct DestSize needs to be calculated based on MaxXY values
     const Point aDestPt(basegfx::fround<tools::Long>(aVisibleRange.getMinX()), basegfx::fround<tools::Long>(aVisibleRange.getMinY()));
     const Size aDestSize(

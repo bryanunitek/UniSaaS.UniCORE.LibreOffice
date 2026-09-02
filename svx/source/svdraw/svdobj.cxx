@@ -560,6 +560,8 @@ SdrObject::SdrObject(SdrModel& rSdrModel, SdrObject const & rSource)
         m_pPlusData->pBroadcast.reset(); // broadcaster isn't copied
     }
 
+    m_bHorizontalRule = rSource.m_bHorizontalRule;
+
     m_pGrabBagItem.reset();
     if (rSource.m_pGrabBagItem!=nullptr)
         m_pGrabBagItem.reset(rSource.m_pGrabBagItem->Clone());
@@ -2566,7 +2568,7 @@ static void extractLineContourFromPrimitive2DSequence(
     // copy line results
     rExtractedHairlines = aExtractor.getExtractedHairlines();
 
-    // copy fill rsults
+    // copy fill results
     rExtractedLineFills = aExtractor.getExtractedLineFills();
 }
 
@@ -2595,7 +2597,7 @@ rtl::Reference<SdrObject> SdrObject::ImpConvertToContourObj(bool bForceLineDash)
                 aMergedHairlinePolyPolygon.append(rExtractedHairline);
             }
 
-            // check for fill rsults
+            // check for fill results
             if (!aExtractedLineFills.empty() && !comphelper::IsFuzzing())
             {
                 // merge to a single tools::PolyPolygon (OR)
@@ -2733,7 +2735,15 @@ void SdrObject::SetMarkProtect(bool bProt)
 
 void SdrObject::SetEmptyPresObj(bool bEpt)
 {
+    const bool bWasEmpty = m_bEmptyPresObj;
     m_bEmptyPresObj = bEpt;
+
+    // Whatever put the content there - typing, a filter, the API - the page hears about it once.
+    if (bWasEmpty && !bEpt)
+    {
+        if (SdrPage* pPage = getSdrPageFromSdrObject())
+            pPage->onEmptyPresObjFilled(*this);
+    }
 }
 
 void SdrObject::SetCustomPromptText(const OUString& rVal)

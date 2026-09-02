@@ -49,7 +49,7 @@ void testRangeNameImpl(const ScDocument& rDoc)
 {
     //check one range data per sheet and one global more detailed
     //add some more checks here
-    ScRangeData* pRangeData = rDoc.GetRangeName()->findByUpperName(u"GLOBAL1"_ustr);
+    ScRangeData* pRangeData = rDoc.GetRangeName().findByUpperName(u"GLOBAL1"_ustr);
     CPPUNIT_ASSERT_MESSAGE("range name Global1 not found", pRangeData);
     double aValue = rDoc.GetValue(1, 0, 0);
     CPPUNIT_ASSERT_EQUAL_MESSAGE("range name Global1 should reference Sheet1.A1", 1.0, aValue);
@@ -297,6 +297,18 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest, testTdf150452)
     CPPUNIT_ASSERT_EQUAL(u"1-GE41L"_ustr, pDoc->GetString(0, 3998, 0));
 }
 
+CPPUNIT_TEST_FIXTURE(ScFiltersTest, testTdf148749_LMBCS_group_control)
+{
+    createScDoc("123/tdf148749.123");
+
+    ScDocument* pDoc = getScDoc();
+
+    // Without the fix in place, this test would have failed with
+    // - Expected: abc\ndef
+    //- Actual  : abc-*def
+    CPPUNIT_ASSERT_EQUAL(u"abc\ndef"_ustr, pDoc->GetString(1, 0, 0));
+}
+
 CPPUNIT_TEST_FIXTURE(ScFiltersTest, testTdf48731)
 {
     createScDoc("csv/tdf48731.csv");
@@ -516,12 +528,12 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest, testHiddenRangeNameODS)
     ScDocument* pDoc = getScDoc();
 
     // This named range is set to "hidden"
-    ScRangeData* pRangeData1 = pDoc->GetRangeName()->findByUpperName(u"NAMEDRANGE1"_ustr);
+    ScRangeData* pRangeData1 = pDoc->GetRangeName().findByUpperName(u"NAMEDRANGE1"_ustr);
     CPPUNIT_ASSERT(pRangeData1);
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_uInt32>(sheet::NamedRangeFlag::HIDDEN),
                          pRangeData1->GetUnoType() & sheet::NamedRangeFlag::HIDDEN);
     // This named range is visible
-    ScRangeData* pRangeData2 = pDoc->GetRangeName()->findByUpperName(u"NAMEDRANGE2"_ustr);
+    ScRangeData* pRangeData2 = pDoc->GetRangeName().findByUpperName(u"NAMEDRANGE2"_ustr);
     CPPUNIT_ASSERT(pRangeData2);
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_uInt32>(0),
                          pRangeData2->GetUnoType() & sheet::NamedRangeFlag::HIDDEN);
@@ -534,11 +546,11 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest, testHiddenRangeNameODS)
     // Check if both named ranges are hidden after saving and reloading
     saveAndReload(TestFilter::ODS);
     pDoc = getScDoc();
-    pRangeData1 = pDoc->GetRangeName()->findByUpperName(u"NAMEDRANGE1"_ustr);
+    pRangeData1 = pDoc->GetRangeName().findByUpperName(u"NAMEDRANGE1"_ustr);
     CPPUNIT_ASSERT(pRangeData1);
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_uInt32>(sheet::NamedRangeFlag::HIDDEN),
                          pRangeData1->GetUnoType() & sheet::NamedRangeFlag::HIDDEN);
-    pRangeData2 = pDoc->GetRangeName()->findByUpperName(u"NAMEDRANGE2"_ustr);
+    pRangeData2 = pDoc->GetRangeName().findByUpperName(u"NAMEDRANGE2"_ustr);
     CPPUNIT_ASSERT(pRangeData2);
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_uInt32>(sheet::NamedRangeFlag::HIDDEN),
                          pRangeData2->GetUnoType() & sheet::NamedRangeFlag::HIDDEN);
@@ -550,12 +562,12 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest, testHiddenRangeNameXLSX)
     ScDocument* pDoc = getScDoc();
 
     // This named range is set to "hidden"
-    ScRangeData* pRangeData1 = pDoc->GetRangeName()->findByUpperName(u"NAMEDRANGE1"_ustr);
+    ScRangeData* pRangeData1 = pDoc->GetRangeName().findByUpperName(u"NAMEDRANGE1"_ustr);
     CPPUNIT_ASSERT(pRangeData1);
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_uInt32>(sheet::NamedRangeFlag::HIDDEN),
                          pRangeData1->GetUnoType() & sheet::NamedRangeFlag::HIDDEN);
     // This named range is visible
-    ScRangeData* pRangeData2 = pDoc->GetRangeName()->findByUpperName(u"NAMEDRANGE2"_ustr);
+    ScRangeData* pRangeData2 = pDoc->GetRangeName().findByUpperName(u"NAMEDRANGE2"_ustr);
     CPPUNIT_ASSERT(pRangeData2);
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_uInt32>(0),
                          pRangeData2->GetUnoType() & sheet::NamedRangeFlag::HIDDEN);
@@ -563,11 +575,11 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest, testHiddenRangeNameXLSX)
     // Save as ODS and test if the named ranges are still with the correct hidden flag
     saveAndReload(TestFilter::ODS);
     pDoc = getScDoc();
-    pRangeData1 = pDoc->GetRangeName()->findByUpperName(u"NAMEDRANGE1"_ustr);
+    pRangeData1 = pDoc->GetRangeName().findByUpperName(u"NAMEDRANGE1"_ustr);
     CPPUNIT_ASSERT(pRangeData1);
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_uInt32>(sheet::NamedRangeFlag::HIDDEN),
                          pRangeData1->GetUnoType() & sheet::NamedRangeFlag::HIDDEN);
-    pRangeData2 = pDoc->GetRangeName()->findByUpperName(u"NAMEDRANGE2"_ustr);
+    pRangeData2 = pDoc->GetRangeName().findByUpperName(u"NAMEDRANGE2"_ustr);
     CPPUNIT_ASSERT(pRangeData2);
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_uInt32>(0),
                          pRangeData2->GetUnoType() & sheet::NamedRangeFlag::HIDDEN);
@@ -579,23 +591,23 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest, testHiddenNamedExpression)
     ScDocument* pDoc = getScDoc();
 
     // Adds two hidden named expressions and two non-hidden named expressions
-    ScRangeName* pNamedRanges = pDoc->GetRangeName();
+    ScRangeName* pNamedRanges = &pDoc->GetRangeName();
     ScRangeData* pRangeData1 = new ScRangeData(*pDoc, u"NAME1"_ustr, u"100"_ustr);
     pRangeData1->AddType(ScRangeData::Type::Hidden);
-    pNamedRanges->insert(pRangeData1);
+    pNamedRanges->insert(std::unique_ptr<ScRangeData>(pRangeData1));
     ScRangeData* pRangeData2 = new ScRangeData(*pDoc, u"NAME2"_ustr, u"text1"_ustr);
     pRangeData2->AddType(ScRangeData::Type::Hidden);
-    pNamedRanges->insert(pRangeData2);
+    pNamedRanges->insert(std::unique_ptr<ScRangeData>(pRangeData2));
     ScRangeData* pRangeData3 = new ScRangeData(*pDoc, u"NAME3"_ustr, u"200"_ustr);
-    pNamedRanges->insert(pRangeData3);
+    pNamedRanges->insert(std::unique_ptr<ScRangeData>(pRangeData3));
     ScRangeData* pRangeData4 = new ScRangeData(*pDoc, u"NAME4"_ustr, u"text2"_ustr);
-    pNamedRanges->insert(pRangeData4);
+    pNamedRanges->insert(std::unique_ptr<ScRangeData>(pRangeData4));
     CPPUNIT_ASSERT_EQUAL(size_t(4), pNamedRanges->size());
 
     // Save and reload to test whether the named expressions retain the hidden  where applicable
     saveAndReload(TestFilter::ODS);
     pDoc = getScDoc();
-    pNamedRanges = pDoc->GetRangeName();
+    pNamedRanges = &pDoc->GetRangeName();
     CPPUNIT_ASSERT_EQUAL(size_t(4), pNamedRanges->size());
     pRangeData1 = pNamedRanges->findByUpperName(u"NAME1"_ustr);
     CPPUNIT_ASSERT(pRangeData1);
@@ -621,12 +633,12 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest, testHiddenNamedExpressionODS)
     ScDocument* pDoc = getScDoc();
 
     // The document has 2 named expressions; the first is hidden; the second is visible
-    ScRangeName* pNamedRanges = pDoc->GetRangeName();
-    ScRangeData* pRangeData1 = pNamedRanges->findByUpperName(u"NAME1"_ustr);
+    ScRangeName& rNamedRanges = pDoc->GetRangeName();
+    ScRangeData* pRangeData1 = rNamedRanges.findByUpperName(u"NAME1"_ustr);
     CPPUNIT_ASSERT(pRangeData1);
     CPPUNIT_ASSERT_EQUAL(ScRangeData::Type::Hidden, pRangeData1->GetType());
     CPPUNIT_ASSERT_EQUAL(u"100"_ustr, pRangeData1->GetSymbol());
-    ScRangeData* pRangeData2 = pNamedRanges->findByUpperName(u"NAME2"_ustr);
+    ScRangeData* pRangeData2 = rNamedRanges.findByUpperName(u"NAME2"_ustr);
     CPPUNIT_ASSERT(pRangeData2);
     CPPUNIT_ASSERT_EQUAL(ScRangeData::Type::Name, pRangeData2->GetType());
     CPPUNIT_ASSERT_EQUAL(u"200"_ustr, pRangeData2->GetSymbol());
@@ -1646,6 +1658,70 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest, testNonAsciiWithDotXLSX)
     pDoc->CalcAll();
     double aValue = pDoc->GetValue(ScAddress(0, 0, 0));
     CPPUNIT_ASSERT_EQUAL(5.0, aValue);
+}
+
+CPPUNIT_TEST_FIXTURE(ScFiltersTest, testCmImportSetsDynamicArrayMaster)
+{
+    // The cm="1" attribute on an XLSX cell lands as a dynamic-array master.
+
+    createScDoc("xlsx/Spill.xlsx");
+    ScDocument* pDoc = getScDoc();
+
+    // C2 carries cm="1" with t="array" ref="C2:C5", the spilled master.
+    ScFormulaCell* pSpilled = pDoc->GetFormulaCell(ScAddress(2, 1, 0));
+    CPPUNIT_ASSERT(pSpilled);
+    CPPUNIT_ASSERT(pSpilled->IsDynamicArrayMaster());
+
+    // A2 is a plain value cell, so the document holds no formula at A2.
+    ScFormulaCell* pValueCell = pDoc->GetFormulaCell(ScAddress(0, 1, 0));
+    CPPUNIT_ASSERT(!pValueCell);
+}
+
+CPPUNIT_TEST_FIXTURE(ScFiltersTest, testCmRoundTripXLSX)
+{
+    // The dynamic-array marker survives an XLSX save and reload through
+    // the cm="1" attribute on the master cell.
+
+    createScDoc("xlsx/Spill.xlsx");
+
+    saveAndReload(TestFilter::XLSX);
+
+    ScDocument* pDoc = getScDoc();
+
+    ScFormulaCell* pMaster = pDoc->GetFormulaCell(ScAddress(2, 1, 0));
+    CPPUNIT_ASSERT(pMaster);
+    CPPUNIT_ASSERT(pMaster->IsDynamicArrayMaster());
+}
+CPPUNIT_TEST_FIXTURE(ScFiltersTest, testIntersectionOperatorXlsxRoundTrip)
+{
+    // The fixture has A1:A4 = {42, 69, 13, 666} and three cells
+    // that read back the upper-left value 42 through implicit
+    // intersection. All three import as plain formulas, so
+    // GetFormula returns them without {} wrapping. The same shape
+    // survives an XLSX round trip.
+
+    auto assertFormulas = [](ScDocument* pDoc) {
+        // C1: plain =A1:A4 range reference. No t="array" tag, so
+        // the cell collapses through implicit intersection at row 1.
+        CPPUNIT_ASSERT_EQUAL(u"=A1:A4"_ustr, pDoc->GetFormula(2, 0, 0));
+        CPPUNIT_ASSERT_EQUAL(42.0, pDoc->GetValue(ScAddress(2, 0, 0)));
+
+        // D1: t="array" wrapper around (A1:A4+0). The outer paren
+        // pair the writer adds is stripped on import.
+        CPPUNIT_ASSERT_EQUAL(u"=@(A1:A4+0)"_ustr, pDoc->GetFormula(3, 0, 0));
+        CPPUNIT_ASSERT_EQUAL(42.0, pDoc->GetValue(ScAddress(3, 0, 0)));
+
+        // E1: t="array" wrapper around TRANSPOSE(A1:A4). The
+        // argument is a function call, so no outer paren strip.
+        CPPUNIT_ASSERT_EQUAL(u"=@(TRANSPOSE(A1:A4))"_ustr, pDoc->GetFormula(4, 0, 0));
+        CPPUNIT_ASSERT_EQUAL(42.0, pDoc->GetValue(ScAddress(4, 0, 0)));
+    };
+
+    createScDoc("xlsx/IntersectionOperatorFixture.xlsx");
+    assertFormulas(getScDoc());
+
+    saveAndReload(TestFilter::XLSX);
+    assertFormulas(getScDoc());
 }
 
 CPPUNIT_TEST_FIXTURE(ScFiltersTest, testArrayFormulaSpillXLSX)

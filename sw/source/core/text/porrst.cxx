@@ -666,24 +666,21 @@ bool SwBookmarkPortion::DoPaint(SwTextPaintInfo const& rTextPaintInfo,
         return false;
     }
 
+    bool bHasCustomColorOrLabel = false;
+    for ( const auto& it : m_aColors )
+    {
+        if ( COL_TRANSPARENT != std::get<1>(it) ||
+             !std::get<3>(it).isEmpty() )
+        {
+            bHasCustomColorOrLabel = true;
+            break;
+        }
+    }
+
     // without field shading, show only custom color or label,
     // but not plain bookmark boundary marks
-    bool bHasCustomColorOrLabel = false;
-    if ( !rTextPaintInfo.GetOpt().IsShowBookmarks() )
-    {
-        for ( const auto& it : m_aColors )
-        {
-            if ( COL_TRANSPARENT != std::get<1>(it) ||
-                 !std::get<3>(it).isEmpty() )
-            {
-                bHasCustomColorOrLabel = true;
-                break;
-            }
-        }
-
-        if ( !bHasCustomColorOrLabel )
-            return false;
-    }
+    if ( !rTextPaintInfo.GetOpt().IsShowBookmarks() && !bHasCustomColorOrLabel )
+        return false;
 
     rOutString = OUStringChar(mcChar);
 
@@ -694,7 +691,7 @@ bool SwBookmarkPortion::DoPaint(SwTextPaintInfo const& rTextPaintInfo,
     // editing the line doesn't update the place between the lines immediately,
     // i.e. top and bottom parts of the higher glyphs aren't moved with the
     // scrolled text;
-    // 2) enlarged brackets of the different height neighborous annotated
+    // 2) enlarged brackets of the different height neighbouring annotated
     // text portions can overlap more seriously.)
     auto const nOrigAscent(rFont.GetAscent(rTextPaintInfo.GetVsh(), *rTextPaintInfo.GetOut()));
     rFont.SetName(u"OpenSymbol"_ustr, rFont.GetActual());
@@ -874,7 +871,7 @@ void SwBookmarkPortion::Paint( const SwTextPaintInfo &rInf ) const
             nTypePos = mnHalfCharWidth * 3/4; // start label on the opening bracket
         }
 
-        // MarkKind::Point: drawn I-beam (e.g. U+2336) as overlapping ][
+        // MarkKind::Point: draw I-beam (e.g. U+2336) as overlapping ][
         if ( std::get<0>(it) == SwScriptInfo::MarkKind::Point )
         {
             aNewPos.AdjustX(-mnHalfCharWidth * 5/16);
@@ -882,7 +879,7 @@ void SwBookmarkPortion::Paint( const SwTextPaintInfo &rInf ) const
             rInf.DrawText( aOutString, *this );
 
             // when the overlapping vertical lines are 50 pixel width on the screen,
-            // this distance (half width * 5/8) still results precise overlapping
+            // this distance (half width * 5/8) still results in precise overlapping
             aNewPos.AdjustX(mnHalfCharWidth * 5/8);
             const_cast< SwTextPaintInfo& >( rInf ).SetPos( aNewPos );
             aOutString = OUString('[');

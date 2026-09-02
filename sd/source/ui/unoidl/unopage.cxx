@@ -27,6 +27,8 @@
 #include <com/sun/star/lang/IndexOutOfBoundsException.hpp>
 #include <com/sun/star/presentation/FadeEffect.hpp>
 #include <com/sun/star/presentation/AnimationSpeed.hpp>
+#include <com/sun/star/presentation/XSoundReference.hpp>
+#include <xmloff/SoundReference.hxx>
 #include <com/sun/star/view/PaperOrientation.hpp>
 #include <com/sun/star/beans/PropertyAttribute.hpp>
 #include <com/sun/star/util/XTheme.hpp>
@@ -731,13 +733,13 @@ void SAL_CALL SdGenericDrawPage::setPropertyValue( const OUString& aPropertyName
         case WID_PAGE_SOUNDFILE :
         {
             OUString aURL;
-            if( aValue >>= aURL )
+            css::uno::Reference<css::presentation::XSoundReference> xSound;
+            if( aValue >>= xSound )
             {
-                GetPage()->SetSoundFile( aURL );
-                GetPage()->SetSound( !aURL.isEmpty() );
-                break;
+                if( xSound.is() )
+                    aURL = xSound->getURL();
             }
-            else
+            else if( !(aValue >>= aURL) )
             {
                 bool bStopSound = false;
                 if( aValue >>= bStopSound )
@@ -745,9 +747,12 @@ void SAL_CALL SdGenericDrawPage::setPropertyValue( const OUString& aPropertyName
                     GetPage()->SetStopSound( bStopSound );
                     break;
                 }
+                throw lang::IllegalArgumentException();
             }
 
-            throw lang::IllegalArgumentException();
+            GetPage()->SetSoundFile( aURL );
+            GetPage()->SetSound( !aURL.isEmpty() );
+            break;
         }
         case WID_LOOP_SOUND:
         {
@@ -1007,8 +1012,11 @@ void SAL_CALL SdGenericDrawPage::setPropertyValue( const OUString& aPropertyName
                     if (pPage->TRG_HasMasterPage())
                         pMasterPage = &pPage->TRG_GetMasterPage();
                 }
-                sd::ThemeColorChanger aChanger(pMasterPage, GetModel()->GetDocShell());
-                aChanger.apply(pTheme->getColorSet());
+                if (pMasterPage)
+                {
+                    sd::ThemeColorChanger aChanger(pMasterPage, GetModel()->GetDocShell());
+                    aChanger.apply(pTheme->getColorSet());
+                }
             }
             break;
 
@@ -1199,13 +1207,14 @@ Any SAL_CALL SdGenericDrawPage::getPropertyValue( const OUString& PropertyName )
         {
             aAny <<= true;
         }
-        else
+        else if( GetPage()->IsSoundOn() && !GetPage()->GetSoundFile().isEmpty() )
         {
-            OUString aURL;
-            if( GetPage()->IsSoundOn() )
-                aURL = GetPage()->GetSoundFile();
-            aAny <<= aURL;
+            const SdSoundLink& rSound = GetPage()->GetSoundLink();
+            aAny <<= css::uno::Reference<css::presentation::XSoundReference>(
+                new xmloff::SoundReference(rSound.getURL(), rSound.isAllowed()));
         }
+        else
+            aAny <<= OUString();
         break;
     }
     case WID_LOOP_SOUND:
@@ -1410,6 +1419,76 @@ void SAL_CALL SdGenericDrawPage::firePropertiesChangeEvent( const Sequence< OUSt
 {
 }
 
+OUString GetPresObjShapeType(PresObjKind eKind)
+{
+    if (eKind == PresObjKind::NONE)
+        return OUString();
+
+    OUString aShapeType(u"com.sun.star.presentation."_ustr);
+
+    switch( eKind )
+    {
+    case PresObjKind::Title:
+        aShapeType += "TitleTextShape";
+        break;
+    case PresObjKind::Outline:
+        aShapeType += "OutlinerShape";
+        break;
+    case PresObjKind::Text:
+        aShapeType += "SubtitleShape";
+        break;
+    case PresObjKind::Graphic:
+        aShapeType += "GraphicObjectShape";
+        break;
+    case PresObjKind::Object:
+        aShapeType += "OLE2Shape";
+        break;
+    case PresObjKind::Chart:
+        aShapeType += "ChartShape";
+        break;
+    case PresObjKind::OrgChart:
+        aShapeType += "OrgChartShape";
+        break;
+    case PresObjKind::Calc:
+        aShapeType += "CalcShape";
+        break;
+    case PresObjKind::Table:
+        aShapeType += "TableShape";
+        break;
+    case PresObjKind::Media:
+        aShapeType += "MediaShape";
+        break;
+    case PresObjKind::Page:
+        aShapeType += "PageShape";
+        break;
+    case PresObjKind::Handout:
+        aShapeType += "HandoutShape";
+        break;
+    case PresObjKind::PagePreview:
+        aShapeType += "PageShape";
+        break;
+    case PresObjKind::Notes:
+        aShapeType += "NotesShape";
+        break;
+    case PresObjKind::Footer:
+        aShapeType += "FooterShape";
+        break;
+    case PresObjKind::Header:
+        aShapeType += "HeaderShape";
+        break;
+    case PresObjKind::SlideNumber:
+        aShapeType += "SlideNumberShape";
+        break;
+    case PresObjKind::DateTime:
+        aShapeType += "DateTimeShape";
+        break;
+    case PresObjKind::NONE:
+        break;
+    }
+
+    return aShapeType;
+}
+
 Reference< drawing::XShape >  SdGenericDrawPage::CreateShape(SdrObject *pObj) const
 {
     DBG_ASSERT( GetPage(), "SdGenericDrawPage::CreateShape(), can't create shape for disposed page!" );
@@ -1458,73 +1537,11 @@ Reference< drawing::XShape >  SdGenericDrawPage::CreateShape(SdrObject *pObj) co
 
         if( eKind != PresObjKind::NONE )
         {
-            OUString aShapeType(u"com.sun.star.presentation."_ustr);
-
-            switch( eKind )
-            {
-            case PresObjKind::Title:
-                aShapeType += "TitleTextShape";
-                break;
-            case PresObjKind::Outline:
-                aShapeType += "OutlinerShape";
-                break;
-            case PresObjKind::Text:
-                aShapeType += "SubtitleShape";
-                break;
-            case PresObjKind::Graphic:
-                aShapeType += "GraphicObjectShape";
-                break;
-            case PresObjKind::Object:
-                aShapeType += "OLE2Shape";
-                break;
-            case PresObjKind::Chart:
-                aShapeType += "ChartShape";
-                break;
-            case PresObjKind::OrgChart:
-                aShapeType += "OrgChartShape";
-                break;
-            case PresObjKind::Calc:
-                aShapeType += "CalcShape";
-                break;
-            case PresObjKind::Table:
-                aShapeType += "TableShape";
-                break;
-            case PresObjKind::Media:
-                aShapeType += "MediaShape";
-                break;
-            case PresObjKind::Page:
-                aShapeType += "PageShape";
-                break;
-            case PresObjKind::Handout:
-                aShapeType += "HandoutShape";
-                break;
-            case PresObjKind::PagePreview:
-                aShapeType += "PageShape";
-                break;
-            case PresObjKind::Notes:
-                aShapeType += "NotesShape";
-                break;
-            case PresObjKind::Footer:
-                aShapeType += "FooterShape";
-                break;
-            case PresObjKind::Header:
-                aShapeType += "HeaderShape";
-                break;
-            case PresObjKind::SlideNumber:
-                aShapeType += "SlideNumberShape";
-                break;
-            case PresObjKind::DateTime:
-                aShapeType += "DateTimeShape";
-                break;
-            case PresObjKind::NONE:
-                break;
-            }
-
             if( !pShape )
                 pShape = comphelper::getFromUnoTunnel<SvxShape>( xShape );
 
             if( pShape )
-                pShape->SetShapeType( aShapeType );
+                pShape->SetShapeType( GetPresObjShapeType( eKind ) );
         }
 
         SvxShape *pSdShape = comphelper::getFromUnoTunnel<SvxShape>(xShape);
@@ -2394,7 +2411,9 @@ void SAL_CALL SdDrawPage::setMasterPage( const Reference< drawing::XDrawPage >& 
     static_cast<SdPage*>(SvxDrawPage::mpPage)->SetLayoutName( pSdPage->GetLayoutName() );
 
     // set notes master also
-    SdPage* pNotesPage = GetModel()->GetDoc()->GetSdPage( (SvxDrawPage::mpPage->GetPageNum()-1)>>1, PageKind::Notes );
+    SdPage* pNotesPage = static_cast<SdPage*>(
+        SvxDrawPage::mpPage->getSdrModelFromSdrPage().GetPage(
+            SvxDrawPage::mpPage->GetPageNum() + 1));
 
     pNotesPage->TRG_ClearMasterPage();
     sal_uInt16 nNum = SvxDrawPage::mpPage->TRG_GetMasterPage().GetPageNum() + 1;

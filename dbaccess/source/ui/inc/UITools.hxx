@@ -79,7 +79,7 @@ namespace dbaui
         @param  _rxContext              the UNO component context
         @param  _rEvtLst                the eventlistener which will be added to the new created connection
         @param  _rOUTConnection         this parameter will be filled with the new created connection
-        @return SQLExceptionInfo        contains a SQLException, SQLContext or a SQLWarning when they araised else .isValid() will return false
+        @return SQLExceptionInfo        contains a SQLException, SQLContext or a SQLWarning when they arise else .isValid() will return false
     */
     ::dbtools::SQLExceptionInfo createConnection(
                                     const OUString& _rsDataSourceName,
@@ -92,7 +92,7 @@ namespace dbaui
         @param  _rxContext              the UNO component context
         @param  _rEvtLst                the eventlistener which will be added to the new created connection
         @param  _rOUTConnection         this parameter will be filled with the new created connection
-        @return SQLExceptionInfo        contains a SQLException, SQLContext or a SQLWarning when they araised else .isValid() will return false
+        @return SQLExceptionInfo        contains a SQLException, SQLContext or a SQLWarning when they arise else .isValid() will return false
     */
     ::dbtools::SQLExceptionInfo createConnection(
                                     const css::uno::Reference< css::beans::XPropertySet >& _xDataSource,
@@ -137,8 +137,8 @@ namespace dbaui
     /** retrieves a data source given by name or URL, and displays an error if this fails
 
         Any <type scope="css::sdbc">SQLException</type>s which occur will be displayed.
-        Additionally, and Exceptions which indicate a data source name pointing to a non-existent database
-        URL will also be denoted. Yet more additionally, and other exceptions will be forwarded to
+        Additionally, any Exceptions which indicate a data source name pointing to a non-existent database
+        URL will also be denoted. Yet more additionally, any other exceptions will be forwarded to
         a <type scope="css::sdb">InteractionHandler</type>.
 
         @param _rDataSourceName
@@ -192,14 +192,14 @@ namespace dbaui
         @param  rName          the name which should be appended
         @param  rxContext      needed to check if datasource is available
         @param  pParent        needed when an error must be shown
-        @return false when datsource is not available otherwise true
+        @return false when the datasource is not available otherwise true
     */
     bool appendToFilter(const css::uno::Reference< css::sdbc::XConnection>& xConnection,
                         const OUString& rName,
                         const css::uno::Reference< css::uno::XComponentContext >& rxContext,
                         weld::Window* pParent);
 
-    /** notifySystemWindow adds or remove the given window _pToRegister at the Systemwindow found when search _pWindow.
+    /** notifySystemWindow adds or removes the given window _pToRegister at the Systemwindow found when search _pWindow.
         @param  _pWindow
             The window which is used to search for the SystemWindow.
         @param  _pToRegister
