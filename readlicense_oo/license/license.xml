@@ -171,6 +171,29 @@
         copies of this file in any form for internal or external distribution as long as this notice remains
         attached.</p>
     </div>
+    <div class="BROTLI">
+    <h2>brotli</h2>
+    <p>The following software may be included in this product: brotli.</p>
+    <p>brotli code is covered by the MIT license:</p>
+    <blockquote>
+        <p>Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.</p>
+        <p>Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:</p>
+        <p>The above copyright notice and this permission notice shall be included in
+        all copies or substantial portions of the Software.</p>
+        <p>THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+        THE SOFTWARE.</p>
+    </blockquote>
+    </div>
     <div class="BZIP2">
         <h2>Bzip2</h2>
         <p>The following software may be included in this product: bzip2, a free and open-source file compression
@@ -600,6 +623,41 @@
         "AS IS" BASIS, AND THE COPYRIGHT HOLDER HAS NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES,
         ENHANCEMENTS, OR MODIFICATIONS.</p>
     </div>
+    <div class="HIGHWAY">
+    <h2>highway</h2>
+    <p>The following software may be included in this product: highway. highway
+    is dual-licensed under the Apache License 2.0 or the BSD 3-Clause
+    License.</p>
+    <p><a href="#a__Apache_License_version_2_0">Jump to Apache License Version
+    2.0</a></p>
+    <h3>BSD 3-Clause License</h3>
+    <p>Copyright (c) The Highway Project Authors. All rights reserved.</p>
+    <p>Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:</p>
+    <ol>
+        <li>Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.</li>
+        <li>Redistributions in binary form must reproduce the above copyright
+        notice, this list of conditions and the following disclaimer in the
+        documentation and/or other materials provided with the
+        distribution.</li>
+        <li>Neither the name of the copyright holder nor the names of its
+        contributors may be used to endorse or promote products derived from
+        this software without specific prior written permission.</li>
+    </ol>
+    <p>THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+    IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+    THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+    PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+    CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+    EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+    PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+    OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+    WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+    OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+    ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</p>
+    </div>
     <div class="HSQLDB">
         <h2>HSQLDB</h2>
         <p>The following software may be included in this product: HSQLDB. Use of any of this software is governed by
@@ -659,7 +717,7 @@
         <p><a href="#a__LGPL_version_2_1">Jump to LGPL Version 2.1</a></p>
         <p><a href="#a__MPL_version_1_1">Jump to MPL Version 1.1</a></p>
     </div>
-    <div class="HYPH">
+    <div class="HYPHEN">
         <h2>Hyphen</h2>
         <p>The following software may be included in this product: Hyphen. Use of any of this software is governed by
         the terms of the license below:</p>
@@ -840,7 +898,7 @@
         by the terms of the license below:</p>
         <p><a href="#a__MPL_version_2">Jump to MPL Version 2.0</a></p>
     </div>
-    <div class="LIBEXTTEXTCAT_DATA" >
+    <div class="LIBEXTTEXTCAT">
         <h2>libexttextcat</h2>
         <p>The following software may be included in this product: libexttextcat. Use of any of this software is
         governed by the terms of the license below:</p>
@@ -1115,6 +1173,36 @@
             original software.</li>
             <li>This notice may not be removed or altered from any source distribution.</li>
         </ol>
+    </div>
+    <div class="LIBJXL">
+    <h2>libjxl</h2>
+    <p>The following software may be included in this product: libjxl. libjxl
+    is licensed under the BSD 3-Clause License.</p>
+    <h3>BSD 3-Clause License</h3>
+    <p>Copyright (c) the JPEG XL Project Authors.</p>
+    <p>All rights reserved.</p>
+    <p>Redistribution and use in source and binary forms, with or without
+       modification, are permitted provided that the following conditions are met:</p>
+    <ol>
+        <li>Redistributions of source code must retain the above copyright notice, this
+            list of conditions and the following disclaimer.</li>
+        <li>Redistributions in binary form must reproduce the above copyright notice,
+            this list of conditions and the following disclaimer in the documentation
+            and/or other materials provided with the distribution.</li>
+        <li>Neither the name of the copyright holder nor the names of its
+            contributors may be used to endorse or promote products derived from
+            this software without specific prior written permission.</li>
+    </ol>
+    <p>THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+       AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+       IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+       DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+       FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+       DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+       SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+       CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+       OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+       OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</p>
     </div>
     <div class="LIBLANGTAG">
         <h2>liblangtag</h2>
@@ -1402,7 +1490,7 @@
         <p><a href="#a__LGPL_version_2_1">Jump to LGPL Version 2.1</a></p>
         <p><a href="#a__MPL_version_2">Jump to MPL Version 2.0</a></p>
     </div>
-    <div class="LIBXML">
+    <div class="LIBXML2">
         <h2>libxml2</h2>
         <p>The following software may be included in this product: libxml2. Use of any of this software is governed by
         the terms of the license below:</p>
@@ -1482,12 +1570,6 @@
         SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
         ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
         OTHER DEALINGS IN THE SOFTWARE.</p>
-    </div>
-    <div class="LPSOLVE" >
-        <h2>lpsolve</h2>
-        <p>The following software may be included in this product: lpsolve. Use of any of this software is governed by
-        the terms of the license below:</p>
-        <p><a href="#a__LGPL_version_2_1">Jump to LGPL Version 2.1</a></p>
     </div>
     <div class="LZMA">
         <h2>lzma</h2>
@@ -1977,23 +2059,23 @@
     GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
     LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
     OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</p>
-    <h2>Raptor RDF Parser Library</h2>
-    <p>The following software may be included in this product: Raptor RDF Parser Library. Use of any of this software
-    is governed by the terms of the license below:</p>
-    <p>Copyright (C) 2000-2008 <a href="http://www.dajobe.org/">David Beckett</a><br />
-    Copyright (C) 2000-2005 <a href="http://www.bristol.ac.uk/">University of Bristol</a>. All Rights Reserved.</p>
-    <p>All the licenses below are alternatives and if you select one license, that one alone applies.</p>
-    <p><a href="#a__LGPL_version_2_1">Jump to LGPL Version 2.1</a></p>
-    <p><a href="#a__Apache_License_version_2_0">Jump to Apache License Version 2.0</a></p>
-    <h2>Rasqal RDF Query Library</h2>
-    <p>The following software may be included in this product: Rasqal RDF Query Library. Use of any of this software is
-    governed by the terms of the license below:</p>
-    <p>Copyright (C) 2000-2008 <a href="http://www.dajobe.org/">David Beckett</a><br />
-    Copyright (C) 2000-2005 <a href="http://www.bristol.ac.uk/">University of Bristol</a>. All Rights Reserved.</p>
-    <p>All the licenses below are alternatives and if you select one license, that one alone applies.</p>
-    <p><a href="#a__LGPL_version_2_1">Jump to LGPL Version 2.1</a></p>
-    <p><a href="#a__Apache_License_version_2_0">Jump to Apache License Version 2.0</a></p>
     <div class="REDLAND">
+        <h2>Raptor RDF Parser Library</h2>
+        <p>The following software may be included in this product: Raptor RDF Parser Library. Use of any of this software
+        is governed by the terms of the license below:</p>
+        <p>Copyright (C) 2000-2008 <a href="http://www.dajobe.org/">David Beckett</a><br />
+        Copyright (C) 2000-2005 <a href="http://www.bristol.ac.uk/">University of Bristol</a>. All Rights Reserved.</p>
+        <p>All the licenses below are alternatives and if you select one license, that one alone applies.</p>
+        <p><a href="#a__LGPL_version_2_1">Jump to LGPL Version 2.1</a></p>
+        <p><a href="#a__Apache_License_version_2_0">Jump to Apache License Version 2.0</a></p>
+        <h2>Rasqal RDF Query Library</h2>
+        <p>The following software may be included in this product: Rasqal RDF Query Library. Use of any of this software is
+        governed by the terms of the license below:</p>
+        <p>Copyright (C) 2000-2008 <a href="http://www.dajobe.org/">David Beckett</a><br />
+        Copyright (C) 2000-2005 <a href="http://www.bristol.ac.uk/">University of Bristol</a>. All Rights Reserved.</p>
+        <p>All the licenses below are alternatives and if you select one license, that one alone applies.</p>
+        <p><a href="#a__LGPL_version_2_1">Jump to LGPL Version 2.1</a></p>
+        <p><a href="#a__Apache_License_version_2_0">Jump to Apache License Version 2.0</a></p>
         <h2>Redland RDF Application Framework</h2>
         <p>The following software may be included in this product: Redland RDF Application Framework. Use of any of
         this software is governed by the terms of the license below:</p>
@@ -2428,13 +2510,6 @@
     <div class="MORE_FONTS">
         <hr />
         <h1><a id="a__Fonts" name="a__Fonts">Fonts</a></h1>
-        <h2>Agdasima</h2>
-        <p>The following software may be included in this product: Agdasima fonts. Use of any of this software is governed
-        by the terms of the license below:</p>
-        <p>Copyright 2023 The Agdasima Project Authors (https://github.com/docrepair-fonts/agdasima-fonts).</p>
-        <p>This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is copied below,
-        and is also available with a FAQ at: <a href="http://scripts.sil.org/OFL">http://scripts.sil.org/OFL</a></p>
-        <p><a href="#a__SIL_Open_Font_License__version_1_1">Jump to SIL Open Font License, Version 1.1</a></p>
         <h2>Alef</h2>
         <p>Copyright (c) 2012, HaGilda &amp; Mushon Zer-Aviv (&lt;http://hagilda.com|info@hagilda.com&gt;), with
         Reserved Font Name Alef Regular.</p>
@@ -2446,33 +2521,10 @@
         <p>Copyright (c) 2010-2017, Khaled Hosny (&lt;khaledhosny@eglug.org&gt;)</p>
         <p>This Font Software is licensed under the SIL Open Font License, Version 1.1 as shown below.</p>
         <p><a href="#a__SIL_Open_Font_License__version_1_1">Jump to SIL Open Font License, Version 1.1</a></p>
-        <h2>Bacasime Antique</h2>
-        <p>The following software may be included in this product: Bacasime Antique fonts. Use of any of this software is governed
-        by the terms of the license below:</p>
-        <p>Copyright 2023 The Bacasime Antique Project Authors (https://github.com/docrepair-fonts/bacasime-antique-fonts),
-        with Reserved Font Name "Playfair".</p>
-        <p>This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is copied below,
-        and is also available with a FAQ at: <a href="http://scripts.sil.org/OFL">http://scripts.sil.org/OFL</a></p>
-        <p><a href="#a__SIL_Open_Font_License__version_1_1">Jump to SIL Open Font License, Version 1.1</a></p>
-        <h2>Belanosima</h2>
-        <p>The following software may be included in this product: Belanosima fonts. Use of any of this software is governed
-        by the terms of the license below:</p>
-        <p>Copyright 2023 The Belanosima Project Authors (https://github.com/docrepair-fonts/belanosima-fonts),
-        with Reserved Font Name "Josefin Sans".</p>
-        <p>This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is copied below,
-        and is also available with a FAQ at: <a href="http://scripts.sil.org/OFL">http://scripts.sil.org/OFL</a></p>
-        <p><a href="#a__SIL_Open_Font_License__version_1_1">Jump to SIL Open Font License, Version 1.1</a></p>
         <h2>Caladea</h2>
         <p>Copyright (c) 2012 Huerta Tipográfica</p>
         <p>This Font Software is licensed under the Apache License, Version 2.0 as shown below.</p>
         <p><a href="#a__Apache_License_version_2_0">Jump to Apache License Version 2.0</a></p>
-        <h2>Caprasimo</h2>
-        <p>The following software may be included in this product: Caprasimo fonts. Use of any of this software is governed
-        by the terms of the license below:</p>
-        <p>Copyright 2023 The Caprasimo Project Authors (https://github.com/docrepair-fonts/caprasimo-fonts).</p>
-        <p>This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is copied below,
-        and is also available with a FAQ at: <a href="http://scripts.sil.org/OFL">http://scripts.sil.org/OFL</a></p>
-        <p><a href="#a__SIL_Open_Font_License__version_1_1">Jump to SIL Open Font License, Version 1.1</a></p>
         <h2>Carlito</h2>
         <p>Copyright (c) 2010-2013 by tyPoland Lukasz Dziedzic with Reserved Font Name "Carlito".</p>
         <p>This Font Software is licensed under the SIL Open Font License, Version 1.1 as shown below.</p>
@@ -2770,27 +2822,6 @@
         <p>The following software may be included in this product: Libre Hebrew fonts (David Libre, Frank Ruhl Hofsi,
         Miriam Libre, Rubik). Use of any of this software is governed by the terms of the license below:</p>
         <p>Copyright 2015 The Frank Ruhl Hofshi Project Authors.</p>
-        <p>This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is copied below,
-        and is also available with a FAQ at: <a href="http://scripts.sil.org/OFL">http://scripts.sil.org/OFL</a></p>
-        <p><a href="#a__SIL_Open_Font_License__version_1_1">Jump to SIL Open Font License, Version 1.1</a></p>
-        <h2>Lugrasimo</h2>
-        <p>The following software may be included in this product: Lugrasimo fonts. Use of any of this software is governed
-        by the terms of the license below:</p>
-        <p>Copyright 2023 The Lugrasimo Project Authors (https://github.com/docrepair-fonts/lugrasimo-fonts).</p>
-        <p>This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is copied below,
-        and is also available with a FAQ at: <a href="http://scripts.sil.org/OFL">http://scripts.sil.org/OFL</a></p>
-        <p><a href="#a__SIL_Open_Font_License__version_1_1">Jump to SIL Open Font License, Version 1.1</a></p>
-        <h2>Lumanosimo</h2>
-        <p>The following software may be included in this product: Lumanosimo fonts. Use of any of this software is governed
-        by the terms of the license below:</p>
-        <p>Copyright 2023 The Lumanosimo Project Authors (https://github.com/docrepair-fonts/lumanosimo-fonts).</p>
-        <p>This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is copied below,
-        and is also available with a FAQ at: <a href="http://scripts.sil.org/OFL">http://scripts.sil.org/OFL</a></p>
-        <p><a href="#a__SIL_Open_Font_License__version_1_1">Jump to SIL Open Font License, Version 1.1</a></p>
-        <h2>Lunasima</h2>
-        <p>The following software may be included in this product: Lunasima fonts. Use of any of this software is governed
-        by the terms of the license below:</p>
-        <p>Copyright 2023 The Lunasima Project Authors (https://github.com/docrepair-fonts/lunasima-fonts).</p>
         <p>This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is copied below,
         and is also available with a FAQ at: <a href="http://scripts.sil.org/OFL">http://scripts.sil.org/OFL</a></p>
         <p><a href="#a__SIL_Open_Font_License__version_1_1">Jump to SIL Open Font License, Version 1.1</a></p>

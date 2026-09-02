@@ -30,16 +30,20 @@
 #include <scopetools.hxx>
 #include <refupdatecontext.hxx>
 
-ScRefUndoData::ScRefUndoData( ScDocument& rDoc ) :
+ScRefUndoData::ScRefUndoData( ScDocument& rDoc, bool bForceDBSnapshot ) :
     pPrintRanges(rDoc.CreatePrintRangeSaver())
 {
+    // An empty database-range collection is normally skipped (nothing to
+    // restore). A caller that may add a range to an empty collection during a
+    // paste passes bForceDBSnapshot so the empty pre-state stays restorable.
+    // DeleteUnchanged() drops it again if the operation changed nothing.
     const ScDBCollection* pOldDBColl = rDoc.GetDBCollection();
-    if (pOldDBColl && !pOldDBColl->empty())
+    if (pOldDBColl && (bForceDBSnapshot || !pOldDBColl->empty()))
         pDBCollection.reset(new ScDBCollection(*pOldDBColl));
 
-    const ScRangeName* pOldRanges = rDoc.GetRangeName();
-    if (pOldRanges && !pOldRanges->empty())
-        pRangeName.reset(new ScRangeName(*pOldRanges));
+    const ScRangeName& rOldRanges = rDoc.GetRangeName();
+    if (!rOldRanges.empty())
+        pRangeName.reset(new ScRangeName(rOldRanges));
 
     // when handling Pivot solely keep the range?
 
@@ -81,8 +85,8 @@ void ScRefUndoData::DeleteUnchanged( ScDocument& rDoc )
     }
     if (pRangeName)
     {
-        ScRangeName* pNewRanges = rDoc.GetRangeName();
-        if ( pNewRanges && *pRangeName == *pNewRanges )
+        ScRangeName& rNewRanges = rDoc.GetRangeName();
+        if ( *pRangeName == rNewRanges )
             pRangeName.reset();
     }
 

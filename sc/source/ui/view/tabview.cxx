@@ -139,6 +139,8 @@ void ScCornerButton::MouseButtonDown( const MouseEvent& rMEvt )
     {
         ScTabViewShell* pViewSh = rViewData.GetViewShell();
         pViewSh->SetActive();                                   // Appear and SetViewFrame
+        // tdf#84694 - deselect draw objects before selecting the entire sheet
+        pViewSh->DrawDeselectAll();
         pViewSh->ActiveGrabFocus();
 
         bool bControl = rMEvt.IsMod1();
@@ -1588,15 +1590,14 @@ void ScTabView::UpdateHeaderWidth( const ScVSplitPos* pWhich, const SCROW* pPosY
         }
     }
 
-    tools::Long nSmall = pRowBar[SC_SPLIT_BOTTOM]->GetSmallWidth();
-    tools::Long nBig   = pRowBar[SC_SPLIT_BOTTOM]->GetBigWidth();
-    tools::Long nDiff  = nBig - nSmall;
-
-    if (nEndPos>10000)
-        nEndPos = 10000;
-    else if (nEndPos<1)     // avoid extra step at 0 (when only one row is visible)
-        nEndPos = 1;
-    tools::Long nWidth = nBig - ( 10000 - nEndPos ) * nDiff / 10000;
+    // tdf#148507 - update row header width only on digit changes
+    tools::Long nWidth = pRowBar[SC_SPLIT_BOTTOM]->GetSmallWidth();
+    if (nEndPos >= 999999)
+        nWidth = pRowBar[SC_SPLIT_BOTTOM]->GetBigWidth();
+    else if (nEndPos >= 99999)
+        nWidth = pRowBar[SC_SPLIT_BOTTOM]->GetLargeWidth();
+    else if (nEndPos >= 9999)
+        nWidth = pRowBar[SC_SPLIT_BOTTOM]->GetMedWidth();
 
     if (nWidth == pRowBar[SC_SPLIT_BOTTOM]->GetWidth() || bInUpdateHeader)
         return;

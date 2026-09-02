@@ -222,6 +222,35 @@ static SwTwips lcl_CalcTopAndBottomMargin( const SwLayoutFrame&, const SwBorderA
 
 static SwTwips lcl_calcHeightOfRowBeforeThisFrame(const SwRowFrame& rRow);
 
+/// The height a single row of rTab can ever get: a page body with nothing else on it
+static SwTwips lcl_GetMaxRowHeight(const SwTabFrame& rTab)
+{
+    const SwPageFrame* pPage = rTab.FindPageFrame();
+    SwRectFnSet aRectFnSet(*pPage);
+    SwTwips nRet = aRectFnSet.GetHeight(pPage->getFramePrintArea());
+
+    bool bInPageBody = false;
+    for (auto pBody = rTab.FindBodyFrame(); pBody && !bInPageBody;
+         pBody = pBody->GetUpper()->FindBodyFrame())
+    {
+        bInPageBody = pBody->IsPageBodyFrame();
+    }
+    if (!bInPageBody)
+        return nRet;
+
+    // The row has to fit into the page body, but not into the body as it stands: the footnotes of
+    // the page took their space from it, and they give it back when the row needs it - the ones
+    // anchored before the row stay behind on the page the row leaves, and the row's own ones move
+    // on with the row. So take the body with the page to itself: the print area without header and
+    // footer.
+    for (const SwFrame* pLower = pPage->Lower(); pLower; pLower = pLower->GetNext())
+    {
+        if (pLower->IsHeaderFrame() || pLower->IsFooterFrame())
+            nRet -= aRectFnSet.GetHeight(pLower->getFrameArea());
+    }
+    return nRet;
+}
+
 static SwTwips lcl_GetHeightOfRows( const SwFrame* pStart, tools::Long nCount )
 {
     if ( !nCount || !pStart)
@@ -1100,8 +1129,40 @@ static bool lcl_FindSectionsInRow( const SwRowFrame& rRow )
     return bRet;
 }
 
-bool SwTabFrame::Split(const SwTwips nCutPos, bool bTryToSplit,
-        bool bTableRowKeep, bool & rIsFootnoteGrowth)
+enum class SwFootnoteRescue
+{
+    None,
+    MoveTable, ///< the footnote stays on this page, so the table is the one to move
+    MoveOwnFootnote, ///< the footnote goes where the row goes, so it is the one to move
+};
+
+// A footnote took the space the row needed, and which footnote it is decides who gives way.
+static SwFootnoteRescue lcl_GetFootnoteRescue(const SwRowFrame& rRow)
+{
+    const SwPageFrame* pPage = rRow.FindPageFrame();
+    const SwFootnoteContFrame* pCont = pPage->FindFootnoteCont();
+    if (!pCont)
+        return SwFootnoteRescue::None;
+
+    bool bOfRow = false;
+    for (const SwFrame* pFootnote = pCont->Lower(); pFootnote; pFootnote = pFootnote->GetNext())
+    {
+        const SwContentFrame* pRef = static_cast<const SwFootnoteFrame*>(pFootnote)->GetRef();
+        const SwPageFrame* pRefPage = pRef ? pRef->FindPageFrame() : nullptr;
+        if (!pRefPage)
+            continue;
+        // A footnote pushed onto this page from an earlier one stays here when what follows it
+        // moves on, so the move leaves no page blank - and it cannot repeat itself from page to
+        // page, as a move away from a footnote travelling with its own anchor would.
+        if (pRefPage->GetPhyPageNum() < pPage->GetPhyPageNum())
+            return SwFootnoteRescue::MoveTable;
+        bOfRow = bOfRow || rRow.IsAnLower(pRef);
+    }
+    return bOfRow ? SwFootnoteRescue::MoveOwnFootnote : SwFootnoteRescue::None;
+}
+
+bool SwTabFrame::Split(const SwTwips nCutPos, bool bTryToSplit, bool bTableRowKeep,
+                       bool& rIsFootnoteGrowth, SwFootnoteRescue& rRescue)
 {
     bool bRet = true;
 
@@ -1158,17 +1219,13 @@ bool SwTabFrame::Split(const SwTwips nCutPos, bool bTryToSplit,
     //                   table, or it will be set to false under certain
     //                   conditions that are not suitable for splitting
     //                   the row.
+    const tools::Long nMaxHeight = lcl_GetMaxRowHeight(*this);
+
     bool bSplitRowAllowed = bTryToSplit && nRemainingSpaceForLastRow > 0;
     if (bSplitRowAllowed && !pRow->IsRowSplitAllowed())
     {
         // A row larger than the entire page ought to be allowed to split regardless of setting,
         // otherwise it has hidden content and that makes no sense
-        tools::Long nMaxHeight = FindPageFrame()->getFramePrintArea().Height();
-        for (auto pBody = FindBodyFrame(); pBody; pBody = pBody->GetUpper()->FindBodyFrame())
-        {
-            if (pBody->IsPageBodyFrame())
-                nMaxHeight = pBody->getFramePrintArea().Height();
-        }
         if (pRow->getFrameArea().Height() > nMaxHeight)
             pRow->SetForceRowSplitAllowed( true );
         else
@@ -1212,6 +1269,9 @@ bool SwTabFrame::Split(const SwTwips nCutPos, bool bTryToSplit,
     // the row. Maybe we should keep the next row in this table.
     // Note: This is only done if we are at the beginning of our upper
     bool bKeepNextRow = false;
+    // A row that the repeated headline leaves no room for gets a page without that headline;
+    // the headline resumes on the pages after it
+    bool bOmitHeadline = false;
     if ( nRowCount < nRepeat )
     {
         // First case: One of the repeated headline does not fit to the page anymore.
@@ -1259,8 +1319,15 @@ bool SwTabFrame::Split(const SwTwips nCutPos, bool bTryToSplit,
                 pLowerCell = static_cast<SwCellFrame*>(pLowerCell->GetNext());
             }
         }
+        else if (nRepeat && pRow->getFrameArea().Height() <= nMaxHeight)
+            bOmitHeadline = true;
         else
+        {
             bKeepNextRow = true;
+            // Keeping the row here means cutting it off at the page's bottom, so see first whether
+            // the footnote that took its space can be got out of the way
+            rRescue = lcl_GetFootnoteRescue(*pRow);
+        }
     }
 
     // Better keep the next row in this table:
@@ -1329,11 +1396,16 @@ bool SwTabFrame::Split(const SwTwips nCutPos, bool bTryToSplit,
     // If we do not intend to split pRow, we check if we are
     // allowed to move pRow to a follow. Otherwise we return
     // false, indicating an error
-    if ( !bSplitRowAllowed )
+    if (!bSplitRowAllowed && !bOmitHeadline)
     {
         SwRowFrame* pFirstNonHeadlineRow = GetFirstNonHeadlineRow();
         if ( pRow == pFirstNonHeadlineRow )
+        {
+            // The first row cannot be handed to a follow: that would leave this table without rows.
+            // It can still get the space of a footnote, and then it is not cut off here after all.
+            rRescue = lcl_GetFootnoteRescue(*pRow);
             return false;
+        }
 
         // #i91764#
         // Ignore row span lines
@@ -1344,9 +1416,16 @@ bool SwTabFrame::Split(const SwTwips nCutPos, bool bTryToSplit,
         }
         if ( !pTmpRow || pRow == pTmpRow )
         {
+            if (pTmpRow)
+                rRescue = lcl_GetFootnoteRescue(*pRow);
             return false;
         }
     }
+
+    // The row heading the follow must not be given a heading it cannot fit under: it would only
+    // be pushed on again, leaving the repeat stranded on a page of its own
+    const bool bFollowOmitsHeadline
+        = bOmitHeadline || (!bSplitRowAllowed && !RowFitsUnderHeadline(*pRow));
 
     // Build follow table if not already done:
     bool bNewFollow;
@@ -1355,6 +1434,16 @@ bool SwTabFrame::Split(const SwTwips nCutPos, bool bTryToSplit,
     {
         pFoll = GetFollow();
         bNewFollow = false;
+        if (bFollowOmitsHeadline)
+        {
+            SwRowFrame* pHeadline;
+            while (nullptr != (pHeadline = static_cast<SwRowFrame*>(pFoll->Lower()))
+                   && pHeadline->IsRepeatedHeadline())
+            {
+                pHeadline->Cut();
+                SwFrame::DestroyFrame(pHeadline);
+            }
+        }
     }
     else
     {
@@ -1378,10 +1467,11 @@ bool SwTabFrame::Split(const SwTwips nCutPos, bool bTryToSplit,
 
         // Repeat the headlines.
         auto& rLines = GetTable()->GetTabLines();
-        for ( nRowCount = 0; nRowCount < nRepeat; ++nRowCount )
+        const sal_uInt16 nFollowRepeat = bFollowOmitsHeadline ? 0 : nRepeat;
+        for (sal_uInt16 i = 0; i < nFollowRepeat; ++i)
         {
             // Insert new headlines:
-            SwRowFrame* pHeadline = new SwRowFrame(*rLines[nRowCount], this);
+            SwRowFrame* pHeadline = new SwRowFrame(*rLines[i], this);
             {
                 sw::FlyCreationSuppressor aSuppressor;
                 pHeadline->SetRepeatedHeadline(true);
@@ -2309,6 +2399,13 @@ void SwTabFrame::MakeAll(vcl::RenderContext* pRenderContext)
     bool bMovedFwd  = false;
     // gets set to true when the Frame is split
     bool bSplit = false;
+    // the bottom that the split measured the rows against
+    SwTwips nSplitDeadLine = 0;
+    // as long as bRetryRegainedSpace is true, the rows the split rejected may be measured once
+    // more, against the space that has appeared under that bottom since
+    bool bRetryRegainedSpace = true;
+    // the footnotes anchored in the table are moved past its bottom only once
+    bool bMovedOwnFootnotes = false;
     const bool bFootnotesInDoc = !GetFormat()->GetDoc().GetFootnoteIdxs().empty();
     const bool bFly     = IsInFly();
 
@@ -2379,9 +2476,15 @@ void SwTabFrame::MakeAll(vcl::RenderContext* pRenderContext)
         if( GetFollow() && !GetFollow()->IsJoinLocked() &&
             nullptr == GetFirstNonHeadlineRow() )
         {
-            if ( HasFollowFlowLine() )
-                RemoveFollowFlowLine();
-            Join();
+            // Unless the row over there is the one the headline leaves no room for: taking it
+            // back would only push it out again
+            const SwRowFrame* pFollowRow = GetFollow()->GetFirstNonHeadlineRow();
+            if (!pFollowRow || RowFitsUnderHeadline(*pFollowRow))
+            {
+                if (HasFollowFlowLine())
+                    RemoveFollowFlowLine();
+                Join();
+            }
         }
     }
 
@@ -2670,6 +2773,17 @@ void SwTabFrame::MakeAll(vcl::RenderContext* pRenderContext)
         // the table to be split! Only skip this if condition once.
         if( nDistanceToUpperPrtBottom >= 0 && !bLastRowHasToMoveToFollow )
         {
+            // The rows that went to the follow took their footnotes along, so the page has grown
+            // back since the split measured them: measure them against it as it is now
+            if (bSplit && bRetryRegainedSpace
+                && aRectFnSet.YDiff(aRectFnSet.GetPrtBottom(*GetUpper()), nSplitDeadLine) > 0)
+            {
+                // only once: a row taken back can bring its own footnote with it, shrinking the
+                // page again, and this would keep splitting and joining the same row
+                bRetryRegainedSpace = false;
+                bSplit = false;
+            }
+
             // If there is space left in the upper printing area, join as for trial
             // at least one further row of an existing follow.
             if ( !bSplit && GetFollow() )
@@ -3094,6 +3208,7 @@ void SwTabFrame::MakeAll(vcl::RenderContext* pRenderContext)
                 {
                     aNotify.SetLowersComplete( false );
                     bSplit = true;
+                    nSplitDeadLine = nDeadLine;
 
                     // An existing follow flow line has to be removed.
                     if ( HasFollowFlowLine() )
@@ -3123,9 +3238,37 @@ void SwTabFrame::MakeAll(vcl::RenderContext* pRenderContext)
                         // The second attempt; ignore all the flags allowing to split the row
                         bEffectiveTableRowKeep = bTableRowKeep;
                     }
-                    const bool bSplitError = !Split(nDeadLine, bTryToSplit,
-                        bEffectiveTableRowKeep,
-                        isFootnoteGrowth);
+                    SwFootnoteRescue eRescue = SwFootnoteRescue::None;
+                    const bool bSplitError = !Split(nDeadLine, bTryToSplit, bEffectiveTableRowKeep,
+                                                    isFootnoteGrowth, eRescue);
+
+                    // The table cannot make room for its first row by splitting, and the footnote
+                    // that took the space stays on this page: move the table rather than leave the
+                    // row here to be cut off at the page's bottom
+                    if (eRescue == SwFootnoteRescue::MoveTable)
+                    {
+                        // Move always: there is no previous frame on this page to move relative to,
+                        // which is what normally forbids the move - and the page is not left blank,
+                        // it keeps the footnote. A move off the page ends the page making.
+                        if (!MoveFwd(true, false, true))
+                            bMakePage = false;
+                        bMovedFwd = true;
+                        setFrameAreaPositionValid(false);
+                        continue;
+                    }
+
+                    // The footnote that took the row's space is the row's own, so it is the one to
+                    // move: send the footnotes past the table's bottom, and what has no room left
+                    // there goes to the next page, leaving the row the space it needs
+                    if (eRescue == SwFootnoteRescue::MoveOwnFootnote && !bMovedOwnFootnotes)
+                    {
+                        bMovedOwnFootnotes = true;
+                        FindPageFrame()->RearrangeFootnotes(aRectFnSet.GetBottom(getFrameArea()),
+                                                            false);
+                        m_bCalcLowers = true;
+                        setFrameAreaSizeValid(false);
+                        continue;
+                    }
 
                     // tdf#130639 don't start table on a new page after the fallback "switch off repeating header"
                     if (bSplitError && nRepeat > GetTable()->GetRowsToRepeat())
@@ -3842,6 +3985,16 @@ void SwTabFrame::Format( vcl::RenderContext* /*pRenderContext*/, const SwBorderA
                                     ( (nRightOffset > 0) ?
                                       std::max( nCenterSpacing, SwTwips(nRightOffset) ) :
                                       nCenterSpacing );
+                    // When a surrounding fly forces the table off-centre on one side, it can no
+                    // longer be centred, give the opposite side the remaining space.
+                    if (nLeftOffset > std::max(SwTwips(0), nCenterSpacing) && nRightOffset <= 0)
+                        nRightSpacing
+                            = nRightLine
+                              + std::max(SwTwips(0), nMax - nWishedTableWidth - nLeftSpacing);
+                    else if (nRightOffset > std::max(SwTwips(0), nCenterSpacing) && nLeftOffset <= 0)
+                        nLeftSpacing
+                            = nLeftLine
+                              + std::max(SwTwips(0), nMax - nWishedTableWidth - nRightSpacing);
                 }
                 break;
             case text::HoriOrientation::FULL:
@@ -4029,7 +4182,7 @@ SwTwips SwTabFrame::GrowFrame(SwTwips nDist, SwResizeLimitReason& reason, bool b
         }
         // #i28701# - Due to the new object positioning the
         // frame on the next page/column can flow backward (e.g. it was moved
-        // forward due to the positioning of its objects ). Thus, invalivate this
+        // forward due to the positioning of its objects ). Thus, invalidate this
         // next frame, if document compatibility option 'Consider wrapping style
         // influence on object positioning' is ON.
         else if ( GetFormat()->getIDocumentSettingAccess().get(DocumentSettingId::CONSIDER_WRAP_ON_OBJECT_POSITION) )
@@ -6699,6 +6852,19 @@ SwRowFrame* SwTabFrame::GetFirstNonHeadlineRow() const
     }
 
     return pRet;
+}
+
+bool SwTabFrame::RowFitsUnderHeadline(const SwRowFrame& rRow) const
+{
+    const sal_uInt16 nRepeat = GetTable()->GetRowsToRepeat();
+    if (!nRepeat || rRow.IsRowSplitAllowed())
+        return true;
+    // the headlines are the table's first rows, and the master always carries them
+    const SwTabFrame* pMaster = IsFollow() ? FindMaster(true) : this;
+    if (!pMaster)
+        return true;
+    return rRow.getFrameArea().Height()
+           <= lcl_GetMaxRowHeight(*this) - lcl_GetHeightOfRows(pMaster->Lower(), nRepeat);
 }
 
 bool SwTable::IsHeadline( const SwTableLine& rLine ) const

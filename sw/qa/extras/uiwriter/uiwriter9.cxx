@@ -9,6 +9,9 @@
 
 #include <config_poppler.h>
 #include <swmodeltestbase.hxx>
+
+#include <set>
+
 #include <officecfg/Office/Common.hxx>
 #include <officecfg/Office/Writer.hxx>
 #include <com/sun/star/document/XEmbeddedObjectSupplier2.hpp>
@@ -21,6 +24,7 @@
 #include <com/sun/star/awt/FontSlant.hpp>
 #include <com/sun/star/container/XContentEnumerationAccess.hpp>
 #include <com/sun/star/table/TableBorder2.hpp>
+#include <com/sun/star/text/TextContentAnchorType.hpp>
 #include <com/sun/star/text/XDocumentIndex.hpp>
 #include <com/sun/star/text/XTextField.hpp>
 #include <com/sun/star/text/XTextFrame.hpp>
@@ -30,6 +34,8 @@
 #include <com/sun/star/text/XPageCursor.hpp>
 #include <com/sun/star/text/XParagraphCursor.hpp>
 
+#include <com/sun/star/util/SearchAlgorithms2.hpp>
+#include <com/sun/star/util/SearchFlags.hpp>
 #include <com/sun/star/view/XSelectionSupplier.hpp>
 
 #include <comphelper/lok.hxx>
@@ -39,6 +45,7 @@
 #include <comphelper/scopeguard.hxx>
 #include <comphelper/configuration.hxx>
 #include <swdtflvr.hxx>
+#include <i18nutil/searchopt.hxx>
 #include <o3tl/string_view.hxx>
 #include <editeng/acorrcfg.hxx>
 #include <swacorr.hxx>
@@ -864,6 +871,49 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest9, testTdf159565)
                          xSelection->getString());
 }
 
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest9, testTdf163949)
+{
+    // Given a document with three text frames, each holding the search term:
+    createSwDoc();
+    auto xMSF(mxComponent.queryThrow<lang::XMultiServiceFactory>());
+    auto xText(mxComponent.queryThrow<text::XTextDocument>()->getText());
+
+    static constexpr OUString texts[] = { u"1 match"_ustr, u"2 match"_ustr, u"3 match"_ustr };
+    for (const OUString& rFrameText : texts)
+    {
+        auto xFrame(xMSF->createInstance(u"com.sun.star.text.TextFrame"_ustr)
+                        .queryThrow<text::XTextFrame>());
+        xFrame.queryThrow<beans::XPropertySet>()->setPropertyValue(
+            u"AnchorType"_ustr, uno::Any(text::TextContentAnchorType_AT_PARAGRAPH));
+        auto xCursor(xText->createTextCursor());
+        xText->insertTextContent(xCursor, xFrame, false);
+        xFrame->getText()->setString(rFrameText);
+    }
+
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+
+    i18nutil::SearchOptions2 aSearchOpt;
+    aSearchOpt.searchFlag = css::util::SearchFlags::ALL_IGNORE_CASE;
+    aSearchOpt.searchString = u"match"_ustr;
+    aSearchOpt.AlgorithmType2 = css::util::SearchAlgorithms2::ABSOLUTE;
+
+    // When repeatedly using "Find Previous" through the frames (backward search in the
+    // "other" area, where frames live), collect which frame each hit lands in - the
+    // frames carry distinct text, so the paragraph text identifies the frame:
+    std::set<OUString> aVisitedFrames;
+    for (size_t i = 0; i < std::size(texts); ++i)
+    {
+        if (!pWrtShell->SearchPattern(aSearchOpt, /*bSearchInNotes=*/false, SwDocPositions::Curr,
+                                      SwDocPositions::Start, FindRanges::InOther))
+            break;
+        aVisitedFrames.insert(pWrtShell->GetCursor()->GetPointNode().GetTextNode()->GetText());
+    }
+
+    // Then the match in every frame must be reached in turn. Without the fix, only the last frame
+    // was ever highlighted.
+    CPPUNIT_ASSERT_EQUAL(std::size(texts), aVisitedFrames.size());
+}
+
 CPPUNIT_TEST_FIXTURE(SwUiWriterTest9, testTdf159816)
 {
     createSwDoc();
@@ -1256,8 +1306,7 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest9, testTdf158375_dde_disable)
     CPPUNIT_ASSERT_EQUAL(
         size_t(1), pDoc->getIDocumentLinksAdministration().GetLinkManager().GetLinks().size());
 
-    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, nullptr,
-                                                                            u""_ustr);
+    pDoc->getIDocumentLinksAdministration().GetLinkManager().UpdateAllLinks(false, u""_ustr);
 
     uno::Reference<text::XTextSectionsSupplier> xTextSectionsSupplier(mxComponent, uno::UNO_QUERY);
     uno::Reference<container::XIndexAccess> xSections(xTextSectionsSupplier->getTextSections(),
@@ -1926,6 +1975,186 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest9, testTdf59121_UndoRedoCutBookmark)
     // This is where tdf#59121 fails: it restored the text but the bookmark is LOST
     CPPUNIT_ASSERT_EQUAL(sal_Int32(1), rIDMA.getAllMarksCount());
     CPPUNIT_ASSERT_EQUAL(u"foo"_ustr, (*(rIDMA.getAllMarksBegin()))->GetName().toString());
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest9, testAutocorrectSingleQuoteUndo)
+{
+    // Typing an apostrophe autocorrects it to a typographic one. Undoing the
+    // autocorrect must remove the whole quote in a single step, not leave a
+    // straight quote behind.
+    createSwDoc();
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwXTextDocument* pTextDoc = getSwTextDoc();
+
+    auto getText = [&]() -> OUString {
+        return pWrtShell->getShellCursor(false)->GetPoint()->GetNode().GetTextNode()->GetText();
+    };
+
+    pTextDoc->postKeyEvent(LOK_KEYEVENT_KEYINPUT, 'c', 0);
+    pTextDoc->postKeyEvent(LOK_KEYEVENT_KEYINPUT, 'e', 0);
+    pTextDoc->postKeyEvent(LOK_KEYEVENT_KEYINPUT, '\'', 0);
+    Scheduler::ProcessEventsToIdle();
+
+    // The straight apostrophe became a typographic one (U+2019).
+    CPPUNIT_ASSERT_EQUAL(u"ce\u2019"_ustr, getText());
+
+    pWrtShell->Undo();
+    Scheduler::ProcessEventsToIdle();
+
+    // One undo removes the quote entirely. Without the fix the quote turned
+    // back into a straight one (U+0027) and only a second undo removed it.
+    CPPUNIT_ASSERT_EQUAL(u"ce"_ustr, getText());
+
+    // The same holds when more is typed after the quote and it is undone: the
+    // undo that reaches the quote removes it rather than exposing a straight
+    // quote in between.
+    pTextDoc->postKeyEvent(LOK_KEYEVENT_KEYINPUT, '\'', 0);
+    pTextDoc->postKeyEvent(LOK_KEYEVENT_KEYINPUT, 'u', 0);
+    pTextDoc->postKeyEvent(LOK_KEYEVENT_KEYINPUT, 'n', 0);
+    Scheduler::ProcessEventsToIdle();
+    CPPUNIT_ASSERT_EQUAL(u"ce\u2019un"_ustr, getText());
+
+    pWrtShell->Undo();
+    Scheduler::ProcessEventsToIdle();
+    CPPUNIT_ASSERT_EQUAL(u"ce\u2019"_ustr, getText());
+
+    pWrtShell->Undo();
+    Scheduler::ProcessEventsToIdle();
+    CPPUNIT_ASSERT_EQUAL(u"ce"_ustr, getText());
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest9, testHiddenRedlineDeleteWordUndo)
+{
+    // Deleting a word that sits inside an existing tracked formatting change,
+    // with change tracking on but tracked changes hidden, then undoing the
+    // deletion must show the word again in the layout.
+    createSwDoc();
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwDoc* pDoc = getSwDoc();
+
+    pWrtShell->Insert(u"foo Gegenstand bar"_ustr);
+
+    dispatchCommand(mxComponent, u".uno:TrackChanges"_ustr, {});
+    CPPUNIT_ASSERT(pDoc->getIDocumentRedlineAccess().IsRedlineOn());
+
+    // A tracked formatting change over the whole paragraph, so deleting the
+    // word later splits that change into three parts.
+    pWrtShell->SelAll();
+    dispatchCommand(mxComponent, u".uno:Bold"_ustr, {});
+
+    dispatchCommand(mxComponent, u".uno:ShowTrackedChanges"_ustr, {});
+    CPPUNIT_ASSERT(pWrtShell->GetLayout()->IsHideRedlines());
+
+    // Select the word "Gegenstand" ("foo " is 4 characters, the word is 10).
+    pWrtShell->SttEndDoc(/*bStart=*/true);
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/false, 4, /*bBasicCall=*/false);
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/true, 10, /*bBasicCall=*/false);
+
+    auto bWordShown = [this]() {
+        return countXPathNodes(parseLayoutDump(), "//*[contains(@portion,'Gegenstand')]") > 0;
+    };
+    CPPUNIT_ASSERT(bWordShown());
+
+    dispatchCommand(mxComponent, u".uno:Delete"_ustr, {});
+    // With the tracked deletion hidden, the word is no longer rendered.
+    CPPUNIT_ASSERT(!bWordShown());
+
+    dispatchCommand(mxComponent, u".uno:Undo"_ustr, {});
+    // Undo removes the deletion, so the word is rendered again without having
+    // to toggle the display of tracked changes. Before the fix the merged
+    // paragraph kept its stale extents and the word stayed hidden.
+    CPPUNIT_ASSERT(bWordShown());
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest9, testMultipleSelection)
+{
+    // Tests passing a Sequence of XTextRanges to XSelectionSupplier::select. See tdf#172967
+
+    createSwDoc();
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwXTextDocument* pTextDoc = getSwTextDoc();
+    uno::Reference<text::XText> xText = pTextDoc->getText();
+
+    pWrtShell->Insert(u"one potato two potatoes three potatoes four"_ustr);
+
+    // Make an XTextRange for each of the number words
+    uno::Reference<text::XTextCursor> xOne = xText->createTextCursorByRange(xText->getStart());
+    xOne->goRight(3, true);
+
+    uno::Reference<text::XTextCursor> xTwo = xText->createTextCursorByRange(xOne->getEnd());
+    xTwo->goRight(8, false);
+    xTwo->goRight(3, true);
+
+    uno::Reference<text::XTextCursor> xThree = xText->createTextCursorByRange(xTwo->getEnd());
+    xThree->goRight(10, false);
+    xThree->goRight(5, true);
+
+    uno::Reference<text::XTextCursor> xFour = xText->createTextCursorByRange(xThree->getEnd());
+    xFour->goRight(10, false);
+    xFour->goRight(4, true);
+
+    // Select all of the number words
+    uno::Sequence<uno::Any> xSelection{ uno::Any(xOne), uno::Any(xTwo), uno::Any(xThree),
+                                        uno::Any(xFour) };
+    uno::Reference<view::XSelectionSupplier> xSelectionSupplier(pTextDoc->getCurrentController(),
+                                                                uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT(xSelectionSupplier->select(uno::Any(xSelection)));
+
+    // Get the current selection back from the supplier
+    uno::Reference<container::XIndexAccess> xRanges;
+    CPPUNIT_ASSERT(xSelectionSupplier->getSelection() >>= xRanges);
+
+    // Check the right words were returned
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), xRanges->getCount());
+    uno::Reference<text::XTextRange> xWord;
+    CPPUNIT_ASSERT(xRanges->getByIndex(0) >>= xWord);
+    CPPUNIT_ASSERT_EQUAL(u"one"_ustr, xWord->getString());
+    CPPUNIT_ASSERT(xRanges->getByIndex(1) >>= xWord);
+    CPPUNIT_ASSERT_EQUAL(u"two"_ustr, xWord->getString());
+    CPPUNIT_ASSERT(xRanges->getByIndex(2) >>= xWord);
+    CPPUNIT_ASSERT_EQUAL(u"three"_ustr, xWord->getString());
+    CPPUNIT_ASSERT(xRanges->getByIndex(3) >>= xWord);
+    CPPUNIT_ASSERT_EQUAL(u"four"_ustr, xWord->getString());
+
+    // Reset the selection by passing an empty sequence
+    uno::Sequence<uno::Any> xEmptySelection;
+    CPPUNIT_ASSERT(xSelectionSupplier->select(uno::Any(xEmptySelection)));
+
+    // The selection should now be empty
+    CPPUNIT_ASSERT(xSelectionSupplier->getSelection() >>= xRanges);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1), xRanges->getCount());
+    CPPUNIT_ASSERT(xRanges->getByIndex(0) >>= xWord);
+    CPPUNIT_ASSERT_EQUAL(u""_ustr, xWord->getString());
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest9, testMultipleSelectionOverlap)
+{
+    // Tests passing a Sequence of XTextRanges to XSelectionSupplier::select where one of them
+    // overlaps the other.
+
+    createSwDoc();
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwXTextDocument* pTextDoc = getSwTextDoc();
+    uno::Reference<text::XText> xText = pTextDoc->getText();
+
+    pWrtShell->Insert(u"orange"_ustr);
+
+    // Create two overlapping ranges
+    uno::Reference<text::XTextCursor> xOr = xText->createTextCursorByRange(xText->getStart());
+    xOr->goRight(2, true);
+    CPPUNIT_ASSERT_EQUAL(u"or"_ustr, xOr->getString());
+
+    uno::Reference<text::XTextCursor> xRange = xText->createTextCursorByRange(xText->getStart());
+    xRange->goRight(1, false);
+    xRange->goRight(5, true);
+    CPPUNIT_ASSERT_EQUAL(u"range"_ustr, xRange->getString());
+
+    // Try selecting them both
+    uno::Sequence<uno::Any> xSelection{ uno::Any(xOr), uno::Any(xRange) };
+    uno::Reference<view::XSelectionSupplier> xSelectionSupplier(pTextDoc->getCurrentController(),
+                                                                uno::UNO_QUERY_THROW);
+    // The selection should fail
+    CPPUNIT_ASSERT(!xSelectionSupplier->select(uno::Any(xSelection)));
 }
 
 } // end of anonymous namespace

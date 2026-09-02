@@ -1296,9 +1296,9 @@ public:
             if (!p.bIsExpression)
                 ScXMLConverter::ConvertCellRangeAddress(aContent);
 
-            ScRangeData* pData = new ScRangeData(
-                mrDoc, p.sName, aContent, aPos, nNewType, p.eGrammar);
-            mrRangeName.insert(pData);
+            std::unique_ptr<ScRangeData> pData(new ScRangeData(
+                mrDoc, p.sName, aContent, aPos, nNewType, p.eGrammar));
+            mrRangeName.insert(std::move(pData));
         }
     }
 };
@@ -1314,9 +1314,9 @@ void ScXMLImport::SetNamedRanges()
         return;
 
     // Insert the namedRanges
-    ScRangeName* pRangeNames = mpDoc->GetRangeName();
+    ScRangeName& rRangeNames = mpDoc->GetRangeName();
     ::std::for_each(m_aMyNamedExpressions.begin(), m_aMyNamedExpressions.end(),
-            RangeNameInserter(*mpDoc, *pRangeNames, -1));
+            RangeNameInserter(*mpDoc, rRangeNames, -1));
 }
 
 void ScXMLImport::SetSheetNamedRanges()
@@ -1614,7 +1614,7 @@ void ScXMLImport::ExtractFormulaNamespaceGrammar(
     /*  Check if a namespace URL could be resolved from the attribute value.
         Use that namespace only, if the Calc document knows an associated
         external formula parser. This prevents that the range operator in
-        conjunction with defined names is confused as namespaces prefix, e.g.
+        conjunction with defined names is confused as a namespace prefix, e.g.
         in the expression 'table:A1' where 'table' is a named reference. */
     if( ((nNsId & XML_NAMESPACE_UNKNOWN_FLAG) != 0) && !rFormulaNmsp.isEmpty() &&
         mpDoc->GetFormulaParserPool().hasFormulaParser( rFormulaNmsp ) )
@@ -1719,7 +1719,7 @@ extern "C" SAL_DLLPUBLIC_EXPORT bool TestImportFODS(SvStream &rStream)
     //SetLoading hack because the document properties will be re-initted
     //by the xml filter and during the init, while it's considered uninitialized,
     //setting a property will inform the document it's modified, which attempts
-    //to update the properties, which throws cause the properties are uninitialized
+    //to update the properties, which throws because the properties are uninitialized
     xDocSh->SetLoading(SfxLoadedFlags::NONE);
     bool ret = xFilter->filter(aArgs);
     xDocSh->SetLoading(SfxLoadedFlags::ALL);
@@ -1772,7 +1772,7 @@ extern "C" SAL_DLLPUBLIC_EXPORT bool TestFODSExportXLS(SvStream &rStream)
     //SetLoading hack because the document properties will be re-initted
     //by the xml filter and during the init, while it's considered uninitialized,
     //setting a property will inform the document it's modified, which attempts
-    //to update the properties, which throws cause the properties are uninitialized
+    //to update the properties, which throws because the properties are uninitialized
     xDocSh->SetLoading(SfxLoadedFlags::NONE);
     bool ret = xFilter->filter(aArgs);
     xDocSh->SetLoading(SfxLoadedFlags::ALL);
@@ -1827,7 +1827,7 @@ extern "C" SAL_DLLPUBLIC_EXPORT bool TestImportXLSX(SvStream &rStream)
     //SetLoading hack because the document properties will be re-initted
     //by the xml filter and during the init, while it's considered uninitialized,
     //setting a property will inform the document it's modified, which attempts
-    //to update the properties, which throws cause the properties are uninitialized
+    //to update the properties, which throws because the properties are uninitialized
     xDocSh->SetLoading(SfxLoadedFlags::NONE);
     bool ret = false;
     try

@@ -225,6 +225,10 @@ QObject* QtBuilder::insertObject(QObject* pParent, const OUString& rClass, std::
     {
         QComboBox* pComboBox = new QComboBox(pParentWidget);
         pComboBox->setEditable(extractEntry(rProps));
+        // use a model that supports sorting
+        QSortFilterProxyModel* pModel = new QSortFilterProxyModel(pComboBox);
+        pModel->setSourceModel(new QStandardItemModel(0, 1, pComboBox));
+        pComboBox->setModel(pModel);
         pObject = pComboBox;
     }
     else if (rClass == u"GtkDialog")
@@ -379,7 +383,7 @@ QObject* QtBuilder::insertObject(QObject* pParent, const OUString& rClass, std::
     {
         QToolButton* pButton = new QToolButton(pParentWidget);
         pButton->setCheckable(true);
-        setButtonProperties(*pButton, rProps, pParentWidget);
+        setToggleButtonProperties(*pButton, rProps, pParentWidget);
         pObject = pButton;
     }
     else if (rClass == u"GtkToolbar")
@@ -911,11 +915,17 @@ void QtBuilder::setButtonProperties(QAbstractButton& rButton, stringmap& rProps,
 
     if (QDialogButtonBox* pButtonBox = qobject_cast<QDialogButtonBox*>(pParentWidget))
     {
-        pButtonBox->addButton(&rButton, QDialogButtonBox::NoRole);
-
         // for message boxes, avoid implicit standard buttons in addition to those explicitly added
+        // and add button via QMessageBox API instead of via the button box
         if (QMessageBox* pMessageBox = qobject_cast<QMessageBox*>(pParentWidget->window()))
+        {
             pMessageBox->setStandardButtons(QMessageBox::NoButton);
+            pMessageBox->addButton(&rButton, QMessageBox::ButtonRole::NoRole);
+        }
+        else
+        {
+            pButtonBox->addButton(&rButton, QDialogButtonBox::NoRole);
+        }
     }
 }
 
@@ -994,8 +1004,7 @@ void QtBuilder::setMenuButtonProperties(QToolButton& rButton, stringmap& rProps,
         rButton.setMenu(pMenu);
     }
 
-    setButtonProperties(rButton, rProps, pParentWidget);
-    QtInstanceMenuButton::updateToolButtonStyle(rButton);
+    setToggleButtonProperties(rButton, rProps, pParentWidget);
 }
 
 void QtBuilder::setMessageDialogProperties(QMessageBox& rMessageBox, stringmap& rProps)
@@ -1107,6 +1116,13 @@ void QtBuilder::setTextViewProperties(QPlainTextEdit& rTextEdit, stringmap& rPro
             rTextEdit.setReadOnly(!toBool(rValue));
         }
     }
+}
+
+void QtBuilder::setToggleButtonProperties(QToolButton& rButton, stringmap& rProps,
+                                          QWidget* pParentWidget)
+{
+    setButtonProperties(rButton, rProps, pParentWidget);
+    QtInstanceToggleButton::updateToolButtonStyle(rButton);
 }
 
 void QtBuilder::setWidgetProperties(QWidget& rWidget, stringmap& rProps)

@@ -40,6 +40,7 @@
 #include <environmentofanchoredobject.hxx>
 #include <frmatr.hxx>
 #include <fmtwrapinfluenceonobjpos.hxx>
+#include <layouter.hxx>
 #include <rowfrm.hxx>
 #include <sortedobjs.hxx>
 #include <textboxhelper.hxx>
@@ -668,6 +669,15 @@ void SwToContentAnchoredObjectPosition::CalcPosition()
             const SwTwips nTopOfAnch = GetTopForObjPos( *pAnchorFrameForVertPos, aRectFnSet.FnRect(), aRectFnSet.IsVert() );
             if( nRelPosY <= 0 )
             {
+                // MSO-formatted documents: a no-wrap object cannot share a line with its anchor
+                // paragraph, and a footer keeps that paragraph at the page's footer distance, so
+                // it has nowhere to be pushed. Pull the object up until it clears the paragraph
+                // instead of covering it. Without the compatibility flag: the position given for
+                // the object is the one to honour, even where it covers the text.
+                const SwTwips nObjHeight = aRectFnSet.GetHeight(aObjBoundRect);
+                if (bMSOLayout && pFooter && bNoSurround && nRelPosY + nObjHeight > 0)
+                    nRelPosY = -nObjHeight;
+
                 // Allow negative position, but keep it
                 // inside environment layout frame.
                 const SwLayoutFrame& rVertEnvironLayFrame =
@@ -733,7 +743,12 @@ void SwToContentAnchoredObjectPosition::CalcPosition()
                         {
                             // No need to grow the anchor cell in case the follow-text-flow object
                             // is wrap-though.
-                            if (!GetAnchorFrame().IsInTab() || !DoesObjFollowsTextFlow() || !bWrapThrough)
+                            if (!GetAnchorFrame().IsInTab() || ((!DoesObjFollowsTextFlow() || !bWrapThrough) &&
+                                // tdf#172156: stop growing the cell once this object has grown it
+                                // too many times during positioning
+                                !SwLayouter::RegisterAnchoredObjGrowInTab(
+                                    GetAnchoredObj().GetFrameFormat()->GetDoc(),
+                                    &GetAnchoredObj()) ))
                             {
                                 pLayoutFrameToGrow->Grow( nRelPosY - nAvail );
                             }
@@ -895,7 +910,11 @@ void SwToContentAnchoredObjectPosition::CalcPosition()
             {
                 // No need to grow the anchor cell in case the follow-text-flow object
                 // is wrap-though.
-                if (!GetAnchorFrame().IsInTab() || !DoesObjFollowsTextFlow() || !bWrapThrough)
+                if (!GetAnchorFrame().IsInTab() || ((!DoesObjFollowsTextFlow() || !bWrapThrough) &&
+                    // tdf#172156: see above - break the cell-grow oscillation.
+                    !SwLayouter::RegisterAnchoredObjGrowInTab(
+                        GetAnchoredObj().GetFrameFormat()->GetDoc(),
+                        &GetAnchoredObj()) ))
                 {
                     pLayoutFrameToGrow->Grow( -nDist );
                 }
@@ -1266,6 +1285,10 @@ void SwToContentAnchoredObjectPosition::CalcOverlap(const SwTextFrame* pAnchorFr
             continue;
         }
 
+        // Set for an object which the header or footer pushes into the body: it is not part of the
+        // body's flow, so it cannot be resolved by moving down past it.
+        bool bObjectFromHeaderOrFooter = false;
+
         if (bSplitFly)
         {
             SwFlyFrame* pAnchoredObjFly = pAnchoredObj->DynCastFlyFrame();
@@ -1293,8 +1316,13 @@ void SwToContentAnchoredObjectPosition::CalcOverlap(const SwTextFrame* pAnchorFr
 
             if (pAnchoredObjFlyAnchor && pAnchoredObjFlyAnchor->GetUpper() != pAnchorUpper)
             {
-                // A fly overlapping with a fly from another upper is fine.
-                continue;
+                // A fly overlapping with a fly from another upper is fine, except for a header or
+                // footer object reaching into the body we are in.
+                if (pAnchorUpper && pAnchorUpper->IsInDocBody()
+                    && pAnchoredObjFlyAnchor->FindFooterOrHeader())
+                    bObjectFromHeaderOrFooter = true;
+                else
+                    continue;
             }
 
             bool bAnchoredObjFlyAnchorInTable
@@ -1318,6 +1346,25 @@ void SwToContentAnchoredObjectPosition::CalcOverlap(const SwTextFrame* pAnchorFr
         if (!GetAnchoredObj().GetObjRect().Overlaps(pAnchoredObj->GetObjRect()))
         {
             // Found an already positioned object, but it doesn't overlap, ignore.
+            continue;
+        }
+
+        if (bObjectFromHeaderOrFooter
+            && pAnchoredObj->GetObjRect().Top() > GetAnchoredObj().GetObjRect().Top())
+        {
+            // The other object starts below us, so shifting down would push us off the page:
+            // shift up instead, until our bottom clears it. The page is the limit - a split fly
+            // may reach into the top margin area, but not past the page edge; where even that is
+            // not enough, keep the overlap.
+            const SwTwips nUp
+                = GetAnchoredObj().GetObjRect().Bottom() - pAnchoredObj->GetObjRect().Top() + 1;
+            const SwPageFrame* pPageFrame = pAnchorFrameForVertPos->FindPageFrame();
+            if (pPageFrame
+                && GetAnchoredObj().GetObjRect().Top() - nUp >= pPageFrame->getFrameArea().Top())
+            {
+                rRelPos.setY(rRelPos.getY() - nUp);
+                GetAnchoredObj().SetObjTop(nTopOfAnch + rRelPos.Y());
+            }
             continue;
         }
 

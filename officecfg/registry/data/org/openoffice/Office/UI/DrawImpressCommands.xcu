@@ -461,11 +461,6 @@
           <value xml:lang="en-US">Master Slides</value>
         </prop>
       </node>
-      <node oor:name=".uno:ConnectorAttributes" oor:op="replace">
-        <prop oor:name="Label" oor:type="xs:string">
-          <value xml:lang="en-US">~Connector...</value>
-        </prop>
-      </node>
       <node oor:name=".uno:PresentationDialog" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">S~lide Show Settings...</value>
@@ -799,6 +794,16 @@
           <value>1</value>
         </prop>
       </node>
+      <node oor:name=".uno:CopySlide" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Copy Slide</value>
+        </prop>
+      </node>
+      <node oor:name=".uno:PasteSlide" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Paste Slide</value>
+        </prop>
+      </node>
       <node oor:name=".uno:ManageLinks" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">E~xternal Links...</value>
@@ -823,6 +828,7 @@
       <node oor:name=".uno:OutlineMode" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">~Outline</value>
+          <value xml:lang="x-comment">Outline refers to a mode that shows an overview of the slides</value>
         </prop>
         <prop oor:name="Properties" oor:type="xs:int">
           <value>1</value>
@@ -1232,6 +1238,11 @@
       <node oor:name=".uno:RemoveSlideSection" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">Remove Section</value>
+        </prop>
+      </node>
+      <node oor:name=".uno:RemoveSlideSectionAndSlides" oor:op="replace">
+        <prop oor:name="Label" oor:type="xs:string">
+          <value xml:lang="en-US">Remove Section &amp; Slides</value>
         </prop>
       </node>
       <node oor:name=".uno:RenameSlideSection" oor:op="replace">
@@ -2383,14 +2394,6 @@
       <node oor:name=".uno:ModifyPresentationObject" oor:op="replace">
         <prop oor:name="Label" oor:type="xs:string">
           <value xml:lang="en-US">Presentation ~Object...</value>
-        </prop>
-      </node>
-      <node oor:name=".uno:HangingIndent" oor:op="replace">
-        <prop oor:name="Label" oor:type="xs:string">
-          <value xml:lang="en-US">Hanging Indent</value>
-        </prop>
-        <prop oor:name="Properties" oor:type="xs:int">
-          <value>1</value>
         </prop>
       </node>
       <node oor:name=".uno:RedactedExportBlack" oor:op="replace">

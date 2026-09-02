@@ -26,6 +26,7 @@
 #include <sal/types.h>
 #include <o3tl/typed_flags_set.hxx>
 #include <vcl/window.hxx>
+#include <vcl/windowstate.hxx>
 
 #include <comphelper/lok.hxx>
 
@@ -63,7 +64,7 @@ struct SAL_DLLPUBLIC_RTTI SfxChildWinInfo
 {
     OUString            aExtraString;
     OUString            aModule;
-    OUString            aWinState;
+    vcl::WindowData aWinState;
     Point               aPos;
     Size                aSize;
     SfxChildWindowFlags nFlags;
@@ -78,10 +79,9 @@ struct SAL_DLLPUBLIC_RTTI SfxChildWinInfo
 };
 
 // ChildWindow factory methods
-typedef std::unique_ptr<SfxChildWindow> (*SfxChildWinCtor)( vcl::Window *pParentWindow,
-                                            sal_uInt16 nId,
-                                            SfxBindings *pBindings,
-                                            SfxChildWinInfo *pInfo);
+typedef std::unique_ptr<SfxChildWindow> (*SfxChildWinCtor)(vcl::Window* pParentWindow,
+                                                           sal_uInt16 nId, SfxBindings& rBindings,
+                                                           SfxChildWinInfo& rInfo);
 
 struct SFX2_DLLPUBLIC SfxChildWinFactory
 {
@@ -100,17 +100,16 @@ extern SFX2_DLLPUBLIC bool ParentIsFloatingWindow(const vcl::Window *pParent);
 class SFX2_DLLPUBLIC SfxChildWindow
 {
     VclPtr<vcl::Window>        m_pParent;       // parent window (Topwindow)
-    VclPtr<vcl::Window>        pWindow;         // actual contents
-    std::unique_ptr< SfxChildWindow_Impl>       pImpl;            // Implementation data
-    std::shared_ptr<SfxDialogController> xController;     // actual contents
-    SfxChildAlignment          eChildAlignment; // Current css::drawing::Alignment
-                                                 // Another window in pWindow
-    sal_uInt16                 nType;           // ChildWindow-Id
+    VclPtr<vcl::Window> m_pWindow; // actual contents
+    std::unique_ptr<SfxChildWindow_Impl> m_pImpl; // Implementation data
+    std::shared_ptr<SfxDialogController> m_xController; // actual contents
+    SfxChildAlignment m_eChildAlignment; // Current css::drawing::Alignment
+    sal_uInt16 m_nType; // ChildWindow-Id
     SAL_DLLPRIVATE void ClearWorkwin();
 
 protected:
-    void                SetWindow(const VclPtr<vcl::Window>& p) { pWindow = p; }
-                        SfxChildWindow(vcl::Window *pParentWindow, sal_uInt16 nId);
+    void SetWindow(const VclPtr<vcl::Window>& p) { m_pWindow = p; }
+    SfxChildWindow(vcl::Window* pParentWindow, sal_uInt16 nId);
 
 public:
     virtual             ~SfxChildWindow();
@@ -118,28 +117,29 @@ public:
     // the constructor was called (e.g. to avoid calling virtual methods in the constructor)
     virtual             void Initialize() {}
     void                Destroy();
-    vcl::Window*        GetWindow() const
-                        { return pWindow; }
-    void                SetController(const std::shared_ptr<SfxDialogController>& controller) { xController = controller; }
-    std::shared_ptr<SfxDialogController>& GetController() { return xController; }
-    const std::shared_ptr<SfxDialogController>& GetController() const { return xController; }
+    vcl::Window* GetWindow() const { return m_pWindow; }
+    void SetController(const std::shared_ptr<SfxDialogController>& controller)
+    {
+        m_xController = controller;
+    }
+    std::shared_ptr<SfxDialogController>& GetController() { return m_xController; }
+    const std::shared_ptr<SfxDialogController>& GetController() const { return m_xController; }
     vcl::Window*        GetParent() const
                         { return m_pParent; }
-    SfxChildAlignment   GetAlignment() const
-                        { return eChildAlignment; }
+    SfxChildAlignment GetAlignment() const { return m_eChildAlignment; }
     void                SetAlignment(SfxChildAlignment eAlign);
     virtual void        Hide();
     virtual void        Show( ShowFlags nFlags );
     sal_uInt16          GetPosition() const;
-    sal_uInt16          GetType() const
-                        { return nType; }
+    sal_uInt16 GetType() const { return m_nType; }
 
     virtual SfxChildWinInfo GetInfo() const;
     void                SaveStatus(const SfxChildWinInfo& rInfo);
 
     static void         RegisterChildWindow(SfxModule*, const SfxChildWinFactory&);
 
-    static std::unique_ptr<SfxChildWindow> CreateChildWindow( sal_uInt16, vcl::Window*, SfxBindings*, SfxChildWinInfo &);
+    static std::unique_ptr<SfxChildWindow> CreateChildWindow(sal_uInt16, vcl::Window*, SfxBindings&,
+                                                             SfxChildWinInfo&);
     void                SetHideNotDelete( bool bOn );
     bool                IsHideNotDelete() const;
     bool                IsVisible() const;
@@ -163,7 +163,7 @@ const int nCloseResponseToJustHide = -42;
 #define SFX_DECL_CHILDWINDOW(Class) \
     public  :   \
         static  std::unique_ptr<SfxChildWindow> CreateImpl(vcl::Window *pParent, sal_uInt16 nId, \
-                    SfxBindings *pBindings, SfxChildWinInfo* pInfo ); \
+                    SfxBindings& rBindings, SfxChildWinInfo& rInfo); \
         static  void RegisterChildWindow (bool bVisible=false, SfxModule *pMod=nullptr, SfxChildWindowFlags nFlags=SfxChildWindowFlags::NONE); \
         virtual SfxChildWinInfo GetInfo() const override
 
@@ -179,9 +179,9 @@ const int nCloseResponseToJustHide = -42;
 
 #define SFX_IMPL_POS_CHILDWINDOW(Class, MyID, Pos) \
         std::unique_ptr<SfxChildWindow> Class::CreateImpl( vcl::Window *pParent, \
-                sal_uInt16 nId, SfxBindings *pBindings, SfxChildWinInfo* pInfo ) \
+                sal_uInt16 nId, SfxBindings& rBindings, SfxChildWinInfo& rInfo) \
                 {   \
-                    return std::make_unique<Class>(pParent, nId, pBindings, pInfo);\
+                    return std::make_unique<Class>(pParent, nId, rBindings, rInfo);\
                 } \
         void    Class::RegisterChildWindow (bool bVis, SfxModule *pMod, SfxChildWindowFlags nFlags)   \
                 {   \

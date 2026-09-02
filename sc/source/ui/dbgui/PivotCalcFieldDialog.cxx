@@ -60,17 +60,6 @@ ScPivotCalcFieldDlg::ScPivotCalcFieldDlg(weld::Window* pParent, ScViewData& rDat
     , mxBtnOK(m_xBuilder->weld_button(u"ok"_ustr))
     , mxBtnCancel(m_xBuilder->weld_button(u"cancel"_ustr))
 {
-    Init();
-}
-
-ScPivotCalcFieldDlg::~ScPivotCalcFieldDlg()
-{
-    if (m_xInfoBox)
-        m_xInfoBox->response(RET_OK);
-}
-
-void ScPivotCalcFieldDlg::Init()
-{
     // Buttons
     mxBtnCancel->connect_clicked(LINK(this, ScPivotCalcFieldDlg, CancelClicked));
     mxBtnOK->connect_clicked(LINK(this, ScPivotCalcFieldDlg, OKClicked));
@@ -92,6 +81,12 @@ void ScPivotCalcFieldDlg::Init()
     AddDummyNewField();
     aStrAdd = mxBtnAdd->get_label();
     aStrModify = mxBtnMod->get_label();
+}
+
+ScPivotCalcFieldDlg::~ScPivotCalcFieldDlg()
+{
+    if (m_xInfoBox)
+        m_xInfoBox->response(RET_OK);
 }
 
 void ScPivotCalcFieldDlg::ErrorBox(const OUString& rString)
@@ -593,7 +588,7 @@ IMPL_LINK_NOARG(ScPivotCalcFieldDlg, CalcFieldNameSelected, weld::ComboBox&, voi
     }
 }
 
-IMPL_LINK_NOARG(ScPivotCalcFieldDlg, CalcEntryChanged, weld::TextView&, void)
+IMPL_LINK_NOARG(ScPivotCalcFieldDlg, CalcEntryChanged, weld::TextWidget&, void)
 {
     OUString aName = mxCalcNames->get_active_text();
     OUString aCalc = mxCalculation->get_text().trim();

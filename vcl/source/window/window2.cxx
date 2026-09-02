@@ -59,7 +59,7 @@ void Window::ShowFocus( const tools::Rectangle& rRect )
 
     ImplWinData* pWinData = ImplGetWinData();
 
-    // native themeing suggest not to use focus rects
+    // native theming suggests not to use focus rects
     if( ! ( mpWindowImpl->mbUseNativeFocus &&
             IsNativeWidgetEnabled() ) )
     {
@@ -100,7 +100,7 @@ void Window::HideFocus()
         return;
     mpWindowImpl->mbInHideFocus = true;
 
-    // native themeing can suggest not to use focus rects
+    // native theming can suggest not to use focus rects
     if( ! ( mpWindowImpl->mbUseNativeFocus &&
             IsNativeWidgetEnabled() ) )
     {
@@ -726,7 +726,7 @@ bool Window::HandleScrollCommand( const CommandEvent& rCmd,
                             double visSizeX = double(pHScrl->GetVisibleSize());
                             double ratioX = deltaXInPixels / double(winSize.getWidth());
                             tools::Long deltaXInLogic = tools::Long(visSizeX * ratioX);
-                            // Touch need to work by pixels. Did not apply this to
+                            // Touch needs to work by pixels. Did not apply this to
                             // Android, as android code may require adaptations
                             // to work with this scrolling code
 #ifndef IOS
@@ -758,7 +758,7 @@ bool Window::HandleScrollCommand( const CommandEvent& rCmd,
                             double ratioY = deltaYInPixels / double(winSize.getHeight());
                             tools::Long deltaYInLogic = tools::Long(visSizeY * ratioY);
 
-                            // Touch need to work by pixels. Did not apply this to
+                            // Touch needs to work by pixels. Did not apply this to
                             // Android, as android code may require adaptations
                             // to work with this scrolling code
 #ifndef IOS
@@ -1241,7 +1241,7 @@ bool Window::IsDefaultSize() const
 
 Point Window::GetOffsetPixelFrom(const vcl::Window& rWindow) const
 {
-    return Point(GetOutOffXPixel() - rWindow.GetOutOffXPixel(), GetOutOffYPixel() - rWindow.GetOutOffYPixel());
+    return Point(GetDeviceOriginX() - rWindow.GetDeviceOriginX(), GetDeviceOriginY() - rWindow.GetDeviceOriginY());
 }
 
 void Window::EnablePaint( bool bEnable )

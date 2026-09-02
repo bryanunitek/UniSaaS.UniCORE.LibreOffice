@@ -1357,7 +1357,7 @@ bool PDFWriterImpl::emitTilings()
         if( bDeflate )
             aTilingObj.append( "/Filter/FlateDecode" );
         aTilingObj.append( "/Length "
-            + OString::number(nTilingStreamSize)
+            + OString::number(calculateStreamSize(nTilingStreamSize))
             + ">>\nstream\n" );
         if ( !updateObject( tiling.m_nObject ) ) return false;
         if ( !writeBuffer( aTilingObj ) ) return false;
@@ -1432,7 +1432,7 @@ std::map< sal_Int32, sal_Int32 > PDFWriterImpl::emitSystemFont( const vcl::font:
     pFace->CreateFontSubset(aBuffer, aGlyphIds, pEncoding, 1, aInfo);
 
     // write font descriptor
-    sal_Int32 nFontDescriptor = emitFontDescriptor( pFace, aInfo, 0, 0 );
+    sal_Int32 nFontDescriptor = emitFontDescriptor( pFace, aInfo, 0, 0, 0 );
     if( nFontDescriptor )
     {
         // write font object
@@ -1542,7 +1542,7 @@ bool PDFWriterImpl::emitType3Font(const vcl::font::PhysicalFontFace* pFace,
         // write font descriptor
         sal_Int32 nFontDescriptor = 0;
         if (m_aContext.Version > PDFWriter::PDFVersion::PDF_1_4)
-            nFontDescriptor = emitFontDescriptor(pFace, aSubsetInfo, rSubset.m_nFontID, 0);
+            nFontDescriptor = emitFontDescriptor(pFace, aSubsetInfo, rSubset.m_nFontID, 0, 0);
 
         if (nToUnicodeStream)
             nToUnicodeStream = createToUnicodeCMap(pEncoding, aCodeUnits, pCodeUnitsPerGlyph,
@@ -1638,10 +1638,6 @@ bool PDFWriterImpl::emitType3Font(const vcl::font::PhysicalFontFace* pFace,
         ResourceDict aResourceDict;
         std::list<StreamRedirect> aOutputStreams;
 
-        // Scale for glyph outlines.
-        double fScaleX = (GetDPIX() / 72.) * fScale;
-        double fScaleY = (GetDPIY() / 72.) * fScale;
-
         for (auto i = 1u; i < nGlyphs; i++)
         {
             auto nStream = pGlyphStreams[i];
@@ -1723,32 +1719,23 @@ bool PDFWriterImpl::emitType3Font(const vcl::font::PhysicalFontFace* pFace,
                 aContents.append(" cm /Im" + OString::number(nObject) + " Do Q\n");
             }
 
-            const auto& rOutline = rGlyph.getOutline();
-            if (rOutline.count())
-            {
-                aContents.append("q ");
-                appendDouble(fScaleX, aContents);
-                aContents.append(" 0 0 ");
-                appendDouble(fScaleY, aContents);
-                aContents.append(" 0 ");
-                appendDouble(m_aPages.back().getHeight() * -fScaleY, aContents, 3);
-                aContents.append(" cm\n");
-                m_aPages.back().appendPolyPolygon(rOutline, aContents);
-                aContents.append("f\n"
-                                 "Q\n");
-            }
-
+            // The newline before `endstream` is not counted as within the stream
+            assert(aContents[aContents.getLength() - 1] == '\n');
+            aContents.setLength(aContents.getLength() - 1);
+            assert(aContents[aContents.getLength() - 1] != '\n');
             aLine.setLength(0);
             aLine.append(OString::number(nStream)
                 + " 0 obj\n<</Length "
-                + OString::number(aContents.getLength() - 1) // Trailing newline doesn't count
+                + OString::number(calculateStreamSize(aContents.getLength()))
                 + ">>\nstream\n");
             if (!writeBuffer(aLine))
                 return false;
+            checkAndEnableStreamEncryption(nStream);
             if (!writeBuffer(aContents))
                 return false;
+            disableStreamEncryption();
             aLine.setLength(0);
-            aLine.append("endstream\nendobj\n\n");
+            aLine.append("\nendstream\nendobj\n\n");
             if (!writeBuffer(aLine))
                 return false;
         }
@@ -1818,37 +1805,6 @@ bool PDFWriterImpl::emitType3Font(const vcl::font::PhysicalFontFace* pFace,
 
         rFontIDToObject[rSubset.m_nFontID] = nFontObject;
     }
-
-    return true;
-}
-
-typedef int ThreeInts[3];
-static bool getPfbSegmentLengths( const unsigned char* pFontBytes, int nByteLen,
-    ThreeInts& rSegmentLengths )
-{
-    if( !pFontBytes || (nByteLen < 0) )
-        return false;
-    const unsigned char* pPtr = pFontBytes;
-    const unsigned char* pEnd = pFontBytes + nByteLen;
-
-    for(int & rSegmentLength : rSegmentLengths) {
-        // read segment1 header
-        if( pPtr+6 >= pEnd )
-            return false;
-        if( (pPtr[0] != 0x80) || (pPtr[1] >= 0x03) )
-            return false;
-        const int nLen = (pPtr[5]<<24) + (pPtr[4]<<16) + (pPtr[3]<<8) + pPtr[2];
-        if( nLen <= 0)
-            return false;
-        rSegmentLength = nLen;
-        pPtr += nLen + 6;
-    }
-
-    // read segment-end header
-    if( pPtr+2 >= pEnd )
-        return false;
-    if( (pPtr[0] != 0x80) || (pPtr[1] != 0x03) )
-        return false;
 
     return true;
 }
@@ -1953,10 +1909,10 @@ sal_Int32 PDFWriterImpl::createToUnicodeCMap( sal_uInt8 const * pEncoding,
     {
         nLen = aStream.Tell();
         aStream.Seek( 0 );
-        aLine.append( OString::number(nLen) + "/Filter/FlateDecode" );
+        aLine.append(OString::number(calculateStreamSize(nLen)) + "/Filter/FlateDecode");
     }
     else
-        aLine.append( aContents.getLength() );
+        aLine.append(OString::number(calculateStreamSize(aContents.getLength())));
     aLine.append( ">>\nstream\n" );
     if (!writeBuffer(aLine)) return 0;
     checkAndEnableStreamEncryption( nStream );
@@ -1976,7 +1932,149 @@ sal_Int32 PDFWriterImpl::createToUnicodeCMap( sal_uInt8 const * pEncoding,
     return nStream;
 }
 
-sal_Int32 PDFWriterImpl::emitFontDescriptor( const vcl::font::PhysicalFontFace* pFace, FontSubsetInfo const & rInfo, sal_Int32 nSubsetID, sal_Int32 nFontStream )
+sal_Int32 PDFWriterImpl::emitCIDCMap(sal_Int32 nSubsetID, sal_uInt32 nGlyphs)
+{
+    sal_Int32 nStream = createObject();
+    if (!updateObject(nStream))
+        return 0;
+
+    OStringBuffer aContents(PDFWRITER_IMPL_BUFFERSIZE);
+    aContents.append("/CIDInit/ProcSet findresource begin\n"
+                     "12 dict begin\n"
+                     "begincmap\n"
+                     "/CIDSystemInfo<<\n"
+                     "/Registry (Adobe)\n"
+                     "/Ordering (Identity)\n"
+                     "/Supplement 0\n"
+                     ">> def\n"
+                     "/CMapName/Subset-"
+                     + OString::number(nSubsetID)
+                     + " def\n"
+                       "/CMapType 1 def\n"
+                       "1 begincodespacerange\n"
+                       "<00> <FF>\n"
+                       "endcodespacerange\n");
+
+    // The subset has an identity charset, so the CID of each glyph is its glyph
+    // ID, which is also the code we encoded it with.
+    aContents.append("1 begincidrange\n<00> <");
+    COSWriter::appendHex(static_cast<sal_Int8>(nGlyphs - 1), aContents);
+    aContents.append("> 0\nendcidrange\n");
+
+    aContents.append("endcmap\n"
+                     "CMapName currentdict /CMap defineresource pop\n"
+                     "end\n"
+                     "end\n");
+
+    SvMemoryStream aStream;
+    if (!g_bDebugDisableCompression)
+    {
+        ZCodec aCodec(0x4000, 0x4000);
+        aCodec.BeginCompression();
+        aCodec.Write(aStream, reinterpret_cast<const sal_uInt8*>(aContents.getStr()),
+                     aContents.getLength());
+        aCodec.EndCompression();
+    }
+
+    OStringBuffer aLine(80);
+    aLine.append(OString::number(nStream)
+                 + " 0 obj\n"
+                   "<</Type/CMap"
+                   "/CMapName/Subset-"
+                 + OString::number(nSubsetID)
+                 + "-CMap"
+                   "/CIDSystemInfo<</Registry(Adobe)/Ordering(Identity)/Supplement 0>>"
+                   "/Length ");
+    sal_uInt64 nLen = 0;
+    if (!g_bDebugDisableCompression)
+    {
+        nLen = aStream.Tell();
+        aStream.Seek(0);
+        aLine.append(OString::number(nLen) + "/Filter/FlateDecode");
+    }
+    else
+        aLine.append(aContents.getLength());
+    aLine.append(">>\nstream\n");
+    if (!writeBuffer(aLine))
+        return 0;
+    checkAndEnableStreamEncryption(nStream);
+    if (!g_bDebugDisableCompression)
+    {
+        if (!writeBufferBytes(aStream.GetData(), nLen))
+            return 0;
+    }
+    else
+    {
+        if (!writeBuffer(aContents))
+            return 0;
+    }
+    disableStreamEncryption();
+    aLine.setLength(0);
+    aLine.append("\nendstream\nendobj\n\n");
+    if (!writeBuffer(aLine))
+        return 0;
+    return nStream;
+}
+
+sal_Int32 PDFWriterImpl::emitCIDSet(sal_uInt32 nGlyphs)
+{
+    // Only PDF/A-1 requires one, and PDF 2.0 deprecates it.
+    if (m_nPDFA_Version != 1 || !nGlyphs)
+        return 0;
+
+    // A table of bits indexed by CID, high-order bit of the first byte first.
+    // The charset is identity, so the CIDs are 0 to nGlyphs - 1.
+    std::vector<sal_uInt8> aCIDSet((nGlyphs - 1) / 8 + 1, 0);
+    for (sal_uInt32 nCID = 0; nCID < nGlyphs; ++nCID)
+        aCIDSet[nCID / 8] |= 0x80 >> (nCID % 8);
+
+    sal_Int32 nStream = createObject();
+    if (!updateObject(nStream))
+        return 0;
+
+    SvMemoryStream aStream;
+    if (!g_bDebugDisableCompression)
+    {
+        ZCodec aCodec(0x4000, 0x4000);
+        aCodec.BeginCompression();
+        aCodec.Write(aStream, aCIDSet.data(), aCIDSet.size());
+        aCodec.EndCompression();
+    }
+
+    OStringBuffer aLine(80);
+    aLine.append(OString::number(nStream) + " 0 obj\n<</Length ");
+    sal_uInt64 nLen = 0;
+    if (!g_bDebugDisableCompression)
+    {
+        nLen = aStream.Tell();
+        aStream.Seek(0);
+        aLine.append(OString::number(nLen) + "/Filter/FlateDecode");
+    }
+    else
+        aLine.append(OString::number(aCIDSet.size()));
+    aLine.append(">>\nstream\n");
+    if (!writeBuffer(aLine))
+        return 0;
+    checkAndEnableStreamEncryption(nStream);
+    if (!g_bDebugDisableCompression)
+    {
+        if (!writeBufferBytes(aStream.GetData(), nLen))
+            return 0;
+    }
+    else
+    {
+        if (!writeBufferBytes(aCIDSet.data(), aCIDSet.size()))
+            return 0;
+    }
+    disableStreamEncryption();
+    aLine.setLength(0);
+    aLine.append("\nendstream\nendobj\n\n");
+    if (!writeBuffer(aLine))
+        return 0;
+    return nStream;
+}
+
+sal_Int32 PDFWriterImpl::emitFontDescriptor( const vcl::font::PhysicalFontFace* pFace, FontSubsetInfo const & rInfo, sal_Int32 nSubsetID, sal_Int32 nFontStream, sal_Int32 nCIDSet )
 {
     OStringBuffer aLine( PDFWRITER_IMPL_BUFFERSIZE );
     // get font flags, see PDF reference 1.4 p. 358
@@ -2039,7 +2137,8 @@ sal_Int32 PDFWriterImpl::emitFontDescriptor( const vcl::font::PhysicalFontFace* 
             case FontType::SFNT_TTF:
                 aLine.append( '2' );
                 break;
-            case FontType::TYPE1_PFB:
+            case FontType::CFF_FONT:
+                aLine.append( '3' );
                 break;
             default:
                 OSL_FAIL( "unknown fonttype in PDF font descriptor" );
@@ -2047,6 +2146,8 @@ sal_Int32 PDFWriterImpl::emitFontDescriptor( const vcl::font::PhysicalFontFace* 
         }
         aLine.append( " " + OString::number(nFontStream) + " 0 R\n" );
     }
+    if( nCIDSet )
+        aLine.append( "/CIDSet " + OString::number(nCIDSet) + " 0 R\n" );
     aLine.append( ">>\n"
                   "endobj\n\n" );
     if (!writeBuffer(aLine)) return 0;
@@ -2128,30 +2229,17 @@ bool PDFWriterImpl::emitFonts()
                     if (!writeBufferBytes(aBuffer.data(), aBuffer.size()))
                         return false;
                 }
-                else if( aSubsetInfo.m_nFontType & FontType::TYPE1_PFB) // TODO: also support PFA?
+                else if( aSubsetInfo.m_nFontType == FontType::CFF_FONT )
                 {
-                    // get the PFB-segment lengths
-                    ThreeInts aSegmentLengths = {0,0,0};
-                    getPfbSegmentLengths(aBuffer.data(), aBuffer.size(), aSegmentLengths);
-                    // the lengths below are mandatory for PDF-exported Type1 fonts
-                    // because the PFB segment headers get stripped! WhyOhWhy.
-                    aLine.append("/Length1 "
-                        + OString::number(aSegmentLengths[0] )
-                        + "/Length2 "
-                        + OString::number( aSegmentLengths[1] )
-                        + "/Length3 "
-                        + OString::number( aSegmentLengths[2] )
-                        + ">>\n"
-                          "stream\n" );
+                    aLine.append("/Subtype/CIDFontType0C>>\nstream\n");
                     if ( !writeBuffer( aLine ) ) return false;
                     if ( osl::File::E_None != m_aFile.getPos(nStartPos) ) return false;
 
-                    // emit PFB-sections without section headers
+                    // copy bare CFF font program
                     beginCompression();
                     checkAndEnableStreamEncryption( nFontStream );
-                    if ( !writeBufferBytes( &aBuffer[6], aSegmentLengths[0] ) ) return false;
-                    if ( !writeBufferBytes( &aBuffer[12] + aSegmentLengths[0], aSegmentLengths[1] ) ) return false;
-                    if ( !writeBufferBytes( &aBuffer[18] + aSegmentLengths[0] + aSegmentLengths[1], aSegmentLengths[2] ) ) return false;
+                    if (!writeBufferBytes(aBuffer.data(), aBuffer.size()))
+                        return false;
                 }
                 else
                 {
@@ -2178,43 +2266,58 @@ bool PDFWriterImpl::emitFonts()
                     + "\nendobj\n\n" );
                 if ( !writeBuffer( aLine ) ) return false;
 
+                // PDF/A-1 wants the CIDs of a composite subset listed
+                sal_Int32 nCIDSet = emitCIDSet(nGlyphs);
+
                 // write font descriptor
-                sal_Int32 nFontDescriptor = emitFontDescriptor( subset.first.m_pFace, aSubsetInfo, s_subset.m_nFontID, nFontStream );
+                sal_Int32 nFontDescriptor = emitFontDescriptor( subset.first.m_pFace, aSubsetInfo, s_subset.m_nFontID, nFontStream, nCIDSet );
 
                 if( nToUnicodeStream )
                     nToUnicodeStream = createToUnicodeCMap( pEncoding, aCodeUnits, pCodeUnitsPerGlyph, pEncToUnicodeIndex, nGlyphs );
 
+                // Emit the CMap and the descendant CIDFont before the Type 0
+                // wrapper. CFF subsets are CIDFontType0, glyf ones CIDFontType2.
+                bool bTrueType = aSubsetInfo.m_nFontType == FontType::SFNT_TTF;
+                sal_Int32 nCMapStream = emitCIDCMap(s_subset.m_nFontID, nGlyphs);
+                if (!nCMapStream) return false;
+
+                sal_Int32 nCIDFontObject = createObject();
+                if (!updateObject(nCIDFontObject)) return false;
+                {
+                    OStringBuffer aCIDLine;
+                    aCIDLine.append(OString::number(nCIDFontObject) + " 0 obj\n"
+                        "<</Type/Font/Subtype/");
+                    aCIDLine.append(bTrueType ? "CIDFontType2" : "CIDFontType0");
+                    aCIDLine.append("/BaseFont/");
+                    appendSubsetName(s_subset.m_nFontID, aSubsetInfo.m_aPSName, aCIDLine);
+                    aCIDLine.append("\n/CIDSystemInfo<</Registry(Adobe)/Ordering(Identity)/Supplement 0>>\n"
+                        "/FontDescriptor " + OString::number(nFontDescriptor) + " 0 R\n");
+                    if (bTrueType)
+                        aCIDLine.append("/CIDToGIDMap/Identity\n");
+                    // /W is indexed by CID, which is the glyph ID here
+                    aCIDLine.append("/W[0[");
+                    for (auto i = 0u; i < nGlyphs; i++)
+                    {
+                        aCIDLine.append(pWidths[i]);
+                        aCIDLine.append(((i & 15) == 15) ? "\n" : " ");
+                    }
+                    aCIDLine.append("]]\n>>\nendobj\n\n");
+                    if (!writeBuffer(aCIDLine)) return false;
+                }
+
                 sal_Int32 nFontObject = createObject();
                 if ( !updateObject( nFontObject ) ) return false;
                 aLine.setLength( 0 );
-                aLine.append( OString::number(nFontObject) + " 0 obj\n" );
-                aLine.append( (aSubsetInfo.m_nFontType == FontType::TYPE1_PFB) ?
-                             "<</Type/Font/Subtype/Type1/BaseFont/" :
-                             "<</Type/Font/Subtype/TrueType/BaseFont/" );
-                appendSubsetName( s_subset.m_nFontID, aSubsetInfo.m_aPSName, aLine );
-                aLine.append( "\n"
-                             "/FirstChar 0\n"
-                             "/LastChar "
-                    + OString::number( nGlyphs-1 )
-                    + "\n"
-                      "/Widths[" );
-                for (auto i = 0u; i < nGlyphs; i++)
+                aLine.append( OString::number(nFontObject) + " 0 obj\n"
+                    "<</Type/Font/Subtype/Type0/BaseFont/");
+                appendSubsetName(s_subset.m_nFontID, aSubsetInfo.m_aPSName, aLine);
+                aLine.append("\n/Encoding " + OString::number(nCMapStream) + " 0 R\n"
+                    "/DescendantFonts[" + OString::number(nCIDFontObject) + " 0 R]\n");
+                if (nToUnicodeStream)
                 {
-                    aLine.append( pWidths[ i ] );
-                    aLine.append( ((i & 15) == 15) ? "\n" : " " );
+                    aLine.append("/ToUnicode " + OString::number(nToUnicodeStream) + " 0 R\n");
                 }
-                aLine.append( "]\n"
-                             "/FontDescriptor "
-                    + OString::number( nFontDescriptor )
-                    + " 0 R\n" );
-                if( nToUnicodeStream )
-                {
-                    aLine.append( "/ToUnicode "
-                        + OString::number( nToUnicodeStream )
-                        + " 0 R\n" );
-                }
-                aLine.append( ">>\n"
-                             "endobj\n\n" );
+                aLine.append(">>\nendobj\n\n");
                 if ( !writeBuffer( aLine ) ) return false;
 
                 aFontIDToObject[ s_subset.m_nFontID ] = nFontObject;
@@ -2548,14 +2651,16 @@ bool PDFWriterImpl::emitScreenAnnotations()
 
             aLine.append(OString::number(rScreen.m_nTempFileObject)
                 + " 0 obj\n<< /Type /EmbeddedFile /Length "
-                + OString::number(aMemoryStream.GetSize())
+                + OString::number(calculateStreamSize(aMemoryStream.GetSize()))
                 + " >>\nstream\n");
             if (!writeBuffer(aLine))
                 return false;
             aLine.setLength(0);
 
+            checkAndEnableStreamEncryption(rScreen.m_nTempFileObject);
             if (!writeBufferBytes(aMemoryStream.GetData(), aMemoryStream.GetSize()))
                 return false;
+            disableStreamEncryption();
 
             aLine.append("\nendstream\nendobj\n\n");
             if (!writeBuffer(aLine))
@@ -3689,7 +3794,7 @@ bool PDFWriterImpl::emitAppearances( PDFWidget& rWidget, OStringBuffer& rAnnotDi
                 aLine.append( getResourceDictObj() );
                 aLine.append( " 0 R\n"
                               "/Length " );
-                aLine.append( nStreamLen );
+                aLine.append(static_cast<sal_Int64>(calculateStreamSize(nStreamLen)));
                 aLine.append( "\n" );
                 if( bDeflate )
                     aLine.append( "/Filter/FlateDecode\n" );
@@ -4196,11 +4301,12 @@ bool PDFWriterImpl::emitEmbeddedFiles()
         sal_Int64 nSize{};
         if (!rEmbeddedFile.m_aDataContainer.isEmpty())
         {
-            nSize = rEmbeddedFile.m_aDataContainer.getSize();
             checkAndEnableStreamEncryption(rEmbeddedFile.m_nObject);
+            sal_uInt64 const nStartPos{getCurrentFilePosition()};
             if (!writeBufferBytes(rEmbeddedFile.m_aDataContainer.getData(), rEmbeddedFile.m_aDataContainer.getSize()))
                 return false;
             disableStreamEncryption();
+            nSize = sal_Int64(getCurrentFilePosition() - nStartPos);
         }
         else if (rEmbeddedFile.m_pStream)
         {
@@ -5041,13 +5147,18 @@ sal_Int32 PDFWriterImpl::emitDocumentMetadata()
     lcl_assignMeta(m_aContext.DocumentInfo.Creator, aMetadata.m_sCreatorTool);
     aMetadata.m_sCreateDate = m_aCreationMetaDateString;
 
+    bool const bEncryptMetadata{m_pPDFEncryptor && m_pPDFEncryptor->isMetadataEncrypted()};
+
     {
+        sal_uInt64 const nLength{bEncryptMetadata
+                ? calculateStreamSize(aMetadata.getSize())
+                : aMetadata.getSize()};
         COSWriter aWriter;
         aWriter.startObject(nObject);
         aWriter.startDict();
         aWriter.write("/Type", "/Metadata");
         aWriter.write("/Subtype", "/XML");
-        aWriter.write("/Length", sal_Int32(aMetadata.getSize()));
+        aWriter.write("/Length", sal_Int32(nLength));
         aWriter.endDict();
         aWriter.startStream();
         if (!writeBuffer(aWriter.getLine()))
@@ -5055,7 +5166,6 @@ sal_Int32 PDFWriterImpl::emitDocumentMetadata()
     }
 
     //emit the stream
-    bool bEncryptMetadata = m_pPDFEncryptor && m_pPDFEncryptor->isMetadataEncrypted();
     if (bEncryptMetadata)
         checkAndEnableStreamEncryption(nObject);
 
@@ -5500,24 +5610,13 @@ void PDFWriterImpl::registerGlyph(const sal_GlyphId nFontGlyphId,
                                   const std::vector<sal_Ucs>& rCodeUnits, sal_Int32 nGlyphWidth,
                                   sal_uInt8& nMappedGlyph, sal_Int32& nMappedFontObject)
 {
-    // tdf#155161
-    // PDF doesn't support CFF2 table and we currently don't convert them to
-    // Type 1 (like we do with CFF table), so embed as Type 3 fonts.
-    // Non-CFF2 variable fonts are instanced via hb-subset and embedded normally.
-    // With HarfBuzz 13.0.0, we downgrade CFF2 to CFF when subsetting.
-#if HB_VERSION_ATLEAST(13, 0, 0)
-    bool bCFF2 = false;
-#else
-    bool bCFF2 = !pFace->GetRawFontData(HB_TAG('C', 'F', 'F', '2')).empty();
-#endif
-
-    if (pFace->IsColorFont() || bCFF2)
+    if (pFace->IsColorFont())
     {
         // Font has colors, check if this glyph has color layers or bitmap.
         tools::Rectangle aRect;
         auto aLayers = pFace->GetGlyphColorLayers(nFontGlyphId);
         auto aBitmap = pFace->GetGlyphColorBitmap(nFontGlyphId, aRect);
-        if (!aLayers.empty() || !aBitmap.empty() || bCFF2)
+        if (!aLayers.empty() || !aBitmap.empty())
         {
             auto& rSubset = m_aType3Fonts[pFace];
             auto it = rSubset.m_aMapping.find(nFontGlyphId);
@@ -5565,8 +5664,6 @@ void PDFWriterImpl::registerGlyph(const sal_GlyphId nFontGlyphId,
                 }
                 else if (!aBitmap.empty())
                     rNewGlyphEmit.setColorBitmap(aBitmap, aRect);
-                else if (bCFF2)
-                    rNewGlyphEmit.setOutline(pFont->GetGlyphOutlineUntransformed(nFontGlyphId));
 
                 // add new glyph to font mapping
                 Glyph& rNewGlyph = rSubset.m_aMapping[nFontGlyphId];
@@ -5861,16 +5958,16 @@ void PDFWriterImpl::drawLayout( SalLayout& rLayout, const OUString& rText, bool 
     // transform font height back to current units
     // note: the layout calculates in outdevs device pixel !!
     sal_Int32 nFontHeight = DevicePixelToLogicHeight(nPixelFontHeight);
-    if( m_aCurrentPDFState.m_aFont.GetAverageFontWidth() )
+    if( m_aCurrentPDFState.m_aFont.GetFontWidth() )
     {
         Font aFont( m_aCurrentPDFState.m_aFont );
-        aFont.SetAverageFontWidth( 0 );
+        aFont.SetFontWidth( 0 );
         FontMetric aMetric = GetFontMetric( aFont );
-        if( aMetric.GetAverageFontWidth() != m_aCurrentPDFState.m_aFont.GetAverageFontWidth() )
+        if( aMetric.GetFontWidth() != m_aCurrentPDFState.m_aFont.GetFontWidth() )
         {
             fXScale =
-                static_cast<double>(m_aCurrentPDFState.m_aFont.GetAverageFontWidth()) /
-                static_cast<double>(aMetric.GetAverageFontWidth());
+                static_cast<double>(m_aCurrentPDFState.m_aFont.GetFontWidth()) /
+                static_cast<double>(aMetric.GetFontWidth());
         }
     }
 
@@ -5984,8 +6081,6 @@ void PDFWriterImpl::drawLayout( SalLayout& rLayout, const OUString& rText, bool 
         //   for whole words or sentences breaks text selection and
         //   highlighting in PDF viewers (there will be no way to tell
         //   which glyphs belong to which characters).
-        // * Keep generating (now) redundant ToUnicode entries for
-        //   compatibility with old tools not supporting ActualText.
 
         assert(pGlyph->charCount() >= 0);
         for (int n = 0; n < pGlyph->charCount(); n++)
@@ -6007,12 +6102,13 @@ void PDFWriterImpl::drawLayout( SalLayout& rLayout, const OUString& rText, bool 
             {
                 const auto it = rSubset.m_aMapping.find(nGlyphId);
                 if (it != rSubset.m_aMapping.cend() && it->second.codes() != aCodeUnits)
-                {
                     bUseActualText = true;
-                    aCodeUnits.clear();
-                }
             }
         }
+
+        // If we are using ActualText, then ToUnicode mapping is broken, drop it.
+        if (bUseActualText)
+            aCodeUnits.clear();
 
         // tdf#157390: The width stored by registerGlyph() must be the actual glyph width.
         // This must be obtained by calling GetGlyphWidth(vertical=false), otherwise an incorrect
@@ -7917,7 +8013,7 @@ void PDFWriterImpl::writeTransparentObject( TransparencyEmit& rObject )
     }
 
     aLine.append( "/Length " );
-    aLine.append( static_cast<sal_Int32>(nSize) );
+    aLine.append(static_cast<sal_Int64>(calculateStreamSize(nSize)));
     aLine.append( "\n" );
     if( bFlateFilter )
         aLine.append( "/Filter/FlateDecode\n" );
@@ -8231,7 +8327,7 @@ void PDFWriterImpl::writeJPG( const JPGEmit& rObject )
     else
         aLine.append( "/ColorSpace/DeviceGray" );
     aLine.append( "/Filter/DCTDecode/Length " );
-    aLine.append( static_cast<sal_Int64>(nLength) );
+    aLine.append(static_cast<sal_Int64>(calculateStreamSize(nLength)));
     if( nMaskObject )
     {
         aLine.append(" /SMask ");
@@ -8445,7 +8541,7 @@ void PDFWriterImpl::writeReferenceXObject(const ReferenceXObjectEmit& rEmit)
         bool bIsTaggedNonReferenceXObject = m_aContext.Tagged && !m_aContext.UseReferenceXObject;
         sal_Int32 nLength = PDFObjectCopier::copyPageStreams(aContentStreams, aStream, bCompressed,
                                                              bIsTaggedNonReferenceXObject);
-        aLine.append(nLength);
+        aLine.append(static_cast<sal_Int64>(calculateStreamSize(nLength)));
 
         aLine.append(">>\nstream\n");
         if (g_bDebugDisableCompression)
@@ -8560,7 +8656,7 @@ void PDFWriterImpl::writeReferenceXObject(const ReferenceXObjectEmit& rEmit)
         aStream.append(" Do\n");
     }
     aStream.append("Q");
-    aLine.append(aStream.getLength());
+    aLine.append(static_cast<sal_Int64>(calculateStreamSize(aStream.getLength())));
 
     aLine.append(">>\nstream\n");
     if (!writeBuffer(aLine))
@@ -9108,10 +9204,17 @@ const BitmapEmit& PDFWriterImpl::createBitmapEmit(const Bitmap& i_rBitmap, const
     BitmapID aID;
     aID.m_aPixelSize        = aBitmap.GetSizePixel();
     aID.m_nSize             = vcl::pixelFormatBitCount(ePixelFormat);
-    aID.m_nChecksum         = aBitmap.CreateColorBitmap().GetChecksum();
-    aID.m_nMaskChecksum     = 0;
     if( aBitmap.HasAlpha() )
-        aID.m_nMaskChecksum = aBitmap.CreateAlphaMask().GetChecksum();
+    {
+        std::pair<Bitmap, AlphaMask> aPair = aBitmap.SplitIntoColorAndAlpha();
+        aID.m_nChecksum     = aPair.first.GetChecksum();
+        aID.m_nMaskChecksum = aPair.second.GetChecksum();
+    }
+    else
+    {
+        aID.m_nChecksum         = aBitmap.GetChecksum();
+        aID.m_nMaskChecksum     = 0;
+    }
     std::list<BitmapEmit>::const_iterator it = std::find_if(rBitmaps.begin(), rBitmaps.end(),
                                              [&](const BitmapEmit& arg) { return aID == arg.m_aID; });
     if (it == rBitmaps.end())

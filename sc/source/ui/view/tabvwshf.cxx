@@ -1249,7 +1249,6 @@ void ScTabViewShell::ExecuteSetTableBackgroundCol(SfxRequest& rReq)
         VclPtr<AbstractScTabBgColorDlg> pDlg(pFact->CreateScTabBgColorDlg(
                                                     GetFrameWeld(),
                                                     ScResId(SCSTR_SET_TAB_BG_COLOR),
-                                                    ScResId(SCSTR_NO_TAB_BG_COLOR),
                                                     aTabBgColor));
 
         auto xRequest = std::make_shared<SfxRequest>(rReq);

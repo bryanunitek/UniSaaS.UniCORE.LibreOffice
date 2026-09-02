@@ -452,11 +452,11 @@ void SfxViewFrame::ExecReload_Impl( SfxRequest& rReq )
             // if the document seems not to need to be reloaded
             //     and the physical name is different to the logical one,
             // then on file system it can be checked that the copy is still newer than the original and no document reload is required.
-            // Did some semplification to enhance readability of the 'if' expression
+            // Did some simplification to enhance readability of the 'if' expression
             //
             // when the 'http/https' protocol is active, the bool bPhysObjIsYounger relies upon the getlastmodified Property of a WebDAV resource.
             // Said property should be implemented, but sometimes it's not.
-            // implemented. On this case the reload activated here will not work properly.
+            // In this case the reload activated here will not work properly.
             // TODO: change the check age method for WebDAV to etag (entity-tag) property value, need some rethinking, since the
             // etag tells that the cache representation (e.g. in LO) is different from the one on the server,
             // but tells nothing about the age
@@ -1398,7 +1398,7 @@ void SfxViewFrame::AppendContainsMacrosInfobar()
         aResId = STR_MACROS_DISABLED_CONTENT_UNSIGNED;
     else if(pObjImpl->aMacroMode.hasInvalidSignaturesError())
         aResId = STR_MACROS_DISABLED_SIGNATURE_INVALID;
-    // The idea here is to always present an infobar is there was some
+    // The idea here is to always present an infobar if there was some
     // macro/script related potential hazard disabled in the source document
     auto pInfoBar = AppendInfoBar(u"macro"_ustr, SfxResId(STR_MACROS_DISABLED_TITLE),
                                   SfxResId(aResId), InfobarType::WARNING);
@@ -3104,53 +3104,6 @@ void SfxViewFrame::Resize( bool bForce )
     }
 }
 
-#if HAVE_FEATURE_SCRIPTING
-
-#define LINE_SEP 0x0A
-
-static void CutLines( OUString& rStr, sal_Int32 nStartLine, sal_Int32 nLines )
-{
-    sal_Int32 nStartPos = 0;
-    sal_Int32 nLine = 0;
-    while ( nLine < nStartLine )
-    {
-        nStartPos = rStr.indexOf( LINE_SEP, nStartPos );
-        if( nStartPos == -1 )
-            break;
-        nStartPos++;    // not the \n.
-        nLine++;
-    }
-
-    SAL_WARN_IF(nStartPos == -1, "sfx.view", "CutLines: Start row not found!");
-
-    if ( nStartPos != -1 )
-    {
-        sal_Int32 nEndPos = nStartPos;
-        for ( sal_Int32 i = 0; i < nLines; i++ )
-            nEndPos = rStr.indexOf( LINE_SEP, nEndPos+1 );
-
-        if ( nEndPos == -1 ) // Can happen at the last row.
-            nEndPos = rStr.getLength();
-        else
-            nEndPos++;
-
-        rStr = OUString::Concat(rStr.subView( 0, nStartPos )) + rStr.subView( nEndPos );
-    }
-    // erase trailing lines
-    if ( nStartPos != -1 )
-    {
-        sal_Int32 n = nStartPos;
-        sal_Int32 nLen = rStr.getLength();
-        while ( ( n < nLen ) && ( rStr[ n ] == LINE_SEP ) )
-            n++;
-
-        if ( n > nStartPos )
-            rStr = OUString::Concat(rStr.subView( 0, nStartPos )) + rStr.subView( n );
-    }
-}
-
-#endif
-
 /*
     add new recorded dispatch macro script into the application global basic
     lib container. It generates a new unique id for it and insert the macro
@@ -3227,12 +3180,7 @@ void SfxViewFrame::AddDispatchMacroToBasic_Impl( const OUString& sMacro )
                 SbMethod* pMethod = pModule ? pModule->FindMethod(aMacroName, SbxClassType::Method) : nullptr;
                 if (pMethod)
                 {
-                    aOUSource = pModule->GetSource();
-                    sal_uInt16 nStart, nEnd;
-                    pMethod->GetLineRange( nStart, nEnd );
-                    sal_uInt16 nlStart = nStart;
-                    sal_uInt16 nlEnd = nEnd;
-                    CutLines( aOUSource, nlStart-1, nlEnd-nlStart+1 );
+                    aOUSource = pModule->GetSourceWithoutMethod(*pMethod);
                 }
             }
         }

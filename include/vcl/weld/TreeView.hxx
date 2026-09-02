@@ -65,7 +65,7 @@ public:
         render_args;
 
 private:
-    Link<int, void> m_aColumnClickedHdl;
+    Link<int, void> m_aColumnHeaderClickedHdl;
     Link<const iter_col&, void> m_aRadioToggleHdl;
     Link<const TreeIter&, bool> m_aEditingStartedHdl;
     Link<const IterColText&, bool> m_aEditingDoneHdl;
@@ -83,7 +83,7 @@ protected:
     std::function<int(const weld::TreeIter&, const weld::TreeIter&)> m_aCustomSort;
 
 protected:
-    void signal_column_clicked(int nColumn) { m_aColumnClickedHdl.Call(nColumn); }
+    void signal_column_header_clicked(int nColumn) { m_aColumnHeaderClickedHdl.Call(nColumn); }
     bool signal_expanding(const TreeIter& rIter)
     {
         return !m_aExpandingHdl.IsSet() || m_aExpandingHdl.Call(rIter);
@@ -106,7 +106,12 @@ protected:
         m_aModelChangedHdl.Call(*this);
     }
 
-    void signal_toggled(const iter_col& rIterCol) { m_aRadioToggleHdl.Call(rIterCol); }
+    void signal_toggled(const iter_col& rIterCol)
+    {
+        if (notify_events_disabled())
+            return;
+        m_aRadioToggleHdl.Call(rIterCol);
+    }
 
     bool signal_editing_started(const TreeIter& rIter) { return m_aEditingStartedHdl.Call(rIter); }
 
@@ -143,8 +148,10 @@ protected:
         = 0;
     virtual void do_insert_separator(int pos, const OUString& rId) = 0;
     using weld::ItemView::do_set_cursor;
+    virtual void do_set_toggle(const TreeIter& rIter, TriState bOn, int col = -1) = 0;
     virtual void do_set_cursor(int pos) = 0;
     virtual void do_scroll_to_row(const TreeIter& rIter) = 0;
+    virtual int do_iter_n_children(const TreeIter& rIter) const = 0;
     virtual bool do_iter_children(TreeIter& rIter) const = 0;
     virtual void do_set_children_on_demand(const TreeIter& rIter, bool bChildrenOnDemand) = 0;
     virtual void do_remove_selection() = 0;
@@ -211,13 +218,30 @@ public:
     // Argument is a pair of iter, col describing the toggled node
     void connect_toggled(const Link<const iter_col&, void>& rLink) { m_aRadioToggleHdl = rLink; }
 
-    void connect_column_clicked(const Link<int, void>& rLink) { m_aColumnClickedHdl = rLink; }
+    void connect_column_header_clicked(const Link<int, void>& rLink)
+    {
+        m_aColumnHeaderClickedHdl = rLink;
+    }
     void connect_model_changed(const Link<TreeView&, void>& rLink) { m_aModelChangedHdl = rLink; }
 
-    // call before inserting any content and connecting to toggle signals,
-    // an pre-inserted checkbutton column will exist at the start of every row
-    // inserted after this call which can be accessed with col index -1
-    virtual void enable_toggle_buttons(ColumnToggleType eType) = 0;
+    /**
+     * Call before inserting any content and connecting to toggle signals,
+     * a pre-inserted checkbutton column will exist at the start of every row
+     * inserted after this call which can be accessed with col index -1
+     *
+     * (For the corresponding GtkTreeView definition in the .ui file, the first GtkTreeViewColumn
+     * must contain a leading GtkCellRendererToggle to be used for this, in addition
+     * to a renderer for the content referred to by the regular column index of 0.)
+     */
+    virtual void enable_toggle_buttons() = 0;
+
+    /**
+     * Set the type of all toggle buttons used in the TreeView.
+     * (By default, check buttons are used.)
+     *
+     * Call before inserting any entries.
+     */
+    virtual void set_toggle_button_type(ColumnToggleType eType) = 0;
 
     virtual void set_clicks_to_toggle(int nToggleBehavior) = 0;
 
@@ -237,7 +261,7 @@ public:
 
     // col index -1 sets the expander toggle, enable_toggle_buttons must have been called to create that column
     void set_toggle(int row, TriState eState, int col = -1);
-    virtual void set_toggle(const TreeIter& rIter, TriState bOn, int col = -1) = 0;
+    void set_toggle(const TreeIter& rIter, TriState bOn, int col = -1);
 
     // col index -1 gets the expander toggle, enable_toggle_buttons must have been called to create that column
     TriState get_toggle(int row, int col = -1) const;
@@ -340,7 +364,7 @@ public:
     virtual int iter_compare(const TreeIter& rIterA, const TreeIter& rIterB) const;
     bool iter_has_child(const TreeIter& rIter) const;
     // returns the number of direct children rIter has
-    virtual int iter_n_children(const TreeIter& rIter) const = 0;
+    int iter_n_children(const TreeIter& rIter) const;
 
     //visually indent this row as if it was at get_iter_depth() + nIndentLevel
     virtual void set_extra_row_indent(const TreeIter& rIter, int nIndentLevel) = 0;

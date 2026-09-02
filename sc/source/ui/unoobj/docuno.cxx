@@ -600,7 +600,7 @@ void ScModelObj::paintTile( VirtualDevice& rDevice,
 
     // Fetch the document size and the tiled rendering area together,
     // because the tiled rendering area is not cheap to compute, and we want
-    // to pass it down to ScGridWindow::PaintFile to avoid computing twice.
+    // to pass it down to ScGridWindow::PaintTile to avoid computing twice.
     SCCOL nTiledRenderingAreaEndCol = 0;
     SCROW nTiledRenderingAreaEndRow = 0;
     Size aDocSize = getDocumentSize(nTiledRenderingAreaEndCol, nTiledRenderingAreaEndRow);
@@ -862,8 +862,8 @@ void ScModelObj::postMouseEvent(int nType, int nX, int nY, int nCount, int nButt
         pGridWindow->GrabFocus();
 
     // Calc operates in pixels...
-    const Point aPosition(nX * pViewData->GetPPTX() + pGridWindow->GetOutOffXPixel(),
-                          nY * pViewData->GetPPTY() + pGridWindow->GetOutOffYPixel());
+    const Point aPosition(nX * pViewData->GetPPTX() + pGridWindow->GetDeviceOriginX(),
+                          nY * pViewData->GetPPTY() + pGridWindow->GetDeviceOriginY());
 
     VclEventId aEvent = VclEventId::NONE;
     MouseEvent aData(aPosition, nCount, MouseEventModifiers::SIMPLECLICK, nButtons, nModifier);
@@ -1555,7 +1555,7 @@ void ScModelObj::Notify( SfxBroadcaster& rBC, const SfxHint& rHint )
     else if ( nId == SfxHintId::DataChanged )
     {
         //  cached data for rendering become invalid when contents change
-        //  (if a broadcast is added to SetDrawModified, is has to be tested here, too)
+        //  (if a broadcast is added to SetDrawModified, it has to be tested here, too)
 
         pPrintFuncCache.reset();
         m_pPrintState.reset();
@@ -1908,6 +1908,19 @@ bool ScModelObj::FillRenderMarkData( const uno::Any& aSelection,
     return bDone;
 }
 
+//  The visible sheets of the document, in sheet order.
+static std::vector<SCTAB> lcl_GetVisibleTabs(const ScDocument& rDoc)
+{
+    std::vector<SCTAB> aTabs;
+    SCTAB nTabCount = rDoc.GetTableCount();
+    for (SCTAB nTab = 0; nTab < nTabCount; ++nTab)
+    {
+        if (rDoc.IsVisible(nTab))
+            aTabs.push_back(nTab);
+    }
+    return aTabs;
+}
+
 sal_Int32 SAL_CALL ScModelObj::getRendererCount(const uno::Any& aSelection,
     const uno::Sequence<beans::PropertyValue>& rOptions)
 {
@@ -1974,7 +1987,7 @@ sal_Int32 SAL_CALL ScModelObj::getRendererCount(const uno::Any& aSelection,
 
     if (bSinglePageSheets)
     {
-        return pDocShell->GetDocument().GetTableCount();
+        return static_cast<sal_Int32>(lcl_GetVisibleTabs(pDocShell->GetDocument()).size());
     }
 
     bool bIsPrintEvenPages = (nEOContent != 1 && nContent == 0) || nContent != 0;
@@ -2053,8 +2066,12 @@ uno::Sequence<beans::PropertyValue> SAL_CALL ScModelObj::getRenderer( sal_Int32 
         }
     }
 
+    std::vector<SCTAB> aSinglePageTabs;
     if (bSinglePageSheets)
-        nTotalPages = pDocShell->GetDocument().GetTableCount();
+    {
+        aSinglePageTabs = lcl_GetVisibleTabs(pDocShell->GetDocument());
+        nTotalPages = aSinglePageTabs.size();
+    }
 
     sal_Int32 nRenderer = lcl_GetRendererNum( nSelRenderer, aPagesStr, nTotalPages );
 
@@ -2102,7 +2119,11 @@ uno::Sequence<beans::PropertyValue> SAL_CALL ScModelObj::getRenderer( sal_Int32 
 
     SCTAB nTab;
     if (bSinglePageSheets)
-        nTab = nSelRenderer;
+    {
+        if (nSelRenderer < 0 || o3tl::make_unsigned(nSelRenderer) >= aSinglePageTabs.size())
+            throw lang::IllegalArgumentException();
+        nTab = aSinglePageTabs[nSelRenderer];
+    }
     else if ( !maValidPages.empty() )
         nTab = pPrintFuncCache->GetTabForPage( maValidPages.at( nRenderer )-1 );
     else
@@ -2644,8 +2665,12 @@ void SAL_CALL ScModelObj::render( sal_Int32 nSelRenderer, const uno::Any& aSelec
         }
     }
 
+    std::vector<SCTAB> aSinglePageTabs;
     if (bSinglePageSheets)
-        nTotalPages = pDocShell->GetDocument().GetTableCount();
+    {
+        aSinglePageTabs = lcl_GetVisibleTabs(pDocShell->GetDocument());
+        nTotalPages = aSinglePageTabs.size();
+    }
 
     // if no pages counted then user must be trying to print sheet/selection without any content (i.e empty)
     if (nTotalPages == 0)
@@ -2669,7 +2694,13 @@ void SAL_CALL ScModelObj::render( sal_Int32 nSelRenderer, const uno::Any& aSelec
     ScDocument& rDoc = pDocShell->GetDocument();
 
     SCTAB nTab;
-    if (!maValidPages.empty())
+    if (bSinglePageSheets)
+    {
+        if (nSelRenderer < 0 || o3tl::make_unsigned(nSelRenderer) >= aSinglePageTabs.size())
+            throw lang::IllegalArgumentException();
+        nTab = aSinglePageTabs[nSelRenderer];
+    }
+    else if (!maValidPages.empty())
         nTab = pPrintFuncCache->GetTabForPage(maValidPages.at(nRenderer) - 1);
     else
         nTab = pPrintFuncCache->GetTabForPage(nRenderer);
@@ -2685,13 +2716,13 @@ void SAL_CALL ScModelObj::render( sal_Int32 nSelRenderer, const uno::Any& aSelec
     {
         SCCOL nStartCol;
         SCROW nStartRow;
-        rDoc.GetDataStart( nSelRenderer, nStartCol, nStartRow );
+        rDoc.GetDataStart(nTab, nStartCol, nStartRow);
         SCCOL nEndCol;
         SCROW nEndRow;
-        rDoc.GetPrintArea( nSelRenderer, nEndCol, nEndRow );
+        rDoc.GetPrintArea(nTab, nEndCol, nEndRow);
 
-        aRange.aStart = ScAddress(nStartCol, nStartRow, nSelRenderer);
-        aRange.aEnd = ScAddress(nEndCol, nEndRow, nSelRenderer);
+        aRange.aStart = ScAddress(nStartCol, nStartRow, nTab);
+        aRange.aEnd = ScAddress(nEndCol, nEndRow, nTab);
 
         tools::Rectangle aMMRect( pDocShell->GetDocument().GetMMRect(
                     aRange.aStart.Col(), aRange.aStart.Row(),
@@ -2699,9 +2730,9 @@ void SAL_CALL ScModelObj::render( sal_Int32 nSelRenderer, const uno::Any& aSelec
 
         //Set visible tab
         SCTAB nVisTab = rDoc.GetVisibleTab();
-        if (nVisTab != nSelRenderer)
+        if (nVisTab != nTab)
         {
-            nVisTab = nSelRenderer;
+            nVisTab = nTab;
             rDoc.SetVisibleTab(nVisTab);
         }
 
@@ -4442,7 +4473,7 @@ sal_Int32 ScTableSheetsObj::importSheet(
     ScModelObj* pObj = comphelper::getFromUnoTunnel<ScModelObj>(xDocSrc);
     ScDocShell* pDocShellSrc = static_cast<ScDocShell*>(pObj->GetEmbeddedObject());
 
-    // SourceSheet Position and does srcName exists ?
+    // SourceSheet Position and does srcName exist ?
     SCTAB nIndexSrc;
     if ( !pDocShellSrc->GetDocument().GetTable( srcName, nIndexSrc ) )
         throw lang::IllegalArgumentException();

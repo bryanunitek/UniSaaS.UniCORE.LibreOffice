@@ -245,6 +245,13 @@ struct SubstreamContext
     bool bIsPreviousParagraphFramed = false;
     /// Current paragraph had at least one inline object in it.
     bool bParaWithInlineObject = false;
+    /// Formulas appended to the current paragraph. Their text mode (inline, i.e.
+    /// reduced fractions/limits, vs display, i.e. full size) is decided from the
+    /// paragraph's content once it is finished: a formula that is the paragraph's
+    /// only content is a display equation, otherwise it is inline.
+    std::vector<std::pair<rtl::Reference<SwXTextEmbeddedObject>,
+                          css::uno::Reference<css::uno::XInterface>>>
+        aParagraphFormulas;
     /// This is a continuation of already finished paragraph - e.g., first in an index section
     bool bRemoveThisParagraph = false;
     bool bIsFirstParaInShape = false;
@@ -271,6 +278,7 @@ struct SubstreamContext
     bool bIsInFootnoteProperties = false;
     RubyInfo aRubyInfo;
     bool bTextFrameInserted = false;
+    // IsFirstRun: probably better termed as 'IsBeforeContent'. Becomes false before first </w:r>
     bool bIsFirstRun = false;
     bool bIsOutsideAParagraph = true;
     bool bDummyParaAddedForTableInSection = false; // tdf#161631
@@ -840,6 +848,9 @@ public:
     void appendTextContent(const css::uno::Reference<css::text::XTextContent>&, const css::uno::Sequence<css::beans::PropertyValue>&);
     void appendOLE( const OUString& rStreamName, const std::shared_ptr<OLEHandler>& pOleHandler );
     void appendStarMath( const Value& v);
+    /// Decides the text mode of the formulas collected for the paragraph being
+    /// finished (see SubstreamContext::aParagraphFormulas).
+    void finalizeParagraphFormulas();
     void adjustLastPara(sal_Int8 nAlign);
     rtl::Reference<SwXTextSection> appendTextSectionAfter(css::uno::Reference<css::text::XTextRange> const & xBefore);
 

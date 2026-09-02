@@ -174,10 +174,13 @@ namespace
         aVDev->SetFillColor( COL_WHITE);
         aVDev->SetLineColor();
 
+        Bitmap aColorBitmap(rBitmap);
         if(rBitmap.HasAlpha())
         {
             // use given alpha channel
-            aVDev->DrawBitmap(Point(0, 0), rBitmap.CreateAlphaMask().GetBitmap());
+            AlphaMask aAlpha;
+            std::tie(aColorBitmap, aAlpha) = rBitmap.SplitIntoColorAndAlpha();
+            aVDev->DrawBitmap(Point(0, 0), aAlpha.GetBitmap());
         }
         else
         {
@@ -229,7 +232,7 @@ namespace
                 Size(
                     basegfx::fround<tools::Long>(aLogicBitmapRange.getWidth()),
                     basegfx::fround<tools::Long>(aLogicBitmapRange.getHeight())),
-                Bitmap(rBitmap.CreateColorBitmap(), aAlpha)));
+                Bitmap(aColorBitmap, aAlpha)));
 
         return true;
     }
@@ -863,7 +866,7 @@ void clipMetafileContentAgainstOwnRegions(GDIMetaFile& rSource)
                     if(rComment.equalsIgnoreAsciiCase("XGRAD_SEQ_BEGIN"))
                     {
                         // nothing to do; this just means that between here and XGRAD_SEQ_END
-                        // exists a MetaActionType::GRADIENTEX mixed with Xor-tricked painting
+                        // there exists a MetaActionType::GRADIENTEX mixed with Xor-tricked painting
                         // commands. This comment is used to scan over these and filter for
                         // the gradient action. It is needed to support MetaActionType::GRADIENTEX
                         // in this processor to solve usages.

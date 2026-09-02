@@ -157,7 +157,7 @@ public class DocumentHelper
     /* ------------------------------------------------------------------ */
     /** creates a form which is a sibling of the given form
         @param aForm
-            A sinbling of the to be created form.
+            A sibling of the to be created form.
 
         @param sInitialName
             The initial name of the form. May be null, in this case the default (which
@@ -259,7 +259,7 @@ public class DocumentHelper
 
             xReturn = UnoRuntime.queryInterface( XDrawPage.class, xPages.getByIndex( 0 ) );
 
-            // Note that this is no really error-proof code: If the document model does not support the
+            // Note that this is not really error-proof code: If the document model does not support the
             // XDrawPagesSupplier interface, or if the pages collection returned is empty, this will break.
         }
 

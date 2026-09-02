@@ -59,7 +59,7 @@ private:
     DECL_DLLPRIVATE_LINK(LoseFocusHdl, weld::Widget&, void);
     DECL_DLLPRIVATE_LINK(AsyncFocusInHdl, void*, void);
     DECL_DLLPRIVATE_LINK(AsyncFocusOutHdl, void*, void);
-    DECL_DLLPRIVATE_LINK(Modify, weld::Entry&, void);
+    DECL_DLLPRIVATE_LINK(Modify, weld::TextWidget&, void);
 
     void GetFocus();
     void LoseFocus();
@@ -117,12 +117,7 @@ public:
         mxEntry->set_position(-1);
     }
 
-    Selection GetSelection() const
-    {
-        int nStartPos, nEndPos;
-        mxEntry->get_selection_bounds(nStartPos, nEndPos);
-        return Selection(nStartPos, nEndPos);
-    }
+    Selection GetSelection() const;
 
     OUString GetLabelTextForShrinkMode();
 

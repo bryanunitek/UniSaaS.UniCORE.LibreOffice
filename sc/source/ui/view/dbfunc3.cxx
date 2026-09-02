@@ -520,9 +520,9 @@ void ScDBFunc::DoSubTotals( const ScSubTotalParam& rParam, bool bRecord,
                                     InsertDeleteFlags::FORMULA, false, *pUndoDoc );
 
         // database and other ranges
-        ScRangeName* pDocRange = rDoc.GetRangeName();
-        if (!pDocRange->empty())
-            pUndoRange.reset(new ScRangeName( *pDocRange ));
+        ScRangeName& rDocRange = rDoc.GetRangeName();
+        if (!rDocRange.empty())
+            pUndoRange.reset(new ScRangeName( rDocRange ));
         ScDBCollection* pDocDB = rDoc.GetDBCollection();
         if (!pDocDB->empty())
             pUndoDB.reset(new ScDBCollection( *pDocDB ));
@@ -2312,9 +2312,9 @@ void ScDBFunc::RepeatDB( bool bRecord )
             rDoc.CopyToDocument( 0,0,0, rDoc.MaxCol(),rDoc.MaxRow(),nTabCount-1, InsertDeleteFlags::FORMULA, false, *pUndoDoc );
 
             // data base and other ranges
-            ScRangeName* pDocRange = rDoc.GetRangeName();
-            if (!pDocRange->empty())
-                pUndoRange.reset(new ScRangeName( *pDocRange ));
+            ScRangeName& rDocRange = rDoc.GetRangeName();
+            if (!rDocRange.empty())
+                pUndoRange.reset(new ScRangeName( rDocRange ));
             ScDBCollection* pDocDB = rDoc.GetDBCollection();
             if (!pDocDB->empty())
                 pUndoDB.reset(new ScDBCollection( *pDocDB ));
@@ -2345,7 +2345,7 @@ void ScDBFunc::RepeatDB( bool bRecord )
             else
                 Query( aQueryParam, nullptr, false );
 
-            // if not inplace the sheet may have changed
+            // if not in-place the sheet may have changed
             if ( !aQueryParam.bInplace && aQueryParam.nDestTab != nTab )
                 SetTabNo( nTab );
         }
@@ -2391,7 +2391,7 @@ void ScDBFunc::RepeatDB( bool bRecord )
             ScRange(0, 0, nTab, rDoc.MaxCol(), rDoc.MaxRow(), nTab),
             PaintPartFlags::Grid | PaintPartFlags::Left | PaintPartFlags::Top | PaintPartFlags::Size);
     }
-    else        // "no not execute any operations"
+    else        // "do not execute any operations"
         ErrorMessage(STR_MSSG_REPEATDB_0);
 }
 

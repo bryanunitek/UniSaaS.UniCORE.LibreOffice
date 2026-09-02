@@ -100,6 +100,7 @@ public:
     virtual bool                operator==( const formula::FormulaToken& rToken ) const override;
     virtual FormulaToken*       Clone() const override { return new ScMatrixToken(*this); }
     virtual bool IsMatrixRangeToken() const { return false; }
+    virtual bool IsMatrixReference() const { return false; }
 };
 
 /**
@@ -110,13 +111,17 @@ public:
 class ScMatrixRangeToken final : public ScMatrixToken
 {
     ScComplexRefData maRef;
+    // The values are still the ones the cells of maRef hold. False for a matrix computed by
+    // an operator, which keeps the range only to say where its values sit.
+    bool mbReference;
 public:
-    ScMatrixRangeToken( const sc::RangeMatrix& rMat );
+    ScMatrixRangeToken(sc::RangeMatrix const& rMatrix, bool bReference);
     ScMatrixRangeToken( const ScMatrixRangeToken& );
 
     const ScComplexRefData& GetDoubleRef() const { return maRef; }
     virtual FormulaToken* Clone() const override;
     virtual bool IsMatrixRangeToken() const override { return true; }
+    virtual bool IsMatrixReference() const override { return mbReference; }
 };
 
 class SC_DLLPUBLIC ScExternalToken : public formula::FormulaToken
@@ -366,7 +371,7 @@ public:
 private:
 
     /** xUpperLeft is modifiable through SetUpperLeftDouble(), so clone it
-        whenever an svDouble token is assigned to. */
+        whenever an svDouble token is assigned to or it is not reference counted. */
     void CloneUpperLeftIfNecessary();
 };
 

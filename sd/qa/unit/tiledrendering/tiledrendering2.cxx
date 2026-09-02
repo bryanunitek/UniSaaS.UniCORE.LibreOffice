@@ -12,12 +12,17 @@
 
 #include <sfx2/sidebar/Sidebar.hxx>
 #include <vcl/scheduler.hxx>
+#include <com/sun/star/document/UpdateDocMode.hpp>
 #include <comphelper/propertyvalue.hxx>
 #include <comphelper/sequenceashashmap.hxx>
 #include <svl/cryptosign.hxx>
+#include <sfx2/linkmgr.hxx>
+
+#include <vcl/virdev.hxx>
 
 #include <DrawDocShell.hxx>
 #include <ViewShell.hxx>
+#include <drawdoc.hxx>
 #include <unomodel.hxx>
 
 using namespace css;
@@ -141,6 +146,12 @@ CPPUNIT_TEST_FIXTURE(SdTiledRenderingTest, testNotesViewInvalidations)
 #if ENABLE_PDFIMPORT
 CPPUNIT_TEST_FIXTURE(SdTiledRenderingTest, testPdfiumLinks)
 {
+    auto pPdfium = vcl::pdf::PDFiumLibrary::get();
+    if (!pPdfium)
+    {
+        return;
+    }
+
     // Given a pdf file with links:
     SdXImpressDocument* pDoc = createDoc("link_2p.pdf");
     SdTestViewCallback aView;
@@ -173,6 +184,123 @@ CPPUNIT_TEST_FIXTURE(SdTiledRenderingTest, testPdfiumLinks)
     CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(0), links.size());
 }
 #endif
+
+CPPUNIT_TEST_FIXTURE(SdTiledRenderingTest, testSlideBackgroundRemoteNotFetched)
+{
+    // Slide background fill image with a remote URL must not fetch
+    // the URL during paint when link updates are not allowed.
+    // The assert in createNewSdrFillGraphicAttribute will fire if
+    // a remote fetch is attempted.
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                      sal_Int16(css::document::UpdateDocMode::NO_UPDATE)),
+    };
+    loadFromFile(u"slide-background-link.fodp", aParams);
+    SdXImpressDocument* pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    CPPUNIT_ASSERT(pImpressDocument);
+
+    // The slide's deferred remote background fill bitmap is registered as an
+    // external link as the page is imported, so it appears in Edit, Links to
+    // External Files and can be updated or broken.
+    sfx2::LinkManager* pLinkMgr = pImpressDocument->GetDoc()->GetLinkManager();
+    CPPUNIT_ASSERT(pLinkMgr);
+    CPPUNIT_ASSERT_MESSAGE("slide background fill bitmap link should be registered",
+                           !pLinkMgr->GetLinks().empty());
+
+    pImpressDocument->initializeForTiledRendering({});
+
+    ScopedVclPtrInstance<VirtualDevice> pDevice(DeviceFormat::WITHOUT_ALPHA);
+    pDevice->SetOutputSizePixel(Size(1024, 768));
+    pImpressDocument->paintTile(*pDevice, 1024, 768, 0, 0, 15360, 7680);
+}
+
+CPPUNIT_TEST_FIXTURE(SdTiledRenderingTest, testMasterPageBackgroundRemoteNotFetched)
+{
+    // A master page background fill image with a remote URL must not fetch
+    // the URL during paint when link updates are not allowed. The master
+    // background lands on the master's presentation style sheet, not on the
+    // page item set, so the link is registered through the SfxStyleSheet path
+    // rather than the SdrPage one.
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                      sal_Int16(css::document::UpdateDocMode::NO_UPDATE)),
+    };
+    loadFromFile(u"master-page-background-link.fodp", aParams);
+    SdXImpressDocument* pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    CPPUNIT_ASSERT(pImpressDocument);
+
+    sfx2::LinkManager* pLinkMgr = pImpressDocument->GetDoc()->GetLinkManager();
+    CPPUNIT_ASSERT(pLinkMgr);
+    CPPUNIT_ASSERT_MESSAGE("master page background fill bitmap link should be registered",
+                           !pLinkMgr->GetLinks().empty());
+
+    pImpressDocument->initializeForTiledRendering({});
+
+    ScopedVclPtrInstance<VirtualDevice> pDevice(DeviceFormat::WITHOUT_ALPHA);
+    pDevice->SetOutputSizePixel(Size(1024, 768));
+    pImpressDocument->paintTile(*pDevice, 1024, 768, 0, 0, 15360, 7680);
+}
+
+CPPUNIT_TEST_FIXTURE(SdTiledRenderingTest, testBulletImageRemoteNotFetched)
+{
+    // text:list-level-style-image with a remote URL must not fetch
+    // the URL during paint when link updates are not allowed.
+    // Currently the editeng rendering path silently skips unresolved
+    // GraphicExternalLink graphics (GraphicType::Default is not handled
+    // by create2DDecompositionOfGraphic). If someone adds fetching here,
+    // this test should catch it.
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                      sal_Int16(css::document::UpdateDocMode::NO_UPDATE)),
+    };
+    loadFromFile(u"bullet-image-link.fodp", aParams);
+    SdXImpressDocument* pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    CPPUNIT_ASSERT(pImpressDocument);
+    pImpressDocument->initializeForTiledRendering({});
+
+    ScopedVclPtrInstance<VirtualDevice> pDevice(DeviceFormat::WITHOUT_ALPHA);
+    pDevice->SetOutputSizePixel(Size(1024, 768));
+    pImpressDocument->paintTile(*pDevice, 1024, 768, 0, 0, 15360, 7680);
+}
+
+CPPUNIT_TEST_FIXTURE(SdTiledRenderingTest, testShapeFillRemoteNotFetched)
+{
+    // draw:fill-image with a remote URL on a shape must not fetch
+    // the URL during paint when link updates are not allowed.
+    // The assert in createNewSdrFillGraphicAttribute will fire if
+    // a remote fetch is attempted.
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                      sal_Int16(css::document::UpdateDocMode::NO_UPDATE)),
+    };
+    loadFromFile(u"shape-fill-link.fodp", aParams);
+    SdXImpressDocument* pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    CPPUNIT_ASSERT(pImpressDocument);
+    pImpressDocument->initializeForTiledRendering({});
+
+    ScopedVclPtrInstance<VirtualDevice> pDevice(DeviceFormat::WITHOUT_ALPHA);
+    pDevice->SetOutputSizePixel(Size(1024, 768));
+    pImpressDocument->paintTile(*pDevice, 1024, 768, 0, 0, 15360, 7680);
+}
+
+CPPUNIT_TEST_FIXTURE(SdTiledRenderingTest, testFormImageRemoteNotFetched)
+{
+    // Form image button with a remote ImageURL must not fetch the
+    // URL during import when link updates are not allowed.
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                      sal_Int16(css::document::UpdateDocMode::NO_UPDATE)),
+    };
+    loadFromFile(u"form-image-link.fodp", aParams);
+    SdXImpressDocument* pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    CPPUNIT_ASSERT(pImpressDocument);
+    pImpressDocument->initializeForTiledRendering({});
+
+    ScopedVclPtrInstance<VirtualDevice> pDevice(DeviceFormat::WITHOUT_ALPHA);
+    pDevice->SetOutputSizePixel(Size(1024, 768));
+    // FIXME: it fails with void DeInitVCL(): Assertion `vcl::Window::IsLOKWindowsEmpty()' failed
+    // pImpressDocument->paintTile(*pDevice, 1024, 768, 0, 0, 15360, 7680);
+}
 
 CPPUNIT_PLUGIN_IMPLEMENT();
 

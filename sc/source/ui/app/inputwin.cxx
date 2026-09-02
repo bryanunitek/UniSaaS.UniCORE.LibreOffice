@@ -122,13 +122,11 @@ enum ScNameInputType
 
 SFX_IMPL_CHILDWINDOW_WITHID(ScInputWindowWrapper,FID_INPUTLINE_STATUS)
 
-ScInputWindowWrapper::ScInputWindowWrapper( vcl::Window*          pParentP,
-                                            sal_uInt16           nId,
-                                            SfxBindings*     pBindings,
-                                            SfxChildWinInfo* /* pInfo */ )
-    :   SfxChildWindow( pParentP, nId )
+ScInputWindowWrapper::ScInputWindowWrapper(vcl::Window* pParentP, sal_uInt16 nId,
+                                           SfxBindings& rBindings, SfxChildWinInfo&)
+    : SfxChildWindow(pParentP, nId)
 {
-    VclPtr<ScInputWindow> pWin = VclPtr<ScInputWindow>::Create( pParentP, pBindings );
+    VclPtr<ScInputWindow> pWin = VclPtr<ScInputWindow>::Create(pParentP, &rBindings);
     SetWindow( pWin );
 
     pWin->Show();
@@ -136,7 +134,7 @@ ScInputWindowWrapper::ScInputWindowWrapper( vcl::Window*          pParentP,
     pWin->SetSizePixel( pWin->CalcWindowSizePixel() );
 
     SetAlignment(SfxChildAlignment::LOWESTTOP);
-    pBindings->Invalidate( FID_TOGGLEINPUTLINE );
+    rBindings.Invalidate(FID_TOGGLEINPUTLINE);
 }
 
 /**
@@ -443,7 +441,7 @@ void ScInputWindow::PixelInvalidate(const tools::Rectangle* pRectangle)
     if (pRectangle)
     {
         tools::Rectangle aRect(*pRectangle);
-        aRect.Move(-GetOutOffXPixel(), -GetOutOffYPixel());
+        aRect.Move(-GetDeviceOriginX(), -GetDeviceOriginY());
         Window::PixelInvalidate(&aRect);
     }
     else
@@ -2344,8 +2342,8 @@ void ScPosWnd::FillRangeNames(bool initialize)
         ScDocument& rDoc = pDocShell->GetDocument();
 
         ScRange aDummy;
-        ScRangeName* pRangeNames = rDoc.GetRangeName();
-        for (const auto& rEntry : *pRangeNames)
+        ScRangeName& rRangeNames = rDoc.GetRangeName();
+        for (const auto& rEntry : rRangeNames)
         {
             if (rEntry.second->IsValidReference(aDummy))
                 aSet.insert(rEntry.second->GetName());
@@ -2617,16 +2615,16 @@ void ScPosWnd::DoEnter()
                 }
                 else if ( eType == SC_NAME_INPUT_DEFINE )
                 {
-                    ScRangeName* pNames = rDoc.GetRangeName();
+                    ScRangeName& rNames = rDoc.GetRangeName();
                     ScRange aSelection;
-                    if ( pNames && !pNames->findByUpperName(ScGlobal::getCharClass().uppercase(aText)) &&
+                    if ( !rNames.findByUpperName(ScGlobal::getCharClass().uppercase(aText)) &&
                             (rViewData.GetSimpleArea( aSelection ) == SC_MARK_SIMPLE) )
                     {
-                        ScRangeName aNewRanges( *pNames );
+                        ScRangeName aNewRanges( rNames );
                         ScAddress aCursor( rViewData.GetCurX(), rViewData.GetCurY(), rViewData.CurrentTabForData() );
                         OUString aContent(aSelection.Format(rDoc, ScRefFlags::RANGE_ABS_3D, rDoc.GetAddressConvention()));
-                        ScRangeData* pNew = new ScRangeData( rDoc, aText, aContent, aCursor );
-                        if ( aNewRanges.insert(pNew) )
+                        std::unique_ptr<ScRangeData> pNew(new ScRangeData( rDoc, aText, aContent, aCursor ));
+                        if ( aNewRanges.insert(std::move(pNew)) )
                         {
                             pDocShell->GetDocFunc().ModifyRangeNames( aNewRanges );
                             pViewSh->UpdateInputHandler(true);

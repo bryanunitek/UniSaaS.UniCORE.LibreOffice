@@ -14,15 +14,19 @@
 #include <bitmaps.hlst>
 #include <cfgutil.hxx>
 #include <dialmgr.hxx>
+#include <GetDocumentModel.hxx>
 #include <scriptdlg.hxx>
 #include <strings.hrc>
 #include <basctl/basctldllpublic.hxx>
 #include <basctl/sbxitem.hxx>
 #include <basctl/scriptdocument.hxx>
+#include <basic/basmgr.hxx>
+#include <basic/sbmeth.hxx>
 #include <comphelper/SetFlagContextHelper.hxx>
 #include <comphelper/diagnose_ex.hxx>
 #include <comphelper/documentinfo.hxx>
 #include <comphelper/processfactory.hxx>
+#include <comphelper/scriptbrowse.hxx>
 #include <osl/file.hxx>
 #include <rtl/ustrbuf.hxx>
 #include <sfx2/app.hxx>
@@ -34,8 +38,9 @@
 #include <svl/itemset.hxx>
 #include <svl/stritem.hxx>
 #include <svtools/dlgname.hxx>
+#include <svtools/viewoptions.hxx>
 #include <svx/passwd.hxx>
-#include <unotools/viewoptions.hxx>
+#include <tools/debug.hxx>
 #include <vcl/commandevent.hxx>
 #include <vcl/svapp.hxx>
 #include <vcl/vclenum.hxx>
@@ -53,10 +58,10 @@
 #include <com/sun/star/script/browse/BrowseNodeTypes.hpp>
 #include <com/sun/star/script/browse/theBrowseNodeFactory.hpp>
 #include <com/sun/star/script/browse/BrowseNodeFactoryViewTypes.hpp>
+#include <com/sun/star/script/browse/XCopyableBrowseNode.hpp>
 #include <com/sun/star/script/XLibraryContainer2.hpp>
 #include <com/sun/star/script/XLibraryContainerPassword.hpp>
 #include <com/sun/star/script/XPersistentLibraryContainer.hpp>
-#include <com/sun/star/script/XInvocation.hpp>
 #include <com/sun/star/script/XStorageBasedLibraryContainer.hpp>
 #include <com/sun/star/uno/RuntimeException.hpp>
 
@@ -222,6 +227,7 @@ void ScriptContainersListBox::Fill(const weld::TreeIter* pEntryIter)
     weld::WaitObject aWait(m_pMacroManagerDialog->getDialog());
 
     css::uno::Reference<css::script::browse::XBrowseNode> xNode;
+    css::uno::Reference<css::frame::XModel> xParentDocumentModel;
     if (pEntryIter == nullptr)
     {
         ClearAll();
@@ -247,6 +253,7 @@ void ScriptContainersListBox::Fill(const weld::TreeIter* pEntryIter)
             = weld::fromId<ScriptContainerInfo*>(m_xTreeView->get_id(*pEntryIter));
 
         xNode.set(pScriptContainerInfoEntry->pBrowseNode);
+        xParentDocumentModel.set(pScriptContainerInfoEntry->xModel);
 
         Remove(pEntryIter, /*bRemoveEntryIter*/ false);
     }
@@ -284,8 +291,12 @@ void ScriptContainersListBox::Fill(const weld::TreeIter* pEntryIter)
                 currentDocTitle = comphelper::DocumentInfo::getDocumentTitle(xModel);
         }
 
-        const css::uno::Sequence<css::uno::Reference<css::script::browse::XBrowseNode>> children
-            = xNode->getChildNodes();
+        std::vector<css::uno::Reference<css::script::browse::XBrowseNode>> children
+            = comphelper::scriptbrowse::getChildNodes(xNode);
+
+        if (!bIsRootNode)
+            comphelper::scriptbrowse::sortNodes(children);
+
         for (css::uno::Reference<css::script::browse::XBrowseNode> const& theChild : children)
         {
             if (!theChild.is())
@@ -298,6 +309,7 @@ void ScriptContainersListBox::Fill(const weld::TreeIter* pEntryIter)
                 continue;
 
             OUString uiName = theChild->getName();
+            css::uno::Reference<css::frame::XModel> xDocumentModel;
             if (bIsRootNode)
             {
                 if (uiName == user)
@@ -316,6 +328,14 @@ void ScriptContainersListBox::Fill(const weld::TreeIter* pEntryIter)
                     // containers.
                     continue;
                 }
+                else
+                {
+                    xDocumentModel = getDocumentModel(m_xContext, uiName);
+                }
+            }
+            else
+            {
+                xDocumentModel = xParentDocumentModel;
             }
 
             // We call acquire on the XBrowseNode so that it does not
@@ -326,8 +346,8 @@ void ScriptContainersListBox::Fill(const weld::TreeIter* pEntryIter)
 
             if (theChild->hasChildNodes())
             {
-                const css::uno::Sequence<css::uno::Reference<css::script::browse::XBrowseNode>>
-                    grandchildren = theChild->getChildNodes();
+                const std::vector<css::uno::Reference<css::script::browse::XBrowseNode>>
+                    grandchildren = comphelper::scriptbrowse::getChildNodes(theChild);
                 for (const auto& rxNode : grandchildren)
                 {
                     if (!rxNode.is())
@@ -341,7 +361,7 @@ void ScriptContainersListBox::Fill(const weld::TreeIter* pEntryIter)
             }
 
             OUString aImage = CuiConfigGroupListBox::GetImage(theChild, m_xContext, bIsRootNode);
-            Insert(theChild, pEntryIter, uiName, aImage, bChildOnDemand);
+            Insert(theChild, xDocumentModel, pEntryIter, uiName, aImage, bChildOnDemand);
         }
     }
 
@@ -378,7 +398,8 @@ void ScriptContainersListBox::Fill(const weld::TreeIter* pEntryIter)
 
             for (const OUString& rDlgName : aDocument.getObjectNames(basctl::E_DIALOGS, aLibName))
             {
-                Insert(nullptr, pEntryIter, rDlgName, RID_CUIBMP_DIALOG, false);
+                Insert(nullptr, xParentDocumentModel, pEntryIter, rDlgName, RID_CUIBMP_DIALOG,
+                       false);
             }
         }
     }
@@ -386,12 +407,13 @@ void ScriptContainersListBox::Fill(const weld::TreeIter* pEntryIter)
 
 void ScriptContainersListBox::Insert(
     const css::uno::Reference<css::script::browse::XBrowseNode>& xInsertNode,
-    const weld::TreeIter* pIter, const OUString& rsUiName, const OUString& rsImage,
-    bool bChildOnDemand, int nPos, weld::TreeIter* pRet)
+    const css::uno::Reference<css::frame::XModel>& xDocumentModel, const weld::TreeIter* pIter,
+    const OUString& rsUiName, const OUString& rsImage, bool bChildOnDemand, int nPos,
+    weld::TreeIter* pRet)
 {
     std::unique_ptr<weld::TreeIter> xNewEntryIter = m_xTreeView->make_iterator();
 
-    OUString sId(weld::toId(new ScriptContainerInfo(xInsertNode.get())));
+    OUString sId(weld::toId(new ScriptContainerInfo(xInsertNode.get(), xDocumentModel)));
     m_xTreeView->insert(pIter, nPos, &rsUiName, &sId, nullptr, nullptr, bChildOnDemand,
                         xNewEntryIter.get());
     m_xTreeView->set_image(*xNewEntryIter, rsImage);
@@ -458,8 +480,8 @@ void ScriptContainersListBox::ScriptContainerSelected()
         {
             if (xBrowseNode->hasChildNodes())
             {
-                const css::uno::Sequence<css::uno::Reference<css::script::browse::XBrowseNode>>
-                    children = xBrowseNode->getChildNodes();
+                const std::vector<css::uno::Reference<css::script::browse::XBrowseNode>> children
+                    = comphelper::scriptbrowse::getSortedChildNodes(xBrowseNode);
 
                 for (const css::uno::Reference<css::script::browse::XBrowseNode>& childNode :
                      children)
@@ -500,8 +522,8 @@ void ScriptContainersListBox::ScriptContainerSelected()
 
                         childNode->acquire();
 
-                        m_pScriptsListBox->aArr.push_back(
-                            std::make_unique<ScriptInfo>(childNode.get(), sURI, sDescription));
+                        m_pScriptsListBox->aArr.push_back(std::make_unique<ScriptInfo>(
+                            childNode.get(), sURI, sDescription, pScriptContainerInfo->xModel));
 
                         OUString sId(weld::toId(m_pScriptsListBox->aArr.back().get()));
                         m_pScriptsListBox->append(sId, childNode->getName(), RID_CUIBMP_MACRO);
@@ -658,6 +680,8 @@ MacroManagerDialog::MacroManagerDialog(weld::Window* pParent,
     , m_xMacroDeleteButton(m_xBuilder->weld_button(u"macrodelete"_ustr))
     , m_xMacroCreateButton(m_xBuilder->weld_button(u"macrocreate"_ustr))
     , m_xMacroRenameButton(m_xBuilder->weld_button(u"macrorename"_ustr))
+    , m_xModuleCopyButton(m_xBuilder->weld_button(u"modulecopy"_ustr))
+    , m_xModulePasteButton(m_xBuilder->weld_button(u"modulepaste"_ustr))
     , m_xAssignButton(m_xBuilder->weld_button(u"assign"_ustr))
 {
     m_aScriptsListBoxLabelBaseStr = m_xScriptsListBoxLabel->get_label();
@@ -688,6 +712,8 @@ MacroManagerDialog::MacroManagerDialog(weld::Window* pParent,
     m_xMacroEditButton->connect_clicked(LINK(this, MacroManagerDialog, ClickHdl));
     m_xMacroRenameButton->connect_clicked(LINK(this, MacroManagerDialog, ClickHdl));
     m_xMacroDeleteButton->connect_clicked(LINK(this, MacroManagerDialog, ClickHdl));
+    m_xModuleCopyButton->connect_clicked(LINK(this, MacroManagerDialog, ClickHdl));
+    m_xModulePasteButton->connect_clicked(LINK(this, MacroManagerDialog, ClickHdl));
 
     StartListening(*SfxGetpApp());
 }
@@ -905,23 +931,6 @@ IMPL_LINK(MacroManagerDialog, ContextMenuHdl, const CommandEvent&, rCEvt, bool)
     return true;
 }
 
-// same as OUString SvxScriptOrgDialog::getBoolProperty((Reference<beans::XPropertySet> const& xProps, OUString const& propName)
-// cui/source/dialogs/scriptdlg.cxx
-bool MacroManagerDialog::getBoolProperty(
-    css::uno::Reference<css::beans::XPropertySet> const& xProps, OUString const& propName)
-{
-    bool result = false;
-    try
-    {
-        xProps->getPropertyValue(propName) >>= result;
-    }
-    catch (css::uno::Exception&)
-    {
-        return result;
-    }
-    return result;
-}
-
 css::uno::Reference<css::script::browse::XBrowseNode>
 MacroManagerDialog::getBrowseNode(const weld::TreeView& rTreeView, const weld::TreeIter& rTreeIter)
 {
@@ -991,6 +1000,8 @@ void MacroManagerDialog::CheckButtons()
     bool bSensitiveLibraryPasswordButton = false;
     bool bSensitiveLibraryImportButton = false;
     bool bSensitiveLibraryExportButton = false;
+    bool bSensitiveModuleCopyButton = false;
+    bool bSensitiveModulePasteButton = false;
 
     bool bSensitiveMacroRunButton = false;
     bool bSensitiveMacroCreateButton = false;
@@ -1034,14 +1045,9 @@ void MacroManagerDialog::CheckButtons()
                             rScriptContainersTreeView, *xScriptContainersSelectedIter);
                         if (node.is())
                         {
-                            css::uno::Reference<css::beans::XPropertySet> xProps(
-                                node, css::uno::UNO_QUERY);
-                            if (xProps.is())
+                            if (comphelper::scriptbrowse::isCreatable(node))
                             {
-                                if (getBoolProperty(xProps, "Creatable"))
-                                {
-                                    bSensitiveNewLibraryButton = true;
-                                }
+                                bSensitiveNewLibraryButton = true;
                             }
                         }
                     }
@@ -1124,34 +1130,43 @@ void MacroManagerDialog::CheckButtons()
                 }
             }
 
-            if (!bSharedLocationContainer && nSelectedIterDepth > 1)
+            if (!bSharedLocationContainer)
             {
                 css::uno::Reference<css::script::browse::XBrowseNode> node
                     = getBrowseNode(rScriptContainersTreeView, *xScriptContainersSelectedIter);
                 if (node.is())
                 {
-                    css::uno::Reference<css::beans::XPropertySet> xProps(node, css::uno::UNO_QUERY);
-                    if (xProps.is())
+                    if (nSelectedIterDepth > 1)
                     {
-                        if (getBoolProperty(xProps, "Creatable")
+                        if (comphelper::scriptbrowse::isCreatable(node)
                             && rScriptContainersTreeView.get_iter_depth(
                                    *xScriptContainersSelectedIter)
                                    == 2) // library entry
                         {
                             bSensitiveMacroCreateButton = true;
                         }
-                        if (getBoolProperty(xProps, "Editable"))
+                        if (comphelper::scriptbrowse::isEditable(node))
                         {
                             bSensitiveLibraryModuleDialogEditButton = true;
                         }
-                        if (getBoolProperty(xProps, "Deletable"))
+                        if (comphelper::scriptbrowse::isDeletable(node))
                         {
                             bSensitiveLibraryModuleDialogDeleteButton = true;
                         }
-                        if (getBoolProperty(xProps, "Renamable"))
+                        if (comphelper::scriptbrowse::isRenamable(node))
                         {
                             bSensitiveLibraryModuleDialogRenameButton = true;
                         }
+
+                        css::uno::Reference<css::script::browse::XCopyableBrowseNode> xCopyableNode(
+                            node, css::uno::UNO_QUERY);
+                        if (xCopyableNode.is() && xCopyableNode->isCopyableNode())
+                            bSensitiveModuleCopyButton = true;
+                    }
+
+                    if (m_xCopiedNode.is() && m_xCopiedNode->nodeCanBeCopiedTo(node))
+                    {
+                        bSensitiveModulePasteButton = true;
                     }
                 }
             }
@@ -1163,29 +1178,28 @@ void MacroManagerDialog::CheckButtons()
             {
                 bSensitiveAssignButton = true;
 
+                if (bBasic)
+                    bSensitiveMacroDeleteButton = true;
+
                 css::uno::Reference<css::script::browse::XBrowseNode> node;
                 node = getBrowseNode(rScriptsTreeView, *xScriptsSelectedIter);
                 if (node.is())
                 {
                     bSensitiveMacroRunButton = true;
 
-                    css::uno::Reference<css::beans::XPropertySet> xProps(node, css::uno::UNO_QUERY);
-                    if (xProps.is())
+                    if (comphelper::scriptbrowse::isEditable(node))
                     {
-                        if (getBoolProperty(xProps, "Editable"))
+                        bSensitiveMacroEditButton = true;
+                    }
+                    if (!bSharedLocationContainer)
+                    {
+                        if (comphelper::scriptbrowse::isDeletable(node))
                         {
-                            bSensitiveMacroEditButton = true;
+                            bSensitiveMacroDeleteButton = true;
                         }
-                        if (!bSharedLocationContainer)
+                        if (comphelper::scriptbrowse::isRenamable(node))
                         {
-                            if (getBoolProperty(xProps, "Deletable"))
-                            {
-                                bSensitiveMacroDeleteButton = true;
-                            }
-                            if (getBoolProperty(xProps, "Renamable"))
-                            {
-                                bSensitiveMacroRenameButton = true;
-                            }
+                            bSensitiveMacroRenameButton = true;
                         }
                     }
                 }
@@ -1207,6 +1221,8 @@ void MacroManagerDialog::CheckButtons()
     m_xMacroEditButton->set_sensitive(bSensitiveMacroEditButton);
     m_xMacroRenameButton->set_sensitive(bSensitiveMacroRenameButton);
     m_xMacroDeleteButton->set_sensitive(bSensitiveMacroDeleteButton);
+    m_xModuleCopyButton->set_sensitive(bSensitiveModuleCopyButton);
+    m_xModulePasteButton->set_sensitive(bSensitiveModulePasteButton);
     m_xAssignButton->set_sensitive(bSensitiveAssignButton);
 }
 
@@ -1559,9 +1575,7 @@ IMPL_LINK(MacroManagerDialog, ClickHdl, weld::Button&, rButton, void)
         }
         else if (&rButton == m_xMacroDeleteButton.get())
         {
-            // todo
-            // see: void MacroChooser::DeleteMacro()
-            return;
+            BasicScriptsMacroDelete();
         }
         else if (&rButton == m_xAssignButton.get())
         {
@@ -1606,21 +1620,17 @@ IMPL_LINK(MacroManagerDialog, ClickHdl, weld::Button&, rButton, void)
             return; // should never happen
         css::uno::Reference<css::script::browse::XBrowseNode> node
             = getBrowseNode(rTreeView, *xSelectedIter);
-        css::uno::Reference<css::script::XInvocation> xInv(node, css::uno::UNO_QUERY);
-        if (xInv.is())
+        if (node.is())
         {
             m_xDialog->response(RET_CANCEL);
-            css::uno::Sequence<css::uno::Any> args(0);
-            css::uno::Sequence<css::uno::Any> outArgs(0);
-            css::uno::Sequence<sal_Int16> outIndex;
             try
             {
                 // ISSUE need code to run script here
-                xInv->invoke(u"Editable"_ustr, args, outIndex, outArgs);
+                comphelper::scriptbrowse::editNode(node);
             }
             catch (css::uno::Exception const&)
             {
-                TOOLS_WARN_EXCEPTION("cui.dialogs", "Caught exception trying to invoke");
+                TOOLS_WARN_EXCEPTION("cui.dialogs", "Caught exception trying to edit");
             }
         }
     }
@@ -1672,6 +1682,26 @@ IMPL_LINK(MacroManagerDialog, ClickHdl, weld::Button&, rButton, void)
                 ScriptContainerType::LOCATION));
         aRequest.AppendItem(aMacroInfoItem);
         SfxGetpApp()->ExecuteSlot(aRequest);
+    }
+    else if (&rButton == m_xModuleCopyButton.get())
+    {
+        weld::TreeView& rTreeView = m_xScriptContainersListBox->get_widget();
+        std::unique_ptr<weld::TreeIter> xSelectedIter = rTreeView.get_selected();
+        if (!xSelectedIter)
+            return; // should never happen
+        m_xCopiedNode.set(getBrowseNode(rTreeView, *xSelectedIter), css::uno::UNO_QUERY);
+        CheckButtons();
+    }
+    else if (&rButton == m_xModulePasteButton.get())
+    {
+        if (!m_xCopiedNode.is())
+            return;
+
+        weld::TreeView& rTreeView = m_xScriptContainersListBox->get_widget();
+        std::unique_ptr<weld::TreeIter> xSelectedIter = rTreeView.get_selected();
+        if (!xSelectedIter)
+            return; // should never happen
+        ScriptingFrameworkScriptsPasteEntry(rTreeView, *xSelectedIter);
     }
 }
 
@@ -2033,6 +2063,27 @@ void MacroManagerDialog::BasicScriptsMacroEdit(const basctl::ScriptDocument& rDo
     m_xDialog->response(0);
 }
 
+void MacroManagerDialog::BasicScriptsMacroDelete()
+{
+    SbMethod* pMethod = GetSelectedBasicMethod();
+
+    DBG_ASSERT(pMethod, "BasicScriptsMacroDelete: no macro found!");
+
+    if (!pMethod || !basctl::QueryDelMacro(pMethod->GetName(), m_xDialog.get()))
+        return;
+
+    // Remove the macro from the list. We need to do this before calling DeleteMacro because that
+    // can trigger a notification which will cause the list of macros to be reloaded so if we do it
+    // after we’ll delete the wrong node.
+    if (std::unique_ptr<weld::TreeIter> xScriptsEntryIter
+        = m_xScriptsListBox->get_widget().get_selected())
+    {
+        m_xScriptsListBox->Remove(*xScriptsEntryIter);
+    }
+
+    basctl::DeleteMacro(*pMethod);
+}
+
 // modified version of void SvxScriptOrgDialog::renameEntry(const weld::TreeIter& rEntry)
 // cui/source/dialogs/scriptdlg.cxx
 void MacroManagerDialog::ScriptingFrameworkScriptsRenameEntry(weld::TreeView& rTreeView,
@@ -2040,9 +2091,8 @@ void MacroManagerDialog::ScriptingFrameworkScriptsRenameEntry(weld::TreeView& rT
 {
     css::uno::Reference<css::script::browse::XBrowseNode> xBrowseNode
         = getBrowseNode(rTreeView, rEntry);
-    css::uno::Reference<css::script::XInvocation> xInv(xBrowseNode, css::uno::UNO_QUERY);
 
-    if (xInv.is())
+    if (xBrowseNode.is())
     {
         OUString aNewName = xBrowseNode->getName();
         sal_Int32 extnPos = aNewName.lastIndexOf('.');
@@ -2073,17 +2123,14 @@ void MacroManagerDialog::ScriptingFrameworkScriptsRenameEntry(weld::TreeView& rT
 
         aNewName = aNameDialog.GetName();
 
-        css::uno::Sequence<css::uno::Any> args{ css::uno::Any(aNewName) };
-        css::uno::Sequence<css::uno::Any> outArgs;
-        css::uno::Sequence<sal_Int16> outIndex;
         try
         {
-            css::uno::Any aResult = xInv->invoke(u"Renamable"_ustr, args, outIndex, outArgs);
-            xBrowseNode.set(aResult, css::uno::UNO_QUERY);
+            xBrowseNode = comphelper::scriptbrowse::renameNode(xBrowseNode, aNewName);
         }
         catch (css::uno::Exception const&)
         {
             TOOLS_WARN_EXCEPTION("cui.dialogs", "Caught exception trying to Rename");
+            xBrowseNode.clear();
         }
     }
     if (xBrowseNode.is())
@@ -2129,6 +2176,50 @@ void MacroManagerDialog::ScriptingFrameworkScriptsRenameEntry(weld::TreeView& rT
     }
 }
 
+void MacroManagerDialog::ScriptingFrameworkScriptsPasteEntry(weld::TreeView& rTreeView,
+                                                             const weld::TreeIter& rEntry)
+{
+    css::uno::Reference<css::script::browse::XBrowseNode> node = getBrowseNode(rTreeView, rEntry);
+    if (!node.is() || !m_xCopiedNode->nodeCanBeCopiedTo(node))
+        return;
+
+    try
+    {
+        node = m_xCopiedNode->copyNode(node);
+    }
+    catch (const css::uno::Exception&)
+    {
+        return;
+    }
+
+    // If we don’t expand the row before filling it then it will end up with two copies of all the
+    // entries
+    rTreeView.expand_row(rEntry);
+    m_xScriptContainersListBox->Fill(&rEntry);
+    // Filling it causes the node to close so we need to expand it again
+    rTreeView.expand_row(rEntry);
+
+    // Try to select the new entry
+    if (rTreeView.iter_has_child(rEntry))
+    {
+        OUString sNodeName = node->getName();
+
+        std::unique_ptr<weld::TreeIter> xIter = rTreeView.make_iterator(&rEntry);
+        if (rTreeView.iter_children(*xIter))
+        {
+            do
+            {
+                if (rTreeView.get_text(*xIter) == sNodeName)
+                {
+                    rTreeView.select(*xIter);
+                    SelectHdl(rTreeView);
+                    break;
+                }
+            } while (rTreeView.iter_next_sibling(*xIter));
+        }
+    }
+}
+
 // for Scripting Framework entries
 // duplicate of OUString SvxScriptOrgDialog::getListOfChildren
 // cui/source/dialogs/scriptdlg.cxx
@@ -2146,8 +2237,8 @@ OUString MacroManagerDialog::getListOfChildren(
     {
         if (node->hasChildNodes())
         {
-            const css::uno::Sequence<css::uno::Reference<css::script::browse::XBrowseNode>> children
-                = node->getChildNodes();
+            const std::vector<css::uno::Reference<css::script::browse::XBrowseNode>> children
+                = comphelper::scriptbrowse::getSortedChildNodes(node);
             for (const css::uno::Reference<css::script::browse::XBrowseNode>& n : children)
             {
                 result.append(getListOfChildren(n, depth + 1));
@@ -2179,16 +2270,12 @@ void MacroManagerDialog::ScriptingFrameworkScriptsDeleteEntry(weld::TreeView& rT
         return;
     }
 
-    css::uno::Reference<css::script::XInvocation> xInv(node, css::uno::UNO_QUERY);
-    if (xInv.is())
+    if (node.is())
     {
-        css::uno::Sequence<css::uno::Any> args(0);
-        css::uno::Sequence<css::uno::Any> outArgs(0);
-        css::uno::Sequence<sal_Int16> outIndex;
         try
         {
-            css::uno::Any aResult = xInv->invoke(u"Deletable"_ustr, args, outIndex, outArgs);
-            aResult >>= result; // or do we just assume true if no exception ?
+            result = comphelper::scriptbrowse::deleteNode(node);
+            // or do we just assume true if no exception ?
         }
         catch (css::uno::Exception const&)
         {
@@ -2231,10 +2318,8 @@ void MacroManagerDialog::ScriptingFrameworkScriptsCreateEntry(InputDialogMode eI
     css::uno::Reference<css::script::browse::XBrowseNode> aChildNode;
     css::uno::Reference<css::script::browse::XBrowseNode> xBrowseNode
         = getBrowseNode(rTreeView, *xSelectedIter);
-    css::uno::Reference<css::script::XInvocation> xInv(xBrowseNode, css::uno::UNO_QUERY);
 
-    // Currently, invocation is not implemented for python, only beanshell, javascript, and java.
-    if (xInv.is())
+    if (xBrowseNode.is())
     {
         OUString aNewName;
         OUString aNewStdName;
@@ -2250,7 +2335,7 @@ void MacroManagerDialog::ScriptingFrameworkScriptsCreateEntry(InputDialogMode eI
         bool bValid = false;
         sal_Int32 i = 1;
 
-        css::uno::Sequence<css::uno::Reference<css::script::browse::XBrowseNode>> childNodes;
+        std::vector<css::uno::Reference<css::script::browse::XBrowseNode>> childNodes;
         // no children => ok to create Parcel1 or Script1 without checking ?
         try
         {
@@ -2261,7 +2346,7 @@ void MacroManagerDialog::ScriptingFrameworkScriptsCreateEntry(InputDialogMode eI
             }
             else
             {
-                childNodes = xBrowseNode->getChildNodes();
+                childNodes = comphelper::scriptbrowse::getChildNodes(xBrowseNode);
             }
         }
         catch (css::uno::Exception&)
@@ -2274,7 +2359,7 @@ void MacroManagerDialog::ScriptingFrameworkScriptsCreateEntry(InputDialogMode eI
         {
             aNewName = aNewStdName + OUString::number(i);
             bool bFound = false;
-            if (childNodes.hasElements())
+            if (!childNodes.empty())
             {
                 OUString nodeName = childNodes[0]->getName();
                 sal_Int32 extnPos = nodeName.lastIndexOf('.');
@@ -2355,13 +2440,9 @@ void MacroManagerDialog::ScriptingFrameworkScriptsCreateEntry(InputDialogMode eI
         // open up parent node (which ensures it's loaded)
         rTreeView.expand_row(*xSelectedIter);
 
-        css::uno::Sequence<css::uno::Any> args{ css::uno::Any(aNewName) };
-        css::uno::Sequence<css::uno::Any> outArgs;
-        css::uno::Sequence<sal_Int16> outIndex;
         try
         {
-            css::uno::Any aResult = xInv->invoke(u"Creatable"_ustr, args, outIndex, outArgs);
-            aChildNode.set(aResult, css::uno::UNO_QUERY);
+            aChildNode = comphelper::scriptbrowse::createNode(xBrowseNode, aNewName);
         }
         catch (css::uno::Exception const&)
         {
@@ -2405,6 +2486,20 @@ OUString MacroManagerDialog::GetScriptURL() const
             result = pScriptInfo->sURL;
     }
     return result;
+}
+
+css::uno::Reference<css::frame::XModel> MacroManagerDialog::GetScriptModel() const
+{
+    css::uno::Reference<css::frame::XModel> xModel;
+
+    if (std::unique_ptr<weld::TreeIter> xIter = m_xScriptsListBox->get_selected())
+    {
+        ScriptInfo* pScriptInfo = weld::fromId<ScriptInfo*>(m_xScriptsListBox->get_id(*xIter));
+        if (pScriptInfo)
+            xModel = pScriptInfo->xModel;
+    }
+
+    return xModel;
 }
 
 constexpr OUString MACRO_MANAGER_CONFIGNAME = u"MacroManagerDialog"_ustr;
@@ -2511,6 +2606,58 @@ void MacroManagerDialog::LoadLastUsedMacro()
     }
 
     UpdateUI();
+}
+
+SbModule* MacroManagerDialog::GetSelectedBasicModule() const
+{
+    weld::TreeView& rScriptContainersTreeView = m_xScriptContainersListBox->get_widget();
+    std::unique_ptr<weld::TreeIter> xIter = rScriptContainersTreeView.get_selected();
+
+    if (!xIter)
+        return nullptr;
+
+    OUString aParts[3];
+
+    // The selected node needs to be at least 4 branches deep, ie,
+    // Document->Language->Library->Module. Here we store the names of the last three and also check
+    // that the language part has a parent node.
+    for (auto& aPart : aParts)
+    {
+        aPart = rScriptContainersTreeView.get_text(*xIter);
+
+        if (!rScriptContainersTreeView.iter_parent(*xIter))
+            return nullptr;
+    }
+
+    if (aParts[2] != u"Basic"_ustr)
+        return nullptr;
+
+    basctl::ScriptDocument aDocument = m_xScriptContainersListBox->GetScriptDocument(xIter.get());
+    BasicManager* pBasicManager = aDocument.getBasicManager();
+
+    if (!pBasicManager)
+        return nullptr;
+
+    StarBASIC* pLibrary = pBasicManager->GetLib(aParts[1]);
+    if (!pLibrary)
+        return nullptr;
+
+    return pLibrary->FindModule(aParts[0]);
+}
+
+SbMethod* MacroManagerDialog::GetSelectedBasicMethod() const
+{
+    SbModule* pModule = GetSelectedBasicModule();
+
+    if (!pModule)
+        return nullptr;
+
+    OUString sScriptName = m_xScriptsListBox->GetSelectedScriptName();
+
+    if (sScriptName.getLength() <= 0)
+        return nullptr;
+
+    return pModule->FindMethod(sScriptName, SbxClassType::Method);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab cinoptions=b1,g0,N-s cinkeys+=0=break: */

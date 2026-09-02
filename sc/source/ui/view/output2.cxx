@@ -1442,7 +1442,7 @@ bool beginsWithRTLCharacter(const OUString& rStr)
     right alignment is returned.
  */
 static SvxCellHorJustify getAlignmentFromContext( SvxCellHorJustify eInHorJust,
-        bool bCellIsValue, const OUString& rText,
+        bool bCellIsValue, bool bCellIsCallable, const OUString& rText,
         const ScPatternAttr& rPattern, const SfxItemSet* pCondSet,
         const ScDocument* pDoc, SCTAB mnTab, const bool  bNumberFormatIsText )
 {
@@ -1461,6 +1461,8 @@ static SvxCellHorJustify getAlignmentFromContext( SvxCellHorJustify eInHorJust,
         }
         else if (bCellIsValue) //If language is not RTL
             eHorJustContext = bNumberFormatIsText ? SvxCellHorJustify::Left : SvxCellHorJustify::Right;
+        else if (bCellIsCallable)
+            eHorJustContext = SvxCellHorJustify::Center;
         else
             bUseWritingDirection = true;
     }
@@ -1601,6 +1603,7 @@ void ScOutputData::LayoutStringsImpl(bool const bPixelToLogic, RowInfo* const pT
     const SfxItemSet* pCondSet = nullptr;
     const SfxItemSet* pTableSet = nullptr;
     bool bCellIsValue = false;
+    bool bCellIsCallable = false;
     tools::Long nNeededWidth = 0;
     OutputAreaParam aAreaParam;
     bool bMergeEmpty = false;
@@ -1721,7 +1724,7 @@ void ScOutputData::LayoutStringsImpl(bool const bPixelToLogic, RowInfo* const pT
         if ( nCellY == nY && nCellX >= mnX1 && nCellX <= mnX2 )
         {
             ScCellInfo& rCellInfo = pThisRowInfo->cellInfo(nCellX);
-            pPattern = rCellInfo.pPatternAttr;
+            pPattern = rCellInfo.getPatternAttr();
             pCondSet = rCellInfo.pConditionSet;
             pTableSet = rCellInfo.pTableFormatSet;
 
@@ -1818,11 +1821,12 @@ void ScOutputData::LayoutStringsImpl(bool const bPixelToLogic, RowInfo* const pT
         {
             ScFormulaCell* pFCell = aCell.getFormula();
             bCellIsValue = pFCell->IsRunning() || pFCell->IsValue();
+            bCellIsCallable = pFCell->IsCallable();
         }
 
         const bool bNumberFormatIsText = lcl_isNumberFormatText( mpDoc, nCellX, nCellY, mnTab );
-        eOutHorJust = getAlignmentFromContext( aVars.GetHorJust(), bCellIsValue, aVars.GetString(),
-                *pPattern, pCondSet, mpDoc, mnTab, bNumberFormatIsText );
+        eOutHorJust = getAlignmentFromContext( aVars.GetHorJust(), bCellIsValue, bCellIsCallable,
+                aVars.GetString(), *pPattern, pCondSet, mpDoc, mnTab, bNumberFormatIsText );
 
         bool bBreak = ( aVars.GetLineBreak() || aVars.GetHorJust() == SvxCellHorJustify::Block );
         // #i111387# #o11817313# tdf#121040 disable automatic line breaks for all number formats
@@ -4601,7 +4605,7 @@ void ScOutputData::DrawEdit(bool bPixelToLogic)
                              !mpDoc->ColHidden(nCellX, mnTab) )
                         {
                             ScCellInfo& rCellInfo = pThisRowInfo->cellInfo(nCellX);
-                            pPattern = rCellInfo.pPatternAttr;
+                            pPattern = rCellInfo.getPatternAttr();
                             pCondSet = rCellInfo.pConditionSet;
                             pTableSet = rCellInfo.pTableFormatSet;
                             aCell = rCellInfo.maCell;
@@ -4636,7 +4640,8 @@ void ScOutputData::DrawEdit(bool bPixelToLogic)
                         DrawEditParam aParam(pPattern, pCondSet, pTableSet, lcl_SafeIsValue(aCell));
                         const bool bNumberFormatIsText = lcl_isNumberFormatText( mpDoc, nCellX, nCellY, mnTab );
                         aParam.meHorJustContext = getAlignmentFromContext( aParam.meHorJustAttr,
-                                aParam.mbCellIsValue, aStr, *pPattern, pCondSet, mpDoc, mnTab, bNumberFormatIsText);
+                                aParam.mbCellIsValue, false, aStr, *pPattern, pCondSet, mpDoc, mnTab,
+                                bNumberFormatIsText);
                         aParam.meHorJustResult = (aParam.meHorJustAttr == SvxCellHorJustify::Block) ?
                                 SvxCellHorJustify::Block : aParam.meHorJustContext;
                         aParam.mbPixelToLogic = bPixelToLogic;
@@ -4762,7 +4767,7 @@ void ScOutputData::DrawRotated(bool bPixelToLogic)
                         //! rest from merged cells further up do not work!
 
                         bool bFromDoc = false;
-                        pPattern = pInfo->pPatternAttr;
+                        pPattern = pInfo->getPatternAttr();
                         pCondSet = pInfo->pConditionSet;
                         if (!pPattern)
                         {
@@ -4951,7 +4956,7 @@ void ScOutputData::DrawRotated(bool bPixelToLogic)
                                     // tdf#143377 new strategy: instead of using zero for nSin, which
                                     // would be the *correct* value, continue with the corrected maximum
                                     // allowed value which is then *not* zero. This is similar to
-                                    // the behaviour before where (just due to numerical unprecisions)
+                                    // the behaviour before where (just due to numerical imprecisions)
                                     // nSin was also not zero (pure coincidence), but very close to it.
                                     // I checked and tried to make safe all places below that use
                                     // nSin and divide by it, but there is too much going on and that
@@ -4970,7 +4975,7 @@ void ScOutputData::DrawRotated(bool bPixelToLogic)
                                 {
                                     //! the correct paper size for break depends on the number
                                     //! of rows, as long as the rows can not be outputted individually
-                                    //! offsetted -> therefore unlimited, so no wrapping.
+                                    //! offset -> therefore unlimited, so no wrapping.
                                     //! With offset rows the following would be correct:
                                     aPaperSize.setWidth( static_cast<tools::Long>(nOutHeight / fabs(nSin)) );
                                 }

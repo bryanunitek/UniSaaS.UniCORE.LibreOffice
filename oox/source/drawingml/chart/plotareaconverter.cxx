@@ -74,7 +74,8 @@ public:
                             sal_Int32 nAxesSetIdx,
                             DataSourceCxModel::DataMap& raSourceMap,
                             bool bSupportsVaryColorsByPoint,
-                            bool bUseFixedInnerSize );
+                            bool bUseFixedInnerSize,
+                            ChartType eCT);
 
     /** Returns the automatic chart title if the axes set contains only one series. */
     const OUString& getAutomaticTitle() const { return maAutoTitle; }
@@ -104,11 +105,11 @@ AxesSetConverter::AxesSetConverter( const ConverterRoot& rParent, AxesSetModel& 
 {
 }
 
-ModelRef< AxisModel > lclGetOrCreateAxis( const AxesSetModel::AxisMap& rFromAxes, sal_Int32 nAxisIdx, sal_Int32 nDefTypeId, bool bMSO2007Doc )
+ModelRef< AxisModel > lclGetOrCreateAxis( const AxesSetModel::AxisMap& rFromAxes, sal_Int32 nAxisIdx, sal_Int32 nDefTypeId, ChartType eCT )
 {
     ModelRef< AxisModel > xAxis = rFromAxes.get( nAxisIdx );
     if( !xAxis )
-        xAxis.create( nDefTypeId, bMSO2007Doc ).mbDeleted = true;  // missing axis is invisible
+        xAxis.create( nDefTypeId, eCT ).mbDeleted = true;  // missing axis is invisible
     return xAxis;
 }
 
@@ -123,7 +124,8 @@ bool lclHasTypeGroupWithLayout(const AxesSetModel::TypeGroupVector& rTypeGroups,
 void AxesSetConverter::convertFromModel( const Reference< XDiagram >& rxDiagram,
                                         View3DModel& rView3DModel, sal_Int32 nAxesSetIdx,
                                         DataSourceCxModel::DataMap& raSourceMap,
-                                        bool bSupportsVaryColorsByPoint, bool bUseFixedInnerSize)
+                                        bool bSupportsVaryColorsByPoint, bool bUseFixedInnerSize,
+                                        ChartType eCT)
 {
     // chartex clusteredColumn + <cx:binning> is how a histogram is stored in OOXML.
     // But the same markup also appears on the clusteredColumn sub-chart of a
@@ -217,24 +219,27 @@ void AxesSetConverter::convertFromModel( const Reference< XDiagram >& rxDiagram,
                 typeGroup->convertFromModel( rxDiagram, xCoordSystem,
                         nAxesSetIdx,bSupportsVaryColorsByPoint );
 
-            bool bMSO2007Doc = getFilter().isMSO2007Document();
             // convert all axes (create missing axis models)
-            ModelRef< AxisModel > xXAxis = lclGetOrCreateAxis( mrModel.maAxes, API_X_AXIS, rFirstTypeGroup.getTypeInfo().mbCategoryAxis ? C_TOKEN( catAx ) : C_TOKEN( valAx ), bMSO2007Doc );
-            ModelRef< AxisModel > xYAxis = lclGetOrCreateAxis( mrModel.maAxes, API_Y_AXIS, C_TOKEN( valAx ), bMSO2007Doc );
+            ModelRef< AxisModel > xXAxis = lclGetOrCreateAxis( mrModel.maAxes,
+                    API_X_AXIS, rFirstTypeGroup.getTypeInfo().mbCategoryAxis ?
+                    C_TOKEN( catAx ) : C_TOKEN( valAx ), eCT );
+            ModelRef< AxisModel > xYAxis = lclGetOrCreateAxis( mrModel.maAxes,
+                    API_Y_AXIS, C_TOKEN( valAx ), eCT );
 
             AxisConverter aXAxisConv( *this, *xXAxis );
             aXAxisConv.convertFromModel(xCoordSystem, aTypeGroups, xYAxis.get(), nAxesSetIdx,
-                                        API_X_AXIS, bUseFixedInnerSize);
+                                        API_X_AXIS, bUseFixedInnerSize, eCT);
             AxisConverter aYAxisConv( *this, *xYAxis );
             aYAxisConv.convertFromModel(xCoordSystem, aTypeGroups, xXAxis.get(), nAxesSetIdx,
-                                        API_Y_AXIS, bUseFixedInnerSize);
+                                        API_Y_AXIS, bUseFixedInnerSize, eCT);
 
             if( rFirstTypeGroup.isDeep3dChart() )
             {
-                ModelRef< AxisModel > xZAxis = lclGetOrCreateAxis( mrModel.maAxes, API_Z_AXIS, C_TOKEN( serAx ), bMSO2007Doc );
+                ModelRef< AxisModel > xZAxis = lclGetOrCreateAxis(
+                        mrModel.maAxes, API_Z_AXIS, C_TOKEN( serAx ), eCT );
                 AxisConverter aZAxisConv( *this, *xZAxis );
                 aZAxisConv.convertFromModel(xCoordSystem, aTypeGroups, nullptr, nAxesSetIdx,
-                                            API_Z_AXIS, bUseFixedInnerSize);
+                                            API_Z_AXIS, bUseFixedInnerSize, eCT);
             }
         }
     }
@@ -407,6 +412,116 @@ void PlotAreaConverter::convertFromModel( View3DModel& rView3DModel,
         }
     }
 
+    // Transfer the series-level axis ids, given in chartex, to the
+    // type group. This doesn't work if there are multiple series
+    // per type group, but I don't think that should happen.
+    for (auto const& typeGroup : mrModel.maTypeGroups)
+    {
+        if( !typeGroup->maSeries.empty() )
+        {
+            for (auto const& elemSeries : typeGroup->maSeries) {
+                // First fill in any implicit axes. MS Office produces files
+                // where some series axis ids are implicit. Make those explicit.
+                switch (elemSeries->mnTypeId) {
+                    case CX_TOKEN(boxWhisker):
+                    case CX_TOKEN(clusteredColumn):
+                    case CX_TOKEN(paretoLine):
+                    case CX_TOKEN(waterfall):
+                    {
+                        bool bNeedCat = false, bNeedVal = false;
+                        // Should have two axes, one category and one value
+                        // (though they may be hidden)
+                        if (elemSeries->maAxisIds.size() == 0) {
+                            bNeedCat = bNeedVal = true;
+                        } else if (elemSeries->maAxisIds.size() == 1) {
+                            assert(aAxisMap[elemSeries->maAxisIds[0]]->mobCatNotVal.has_value());
+                            bool bCatNotVal = aAxisMap[elemSeries->maAxisIds[0]]->mobCatNotVal.value();
+                            if (bCatNotVal) {
+                                // have cat, need val
+                                bNeedVal = true;
+                            } else {
+                                // have val, need cat
+                                bNeedCat = true;
+                            }
+                        } else if (elemSeries->maAxisIds.size() == 2) {
+                            assert(aAxisMap[elemSeries->maAxisIds[0]]->mobCatNotVal.has_value());
+                            assert(aAxisMap[elemSeries->maAxisIds[1]]->mobCatNotVal.has_value());
+                            [[maybe_unused]] bool bCatNotVal0 = aAxisMap[elemSeries->maAxisIds[0]]->mobCatNotVal.value();
+                            [[maybe_unused]] bool bCatNotVal1 = aAxisMap[elemSeries->maAxisIds[1]]->mobCatNotVal.value();
+
+                            // There should be one cat axis and one val axis
+                            assert((bCatNotVal0 && !bCatNotVal1) || (!bCatNotVal0 && bCatNotVal1));
+
+                        } else {
+                            // more than two axes: don't know what to do with this
+                            assert(false);
+                        }
+
+                        if (bNeedCat) {
+                            // Add the first cat axis
+                            for (const auto& [nId, aAxisModel] : aAxisMap) {
+                                if (aAxisModel->mobCatNotVal.has_value() &&
+                                        aAxisModel->mobCatNotVal.value()) {
+                                    elemSeries->maAxisIds.push_back(nId);
+                                    break;
+                                }
+                            }
+                        }
+                        if (bNeedVal) {
+                            // Add the first cat axis
+                            for (const auto& [nId, aAxisModel] : aAxisMap) {
+                                if (aAxisModel->mobCatNotVal.has_value() &&
+                                        !aAxisModel->mobCatNotVal.value()) {
+                                    elemSeries->maAxisIds.push_back(nId);
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    case CX_TOKEN(funnel):
+                    {
+                        bool bNeedCat = false;
+                        // Should have one category axis (though it may be hidden)
+                        // Funnel never seems to have a value axis
+                        if (elemSeries->maAxisIds.size() == 0) {
+                            bNeedCat = true;
+                        } else if (elemSeries->maAxisIds.size() == 1) {
+                            assert(aAxisMap[elemSeries->maAxisIds[0]]->mobCatNotVal.has_value());
+                            [[maybe_unused]] bool bCatNotVal = aAxisMap[elemSeries->maAxisIds[0]]->mobCatNotVal.value();
+
+                            assert(bCatNotVal);
+                        } else {
+                            // more than one axis: don't know what to do with this
+                            assert(false);
+                        }
+
+                        if (bNeedCat) {
+                            // Add the first cat axis
+                            for (const auto& [nId, aAxisModel] : aAxisMap) {
+                                if (aAxisModel->mobCatNotVal.has_value() &&
+                                        aAxisModel->mobCatNotVal.value()) {
+                                    elemSeries->maAxisIds.push_back(nId);
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+
+                if (typeGroup->maAxisIds.empty()) {
+                    if (!elemSeries->maAxisIds.empty()) {
+                        assert(typeGroup->maSeries.size() == 1);
+                        typeGroup->maAxisIds = elemSeries->maAxisIds;
+                    }
+                }
+            }
+        }
+    }
+
     // group the type group models into different axes sets
     typedef ModelVector< AxesSetModel > AxesSetVector;
     AxesSetVector aAxesSets;
@@ -445,8 +560,9 @@ void PlotAreaConverter::convertFromModel( View3DModel& rView3DModel,
             pAxesSet->maTypeGroups.push_back( typeGroup );
 
             // collect the maximum series index for automatic series formatting
-            for (auto const& elemSeries : typeGroup->maSeries)
+            for (auto const& elemSeries : typeGroup->maSeries) {
                 nMaxSeriesIdx = ::std::max( nMaxSeriesIdx, elemSeries->mnIndex );
+            }
         }
     }
     getFormatter().setMaxSeriesIndex( nMaxSeriesIdx );
@@ -471,7 +587,8 @@ void PlotAreaConverter::convertFromModel( View3DModel& rView3DModel,
     {
         AxesSetConverter aAxesSetConv(*this, *axesSet);
         aAxesSetConv.convertFromModel(xDiagram, rView3DModel, nAxesSetIdx,
-                rDataCxModel.maSourceMap, bSupportsVaryColorsByPoint, bUseFixedInnerSize);
+                rDataCxModel.maSourceMap, bSupportsVaryColorsByPoint,
+                bUseFixedInnerSize, mrModel.meCT);
         if(nAxesSetIdx == nStartAxesSetIdx)
         {
             maAutoTitle = aAxesSetConv.getAutomaticTitle();
@@ -498,6 +615,9 @@ void PlotAreaConverter::convertFromModel( View3DModel& rView3DModel,
     {
         PropertySet aPropSet( xDiagram->getWall() );
         getFormatter().convertFrameFormatting( aPropSet, mrModel.mxShapeProp, OBJECTTYPE_PLOTAREA2D );
+
+        if (mrModel.meCT == ChartType::CX && mrModel.mxShapeProp.is())
+            aPropSet.setProperty(PROP_HasExplicitSpPr, true);
     }
 }
 

@@ -320,7 +320,7 @@ public:
 typedef tools::SvRef<SbxObject> SbxObjectRef;
 typedef tools::SvRef<SbxVariable> SbxVariableRef;
 
-//tdf#59222 SbxEnsureParentVariable is a SbxVariable which keeps a reference to
+// tdf#59222 SbxEnsureParentVariable is a SbxVariable which keeps a reference to
 //its parent, ensuring it always exists while this SbxVariable exists
 class SbxEnsureParentVariable final : public SbxVariable
 {
@@ -329,5 +329,10 @@ public:
     SbxEnsureParentVariable(const SbxVariable& r);
     virtual void SetParent(SbxObject* p) override;
 };
+
+// tdf#102381 - turns a variable into the representation of a missing argument including the
+// error value 448 (ERRCODE_BASIC_NAMED_NOT_FOUND, as in VB). Exported so that callers outside
+// can pass missing arguments to basic.
+BASIC_DLLPUBLIC void SbxSetMissingParameter(SbxVariable& rVar);
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

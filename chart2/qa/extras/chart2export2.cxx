@@ -47,7 +47,7 @@ CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testSetSeriesToSecondaryAxisXLSX)
     save(TestFilter::XLSX);
     xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chart1.xml"_ustr);
     CPPUNIT_ASSERT(pXmlDoc);
-    // Check there are only two <lineChart> tag in the XML, one for the primary and one for the secondary axis.
+    // Check there are only two <lineChart> tags in the XML, one for the primary and one for the secondary axis.
     assertXPath(pXmlDoc, "/c:chartSpace/c:chart/c:plotArea/c:lineChart", 2);
 }
 
@@ -223,12 +223,20 @@ CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexTitleXLSX_paretoLine)
     xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
     CPPUNIT_ASSERT(pXmlDoc);
 
+    OString sSeriesBase = "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series"_ostr;
     // A pareto chart from MSO really consists of two subcharts: a pareto line
     // and a clustered column chart.
-    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series", 2, 0,
-                "layoutId", u"clusteredColumn");
-    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series", 2, 1,
-                "layoutId", u"paretoLine");
+
+    // First series: clusteredColumn with its own dataId, no ownerIdx.
+    assertXPath(pXmlDoc, sSeriesBase, 2, 0, "layoutId", u"clusteredColumn");
+    assertXPathNoAttribute(pXmlDoc, sSeriesBase + "[1]", "ownerIdx");
+    assertXPath(pXmlDoc, sSeriesBase + "[1]/cx:dataId", "val", u"0");
+
+    // Second series: paretoLine sharing the first series's data.
+    assertXPath(pXmlDoc, sSeriesBase, 2, 1, "layoutId", u"paretoLine");
+    assertXPath(pXmlDoc, sSeriesBase + "[2]", "ownerIdx", u"0");
+    assertXPath(pXmlDoc, sSeriesBase + "[2]/cx:dataId", 0);
+
     assertXPathContent(pXmlDoc, "/cx:chartSpace/cx:chart/cx:title/cx:tx/cx:txData/cx:v",
                        u"ParetoLine");
 }
@@ -295,6 +303,67 @@ CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexTitleXLSX_waterfall)
                        u"Waterfall");
 }
 
+CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexPerPointDataLabelXLSX)
+{
+    loadFromFile(u"xlsx/funnel1.xlsx");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+    Reference<chart2::XDataSeries> xDataSeries = getDataSeriesFromDoc(xChartDoc, 0);
+    CPPUNIT_ASSERT(xDataSeries.is());
+    Reference<beans::XPropertySet> xPoint(xDataSeries->getDataPointByIndex(0), uno::UNO_SET_THROW);
+    chart2::DataPointLabel aLabel;
+    xPoint->getPropertyValue(u"Label"_ustr) >>= aLabel;
+    aLabel.ShowNumber = true;
+    xPoint->setPropertyValue(u"Label"_ustr, uno::Any(aLabel));
+    xPoint->setPropertyValue(u"LabelPlacement"_ustr, uno::Any(chart::DataLabelPlacement::CENTER));
+
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    OString sDataLabelPath = "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series/"
+                             "cx:dataLabels/cx:dataLabel"_ostr;
+    assertXPath(pXmlDoc, sDataLabelPath, "idx", u"0");
+    assertXPath(pXmlDoc, sDataLabelPath, "pos", u"ctr");
+    // Group-level label properties must precede the cx:dataLabel elements
+    assertXPath(pXmlDoc,
+                sDataLabelPath
+                    + "/following-sibling::*[not(self::cx:dataLabel or "
+                      "self::cx:dataLabelHidden or self::cx:extLst)]",
+                0);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexDataLabelsRoundTrip)
+{
+    loadFromFile(u"xlsx/funnel-label-options.xlsx");
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    OString sLabelsPath = "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series/"
+                          "cx:dataLabels"_ostr;
+
+    // Group-level position and separator
+    assertXPath(pXmlDoc, sLabelsPath, "pos", u"ctr");
+    assertXPathContent(pXmlDoc, sLabelsPath + "/cx:separator", u", ");
+
+    // Individual label positions
+    assertXPath(pXmlDoc, sLabelsPath + "/cx:dataLabel[@idx='0']", "pos", u"t");
+    assertXPath(pXmlDoc, sLabelsPath + "/cx:dataLabel[@idx='3']", "pos", u"b");
+    assertXPath(pXmlDoc, sLabelsPath + "/cx:dataLabel[@idx='7']", "pos", u"inEnd");
+
+    // Individual label number format and separator
+    assertXPath(pXmlDoc, sLabelsPath + "/cx:dataLabel[@idx='0']/cx:numFmt", "formatCode", u"0.00%");
+    assertXPathContent(pXmlDoc, sLabelsPath + "/cx:dataLabel[@idx='0']/cx:separator", u";");
+
+    // Hidden labels, after the cx:dataLabel elements
+    assertXPath(pXmlDoc, sLabelsPath + "/cx:dataLabelHidden", 2);
+    assertXPath(pXmlDoc, sLabelsPath + "/cx:dataLabelHidden[@idx='4']", 1);
+    assertXPath(pXmlDoc, sLabelsPath + "/cx:dataLabelHidden[@idx='8']", 1);
+    assertXPath(pXmlDoc, sLabelsPath + "/cx:dataLabelHidden/following-sibling::cx:dataLabel", 0);
+}
+
 CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexPPTX)
 {
     loadFromFile(u"pptx/funnel-pp1.pptx");
@@ -304,11 +373,25 @@ CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexPPTX)
 
     assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series", 3, 0,
                 "layoutId", u"funnel");
-    // There should be only one axis, where currently there are multiple.
-    // However, that's a separate problem from the gapWidth output. So just
-    // reference the first for now.
-    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis[1]/cx:catScaling", "gapWidth",
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis/cx:catScaling", "gapWidth",
                 u"2.19");
+    // Ensure no fictitious legend shape props gets inserted
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:legend/cx:spPr", 0);
+
+    static constexpr OString sCat
+        = "/cx:chartSpace/cx:chartData/cx:data[@id='0']/cx:strDim[@type='cat']"_ostr;
+    static constexpr OString sVal
+        = "/cx:chartSpace/cx:chartData/cx:data[@id='0']/cx:numDim[@type='val']"_ostr;
+    // tdf#165742: the category strDim must contain the category labels, not
+    // the series values.
+    assertXPathContent(pXmlDoc, sCat + "/cx:lvl/cx:pt[@idx='0']", u"Thing 1");
+    assertXPathContent(pXmlDoc, sCat + "/cx:lvl/cx:pt[@idx='1']", u"Thing 2");
+    assertXPathContent(pXmlDoc, sCat + "/cx:lvl/cx:pt[@idx='2']", u"Thing 3");
+    assertXPathContent(pXmlDoc, sCat + "/cx:lvl/cx:pt[@idx='3']", u"Thing 4");
+
+    // Verify the data formulas round-trip properly
+    assertXPathContent(pXmlDoc, sCat + "/cx:f", u"Sheet1!$A$2:$A$5");
+    assertXPathContent(pXmlDoc, sVal + "/cx:f", u"Sheet1!$B$2:$B$5");
 }
 
 CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexGapWidth)
@@ -318,7 +401,7 @@ CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexGapWidth)
     xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
     CPPUNIT_ASSERT(pXmlDoc);
 
-    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis[1]/cx:catScaling", "gapWidth",
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis/cx:catScaling", "gapWidth",
                 u"2.47");
 }
 
@@ -329,7 +412,7 @@ CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexGapWidth2)
     xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
     CPPUNIT_ASSERT(pXmlDoc);
 
-    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis[1]/cx:catScaling", "gapWidth",
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis/cx:catScaling", "gapWidth",
                 u"2.55");
 }
 
@@ -374,6 +457,105 @@ CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexNoSpPr)
     assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series");
     assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series/cx:spPr",
                 0);
+
+    // chartSpace, title, and plotArea each take an optional cx:spPr child
+    // in the chartex schema. Make sure we're not making up default values for
+    // these.
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:spPr", 0);
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:title/cx:spPr", 0);
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:spPr", 0);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexExplicitSpPr)
+{
+    // waterfall2.xlsx has explicit <cx:spPr> on chartSpace and title (but
+    // not plotArea). Make sure these are round-tripping properly (both
+    // existence and nonexistence).
+    loadFromFile(u"xlsx/waterfall2.xlsx");
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:spPr", 1);
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:title/cx:spPr", 1);
+    // The source has no plotArea-level spPr; suppression must hold here too.
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:spPr", 0);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexAxisRoundTrip)
+{
+    // paretoLine.xlsx has three axes identified by @id:
+    //   id=0 cx:catScaling axis (category)
+    //   id=1 empty cx:valScaling + empty cx:majorGridlines
+    //   id=2 cx:valScaling min="0" max="1" + cx:units unit="percentage"
+    // Round-trip via the chart2 model must preserve all of these.
+    loadFromFile(u"xlsx/paretoLine.xlsx");
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    OString sAxisId1 = "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis[@id='1']"_ostr;
+    OString sAxisId2 = "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis[@id='2']"_ostr;
+
+    // axis id=2: cx:valScaling preserves min/max.
+    assertXPath(pXmlDoc, sAxisId2 + "/cx:valScaling", "min", u"0");
+    assertXPath(pXmlDoc, sAxisId2 + "/cx:valScaling", "max", u"1");
+
+    // axis id=2: cx:units uses the flat chartex form with a "unit"
+    // attribute, not a c-namespace style unitsLabel child.
+    assertXPath(pXmlDoc, sAxisId2 + "/cx:units", "unit", u"percentage");
+    assertXPath(pXmlDoc, sAxisId2 + "/cx:units/cx:unitsLabel", 0);
+
+    // axis id=1: source <cx:majorGridlines/> has no cx:spPr; we must not
+    // invent one on export.
+    assertXPath(pXmlDoc, sAxisId1 + "/cx:majorGridlines", 1);
+    assertXPath(pXmlDoc, sAxisId1 + "/cx:majorGridlines/cx:spPr", 0);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testChartexAxisIdPerSeries)
+{
+    // Waterfall charts have two axes. Each series should reference both via
+    // cx:axisId, and the plot area should contain exactly two cx:axis
+    // elements.
+    loadFromFile(u"xlsx/waterfall2.xlsx");
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    assertXPath(pXmlDoc,
+                "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series[1]/cx:axisId", 2);
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis", 2);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testFunnelCharts)
+{
+    // Funnel charts have one axis. (At least as MSO produces them -- arguably
+    // there are two dimensions, but we'll stick with the MSO convention for
+    // now.) The series should reference it via
+    // cx:axisId, and the plot area should contain exactly one cx:axis
+    // elements.
+    loadFromFile(u"xlsx/funnel1.xlsx");
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    assertXPath(pXmlDoc,
+                "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series/cx:axisId", 1);
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testRegionMap)
+{
+    // RegionMap charts have no axes. The series should have no cx:axisId and the plot
+    // area should have no cx:axis.
+    loadFromFile(u"xlsx/regionMap.xlsx");
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    assertXPath(pXmlDoc,
+                "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series/cx:axisId", 0);
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chart/cx:plotArea/cx:axis", 0);
 }
 
 CPPUNIT_TEST_FIXTURE(Chart2ExportTest2, testAxisTitleRotationXLSX)

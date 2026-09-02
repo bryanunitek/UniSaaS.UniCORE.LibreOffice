@@ -113,8 +113,6 @@ $(eval $(call gb_Library_add_exception_objects,cui,\
     cui/source/customize/SvxConfigPageHelper \
     cui/source/customize/SvxMenuConfigPage \
     cui/source/customize/SvxToolbarConfigPage \
-    cui/source/customize/SvxNotebookbarConfigPage \
-    cui/source/customize/CustomNotebookbarGenerator \
     cui/source/dialogs/about \
     $(call gb_Helper_optional,EXTENSIONS, \
         cui/source/dialogs/AdditionsDialog) \
@@ -142,7 +140,6 @@ $(eval $(call gb_Library_add_exception_objects,cui,\
     cui/source/dialogs/screenshotannotationdlg \
     cui/source/dialogs/pastedlg \
     cui/source/dialogs/postdlg \
-    cui/source/dialogs/querydialog \
     cui/source/dialogs/QrCodeGenDialog \
     cui/source/dialogs/GraphicTestsDialog \
     cui/source/dialogs/ImageViewerDialog \
@@ -192,7 +189,6 @@ $(eval $(call gb_Library_add_exception_objects,cui,\
     cui/source/options/optgenrl \
     cui/source/options/opthtml \
     cui/source/options/optlanguagetool \
-    cui/source/options/optdeepl \
     cui/source/options/optinet2 \
     cui/source/options/optjava \
     cui/source/options/optjsearch \
@@ -243,6 +239,7 @@ $(eval $(call gb_Library_add_exception_objects,cui,\
     cui/source/tabpages/tptrans \
     cui/source/tabpages/transfrm \
     cui/source/util/FontFeatures \
+    cui/source/util/GetDocumentModel \
     cui/source/dialogs/widgettestdlg \
 ))
 

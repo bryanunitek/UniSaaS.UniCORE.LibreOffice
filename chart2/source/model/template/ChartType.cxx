@@ -439,19 +439,17 @@ bool ChartType::isSupportingRightAngledAxes()
 
 bool ChartType::isSupportingOverlapAndGapWidthProperties(sal_Int32 nDimensionCount)
 {
-    //2D bar charts do support a this special properties
+    //2D bar charts do support these special properties
     if (nDimensionCount == 3)
         return false;
 
     OUString aChartTypeName = getChartType();
-    if (aChartTypeName.match(CHART2_SERVICE_NAME_CHARTTYPE_COLUMN))
+    if (aChartTypeName.match(CHART2_SERVICE_NAME_CHARTTYPE_COLUMN) ||
+            aChartTypeName.match(CHART2_SERVICE_NAME_CHARTTYPE_BAR) ||
+            aChartTypeName.match(CHART2_SERVICE_NAME_CHARTTYPE_FUNNEL) ||
+            aChartTypeName.match(CHART2_SERVICE_NAME_CHARTTYPE_HISTOGRAM)) {
         return true;
-
-    if (aChartTypeName.match(CHART2_SERVICE_NAME_CHARTTYPE_BAR))
-        return true;
-
-    if (aChartTypeName.match(CHART2_SERVICE_NAME_CHARTTYPE_HISTOGRAM))
-        return true;
+    }
 
     return false;
 }

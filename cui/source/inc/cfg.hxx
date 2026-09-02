@@ -387,7 +387,7 @@ private:
     bool                                bInitialised;
     SaveInData*                         pCurrentSaveInData;
 
-    DECL_LINK(SearchUpdateHdl, weld::Entry&, void);
+    DECL_LINK(SearchUpdateHdl, weld::TextWidget&, void);
 
 protected:
 
@@ -435,9 +435,6 @@ protected:
     std::unique_ptr<weld::Button>              m_xAddCommandButton;
     std::unique_ptr<weld::Button>              m_xRemoveCommandButton;
 
-    OUString m_sAppName;
-    OUString m_sFileName;
-
     SvxConfigPage(weld::Container* pPage, weld::DialogController* pController, const SfxItemSet&);
 
     DECL_LINK(MoveHdl, weld::Button&, void);
@@ -473,10 +470,6 @@ protected:
                                           weld::TreeView& rTreeView, weld::TreeIter& rIter,
                                           bool bMenu = false);
 
-    void InsertEntryIntoNotebookbarTabUI(std::u16string_view sClassId, const OUString& sUIItemId,
-                                         const OUString& sUIItemCommand,
-                                         weld::TreeView& rTreeView, const weld::TreeIter& rIter);
-
     SvxEntries*     FindParentForChild( SvxEntries* pParentEntries,
                                         SvxConfigEntry* pChildData );
 
@@ -494,8 +487,6 @@ public:
     static bool     CanConfig( std::u16string_view rModuleId );
 
     SaveInData*     GetSaveInData() { return pCurrentSaveInData; }
-    const OUString& GetAppName() const { return m_sAppName; }
-    const OUString& GetFileName() const { return m_sFileName; }
 
     int             AddFunction(int nTarget,
                                 bool bAllowDuplicates,
@@ -549,7 +540,7 @@ class SvxMainMenuOrganizerDialog : public weld::GenericDialogController
     void UpdateButtonStates();
 
     DECL_LINK(MoveHdl, weld::Button&, void);
-    DECL_LINK(ModifyHdl, weld::Entry&, void);
+    DECL_LINK(ModifyHdl, weld::TextWidget&, void);
     DECL_LINK(SelectHdl, weld::ItemView&, void);
 
 public:

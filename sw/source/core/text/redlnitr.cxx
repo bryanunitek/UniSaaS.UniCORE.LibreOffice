@@ -145,7 +145,8 @@ public:
                 if (m_pEndPos->GetNodeIndex() < pRed->Start()->GetNodeIndex())
                     break;
 
-                if (pRed->GetType() != RedlineType::Delete)
+                // Hide delete and delete-then-format redline content.
+                if (pRed->GetTypeIgnoringAdditonalFormat() != RedlineType::Delete)
                     continue;
 
                 auto [pStart, pEnd] = pRed->StartEnd(); // SwPosition*
@@ -185,22 +186,35 @@ public:
                             ? m_rIDMA.getFieldmarkAt(*m_oNextFieldmarkHide)
                             : m_rIDMA.getInnerFieldmarkFor(*m_oNextFieldmarkHide));
                 assert(pFieldmark);
-                m_Fieldmark.first = pFieldmark;
-                // for cursor travelling, there should be 2 visible chars;
-                // whichever char is hidden, the cursor travelling needs to
-                // be adapted in any case to skip in some situation or other;
-                // always hide the CH_TXT_ATR_FIELDSEP for now
-                if (m_eFieldmarkMode == sw::FieldmarkMode::ShowResult)
+                // A field mark magic character can momentarily exist in the
+                // text without a corresponding registered Fieldmark, e.g. while
+                // redline Show moves nodes around during export of a document
+                // with tracked changes. In that case skip the field mark hide
+                // rather than dereferencing a null Fieldmark; the frame is
+                // rebuilt once the mark is registered again.
+                if (!pFieldmark)
                 {
-                    m_Fieldmark.second.emplace(
-                        sw::mark::FindFieldSep(*m_Fieldmark.first));
-                    m_Fieldmark.second->AdjustContent(+1);
-                    m_oNextFieldmarkHide->AdjustContent(+1); // skip start
+                    m_oNextFieldmarkHide.reset();
                 }
                 else
                 {
-                    m_Fieldmark.second.emplace(pFieldmark->GetMarkEnd());
-                    m_Fieldmark.second->AdjustContent(-1);
+                    m_Fieldmark.first = pFieldmark;
+                    // for cursor travelling, there should be 2 visible chars;
+                    // whichever char is hidden, the cursor travelling needs to
+                    // be adapted in any case to skip in some situation or other;
+                    // always hide the CH_TXT_ATR_FIELDSEP for now
+                    if (m_eFieldmarkMode == sw::FieldmarkMode::ShowResult)
+                    {
+                        m_Fieldmark.second.emplace(
+                            sw::mark::FindFieldSep(*m_Fieldmark.first));
+                        m_Fieldmark.second->AdjustContent(+1);
+                        m_oNextFieldmarkHide->AdjustContent(+1); // skip start
+                    }
+                    else
+                    {
+                        m_Fieldmark.second.emplace(pFieldmark->GetMarkEnd());
+                        m_Fieldmark.second->AdjustContent(-1);
+                    }
                 }
             }
         }
@@ -795,13 +809,18 @@ void SwAttrIter::CtorInitAttrIter(SwTextNode & rTextNode,
         Seek( TextFrameIndex(0) );
     }
 
+    SwRedlineItr::Mode const eMode(
+        (pRootFrame && pRootFrame->IsHideRedlines())
+            ? SwRedlineItr::Mode::Hide
+            : bShow
+                ? SwRedlineItr::Mode::Show
+                : SwRedlineItr::Mode::Ignore);
+    // In Ignore mode, with a null ExtTextInputAttr* pArr, SwRedlineItr has
+    // nothing to do, so skip creating it.
+    if (eMode == SwRedlineItr::Mode::Ignore && !pArr)
+        return;
     m_pRedline.reset(new SwRedlineItr( rTextNode, *m_pFont, m_aAttrHandler, nRedlPos,
-                    (pRootFrame && pRootFrame->IsHideRedlines())
-                        ? SwRedlineItr::Mode::Hide
-                        : bShow
-                            ? SwRedlineItr::Mode::Show
-                            : SwRedlineItr::Mode::Ignore,
-                    pArr, pExtInp ? pExtInp->Start() : nullptr));
+                    eMode, pArr, pExtInp ? pExtInp->Start() : nullptr));
 
     if( m_pRedline->IsOn() )
         ++m_nChgCnt;

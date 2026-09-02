@@ -92,7 +92,7 @@ ScDataFormDlg::ScDataFormDlg(weld::Window* pParent, ScTabViewShell& rTabViewShel
                 }
             }
 
-            //skip leading hide column
+            //skip leading hidden column
             for (int i=1;i<=MAX_DATAFORM_COLS;i++)
             {
                 int nColWidth = m_rDoc.GetColWidth(m_nStartCol, m_nTab);
@@ -139,7 +139,7 @@ ScDataFormDlg::ScDataFormDlg(weld::Window* pParent, ScTabViewShell& rTabViewShel
 
         m_aColLength = m_nEndCol - m_nStartCol + 1;
 
-        //new the controls
+        //the new controls
         m_aEntries.reserve(m_aColLength);
 
         sal_Int32 nGridRow = 0;
@@ -219,7 +219,7 @@ void ScDataFormDlg::FillCtrls()
     m_xSlider->vadjustment_set_value(m_nCurrentRow - m_nStartRow - 1);
 }
 
-IMPL_LINK( ScDataFormDlg, Impl_DataModifyHdl, weld::Entry&, rEdit, void)
+IMPL_LINK(ScDataFormDlg, Impl_DataModifyHdl, weld::TextWidget&, rEdit, void)
 {
     if (rEdit.get_value_changed_from_saved())
         m_xBtnRestore->set_sensitive(true);

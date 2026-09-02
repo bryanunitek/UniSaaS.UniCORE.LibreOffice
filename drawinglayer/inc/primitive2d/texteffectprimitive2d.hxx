@@ -50,8 +50,8 @@ private:
     double mfDirection;
     TextEffectStyle2D meTextEffectStyle2D;
 
-    /** the last used object to view transformtion used from getDecomposition
-        for decide buffering
+    /** the last used object to view transformation used from getDecomposition
+        to decide buffering
      */
     basegfx::B2DHomMatrix maLastObjectToViewTransformation;
 
@@ -90,6 +90,6 @@ public:
                        const geometry::ViewInformation2D& rViewInformation) const override;
 };
 
-} // end of namespace primitive2d::drawinglayer
+} // end of namespace drawinglayer::primitive2d
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

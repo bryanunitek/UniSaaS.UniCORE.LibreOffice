@@ -29,9 +29,8 @@
 #include <QtPainter.hxx>
 #include <font/PhysicalFontCollection.hxx>
 #if USE_HEADLESS_CODE
-#include <unx/fontmanager.hxx>
+#include <unx/font/fontmanager.hxx>
 #include <unx/geninst.h>
-#include <unx/glyphcache.hxx>
 #endif
 #include <sallayout.hxx>
 
@@ -112,16 +111,7 @@ void QtGraphics::SetFont(LogicalFontInstance* pReqFont, int nFallbackLevel)
 
 void QtGraphics::GetFontMetric(FontMetricDataRef& rFMD, int nFallbackLevel)
 {
-    QRawFont aRawFont(QRawFont::fromFont(*m_pTextStyle[nFallbackLevel]));
-    QtFontFace::fillAttributesFromQFont(*m_pTextStyle[nFallbackLevel], *rFMD);
-
-    rFMD->ImplCalcLineSpacing(m_pTextStyle[nFallbackLevel].get());
-    rFMD->ImplInitBaselines(m_pTextStyle[nFallbackLevel].get());
-
-    rFMD->SetSlant(0);
-    rFMD->SetWidth(aRawFont.averageCharWidth());
-
-    rFMD->SetMinKashida(m_pTextStyle[nFallbackLevel]->GetKashidaWidth());
+    m_pTextStyle[nFallbackLevel]->GetFontMetric(rFMD);
 }
 
 FontCharMapRef QtGraphics::GetFontCharMap() const
@@ -144,25 +134,7 @@ void QtGraphics::GetDevFontList(vcl::font::PhysicalFontCollection* pPFC)
         return;
 
 #if USE_HEADLESS_CODE
-    FreetypeManager& rFontManager = FreetypeManager::get();
-    psp::PrintFontManager& rMgr = psp::PrintFontManager::get();
-    std::vector<psp::fontID> aList = rMgr.getFontList();
-    for (auto const& nFontId : aList)
-    {
-        auto const* pFont = rMgr.getFont(nFontId);
-        if (!pFont)
-            continue;
-
-        // normalize face number to the FreetypeManager
-        int nFaceNum = rMgr.getFontFaceNumber(nFontId);
-        int nVariantNum = rMgr.getFontFaceVariation(nFontId);
-
-        // inform FreetypeManager about this font provided by the PsPrint subsystem
-        FontAttributes aFA = pFont->m_aFontAttributes;
-        aFA.IncreaseQualityBy(4096);
-        const OString aFileName = rMgr.getFontFileSysPath(nFontId);
-        rFontManager.AddFontFile(aFileName, nFaceNum, nVariantNum, nFontId, aFA);
-    }
+    FontConfigManager::get();
 
     static const bool bUseFontconfig = (nullptr == getenv("SAL_VCL_QT_NO_FONTCONFIG"));
     if (bUseFontconfig)

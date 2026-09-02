@@ -1613,6 +1613,32 @@ void DrawViewShell::FuTemporary(SfxRequest& rReq)
         }
         break;
 
+        case SID_REMOVE_SLIDE_SECTION_AND_SLIDES:
+        {
+            SdPage* pPage = GetActualPage();
+            if (pPage)
+            {
+                sal_uInt16 nPage = (pPage->GetPageNum() - 1) / 2;
+                sd::SlideSectionManager& rMgr = GetDoc()->GetSectionManager();
+                sal_Int32 nSectionIdx = rMgr.GetSectionIndexForSlide(nPage);
+                if (nSectionIdx >= 0 && rMgr.IsSectionStart(nPage))
+                {
+                    const bool bUndo = GetDoc()->IsUndoEnabled();
+                    if (bUndo)
+                        GetView()->BegUndo(
+                            SdResId(STR_UNDO_REMOVE_SLIDE_SECTION_AND_SLIDES));
+
+                    rMgr.RemoveSectionSlides(nSectionIdx);
+
+                    if (bUndo)
+                        GetView()->EndUndo();
+                    GetDocSh()->SetModified();
+                    ResetActualPage();
+                }
+            }
+        }
+        break;
+
         case SID_RENAME_SLIDE_SECTION:
         {
             sd::SlideSectionManager& rMgr = GetDoc()->GetSectionManager();
@@ -4432,7 +4458,7 @@ void DrawViewShell::FuTemporary(SfxRequest& rReq)
             // Open ThemeColorEditDialog to create/edit the new color set
             auto pSubDialog = std::make_shared<svx::ThemeColorEditDialog>(GetFrameWeld(), *pCurrentColorSet);
 
-            weld::DialogController::runAsync(pSubDialog, [pSubDialog, this](sal_uInt32 nResult) {
+            weld::DialogController::runAsync(pSubDialog, [pSubDialog](sal_uInt32 nResult) {
                 if (nResult != RET_OK)
                     return;
 
@@ -4441,8 +4467,6 @@ void DrawViewShell::FuTemporary(SfxRequest& rReq)
                 {
                     // Add the new color set to the global collection
                     svx::ColorSets::get().insert(aColorSet);
-                    // Invalidate to update the toolbar control
-                    GetViewFrame()->GetBindings().Invalidate(SID_ADD_THEME);
                 }
             });
 

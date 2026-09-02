@@ -52,17 +52,260 @@ DECLARE_OOXMLEXPORT_TEST(testTdf137335_whitespaceLineHeight, "tdf137335_whitespa
     CPPUNIT_ASSERT_EQUAL(SwTwips(276), Height);
 }
 
+DECLARE_OOXMLEXPORT_TEST(testTdf137335_whitespaceLineHeight2,
+                         "tdf137335_whitespaceLineHeight2.docx")
+{
+    // given a double-spaced document where the last line contains some very large spaces,
+    // the calculated linespacing between paragraphs should also not be based on the space's height.
+    CPPUNIT_ASSERT_EQUAL(1, getPages());
+}
+
 DECLARE_OOXMLEXPORT_TEST(testTdf164835_nonDummyLineHeight, "tdf164835_nonDummyLineHeight.docx")
 {
     // given a document where whitespace-only lines wrap beside an image
+    CPPUNIT_ASSERT_EQUAL(1, getPages());
     auto pXmlDoc = parseLayoutDump();
 
     SwTwips nImageBottom = getXPath(pXmlDoc, "//fly/infos/bounds", "bottom").toInt32();
-    // CPPUNIT_ASSERT_EQUAL(1, getPages()); // should all be on a single page
-    assertXPathContent(pXmlDoc, "//page[2]/body/txt", u"Text below the picture");
-    SwTwips nTextTop = getXPath(pXmlDoc, "//page[2]/body/txt/infos/bounds", "top").toInt32();
+    assertXPathContent(pXmlDoc, "//page/body/txt[5]", u"Text below the picture");
+    SwTwips nTextTop = getXPath(pXmlDoc, "//page/body/txt[5]/infos/bounds", "top").toInt32();
     // Without the fix, the text in paragraph 5 was beside the image.
     CPPUNIT_ASSERT_GREATER(nImageBottom, nTextTop); // text is below the image
+}
+
+DECLARE_OOXMLEXPORT_TEST(testTdf172113_linespacingComment, "tdf172113_linespacingComment.odt")
+{
+    // given a two page document - triple spaced with a comment in an otherwise empty paragraph
+    CPPUNIT_ASSERT_EQUAL(2, getPages());
+}
+
+DECLARE_OOXMLEXPORT_TEST(testTdf172113_linespacingNumbering, "tdf172113_linespacingNumbering.odt")
+{
+    // given a 1 page, double spaced ODT created with the new LINE_SPACING_AS_GAP_BELOW
+    // containing 4 enlarged-numbering lines.
+    CPPUNIT_ASSERT_EQUAL(1, getPages());
+}
+
+DECLARE_OOXMLEXPORT_TEST(testTdf172113_linespacingLineBreaks, "tdf172113_linespacingLineBreaks.odt")
+{
+    // This is a pre-emptive test: I'm not aware of it not working before, but I almost broke it...
+    // given a 2 page, double spaced document containing a page full of empty line breaks
+    auto pXmlDoc = parseLayoutDump();
+
+    OUString sText = getXPathContent(pXmlDoc, "//page[2]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("Line breaks need to also be double spaced."));
+}
+
+DECLARE_OOXMLEXPORT_TEST(testTdf172169_linespacingFootnote, "tdf172169_linespacingFootnote.odt")
+{
+    // given what should be a single page, double spaced document
+    // where a line starts with a large non-text item and then later has a footnote marker.
+
+    CPPUNIT_ASSERT_EQUAL(1, getPages());
+}
+
+DECLARE_OOXMLEXPORT_TEST(testTdf172169_linespacingSecondPortion,
+                         "tdf172169_linespacingSecondPortion.odt")
+{
+    // given a two page, double spaced document where enlarged text follows an even larger image
+    CPPUNIT_ASSERT_EQUAL(2, getPages());
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf172233_linespacingGap)
+{
+    // given a double-spaced document created by an older version of LibreOffice
+    // with a very large font on the last line.
+    createSwDoc("tdf172233_linespacingGap.odt");
+
+    // The last-line gap is applied twice - so the content doesn't fit on one page.
+    CPPUNIT_ASSERT_EQUAL(2, getPages());
+
+    saveAndReload(TestFilter::DOCX);
+
+    // MS Word places the gap after the line, so only one large gap exists - and all fits on 1 page.
+    CPPUNIT_ASSERT_EQUAL(1, getPages());
+
+    saveAndReload(TestFilter::ODT);
+    CPPUNIT_ASSERT_EQUAL(1, getPages());
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf172169_intraLinespacing)
+{
+    // given a six page, double-spaced document
+    // with various different 60pt SwLinePortions affecting intra-paragraph line spacing
+    createSwDoc("tdf172169_intraLinespacing.odt");
+
+    // NOTE that before LO 7.1 this was 8 pages, but it changed without a compatibility flag...
+    CPPUNIT_ASSERT_EQUAL(6, getPages());
+
+    // Test that the 'broken' layout remains broken in older ODT files
+    auto pXmlDoc = parseLayoutDump();
+
+    OUString sText = getXPathContent(pXmlDoc, "//page[2]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("The change is not limited to footnotes.")); // testing field
+    SwTwips nTextHeight = getXPath(pXmlDoc, "//page[2]/body/txt/infos/bounds", "height").toInt32();
+    // The text only fills half the page.
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(2484, nTextHeight, 100);
+
+    sText = getXPathContent(pXmlDoc, "//page[3]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("How about hidden stuff."));
+    nTextHeight = getXPath(pXmlDoc, "//page[3]/body/txt/infos/bounds", "height").toInt32();
+    // The text only fills about a third of the page
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(1380, nTextHeight, 100);
+
+    sText = getXPathContent(pXmlDoc, "//page[4]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("How about FieldMark stuff."));
+    nTextHeight = getXPath(pXmlDoc, "//page[4]/body/txt/infos/bounds", "height").toInt32();
+    // The text only fills half the page.
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(2484, nTextHeight, 100);
+
+    sText = getXPathContent(pXmlDoc, "//page[5]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("Also explicitly test for content controls,"));
+    nTextHeight = getXPath(pXmlDoc, "//page[5]/body/txt/infos/bounds", "height").toInt32();
+    // The text only fills half the page.
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(2484, nTextHeight, 100);
+
+    sText = getXPathContent(pXmlDoc, "//page[6]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("Let us also explicitly test for tabstops."));
+    nTextHeight = getXPath(pXmlDoc, "//page[6]/body/txt/infos/bounds", "height").toInt32();
+    // The text basically fills the entire page
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(3588, nTextHeight, 100);
+
+    saveAndReload(TestFilter::DOCX);
+
+    CPPUNIT_ASSERT_EQUAL(6, getPages());
+
+    saveAndReload(TestFilter::ODT);
+
+    CPPUNIT_ASSERT_EQUAL(6, getPages());
+
+    // This formatting should be the same for DOCX and ODT - only testing ODT
+    pXmlDoc = parseLayoutDump();
+
+    sText = getXPathContent(pXmlDoc, "//page[2]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("The change is not limited to footnotes."));
+    nTextHeight = getXPath(pXmlDoc, "//page[2]/body/txt/infos/bounds", "height").toInt32();
+    // The text basically fills the entire page. (was 2484)
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(3588, nTextHeight, 100);
+
+    sText = getXPathContent(pXmlDoc, "//page[3]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("How about hidden stuff."));
+    nTextHeight = getXPath(pXmlDoc, "//page[3]/body/txt/infos/bounds", "height").toInt32();
+    // The text only fills about a third of the page
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(1380, nTextHeight, 100);
+
+    sText = getXPathContent(pXmlDoc, "//page[4]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("How about FieldMark stuff."));
+    nTextHeight = getXPath(pXmlDoc, "//page[4]/body/txt/infos/bounds", "height").toInt32();
+    // The text basically fills the entire page. (was 2484)
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(3588, nTextHeight, 100);
+
+    sText = getXPathContent(pXmlDoc, "//page[5]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("Also explicitly test for content controls,"));
+    nTextHeight = getXPath(pXmlDoc, "//page[5]/body/txt/infos/bounds", "height").toInt32();
+    // The text basically fills the entire page. (was 2484)
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(3588, nTextHeight, 100);
+
+    sText = getXPathContent(pXmlDoc, "//page[6]/body/txt");
+    CPPUNIT_ASSERT(sText.startsWith("Let us also explicitly test for tabstops."));
+    nTextHeight = getXPath(pXmlDoc, "//page[6]/body/txt/infos/bounds", "height").toInt32();
+    // The text only fills about two thirds of the page
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(2484, nTextHeight, 100);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf172169_linespacingBidi)
+{
+    // given a double spaced document containing multiportion bidi characters
+    createSwDoc("tdf172169_linespacingBidi.odt");
+
+    // NOTE that before LO 7.1 this was 2 pages, but it changed without a compatibility flag...
+    // Ensure the current implementation doesn't change unintentionally.
+    CPPUNIT_ASSERT_EQUAL(1, getPages());
+
+    auto pXmlDoc = parseLayoutDump();
+
+    SwTwips nTextHeight = getXPath(pXmlDoc, "//page/body/txt/infos/bounds", "height").toInt32();
+    // The paragraph fills the page
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(3634, nTextHeight, 100);
+
+    saveAndReload(TestFilter::DOCX);
+    pXmlDoc = parseLayoutDump();
+
+    // The ODT behaviour is buggy. Line spacing should be based on the tallest, not smallest text.
+    CPPUNIT_ASSERT_EQUAL(2, getPages());
+
+    nTextHeight = getXPath(pXmlDoc, "//page[1]/body/txt/infos/bounds", "height").toInt32();
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(3036, nTextHeight, 100);
+    nTextHeight = getXPath(pXmlDoc, "//page[2]/body/txt/infos/bounds", "height").toInt32();
+    CPPUNIT_ASSERT_EQUAL(SwTwips(552), nTextHeight);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf172169_linespacingDoubleLineText)
+{
+    // given a double spaced document containing Asian double-line text as a mid-portion
+
+    createSwDoc("tdf172169_linespacingDoubleLineText.odt");
+
+    // NOTE that before LO 7.1 this was 2 pages, but it changed without a compatibility flag...
+    // Ensure the current implementation doesn't change unintentionally.
+    CPPUNIT_ASSERT_EQUAL(1, getPages());
+
+    saveAndReload(TestFilter::DOCX);
+
+    // DOCX does use the height of the double-line text to inform the line-spacing
+    CPPUNIT_ASSERT_EQUAL(2, getPages());
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf172169_linespacingVerticalText)
+{
+    // given a double spaced document containing vertical text (as first portion and mid-portion)
+    createSwDoc("tdf172169_linespacingVerticalText.odt");
+
+    // NOTE that before LO 7.1 this was 3 pages, but it changed without a compatibility flag...
+    // Ensure the current implementation doesn't change unintentionally.
+    CPPUNIT_ASSERT_EQUAL(2, getPages());
+
+    auto pXmlDoc = parseLayoutDump();
+
+    SwTwips nTextHeight = getXPath(pXmlDoc, "//page[2]/body/txt/infos/bounds", "height").toInt32();
+    // No extra line-spacing gap is produced by the rotated text in ODT
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(2543, nTextHeight, 100);
+
+    saveAndReload(TestFilter::DOCX);
+    pXmlDoc = parseLayoutDump();
+
+    // DOCX does use the height of the rotated text to inform the line-spacing!
+    CPPUNIT_ASSERT_EQUAL(3, getPages());
+
+    nTextHeight = getXPath(pXmlDoc, "//page[2]/body/txt/infos/bounds", "height").toInt32();
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(1991, nTextHeight, 100);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf172169_linespacingFirstPortion)
+{
+    // given a 2 page, double spaced document containing non-text elements as first portions
+    createSwDoc("tdf172169_linespacingFirstPortion.odt");
+
+    // Ensure the current implementation doesn't change unintentionally.
+    CPPUNIT_ASSERT_EQUAL(2, getPages());
+
+    auto pXmlDoc = parseLayoutDump();
+
+    SwTwips nTextHeight = getXPath(pXmlDoc, "//page[1]/body/txt/infos/bounds", "height").toInt32();
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(3036, nTextHeight, 100);
+    nTextHeight = getXPath(pXmlDoc, "//page[2]/body/txt/infos/bounds", "height").toInt32();
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(3588, nTextHeight, 100);
+
+    saveAndReload(TestFilter::DOCX);
+    pXmlDoc = parseLayoutDump();
+
+    // DOCX doesn't use the height of footnotes or numbering to inform line-spacing.
+    CPPUNIT_ASSERT_EQUAL(2, getPages());
+
+    nTextHeight = getXPath(pXmlDoc, "//page[1]/body/txt/infos/bounds", "height").toInt32();
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(1932, nTextHeight, 100);
+    nTextHeight = getXPath(pXmlDoc, "//page[2]/body/txt/infos/bounds", "height").toInt32();
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(3588, nTextHeight, 100);
 }
 
 DECLARE_OOXMLEXPORT_TEST(testTdf148057_columnBreak, "tdf148057_columnBreak.docx")
@@ -302,7 +545,7 @@ DECLARE_OOXMLEXPORT_TEST(testTdf167657_sectPr_bottomSpacing, "tdf167657_sectPr_b
 
     auto pXmlDoc = parseLayoutDump();
 
-    // Since there is no page break, the prior paragraph's belowSpacing should not be zero'd out.
+    // Since there is no page break, the prior paragraph's belowSpacing should not be zeroed out.
     // NOTE: apparently layout assigns the belowSpacing to the following section, not body/txt[1],
     sal_Int32 nHeight = getXPath(pXmlDoc, "//section/infos/bounds", "height").toInt32();
     // Without the fix, the section's height (showing no bottom margin for the 1st para) was 309
@@ -538,6 +781,33 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf167082)
     CPPUNIT_ASSERT_EQUAL(OUString("Heading 1"), aStyleName);
 }
 
+CPPUNIT_TEST_FIXTURE(Test, testTdf145716_nonHTMLspacing)
+{
+    // Given a two page document with the compat flag doNotUseHTMLParagraphAutoSpacing
+    createSwDoc("tdf145716_nonHTMLspacing.docx");
+
+    saveAndReload(TestFilter::DOCX);
+
+    CPPUNIT_ASSERT_EQUAL(2, getPages());
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf148294_crossReferences)
+{
+    // Given a file with several cross-references in various edge cases
+    createSwDoc("tdf148294_crossReferences.odt");
+
+    save(TestFilter::DOCX);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"word/document.xml"_ustr);
+    assertXPath(pXmlDoc, "//w:bookmarkStart", 4);
+    assertXPath(pXmlDoc, "//w:bookmarkEnd", 4);
+
+    // The second bookmark should be straddling the text 'DOCX'
+    assertXPathContent(pXmlDoc, "//w:p[3]/w:r/w:t", u"DOCX");
+    int n = countXPathNodes(pXmlDoc, "//w:p[3]/w:bookmarkStart/preceding::w:t");
+    CPPUNIT_ASSERT_EQUAL(n + 1, countXPathNodes(pXmlDoc, "//w:p[3]/w:bookmarkEnd/preceding::w:t"));
+}
+
 CPPUNIT_TEST_FIXTURE(Test, testTdf170908_delText)
 {
     // Given a file with deleted text at the end of the paragraph just before anchored stuff
@@ -548,7 +818,7 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf170908_delText)
 
     xmlDocUniquePtr pXmlDoc = parseExport(u"word/document.xml"_ustr);
     // delText must be inside a w:del or MS Word considers the document to be corrupt
-    assertXPath(pXmlDoc, "//w:delText", 1); // there is a delTree element
+    assertXPath(pXmlDoc, "//w:delText", 1); // there is a delText element
     CPPUNIT_ASSERT_EQUAL(1, countXPathNodes(pXmlDoc, "//w:del/w:r/w:delText")); // must be in w:del
 
     // tdf#170516 drawing after plainText control
@@ -570,7 +840,7 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf170908_delText_sdt)
 
     xmlDocUniquePtr pXmlDoc = parseExport(u"word/document.xml"_ustr);
     // delText must be inside a w:del or MS Word considers the document to be corrupt
-    assertXPath(pXmlDoc, "//w:delText", 1); // there is only one delTree element
+    assertXPath(pXmlDoc, "//w:delText", 1); // there is only one delText element
     assertXPath(pXmlDoc, "//w:del/w:sdt/w:sdtContent/w:r/w:delText", 1); // the whole sdt is deleted
 }
 
@@ -585,7 +855,7 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf170952_delText)
 
     xmlDocUniquePtr pXmlDoc = parseExport(u"word/document.xml"_ustr);
     // delText must be inside a w:del or MS Word considers the document to be corrupt
-    assertXPath(pXmlDoc, "//w:delText", 3); // there are three delTree elements
+    assertXPath(pXmlDoc, "//w:delText", 3); // there are three delText elements
     CPPUNIT_ASSERT_EQUAL(3, countXPathNodes(pXmlDoc, "//w:del/w:r/w:delText")); // all are in w:del
 }
 
@@ -731,8 +1001,12 @@ CPPUNIT_TEST_FIXTURE(Test, testQFormatPreservation)
 
     xmlDocUniquePtr pXmlStyles = parseExport(u"word/styles.xml"_ustr);
 
-    assertXPath(pXmlStyles, "//w:style[@w:styleId='Heading']/w:qFormat", 1);
-    // not used currently and had qFormat = 0 on import
+    // "Heading" is the LO pool style auto-created as parent of Heading 1-9.
+    // The source DOCX has no such style, so the export must not invent qFormat
+    // for it via the lcl_guessQFormat fallback - import silence is preserved.
+    assertXPath(pXmlStyles, "//w:style[@w:styleId='Heading']/w:qFormat", 0);
+    // "No spacing" had w:qFormat w:val="0" in the source - that explicit
+    // "no qFormat" must round-trip as no qFormat element on export.
     assertXPath(pXmlStyles, "//w:style[@w:styleId='No spacing']/w:qFormat", 0);
 }
 

@@ -22,6 +22,7 @@
 #include <svx/svdomedia.hxx>
 
 #include <com/sun/star/text/GraphicCrop.hpp>
+#include <com/sun/star/uno/Any.hxx>
 
 #include <rtl/ustring.hxx>
 #include <sal/log.hxx>
@@ -38,9 +39,28 @@
 #include <sdr/contact/viewcontactofsdrmediaobj.hxx>
 #include <avmedia/mediawindow.hxx>
 #include <comphelper/diagnose_ex.hxx>
+#include <comphelper/embeddedobjectcontainer.hxx>
+#include <sfx2/lnkbase.hxx>
+#include <sfx2/linkmgr.hxx>
+#include <sfx2/objsh.hxx>
 
 using namespace ::com::sun::star;
 
+
+// A media object that points at an external URL is a document link. Registering
+// it with the link manager lets it share the normal link update permission: the
+// snapshot is only fetched from the URL once the user has allowed link updates.
+class SdrMediaLink final : public sfx2::SvBaseLink
+{
+    SdrMediaObj& mrMediaObj;
+
+public:
+    explicit SdrMediaLink(SdrMediaObj& rObj);
+
+    virtual void Closed() override;
+    virtual ::sfx2::SvBaseLink::UpdateResult DataChanged(
+        const OUString& rMimeType, const css::uno::Any& rValue) override;
+};
 
 struct SdrMediaObj::Impl
 {
@@ -54,7 +74,43 @@ struct SdrMediaObj::Impl
 #endif
     uno::Reference< graphic::XGraphic >   m_xCachedSnapshot;
     OUString m_LastFailedPkgURL;
+    // owned by the link manager while registered, null otherwise
+    SdrMediaLink* m_pMediaLink = nullptr;
+    // true when the user picked this media reference in this session, false when it arrived with
+    // the document
+    bool m_bLinkAllowed = false;
 };
+
+SdrMediaLink::SdrMediaLink(SdrMediaObj& rObj)
+    : ::sfx2::SvBaseLink(::SfxLinkUpdateMode::ONCALL, SotClipboardFormatId::SIMPLE_FILE)
+    , mrMediaObj(rObj)
+{
+    SetSynchron(false);
+}
+
+::sfx2::SvBaseLink::UpdateResult SdrMediaLink::DataChanged(
+    const OUString&, const css::uno::Any&)
+{
+    // Reached only after a link update was allowed, so drop the placeholder
+    // and fetch a fresh snapshot now, like a linked graphic refetches.
+    mrMediaObj.m_xImpl->m_xCachedSnapshot.clear();
+#if HAVE_FEATURE_AVMEDIA
+    mrMediaObj.m_xImpl->m_xPlayerListener.clear();
+    OUString aRealURL = mrMediaObj.m_xImpl->m_MediaProperties.getTempURL();
+    if (aRealURL.isEmpty())
+        aRealURL = mrMediaObj.m_xImpl->m_MediaProperties.getURL();
+    if (!aRealURL.isEmpty())
+        mrMediaObj.grabSnapshot(aRealURL);
+#endif
+    mrMediaObj.ActionChanged();
+    return SUCCESS;
+}
+
+void SdrMediaLink::Closed()
+{
+    mrMediaObj.m_xImpl->m_pMediaLink = nullptr;
+    SvBaseLink::Closed();
+}
 
 SdrMediaObj::SdrMediaObj(SdrModel& rSdrModel)
 :   SdrRectObj(rSdrModel)
@@ -71,6 +127,9 @@ SdrMediaObj::SdrMediaObj(SdrModel& rSdrModel, SdrMediaObj const & rSource)
 #endif
     setMediaProperties( rSource.getMediaProperties() );
     m_xImpl->m_xCachedSnapshot = rSource.m_xImpl->m_xCachedSnapshot;
+    // A copy of media the user picked stays picked by the user, so duplicating or moving a shape
+    // keeps it playable.
+    m_xImpl->m_bLinkAllowed = rSource.m_xImpl->m_bLinkAllowed;
 }
 
 SdrMediaObj::SdrMediaObj(
@@ -91,6 +150,7 @@ SdrMediaObj::SdrMediaObj(
 
 SdrMediaObj::~SdrMediaObj()
 {
+    ImpDeregisterLink();
 }
 
 bool SdrMediaObj::HasTextEdit() const
@@ -182,24 +242,41 @@ uno::Reference< graphic::XGraphic > const & SdrMediaObj::getSnapshot() const
 
         OUString aRealURL = m_xImpl->m_MediaProperties.getTempURL();
         if( aRealURL.isEmpty() )
+        {
+            // No extracted copy inside the document, so the media is reached
+            // through its URL. Treat it like a linked graphic and only fetch
+            // once the link is allowed, so opening or converting a document
+            // never silently fetches the referenced content.
+            if (!isLinkAllowed())
+                return m_xImpl->m_xCachedSnapshot;
             aRealURL = m_xImpl->m_MediaProperties.getURL();
-        OUString sReferer = m_xImpl->m_MediaProperties.getReferer();
-        OUString sMimeType = m_xImpl->m_MediaProperties.getMimeType();
-        uno::Reference<graphic::XGraphic> xCachedSnapshot = m_xImpl->m_xCachedSnapshot;
-
-        m_xImpl->m_xPlayerListener.set(new avmedia::PlayerListener(
-            [this, xCachedSnapshot, aRealURL, sReferer, sMimeType](const css::uno::Reference<css::media::XPlayer>& rPlayer){
-                SolarMutexGuard g;
-                uno::Reference<graphic::XGraphic> xGraphic
-                    = m_xImpl->m_MediaProperties.getGraphic().GetXGraphic();
-                m_xImpl->m_xCachedSnapshot = avmedia::MediaWindow::grabFrame(rPlayer, xGraphic);
-                ActionChanged();
-            }));
-
-        avmedia::MediaWindow::grabFrame(aRealURL, sReferer, sMimeType, m_xImpl->m_xPlayerListener);
+        }
+        grabSnapshot(aRealURL);
     }
 #endif
     return m_xImpl->m_xCachedSnapshot;
+}
+
+void SdrMediaObj::grabSnapshot(const OUString& rRealURL) const
+{
+#if HAVE_FEATURE_AVMEDIA
+    OUString sReferer = m_xImpl->m_MediaProperties.getReferer();
+    OUString sMimeType = m_xImpl->m_MediaProperties.getMimeType();
+    uno::Reference<graphic::XGraphic> xCachedSnapshot = m_xImpl->m_xCachedSnapshot;
+
+    m_xImpl->m_xPlayerListener.set(new avmedia::PlayerListener(
+        [this, xCachedSnapshot, rRealURL, sReferer, sMimeType](const css::uno::Reference<css::media::XPlayer>& rPlayer){
+            SolarMutexGuard g;
+            uno::Reference<graphic::XGraphic> xGraphic
+                = m_xImpl->m_MediaProperties.getGraphic().GetXGraphic();
+            m_xImpl->m_xCachedSnapshot = avmedia::MediaWindow::grabFrame(rPlayer, xGraphic);
+            ActionChanged();
+        }));
+
+    avmedia::MediaWindow::grabFrame(rRealURL, sReferer, sMimeType, m_xImpl->m_xPlayerListener);
+#else
+    (void)rRealURL;
+#endif
 }
 
 void SdrMediaObj::AdjustToMaxRect( const tools::Rectangle& rMaxRect, bool bShrinkOnly /* = false */ )
@@ -268,6 +345,21 @@ const OUString& SdrMediaObj::getURL() const
     static OUString ret;
     return ret;
 #endif
+}
+
+void SdrMediaObj::setLinkAllowed(bool bAllowed)
+{
+    m_xImpl->m_bLinkAllowed = bAllowed;
+}
+
+bool SdrMediaObj::isLinkAllowed() const
+{
+    if (m_xImpl->m_bLinkAllowed)
+        return true;
+    // A model with no document shell has no user to ask, so its links stay disallowed.
+    sfx2::LinkManager* pLinkManager(getSdrModelFromSdrObject().GetLinkManager());
+    SfxObjectShell* pShell = pLinkManager ? pLinkManager->GetPersist() : nullptr;
+    return pShell && pShell->getEmbeddedObjectContainer().getUserAllowsLinkUpdate();
 }
 
 const OUString& SdrMediaObj::getTempURL() const
@@ -400,6 +492,8 @@ void SdrMediaObj::mediaPropertiesChanged( const ::avmedia::MediaItem& rNewProper
     {
         m_xImpl->m_xCachedSnapshot.clear();
         m_xImpl->m_xPlayerListener.clear();
+        // the URL is changing, so any link registered for the old one is stale
+        ImpDeregisterLink();
         m_xImpl->m_MediaProperties.setFallbackURL( rNewProperties.getFallbackURL() );
         OUString const& url(rNewProperties.getURL());
         if (url.startsWithIgnoreAsciiCase("vnd.sun.star.Package:"))
@@ -441,6 +535,7 @@ void SdrMediaObj::mediaPropertiesChanged( const ::avmedia::MediaItem& rNewProper
             m_xImpl->m_pTempFile.reset();
             m_xImpl->m_MediaProperties.setURL(url, u""_ustr, rNewProperties.getReferer());
         }
+        ImpRegisterLink();
         bBroadcastChanged = true;
     }
 
@@ -464,6 +559,54 @@ void SdrMediaObj::mediaPropertiesChanged( const ::avmedia::MediaItem& rNewProper
         SetChanged();
         BroadcastObjectChange();
     }
+}
+
+void SdrMediaObj::ImpRegisterLink()
+{
+    sfx2::LinkManager* pLinkManager(getSdrModelFromSdrObject().GetLinkManager());
+    if (!pLinkManager || m_xImpl->m_pMediaLink)
+        return;
+
+#if HAVE_FEATURE_AVMEDIA
+    // Media copied into the document is extracted to a temporary file and is
+    // not a link. Only an external reference gets registered.
+    if (m_xImpl->m_pTempFile)
+        return;
+#endif
+    const OUString& rURL = m_xImpl->m_MediaProperties.getURL();
+    if (rURL.isEmpty() || rURL.startsWithIgnoreAsciiCase("vnd.sun.star.Package:"))
+        return;
+
+    // Registration happens even in a build without media playback, so the
+    // external reference stays visible to the user as a document link.
+    m_xImpl->m_pMediaLink = new SdrMediaLink(*this);
+    pLinkManager->InsertFileLink(*m_xImpl->m_pMediaLink,
+                                 sfx2::SvBaseLinkObjectType::ClientFile, rURL);
+}
+
+void SdrMediaObj::ImpDeregisterLink()
+{
+    sfx2::LinkManager* pLinkManager(getSdrModelFromSdrObject().GetLinkManager());
+    if (pLinkManager && m_xImpl->m_pMediaLink)
+    {
+        // Remove implicitly deletes the link object
+        pLinkManager->Remove(m_xImpl->m_pMediaLink);
+        m_xImpl->m_pMediaLink = nullptr;
+    }
+}
+
+void SdrMediaObj::handlePageChange(SdrPage* pOldPage, SdrPage* pNewPage)
+{
+    const bool bRemove(pNewPage == nullptr && pOldPage != nullptr);
+    const bool bInsert(pNewPage != nullptr && pOldPage == nullptr);
+
+    if (bRemove)
+        ImpDeregisterLink();
+
+    SdrRectObj::handlePageChange(pOldPage, pNewPage);
+
+    if (bInsert)
+        ImpRegisterLink();
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

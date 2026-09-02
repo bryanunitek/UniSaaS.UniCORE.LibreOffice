@@ -78,6 +78,13 @@ using namespace css::presentation;
 using namespace ::com::sun::star::graphic;
 using namespace ::com::sun::star::style;
 using namespace ::com::sun::star;
+using namespace ::com::sun::star::beans;
+using namespace ::com::sun::star::container;
+using namespace ::com::sun::star::io;
+using namespace ::com::sun::star::lang;
+using namespace ::com::sun::star::text;
+using namespace ::com::sun::star::uno;
+using namespace ::com::sun::star::xml::sax;
 using namespace ::xmloff::token;
 
 // - ooo elements and attributes -
@@ -2186,7 +2193,7 @@ bool SVGFilter::implExportShape( const Reference< css::drawing::XShape >& rxShap
         bool bTextField = bIsPageNumber || bIsFooter || bIsDateTime;
         if( bTextField )
         {
-            // to notify to the SVGActionWriter::ImplWriteActions method
+            // to notify the SVGActionWriter::ImplWriteActions method
             // that we are dealing with a placeholder shape
             aElementId = sPlaceholderTag;
 
@@ -2616,7 +2623,7 @@ void SVGFilter::implCreateObjectsFromBackground( const Reference< css::drawing::
 
                 maPatterProps[ sPageId ] = { nChecksum, aPos, aSize, { nSlideWidth, nSlideHeight } };
 
-                // create meta comment action that is used to exporting
+                // create meta comment action that is used for exporting
                 // a <use> element which points to the group element representing the background
                 const OUString sBgId = getIdForTiledBackground( sPageId, nChecksum );
                 OString sComment = sTiledBackgroundTag + " " + sBgId.toUtf8();
@@ -2698,7 +2705,7 @@ IMPL_LINK( SVGFilter, CalcFieldHdl, EditFieldInfo*, pInfo, void )
         bFieldProcessed = true;
         if( mpSVGExport->IsEmbedFonts() && mpSVGExport->IsUsePositionedCharacters() )
         {
-            // to notify to the SVGActionWriter::ImplWriteText method
+            // to notify the SVGActionWriter::ImplWriteText method
             // that we are dealing with a placeholder shape
             OUStringBuffer aRepresentation(sPlaceholderTag);
 

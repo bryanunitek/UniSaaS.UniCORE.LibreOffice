@@ -31,14 +31,7 @@
 #include <osl/thread.hxx>
 #include <tools/long.hxx>
 
-#ifdef MACOSX
-#include <osx/osxvcltypes.h>
-#endif
-#include <salinst.hxx>
-
-#include <osx/runinmain.hxx>
-
-#include <salusereventlist.hxx>
+#include "MacInstance.hxx"
 
 class AquaSalFrame;
 class SalFrame;
@@ -47,25 +40,7 @@ class ApplicationEvent;
 class Image;
 enum class SalEvent;
 
-typedef void(^RuninmainBlock)(void);
-
-class AquaSalYieldMutex : public comphelper::SolarMutex
-{
-public:
-    OSX_RUNINMAIN_MEMBERS
-
-protected:
-    virtual void            doAcquire( sal_uInt32 nLockCount ) override;
-    virtual sal_uInt32      doRelease( bool bUnlockAll ) override;
-
-public:
-    AquaSalYieldMutex();
-    virtual ~AquaSalYieldMutex() override;
-
-    virtual bool IsCurrentThread() const override;
-};
-
-class AquaSalInstance : public SalInstance, public SalUserEventList
+class AquaSalInstance : public MacInstance, public SalUserEventList
 {
     friend class AquaSalFrame;
 
@@ -84,12 +59,8 @@ public:
     NSPopUpButtonCell*                      mpPopUpButtonCell;
     NSStepperCell*                          mpStepperCell;
     NSButtonCell*                           mpListNodeCell;
-    OUString                                maDefaultPrinter;
-    oslThreadIdentifier                     maMainThread;
-    int                                     mnActivePrintJobs;
     osl::Mutex                              maUserEventListMutex;
     osl::Condition                          maWaitingYieldCond;
-    bool                                    mbNoYieldLock;
     bool                                    mbTimerProcessed;
 
     static std::list<const ApplicationEvent*> aAppEventList;
@@ -116,12 +87,6 @@ public:
                                                    tools::Long &nDX, tools::Long &nDY,
                                                    DeviceFormat eFormat,
                                                    const SystemGraphicsData& rData ) override;
-    virtual SalInfoPrinter* CreateInfoPrinter(SalPrinterQueueInfo& rQueueInfo,
-                                              ImplJobSetup& rSetupData) override;
-    virtual void            DestroyInfoPrinter( SalInfoPrinter* pPrinter ) override;
-    virtual std::unique_ptr<SalPrinter> CreatePrinter( SalInfoPrinter* pInfoPrinter ) override;
-    virtual void GetPrinterQueueInfo(ImplPrnQueueList& rList) override;
-    virtual OUString        GetDefaultPrinter() override;
     virtual SalTimer*       CreateSalTimer() override;
     virtual SalSystem*      CreateSalSystem() override;
     virtual std::shared_ptr<SalBitmap> CreateSalBitmap() override;
@@ -155,9 +120,6 @@ public:
     // Is this the NSAppThread?
     virtual bool IsMainThread() const override;
 
-    void startedPrintJob() { mnActivePrintJobs++; }
-    void endedPrintJob() { mnActivePrintJobs--; }
-
     // event subtypes for NSEventTypeApplicationDefined events
     static const short AppExecuteSVMain   = 1;
     static const short AppStartTimerEvent = 10;
@@ -173,5 +135,9 @@ private:
 CGImageRef CreateCGImage( const Image& );
 NSImage*   CreateNSImage( const Image& );
 
+inline AquaSalInstance* GetAquaSalInstance()
+{
+    return static_cast<AquaSalInstance*>(GetSalInstance());
+}
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

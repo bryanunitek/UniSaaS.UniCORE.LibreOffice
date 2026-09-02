@@ -18,15 +18,13 @@
  */
 
 #include <SvHeaderTabListBox.hxx>
-#include <accessibility/accessibletablistbox.hxx>
+#include <SvLBoxButton.hxx>
 
 #include <comphelper/types.hxx>
 #include <vcl/headbar.hxx>
 #include <vcl/toolkit/svlbitm.hxx>
 #include <vcl/toolkit/treelistbox.hxx>
 #include <vcl/toolkit/treelistentry.hxx>
-#include <com/sun/star/accessibility/AccessibleStateType.hpp>
-#include <com/sun/star/accessibility/XAccessible.hpp>
 #include <rtl/ustrbuf.hxx>
 #include <sal/log.hxx>
 #include <o3tl/safeint.hxx>
@@ -35,9 +33,6 @@
 #include <strings.hrc>
 #include <svdata.hxx>
 #include <memory>
-
-using namespace ::com::sun::star::uno;
-using namespace ::com::sun::star::accessibility;
 
 // SvTreeListBox callback
 
@@ -69,24 +64,8 @@ void SvTabListBox::SetTabs()
     }
 }
 
-void SvTabListBox::InitEntry(SvTreeListEntry& rEntry, const OUString& rStr, const Image& rColl,
-                             const Image& rExp)
-{
-    SvTreeListBox::InitEntry(rEntry, rStr, rColl, rExp);
-
-    sal_Int32 nIndex = 0;
-    // TODO: verify if nTabCount is always >0 here!
-    const sal_uInt16 nCount = mvTabList.size() - 1;
-    for( sal_uInt16 nToken = 0; nToken < nCount; nToken++ )
-    {
-        const std::u16string_view aToken = GetToken(aCurEntry, nIndex);
-        rEntry.AddItem(std::make_unique<SvLBoxString>(OUString(aToken)));
-    }
-}
-
 SvTabListBox::SvTabListBox( vcl::Window* pParent, WinBits nBits )
     : SvTreeListBox( pParent, nBits )
-    , m_eRole(SvTabListBoxRole::Unknown)
 {
     SetHighlightRange();    // select full width
 }
@@ -132,36 +111,33 @@ void SvTabListBox::SetTabs(const std::vector<tools::Long>& rTabPositions)
         Invalidate();
 }
 
-SvTreeListEntry* SvTabListBox::InsertEntry( const OUString& rText, SvTreeListEntry* pParent,
-                                        bool /*bChildrenOnDemand*/,
-                                        sal_uInt32 nPos, OUString* pUserData )
+SvTreeListEntry& SvTabListBox::InsertEntry(const OUString& rText, SvTreeListEntry* pParent,
+                                            sal_uInt32 nPos)
 {
-    return InsertEntryToColumn( rText, pParent, nPos, 0xffff, pUserData );
-}
+    m_nTreeFlags |= SvTreeFlags::MANINS;
 
-SvTreeListEntry* SvTabListBox::InsertEntryToColumn(const OUString& rStr,SvTreeListEntry* pParent,sal_uInt32 nPos,sal_uInt16 nCol,
-    OUString* pUser )
-{
-    OUString aStr;
-    if( nCol != 0xffff )
+    SvTreeListEntry* pEntry = new SvTreeListEntry;
+
+    if (m_nTreeFlags & SvTreeFlags::CHKBTN)
     {
-        while( nCol )
-        {
-            aStr += "\t";
-            nCol--;
-        }
+        assert(m_pCheckButtonData);
+        pEntry->AddItem(std::make_unique<SvLBoxButton>(*m_pCheckButtonData));
     }
-    aStr += rStr;
-    OUString aFirstStr( aStr );
-    sal_Int32 nEnd = aFirstStr.indexOf( '\t' );
-    if( nEnd != -1 )
-    {
-        aFirstStr = aFirstStr.copy(0, nEnd);
-        aCurEntry = aStr.copy(++nEnd);
-    }
-    else
-        aCurEntry.clear();
-    return SvTreeListBox::InsertEntry( aFirstStr, pParent, false, nPos, pUser );
+
+    pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(Image(), Image()));
+
+    pEntry->AddItem(std::make_unique<SvLBoxString>(rText));
+
+    // TODO: verify if nTabCount is always >0 here!
+    const sal_uInt16 nCount = mvTabList.size() - 1;
+    for (sal_uInt16 nTab = 0; nTab < nCount; nTab++)
+        pEntry->AddItem(std::make_unique<SvLBoxString>());
+
+    Insert(pEntry, nPos, pParent);
+
+    m_nTreeFlags &= ~SvTreeFlags::MANINS;
+
+    return *pEntry;
 }
 
 OUString SvTabListBox::GetEntryText( SvTreeListEntry* pEntry ) const
@@ -201,12 +177,6 @@ OUString SvTabListBox::GetEntryText( const SvTreeListEntry* pEntry, sal_uInt16 n
     return aResult.makeStringAndClear();
 }
 
-OUString SvTabListBox::GetEntryText( sal_uInt32 nPos, sal_uInt16 nCol ) const
-{
-    SvTreeListEntry* pEntry = GetEntryOnPos( nPos );
-    return GetEntryText( pEntry, nCol );
-}
-
 OUString SvTabListBox::GetCellText( sal_uInt32 nPos, sal_uInt16 nCol ) const
 {
     SvTreeListEntry* pEntry = GetEntryOnPos( nPos );
@@ -219,12 +189,6 @@ OUString SvTabListBox::GetCellText( sal_uInt32 nPos, sal_uInt16 nCol ) const
             aResult = static_cast<const SvLBoxString&>(rStr).GetText();
     }
     return aResult;
-}
-
-// static
-std::u16string_view SvTabListBox::GetToken( std::u16string_view sStr, sal_Int32& nIndex )
-{
-    return o3tl::getToken(sStr, 0, '\t', nIndex);
 }
 
 OUString SvTabListBox::GetTabEntryText( sal_uInt32 nPos, sal_uInt16 nCol ) const

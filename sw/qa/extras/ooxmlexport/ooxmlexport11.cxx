@@ -438,6 +438,16 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf117805)
     CPPUNIT_ASSERT_EQUAL(8, getParagraphs(textbox));
 }
 
+DECLARE_OOXMLEXPORT_TEST(testFirstPageHeaderNoFooter, "firstheadernofooter.docx")
+{
+    xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+
+    assertXPath(pXmlDoc, "/root/page[1]/header", 1);
+    assertXPath(pXmlDoc, "/root/page[1]/footer", 0);
+    assertXPath(pXmlDoc, "/root/page[2]/header", 1); // TODO: should not be there!
+    assertXPath(pXmlDoc, "/root/page[2]/footer", 1);
+}
+
 DECLARE_OOXMLEXPORT_TEST(testTdf113183, "tdf113183.docx")
 {
     // The horizontal positioning of the star shape affected the positioning of
@@ -497,7 +507,7 @@ DECLARE_OOXMLEXPORT_TEST(testTdf114882, "tdf114882.docx")
 
 DECLARE_OOXMLEXPORT_TEST(testTdf49073, "tdf49073.docx")
 {
-    // test case for Asian phontic guide (ruby text.)
+    // test case for Asian phonetic guide (ruby text.)
     sal_Unicode aRuby[3] = {0x304D,0x3082,0x3093};
     OUString sRuby(aRuby, std::size(aRuby));
     CPPUNIT_ASSERT_EQUAL(sRuby,getProperty<OUString>(getParagraph(1)->getStart(), u"RubyText"_ustr));

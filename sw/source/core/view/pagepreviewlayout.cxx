@@ -571,7 +571,7 @@ void SwPagePreviewLayout::CalcPreviewPages()
         // consider only pages, which have to be painted.
         if ( nCurrCol < mnPaintStartCol )
         {
-            // calculate data of unvisible page needed for accessibility
+            // calculate data of not visible page needed for accessibility
             std::unique_ptr<PreviewPage> pPreviewPage(new PreviewPage);
             Point aCurrAccOffset = aCurrPaintOffset -
                            Point( (mnPaintStartCol-nCurrCol) * mnColWidth, 0 );
@@ -608,7 +608,7 @@ void SwPagePreviewLayout::CalcPreviewPages()
         }
         else
         {
-            // calculate data of unvisible page needed for accessibility
+            // calculate data of not visible page needed for accessibility
             std::unique_ptr<PreviewPage> pPreviewPage(new PreviewPage);
             CalcPreviewDataForPage( *pPage, aCurrPaintOffset, pPreviewPage.get() );
             pPreviewPage->bVisible = false;
@@ -1230,7 +1230,7 @@ void SwPagePreviewLayout::PaintSelectMarkAtPage(vcl::RenderContext& rRenderConte
     ::SwAlignRect( aPageRect, &mrParentViewShell, pOutputDev );
     tools::Rectangle aPxPageRect = pOutputDev->LogicToPixel( aPageRect.SVRect() );
 
-    // draw two rectangle
+    // draw two rectangles
     // OD 19.02.2003 #107369# - adjust position of select mark rectangle
     tools::Rectangle aRect( aPxPageRect.Left(), aPxPageRect.Top(),
                        aPxPageRect.Right(), aPxPageRect.Bottom() );

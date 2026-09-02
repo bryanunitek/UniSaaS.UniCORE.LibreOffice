@@ -32,8 +32,8 @@
 #include <win/svsys.h>
 #include <vector>
 
+#include <d2d1.h>
 #include <dwrite_3.h>
-#include <o3tl/lru_map.hxx>
 #include <basegfx/matrix/b2dhommatrixtools.hxx>
 #include <basegfx/polygon/b2dpolygon.hxx>
 #include <i18nlangtag/mslangid.hxx>
@@ -53,7 +53,6 @@
 #include <vcl/sysdata.hxx>
 #include <vcl/metric.hxx>
 #include <vcl/fontcharmap.hxx>
-#include <comphelper/scopeguard.hxx>
 #include <comphelper/windowserrorstring.hxx>
 
 #include <font/FontSelectPattern.hxx>
@@ -75,18 +74,6 @@
 #include <skia/win/font.hxx>
 
 using namespace vcl;
-
-static FIXED FixedFromDouble( double d )
-{
-    const tools::Long l = static_cast<tools::Long>( d * 65536. );
-    return *reinterpret_cast<FIXED const *>(&l);
-}
-
-static int IntTimes256FromFixed(FIXED f)
-{
-    int nFixedTimes256 = (f.value << 8) + ((f.fract+0x80) >> 8);
-    return nFixedTimes256;
-}
 
 // platform specific font substitution hooks for glyph fallback enhancement
 
@@ -244,18 +231,6 @@ bool WinGlyphFallbackSubstititution::FindFontSubstitute(vcl::font::FontSelectPat
     return bFound;
 }
 
-namespace {
-
-struct ImplEnumInfo
-{
-    HDC                 mhDC;
-    vcl::font::PhysicalFontCollection* mpList;
-    OUString*           mpName;
-    bool                mbPrinter;
-};
-
-}
-
 static rtl_TextEncoding ImplCharSetToSal( BYTE nCharSet )
 {
     rtl_TextEncoding eTextEncoding;
@@ -310,35 +285,6 @@ static FontFamily ImplFamilyToSal( BYTE nFamily )
     }
 
     return FAMILY_DONTKNOW;
-}
-
-static BYTE ImplFamilyToWin( FontFamily eFamily )
-{
-    switch ( eFamily )
-    {
-        case FAMILY_DECORATIVE:
-            return FF_DECORATIVE;
-
-        case FAMILY_MODERN:
-            return FF_MODERN;
-
-        case FAMILY_ROMAN:
-            return FF_ROMAN;
-
-        case FAMILY_SCRIPT:
-            return FF_SCRIPT;
-
-        case FAMILY_SWISS:
-            return FF_SWISS;
-
-        case FAMILY_SYSTEM:
-            return FF_SWISS;
-
-        default:
-            break;
-    }
-
-    return FF_DONTCARE;
 }
 
 static FontWeight ImplWeightToSal( int nWeight )
@@ -410,62 +356,115 @@ static FontPitch ImplLogPitchToSal( BYTE nPitch )
         return PITCH_VARIABLE;
 }
 
-static FontPitch ImplMetricPitchToSal( BYTE nPitch )
+static FontWidth ImplStretchToSal(DWRITE_FONT_STRETCH eStretch)
 {
-    // Grrrr! See NT help
-    if ( !(nPitch & TMPF_FIXED_PITCH) )
-        return PITCH_FIXED;
-    else
-        return PITCH_VARIABLE;
+    switch (eStretch)
+    {
+        case DWRITE_FONT_STRETCH_ULTRA_CONDENSED:
+            return WIDTH_ULTRA_CONDENSED;
+        case DWRITE_FONT_STRETCH_EXTRA_CONDENSED:
+            return WIDTH_EXTRA_CONDENSED;
+        case DWRITE_FONT_STRETCH_CONDENSED:
+            return WIDTH_CONDENSED;
+        case DWRITE_FONT_STRETCH_SEMI_CONDENSED:
+            return WIDTH_SEMI_CONDENSED;
+        case DWRITE_FONT_STRETCH_NORMAL:
+            return WIDTH_NORMAL;
+        case DWRITE_FONT_STRETCH_SEMI_EXPANDED:
+            return WIDTH_SEMI_EXPANDED;
+        case DWRITE_FONT_STRETCH_EXPANDED:
+            return WIDTH_EXPANDED;
+        case DWRITE_FONT_STRETCH_EXTRA_EXPANDED:
+            return WIDTH_EXTRA_EXPANDED;
+        case DWRITE_FONT_STRETCH_ULTRA_EXPANDED:
+            return WIDTH_ULTRA_EXPANDED;
+        default:
+            return WIDTH_DONTKNOW;
+    }
 }
 
-static BYTE ImplPitchToWin( FontPitch ePitch )
+static OUString ImplGetDWriteName(IDWriteLocalizedStrings* pStrings)
 {
-    if ( ePitch == PITCH_FIXED )
-        return FIXED_PITCH;
-    else if ( ePitch == PITCH_VARIABLE )
-        return VARIABLE_PITCH;
-    else
-        return DEFAULT_PITCH;
+    // Prefer the en-us name, matching the name-table reading code used for
+    // font matching and legacy-name resolution.
+    UINT32 nIndex = 0;
+    BOOL bExists = FALSE;
+    if (FAILED(pStrings->FindLocaleName(L"en-us", &nIndex, &bExists)) || !bExists)
+        nIndex = 0;
+    UINT32 nLength = 0;
+    if (FAILED(pStrings->GetStringLength(nIndex, &nLength)) || nLength == 0)
+        return OUString();
+    std::vector<wchar_t> aBuf(nLength + 1);
+    if (FAILED(pStrings->GetString(nIndex, aBuf.data(), static_cast<UINT32>(aBuf.size()))))
+        return OUString();
+    return OUString(o3tl::toU(aBuf.data()), static_cast<sal_Int32>(nLength));
 }
 
-static FontAttributes WinFont2DevFontAttributes( const ENUMLOGFONTEXW& rEnumFont,
-    const NEWTEXTMETRICW& rMetric)
+static DWRITE_FONT_FACE_TYPE ImplGetDWriteFaceType(IDWriteFont* pFont)
+{
+    auto xFont = sal::systools::COMReference<IDWriteFont>(pFont).QueryInterface<IDWriteFont3>();
+    if (!xFont)
+        return DWRITE_FONT_FACE_TYPE_UNKNOWN;
+    sal::systools::COMReference<IDWriteFontFaceReference> xFaceRef;
+    if (FAILED(xFont->GetFontFaceReference(&xFaceRef)))
+        return DWRITE_FONT_FACE_TYPE_UNKNOWN;
+    sal::systools::COMReference<IDWriteFontFile> xFile;
+    if (FAILED(xFaceRef->GetFontFile(&xFile)))
+        return DWRITE_FONT_FACE_TYPE_UNKNOWN;
+    BOOL bSupported = FALSE;
+    DWRITE_FONT_FILE_TYPE eFileType;
+    DWRITE_FONT_FACE_TYPE eFaceType = DWRITE_FONT_FACE_TYPE_UNKNOWN;
+    UINT32 nFaces = 0;
+    if (FAILED(xFile->Analyze(&bSupported, &eFileType, &eFaceType, &nFaces)))
+        return DWRITE_FONT_FACE_TYPE_UNKNOWN;
+    return eFaceType;
+}
+
+static FontAttributes WinFont2DevFontAttributes(IDWriteFont* pFont, const OUString& rFamilyName,
+                                                const LOGFONTW& rLogFont)
 {
     FontAttributes aDFA;
 
-    const LOGFONTW rLogFont = rEnumFont.elfLogFont;
-
     // get font face attributes
-    aDFA.SetFamilyType(ImplFamilyToSal( rLogFont.lfPitchAndFamily ));
-    aDFA.SetWidthType(WIDTH_DONTKNOW);
-    aDFA.SetWeight(ImplWeightToSal( rLogFont.lfWeight ));
-    aDFA.SetItalic((rLogFont.lfItalic) ? ITALIC_NORMAL : ITALIC_NONE);
-    aDFA.SetPitch(ImplLogPitchToSal( rLogFont.lfPitchAndFamily ));
+    aDFA.SetFamilyType(ImplFamilyToSal(rLogFont.lfPitchAndFamily));
+    aDFA.SetWidthType(ImplStretchToSal(pFont->GetStretch()));
+    aDFA.SetWeight(ImplWeightToSal(pFont->GetWeight()));
+    switch (pFont->GetStyle())
+    {
+        case DWRITE_FONT_STYLE_ITALIC:
+            aDFA.SetItalic(ITALIC_NORMAL);
+            break;
+        case DWRITE_FONT_STYLE_OBLIQUE:
+            aDFA.SetItalic(ITALIC_OBLIQUE);
+            break;
+        default:
+            aDFA.SetItalic(ITALIC_NONE);
+            break;
+    }
+    // Get the pitch from DirectWrite; the LOGFONT from ConvertFontToLOGFONT()
+    // doesn't carry it (unlike the one GDI enumeration provides).
+    if (auto xFont1 = sal::systools::COMReference<IDWriteFont>(pFont).QueryInterface<IDWriteFont1>())
+        aDFA.SetPitch(xFont1->IsMonospacedFont() ? PITCH_FIXED : PITCH_VARIABLE);
+    else
+        aDFA.SetPitch(ImplLogPitchToSal(rLogFont.lfPitchAndFamily));
     aDFA.SetMicrosoftSymbolEncoded(rLogFont.lfCharSet == SYMBOL_CHARSET);
 
     // get the font face name
-    aDFA.SetFamilyName(OUString(o3tl::toU(rLogFont.lfFaceName)));
-
-    // use the face's style name only if it looks reasonable
-    const wchar_t* pStyleName = rEnumFont.elfStyle;
-    const wchar_t* pEnd = std::end(rEnumFont.elfStyle);
-    const wchar_t* p = pStyleName;
-    for(; *p && (p < pEnd); ++p )
-        if( *p < 0x0020 )
-            break;
-    if( p < pEnd )
-        aDFA.SetStyleName(OUString(o3tl::toU(pStyleName)));
+    aDFA.SetFamilyName(rFamilyName);
+    sal::systools::COMReference<IDWriteLocalizedStrings> xFaceNames;
+    if (SUCCEEDED(pFont->GetFaceNames(&xFaceNames)))
+        aDFA.SetStyleName(ImplGetDWriteName(xFaceNames.get()));
 
     // heuristics for font quality
     // -   opentypeTT > truetype
-    aDFA.SetQuality( 0 );
-    if( rMetric.tmPitchAndFamily & TMPF_TRUETYPE )
-        aDFA.IncreaseQualityBy( 50 );
-    if( 0 != (rMetric.ntmFlags & (NTM_TT_OPENTYPE | NTM_PS_OPENTYPE)) )
-        aDFA.IncreaseQualityBy( 10 );
+    aDFA.SetQuality(0);
+    const DWRITE_FONT_FACE_TYPE eFaceType = ImplGetDWriteFaceType(pFont);
+    if (eFaceType == DWRITE_FONT_FACE_TYPE_TRUETYPE
+        || eFaceType == DWRITE_FONT_FACE_TYPE_TRUETYPE_COLLECTION)
+        aDFA.IncreaseQualityBy(50);
+    // everything DirectWrite serves is OpenType
+    aDFA.IncreaseQualityBy(10);
 
-    // TODO: add alias names
     return aDFA;
 }
 
@@ -512,17 +511,31 @@ static sal_IntPtr getNextFontId()
     return ++id;
 }
 
-WinFontFace::WinFontFace(const ENUMLOGFONTEXW& rEnumFont, const NEWTEXTMETRICW& rMetric)
-:   vcl::font::PhysicalFontFace(WinFont2DevFontAttributes(rEnumFont, rMetric)),
+WinFontFace::WinFontFace(const FontAttributes& rDFA, const LOGFONTW& rLogFont,
+                         IDWriteFont* pDWFont)
+:   vcl::font::PhysicalFontFace(rDFA),
     mnId(getNextFontId()),
-    meWinCharSet(rEnumFont.elfLogFont.lfCharSet),
-    mnPitchAndFamily(rMetric.tmPitchAndFamily),
-    maLogFont(rEnumFont.elfLogFont)
+    maLogFont(rLogFont),
+    mxDWFont(pDWFont)
 {
 }
 
 WinFontFace::~WinFontFace()
 {
+}
+
+IDWriteFontFace* WinFontFace::GetDWFontFace() const
+{
+    if (!mxDWFontFace && mxDWFont)
+    {
+        HRESULT hr = mxDWFont->CreateFontFace(&mxDWFontFace);
+        if (FAILED(hr))
+        {
+            SAL_WARN("vcl.fonts", "HRESULT 0x" << OUString::number(hr, 16) << ": "
+                                               << comphelper::WindowsErrorStringFromHRESULT(hr));
+        }
+    }
+    return mxDWFontFace.get();
 }
 
 sal_IntPtr WinFontFace::GetFontId() const
@@ -546,13 +559,31 @@ WinFontFace::GetVariations(const LogicalFontInstance& rFont) const
                               .QueryInterface<IDWriteFontFace5>());
         if (xDWFontFace5 && xDWFontFace5->HasVariations())
         {
+            // Skip axes at their default value, so the default instance reports no variations
+            // like the other platforms do (DirectWrite lists every axis even at its default).
+            std::vector<DWRITE_FONT_AXIS_VALUE> aDefaults;
+            sal::systools::COMReference<IDWriteFontResource> xResource;
+            if (SUCCEEDED(xDWFontFace5->GetFontResource(&xResource)))
+            {
+                aDefaults.resize(xResource->GetFontAxisCount());
+                if (FAILED(xResource->GetDefaultFontAxisValues(aDefaults.data(), aDefaults.size())))
+                    aDefaults.clear();
+            }
+
             std::vector<DWRITE_FONT_AXIS_VALUE> aAxisValues(xDWFontFace5->GetFontAxisValueCount());
             auto hr = xDWFontFace5->GetFontAxisValues(aAxisValues.data(), aAxisValues.size());
             if (SUCCEEDED(hr))
             {
                 mxVariations->reserve(aAxisValues.size());
                 for (auto& rAxisValue : aAxisValues)
+                {
+                    auto it = std::find_if(aDefaults.begin(), aDefaults.end(),
+                                           [&rAxisValue](const DWRITE_FONT_AXIS_VALUE& rDefault)
+                                           { return rDefault.axisTag == rAxisValue.axisTag; });
+                    if (it != aDefaults.end() && it->value == rAxisValue.value)
+                        continue;
                     mxVariations->push_back({ OSL_NETDWORD(rAxisValue.axisTag), rAxisValue.value });
+                }
             }
         }
     }
@@ -562,83 +593,107 @@ WinFontFace::GetVariations(const LogicalFontInstance& rFont) const
 
 namespace
 {
-struct BlobReference
+// Keeps the DirectWrite font table alive until HarfBuzz destroys the blob.
+struct DWFontTableContext
 {
-    hb_blob_t* mpBlob;
-    BlobReference(hb_blob_t* pBlob)
-        : mpBlob(pBlob)
-    {
-        hb_blob_reference(mpBlob);
-    }
-    BlobReference(BlobReference&& other) noexcept
-        : mpBlob(other.mpBlob)
-    {
-        other.mpBlob = nullptr;
-    }
-    BlobReference& operator=(BlobReference&& other)
-    {
-        std::swap(mpBlob, other.mpBlob);
-        return *this;
-    }
-    BlobReference(const BlobReference& other) = delete;
-    BlobReference& operator=(BlobReference& other) = delete;
-    ~BlobReference() { hb_blob_destroy(mpBlob); }
+    IDWriteFontFace* mpFontFace;
+    void* mpTableContext;
 };
 }
 
-using BlobCacheKey = std::pair<sal_IntPtr, hb_tag_t>;
+static void releaseTableData(void* pData)
+{
+    auto* pContext = static_cast<DWFontTableContext*>(pData);
+    pContext->mpFontFace->ReleaseFontTable(pContext->mpTableContext);
+    delete pContext;
+}
 
-namespace
+static hb_blob_t* getFontFile(IDWriteFontFace* pFontFace)
 {
-struct BlobCacheKeyHash
-{
-    std::size_t operator()(BlobCacheKey const& rKey) const
+    UINT32 nFileCount = 0;
+    if (FAILED(pFontFace->GetFiles(&nFileCount, nullptr)))
+        return nullptr;
+
+    std::vector<IDWriteFontFile*> aFiles(nFileCount, nullptr);
+    if (FAILED(pFontFace->GetFiles(&nFileCount, aFiles.data())))
+        return nullptr;
+
+    hb_blob_t* pBlob = nullptr;
+    for (UINT32 i = 0; i < nFileCount; ++i)
     {
-        std::size_t seed = 0;
-        o3tl::hash_combine(seed, rKey.first);
-        o3tl::hash_combine(seed, rKey.second);
-        return seed;
+        sal::systools::COMReference<IDWriteFontFile> xFile(aFiles[i], false);
+        if (pBlob)
+            continue;
+
+        const void* pKey = nullptr;
+        UINT32 nKeySize = 0;
+        sal::systools::COMReference<IDWriteFontFileLoader> xLoader;
+        sal::systools::COMReference<IDWriteFontFileStream> xStream;
+        UINT64 nSize = 0;
+        const void* pData = nullptr;
+        void* pContext = nullptr;
+        if (SUCCEEDED(xFile->GetReferenceKey(&pKey, &nKeySize))
+            && SUCCEEDED(xFile->GetLoader(&xLoader))
+            && SUCCEEDED(xLoader->CreateStreamFromKey(pKey, nKeySize, &xStream))
+            && SUCCEEDED(xStream->GetFileSize(&nSize))
+            && SUCCEEDED(xStream->ReadFileFragment(&pData, 0, nSize, &pContext)))
+        {
+            pBlob = hb_blob_create(static_cast<const char*>(pData),
+                                   static_cast<unsigned int>(nSize), HB_MEMORY_MODE_DUPLICATE,
+                                   nullptr, nullptr);
+            xStream->ReleaseFileFragment(pContext);
+        }
     }
-};
+
+    return pBlob;
+}
+
+static hb_blob_t* getFontTable(hb_face_t*, hb_tag_t nTag, void* pUserData)
+{
+    auto pFontFace = static_cast<IDWriteFontFace*>(pUserData);
+
+    if (nTag == 0)
+        return getFontFile(pFontFace);
+
+    const void* pData = nullptr;
+    UINT32 nSize = 0;
+    void* pContext = nullptr;
+    BOOL bExists = FALSE;
+    if (FAILED(pFontFace->TryGetFontTable(OSL_NETDWORD(nTag), &pData, &nSize, &pContext, &bExists)))
+        return nullptr;
+
+    if (!pData || !bExists || !nSize)
+    {
+        pFontFace->ReleaseFontTable(pContext);
+        return nullptr;
+    }
+
+    return hb_blob_create(static_cast<const char*>(pData), nSize, HB_MEMORY_MODE_READONLY,
+                          new DWFontTableContext{ pFontFace, pContext }, releaseTableData);
+}
+
+hb_face_t* WinFontFace::GetHbFace() const
+{
+    if (!mpHbFace)
+    {
+        if (IDWriteFontFace* pFontFace = GetDWFontFace())
+        {
+            pFontFace->AddRef();
+            mpHbFace = hb_face_create_for_tables(getFontTable, pFontFace, [](void* pUserData) {
+                static_cast<IDWriteFontFace*>(pUserData)->Release();
+            });
+            hb_face_set_index(mpHbFace, pFontFace->GetIndex());
+            hb_face_set_glyph_count(mpHbFace, pFontFace->GetGlyphCount());
+        }
+        else
+            mpHbFace = hb_face_get_empty();
+    }
+    return mpHbFace;
 }
 
 hb_blob_t* WinFontFace::GetHbTable(hb_tag_t nTag) const
 {
-    static o3tl::lru_map<BlobCacheKey, BlobReference, BlobCacheKeyHash> gCache(50);
-    BlobCacheKey aCacheKey{ GetFontId(), nTag };
-    auto it = gCache.find(aCacheKey);
-    if (it != gCache.end())
-    {
-        hb_blob_reference(it->second.mpBlob);
-        return it->second.mpBlob;
-    }
-
-    sal_uLong nLength = 0;
-    unsigned char* pBuffer = nullptr;
-
-    HDC hDC(::GetDC(nullptr));
-    HFONT hFont = ::CreateFontIndirectW(&maLogFont);
-    HFONT hOldFont = ::SelectFont(hDC, hFont);
-
-    nLength = ::GetFontData(hDC, OSL_NETDWORD(nTag), 0, nullptr, 0);
-    if (nLength > 0 && nLength != GDI_ERROR)
-    {
-        pBuffer = new unsigned char[nLength];
-        ::GetFontData(hDC, OSL_NETDWORD(nTag), 0, pBuffer, nLength);
-    }
-
-    ::SelectFont(hDC, hOldFont);
-    ::DeleteFont(hFont);
-    ::ReleaseDC(nullptr, hDC);
-
-    hb_blob_t* pBlob = nullptr;
-
-    if (pBuffer)
-        pBlob = hb_blob_create(reinterpret_cast<const char*>(pBuffer), nLength, HB_MEMORY_MODE_READONLY,
-                               pBuffer, [](void* data) { delete[] static_cast<unsigned char*>(data); });
-
-    gCache.insert({ aCacheKey, BlobReference(pBlob) });
-    return pBlob;
+    return hb_face_reference_table(GetHbFace(), nTag);
 }
 
 void WinSalGraphics::SetTextColor( Color nColor )
@@ -650,44 +705,18 @@ void WinSalGraphics::SetTextColor( Color nColor )
     ::SetTextColor( getHDC(), aCol );
 }
 
-static int CALLBACK SalEnumQueryFontProcExW( const LOGFONTW*, const TEXTMETRICW*, DWORD, LPARAM lParam )
-{
-    *reinterpret_cast<bool*>(lParam) = true;
-    return 0;
-}
-
 void ImplGetLogFontFromFontSelect( const vcl::font::FontSelectPattern& rFont,
-                                   const vcl::font::PhysicalFontFace* pFontFace,
+                                   const vcl::font::PhysicalFontFace& rFontFace,
                                    LOGFONTW& rLogFont, bool bAntiAliased)
 {
-    OUString aName;
-    if (pFontFace)
-        aName = pFontFace->GetFamilyName();
-    else
-        aName = rFont.GetFamilyName().getToken( 0, ';' );
-
-    UINT nNameLen = aName.getLength();
-    if (nNameLen >= LF_FACESIZE)
-        nNameLen = LF_FACESIZE - 1;
-    memcpy( rLogFont.lfFaceName, aName.getStr(), nNameLen*sizeof( wchar_t ) );
-    rLogFont.lfFaceName[nNameLen] = 0;
-
-    if  (pFontFace)
-    {
-        const WinFontFace* pWinFontData = static_cast<const WinFontFace*>(pFontFace);
-        rLogFont.lfCharSet = pWinFontData->GetCharSet();
-        rLogFont.lfPitchAndFamily = pWinFontData->GetPitchAndFamily();
-    }
-    else
-    {
-        rLogFont.lfCharSet = rFont.IsMicrosoftSymbolEncoded() ? SYMBOL_CHARSET : DEFAULT_CHARSET;
-        rLogFont.lfPitchAndFamily = ImplPitchToWin( rFont.GetPitch() )
-                                  | ImplFamilyToWin( rFont.GetFamilyType() );
-    }
+    // start from the LOGFONT the face was enumerated with
+    rLogFont = static_cast<const WinFontFace&>(rFontFace).GetLogFont();
 
     rLogFont.lfWeight          = ImplWeightToWin( rFont.GetWeight() );
     rLogFont.lfHeight          = static_cast<LONG>(-rFont.mnHeight);
-    rLogFont.lfWidth           = static_cast<LONG>(rFont.mnWidth);
+    // mnWidth is relative to the font height, unlike GDI's lfWidth which is
+    // relative to the average character width, so it can't be used directly.
+    rLogFont.lfWidth           = 0;
     rLogFont.lfUnderline       = 0;
     rLogFont.lfStrikeOut       = 0;
     rLogFont.lfItalic          = BYTE(rFont.GetItalic() != ITALIC_NONE);
@@ -707,14 +736,14 @@ void ImplGetLogFontFromFontSelect( const vcl::font::FontSelectPattern& rFont,
         rLogFont.lfQuality = bAntiAliased ? ANTIALIASED_QUALITY : NONANTIALIASED_QUALITY;
 }
 
-std::tuple<HFONT, HFONT, sal_Int32>
+std::tuple<HFONT, HFONT>
 WinSalGraphics::ImplDoSetFont(HDC hDC, vcl::font::FontSelectPattern const& i_rFont,
-                              const vcl::font::PhysicalFontFace* i_pFontFace, HFONT& o_rOldFont)
+                              const vcl::font::PhysicalFontFace& i_rFontFace, HFONT& o_rOldFont)
 {
     HFONT hNewFont = nullptr;
 
     LOGFONTW aLogFont;
-    ImplGetLogFontFromFontSelect( i_rFont, i_pFontFace, aLogFont, getAntiAlias());
+    ImplGetLogFontFromFontSelect( i_rFont, i_rFontFace, aLogFont, getAntiAlias());
 
     hNewFont = ::CreateFontIndirectW( &aLogFont );
     o_rOldFont = ::SelectFont(hDC, hNewFont);
@@ -730,6 +759,19 @@ WinSalGraphics::ImplDoSetFont(HDC hDC, vcl::font::FontSelectPattern const& i_rFo
         SelectFont(hDC, hNewFont2);
         DeleteFont( hNewFont );
         hNewFont = hNewFont2;
+        ::GetTextMetricsW(hDC, &aTextMetricW);
+    }
+
+    // Stretch the glyphs horizontally like the layout does (mnWidth relative to the
+    // font height), expressed in GDI's average character width terms.
+    if (i_rFont.mnWidth && i_rFont.mnHeight && aTextMetricW.tmAveCharWidth > 0)
+    {
+        aLogFont.lfWidth = basegfx::fround(double(i_rFont.mnWidth) * aTextMetricW.tmAveCharWidth
+                                           / i_rFont.mnHeight);
+        HFONT hStretchedFont = ::CreateFontIndirectW(&aLogFont);
+        ::SelectFont(hDC, hStretchedFont);
+        ::DeleteFont(hNewFont);
+        hNewFont = hStretchedFont;
     }
 
     // Optionally create a secondary font for non-rotated CJK glyphs in vertical context
@@ -741,8 +783,7 @@ WinSalGraphics::ImplDoSetFont(HDC hDC, vcl::font::FontSelectPattern const& i_rFo
         hNewVerticalFont = ::CreateFontIndirectW(&aLogFont);
     }
 
-    return std::make_tuple(hNewFont, hNewVerticalFont,
-                           static_cast<sal_Int32>(aTextMetricW.tmDescent));
+    return std::make_tuple(hNewFont, hNewVerticalFont);
 }
 
 void WinSalGraphics::SetFont(LogicalFontInstance* pFont, int nFallbackLevel)
@@ -793,38 +834,7 @@ void WinSalGraphics::SetFont(LogicalFontInstance* pFont, int nFallbackLevel)
 
 void WinSalGraphics::GetFontMetric( FontMetricDataRef& rxFontMetric, int nFallbackLevel )
 {
-    // temporarily change the HDC to the font in the fallback level
-    rtl::Reference<WinFontInstance> pFontInstance = mpWinFontEntry[nFallbackLevel];
-    const HFONT hOldFont = SelectFont(getHDC(), pFontInstance->GetHFONT());
-
-    wchar_t aFaceName[LF_FACESIZE+60];
-    if( GetTextFaceW( getHDC(), SAL_N_ELEMENTS(aFaceName), aFaceName ) )
-        rxFontMetric->SetFamilyName(OUString(o3tl::toU(aFaceName)));
-
-    rxFontMetric->SetMinKashida(pFontInstance->GetKashidaWidth());
-    rxFontMetric->ImplCalcLineSpacing(pFontInstance.get());
-    rxFontMetric->ImplInitBaselines(pFontInstance.get());
-
-    // get the font metric
-    OUTLINETEXTMETRICW aOutlineMetric;
-    const bool bOK = GetOutlineTextMetricsW(getHDC(), sizeof(aOutlineMetric), &aOutlineMetric);
-    // restore the HDC to the font in the base level
-    SelectFont( getHDC(), hOldFont );
-    if( !bOK )
-        return;
-
-    TEXTMETRICW aWinMetric = aOutlineMetric.otmTextMetrics;
-
-    // device independent font attributes
-    rxFontMetric->SetFamilyType(ImplFamilyToSal( aWinMetric.tmPitchAndFamily ));
-    rxFontMetric->SetMicrosoftSymbolEncoded(aWinMetric.tmCharSet == SYMBOL_CHARSET);
-    rxFontMetric->SetWeight(ImplWeightToSal( aWinMetric.tmWeight ));
-    rxFontMetric->SetPitch(ImplMetricPitchToSal( aWinMetric.tmPitchAndFamily ));
-    rxFontMetric->SetItalic(aWinMetric.tmItalic ? ITALIC_NORMAL : ITALIC_NONE);
-    rxFontMetric->SetSlant( 0 );
-
-    // transformation dependent font metrics
-    rxFontMetric->SetWidth(aWinMetric.tmAveCharWidth);
+    mpWinFontEntry[nFallbackLevel]->GetFontMetric(rxFontMetric);
 }
 
 FontCharMapRef WinSalGraphics::GetFontCharMap() const
@@ -843,54 +853,96 @@ bool WinSalGraphics::GetFontCapabilities(vcl::FontCapabilities &rFontCapabilitie
     return mpWinFontEntry[0]->GetFontFace()->GetFontCapabilities(rFontCapabilities);
 }
 
-static int CALLBACK SalEnumFontsProcExW( const LOGFONTW* lpelfe,
-                                  const TEXTMETRICW* lpntme,
-                                  DWORD nFontType, LPARAM lParam )
+static void ImplEnumDWriteCollection(IDWriteFontCollection* pCollection,
+                                     vcl::font::PhysicalFontCollection* pList)
 {
-    ImplEnumInfo* pInfo = reinterpret_cast<ImplEnumInfo*>(lParam);
-    if ( !pInfo->mpName )
+    const UINT32 nFamilies = pCollection->GetFontFamilyCount();
+    for (UINT32 i = 0; i < nFamilies; ++i)
     {
-        // Ignore vertical fonts
-        if (lpelfe->lfFaceName[0] != '@')
+        sal::systools::COMReference<IDWriteFontFamily> xFamily;
+        if (FAILED(pCollection->GetFontFamily(i, &xFamily)))
+            continue;
+        sal::systools::COMReference<IDWriteLocalizedStrings> xFamilyNames;
+        if (FAILED(xFamily->GetFamilyNames(&xFamilyNames)))
+            continue;
+        const OUString aFamilyName = ImplGetDWriteName(xFamilyNames.get());
+        if (aFamilyName.isEmpty())
+            continue;
+        const UINT32 nFonts = xFamily->GetFontCount();
+        for (UINT32 j = 0; j < nFonts; ++j)
         {
-            OUString aName(o3tl::toU(lpelfe->lfFaceName));
-            pInfo->mpName = &aName;
-            LOGFONTW aLogFont{ .lfCharSet = lpelfe->lfCharSet };
-            std::copy_n(lpelfe->lfFaceName, std::size(lpelfe->lfFaceName), aLogFont.lfFaceName);
-            EnumFontFamiliesExW(pInfo->mhDC, &aLogFont, SalEnumFontsProcExW,
-                                reinterpret_cast<LPARAM>(pInfo), 0);
-            pInfo->mpName = nullptr;
+            sal::systools::COMReference<IDWriteFont> xFont;
+            if (FAILED(xFamily->GetFont(j, &xFont)))
+                continue;
+
+            // Skip synthetic bold/oblique entries, the unsimulated face is
+            // enumerated too.
+            if (xFont->GetSimulations() != DWRITE_FONT_SIMULATIONS_NONE)
+                continue;
+
+            // The LOGFONT GDI needed to select exactly this face.
+            LOGFONTW aLogFont{};
+            BOOL bIsSystemFont = FALSE;
+            if (FAILED(WinSalGraphics::getDWriteGdiInterop()->ConvertFontToLOGFONT(
+                    xFont.get(), &aLogFont, &bIsSystemFont)))
+                continue;
+
+            rtl::Reference<WinFontFace> pData = new WinFontFace(
+                WinFont2DevFontAttributes(xFont.get(), aFamilyName, aLogFont), aLogFont,
+                xFont.get());
+            pList->Add(pData.get());
+            SAL_INFO("vcl.fonts", "ImplEnumDWriteCollection: font added: "
+                                      << pData->GetFamilyName() << " " << pData->GetStyleName());
         }
     }
-    else
+}
+
+static void ImplEnumDWriteSystemFonts(vcl::font::PhysicalFontCollection* pList)
+{
+    sal::systools::COMReference<IDWriteFontCollection2> xCollection;
+    HRESULT hr = WinSalGraphics::getDWriteFactory()->GetSystemFontCollection(
+        FALSE, DWRITE_FONT_FAMILY_MODEL_TYPOGRAPHIC, &xCollection);
+    if (FAILED(hr))
     {
-        NEWTEXTMETRICW const* pMetric = reinterpret_cast<NEWTEXTMETRICW const*>(lpntme);
-        // Ignore non-device fonts on printers.
-        if (pInfo->mbPrinter)
-        {
-            if ((nFontType & RASTER_FONTTYPE) && !(nFontType & DEVICE_FONTTYPE))
-            {
-                SAL_INFO("vcl.fonts", "Unsupported printer font ignored: " << OUString(o3tl::toU(lpelfe->lfFaceName)));
-                return 1;
-            }
-        }
-        // Only SFNT fonts are supported, ignore anything else.
-        else if (!(nFontType & TRUETYPE_FONTTYPE) &&
-                 !(pMetric->ntmFlags & NTM_PS_OPENTYPE) &&
-                 !(pMetric->ntmFlags & NTM_TT_OPENTYPE))
-        {
-            SAL_INFO("vcl.fonts", "Unsupported font ignored: " << OUString(o3tl::toU(lpelfe->lfFaceName)));
-            return 1;
-        }
-
-        rtl::Reference<WinFontFace> pData
-            = new WinFontFace(*reinterpret_cast<ENUMLOGFONTEXW const*>(lpelfe), *pMetric);
-
-        pInfo->mpList->Add( pData.get() );
-        SAL_INFO("vcl.fonts", "SalEnumFontsProcExW: font added: " << pData->GetFamilyName() << " " << pData->GetStyleName());
+        SAL_WARN("vcl.fonts", "Enumerating system fonts failed: "
+                                  << comphelper::WindowsErrorStringFromHRESULT(hr));
+        return;
     }
+    ImplEnumDWriteCollection(xCollection.get(), pList);
+}
 
-    return 1;
+static bool ImplEnumDWriteFontFiles(vcl::font::PhysicalFontCollection* pList,
+                                    const std::unordered_set<OUString>& rFontPaths)
+{
+    if (rFontPaths.empty())
+        return true;
+    const auto& xFactory = WinSalGraphics::getDWriteFactory();
+    sal::systools::COMReference<IDWriteFontSetBuilder1> xBuilder;
+    sal::systools::COMReference<IDWriteFontSet> xFontSet;
+    sal::systools::COMReference<IDWriteFontCollection2> xCollection;
+    HRESULT hr = xFactory->CreateFontSetBuilder(&xBuilder);
+    if (SUCCEEDED(hr))
+    {
+        for (const OUString& rPath : rFontPaths)
+        {
+            sal::systools::COMReference<IDWriteFontFile> xFile;
+            if (SUCCEEDED(
+                    xFactory->CreateFontFileReference(o3tl::toW(rPath.getStr()), nullptr, &xFile)))
+                xBuilder->AddFontFile(xFile.get());
+        }
+        hr = xBuilder->CreateFontSet(&xFontSet);
+    }
+    if (SUCCEEDED(hr))
+        hr = xFactory->CreateFontCollectionFromFontSet(
+            xFontSet.get(), DWRITE_FONT_FAMILY_MODEL_TYPOGRAPHIC, &xCollection);
+    if (FAILED(hr))
+    {
+        SAL_WARN("vcl.fonts", "Enumerating font files failed: "
+                                  << comphelper::WindowsErrorStringFromHRESULT(hr));
+        return false;
+    }
+    ImplEnumDWriteCollection(xCollection.get(), pList);
+    return true;
 }
 
 static int lcl_AddFontResource(WindowsInstance& rWinInstance, const OUString& rFontFileURL)
@@ -919,39 +971,22 @@ void ImplReleaseTempFonts()
 bool WinSalGraphics::AddTempDevFont(vcl::font::PhysicalFontCollection* pFontCollection,
                                     const OUString& rFontFileURL, const OUString& rFontName)
 {
-    OUString aFontFamily = getFontFamilyNameFromTTF(rFontFileURL);
-    if (aFontFamily.isEmpty())
-    {
-        SAL_WARN("vcl.fonts", "error extracting font family from " << rFontFileURL);
-        return false;
-    }
+    // Best-effort, GDI rejects fonts that DirectWrite reads fine (e.g. font subsets
+    // extracted from PDF files, which have no OS/2 table), and is only needed for the
+    // text output that still goes through GDI.
+    lcl_AddFontResource(GetWindowsInstance(), rFontFileURL);
 
-    if (rFontName != aFontFamily)
-    {
-        SAL_WARN("vcl.fonts", "font family renaming not implemented; skipping embedded " << rFontName);
-        return false;
-    }
+    OUString aFontSystemPath;
+    OSL_VERIFY(!osl::FileBase::getSystemPathFromFileURL(rFontFileURL, aFontSystemPath));
+    // Keep the path even if GDI rejected the font, so it is re-enumerated with the others.
+    GetWindowsInstance().GetData().m_aTempFontPaths.insert(aFontSystemPath);
 
-    int nFonts = lcl_AddFontResource(GetWindowsInstance(), rFontFileURL);
-    if (nFonts <= 0)
+    // Fonts registered with GDI are not in the DirectWrite system collection.
+    if (!ImplEnumDWriteFontFiles(pFontCollection, { aFontSystemPath }))
         return false;
 
-    ImplEnumInfo aInfo{ .mhDC = getHDC(),
-                        .mpList = pFontCollection,
-                        .mpName = &aFontFamily,
-                        .mbPrinter = mbPrinter };
-    const int nExpectedFontCount = pFontCollection->Count() + nFonts;
-
-    LOGFONTW aLogFont = { .lfCharSet = DEFAULT_CHARSET };
-
-    // add the font to the PhysicalFontCollection
-    EnumFontFamiliesExW(getHDC(), &aLogFont,
-        SalEnumFontsProcExW, reinterpret_cast<LPARAM>(&aInfo), 0);
-
-    SAL_WARN_IF(nExpectedFontCount != pFontCollection->Count() && !pFontCollection->FindFontFamily(aFontFamily),
-                "vcl.fonts",
+    SAL_WARN_IF(!pFontCollection->FindFontFamily(rFontName), "vcl.fonts",
                 "temp font was registered but is not in enumeration: " << rFontFileURL);
-
     return true;
 }
 
@@ -1012,16 +1047,8 @@ void WinSalGraphics::GetDevFontList( vcl::font::PhysicalFontCollection* pFontCol
         return true;
     });
 
-    ImplEnumInfo aInfo{ .mhDC = getHDC(),
-                        .mpList = pFontCollection,
-                        .mpName = nullptr,
-                        .mbPrinter = mbPrinter };
-
-    LOGFONTW aLogFont = { .lfCharSet = DEFAULT_CHARSET };
-
-    // fill the PhysicalFontCollection
-    EnumFontFamiliesExW( getHDC(), &aLogFont,
-        SalEnumFontsProcExW, reinterpret_cast<LPARAM>(&aInfo), 0 );
+    ImplEnumDWriteSystemFonts(pFontCollection);
+    ImplEnumDWriteFontFiles(pFontCollection, GetWindowsInstance().GetData().m_aTempFontPaths);
 
     // set glyph fallback hook
     static WinGlyphFallbackSubstititution aSubstFallback;
@@ -1035,212 +1062,41 @@ void WinSalGraphics::ClearDevFontCache()
     mWinSalGraphicsImplBase->ClearDevFontCache();
 }
 
-bool WinFontInstance::GetGlyphOutline(sal_GlyphId nId, basegfx::B2DPolyPolygon& rB2DPolyPoly, bool) const
-{
-    rB2DPolyPoly.clear();
-
-    assert(m_pGraphics);
-    HDC hDC = m_pGraphics->getHDC();
-    const HFONT hOrigFont = static_cast<HFONT>(GetCurrentObject(hDC, OBJ_FONT));
-    const HFONT hFont = GetHFONT();
-    if (hFont != hOrigFont)
-        SelectObject(hDC, hFont);
-
-    const ::comphelper::ScopeGuard aFontRestoreScopeGuard([hFont, hOrigFont, hDC]()
-        { if (hFont != hOrigFont) SelectObject(hDC, hOrigFont); });
-
-    // use unity matrix
-    MAT2 aMat;
-    aMat.eM11 = aMat.eM22 = FixedFromDouble( 1.0 );
-    aMat.eM12 = aMat.eM21 = FixedFromDouble( 0.0 );
-
-    UINT nGGOFlags = GGO_NATIVE;
-    nGGOFlags |= GGO_GLYPH_INDEX;
-
-    GLYPHMETRICS aGlyphMetrics;
-    const DWORD nSize1 = ::GetGlyphOutlineW(hDC, nId, nGGOFlags, &aGlyphMetrics, 0, nullptr, &aMat);
-    if( !nSize1 )       // blank glyphs are ok
-        return true;
-    else if( nSize1 == GDI_ERROR )
-        return false;
-
-    BYTE* pData = new BYTE[ nSize1 ];
-    const DWORD nSize2 = ::GetGlyphOutlineW(hDC, nId, nGGOFlags,
-              &aGlyphMetrics, nSize1, pData, &aMat );
-
-    if( nSize1 != nSize2 )
-        return false;
-
-    // TODO: avoid tools polygon by creating B2DPolygon directly
-    int     nPtSize = 512;
-    Point*  pPoints = new Point[ nPtSize ];
-    PolyFlags* pFlags = new PolyFlags[ nPtSize ];
-
-    TTPOLYGONHEADER* pHeader = reinterpret_cast<TTPOLYGONHEADER*>(pData);
-    while( reinterpret_cast<BYTE*>(pHeader) < pData+nSize2 )
-    {
-        // only outline data is interesting
-        if( pHeader->dwType != TT_POLYGON_TYPE )
-            break;
-
-        // get start point; next start points are end points
-        // of previous segment
-        sal_uInt16 nPnt = 0;
-
-        tools::Long nX = IntTimes256FromFixed( pHeader->pfxStart.x );
-        tools::Long nY = IntTimes256FromFixed( pHeader->pfxStart.y );
-        pPoints[ nPnt ] = Point( nX, nY );
-        pFlags[ nPnt++ ] = PolyFlags::Normal;
-
-        bool bHasOfflinePoints = false;
-        TTPOLYCURVE* pCurve = reinterpret_cast<TTPOLYCURVE*>( pHeader + 1 );
-        pHeader = reinterpret_cast<TTPOLYGONHEADER*>( reinterpret_cast<BYTE*>(pHeader) + pHeader->cb );
-        while( reinterpret_cast<BYTE*>(pCurve) < reinterpret_cast<BYTE*>(pHeader) )
-        {
-            int nNeededSize = nPnt + 16 + 3 * pCurve->cpfx;
-            if( nPtSize < nNeededSize )
-            {
-                Point* pOldPoints = pPoints;
-                PolyFlags* pOldFlags = pFlags;
-                nPtSize = 2 * nNeededSize;
-                pPoints = new Point[ nPtSize ];
-                pFlags = new PolyFlags[ nPtSize ];
-                for( sal_uInt16 i = 0; i < nPnt; ++i )
-                {
-                    pPoints[ i ] = pOldPoints[ i ];
-                    pFlags[ i ] = pOldFlags[ i ];
-                }
-                delete[] pOldPoints;
-                delete[] pOldFlags;
-            }
-
-            int i = 0;
-            if( TT_PRIM_LINE == pCurve->wType )
-            {
-                while( i < pCurve->cpfx )
-                {
-                    nX = IntTimes256FromFixed( pCurve->apfx[ i ].x );
-                    nY = IntTimes256FromFixed( pCurve->apfx[ i ].y );
-                    ++i;
-                    pPoints[ nPnt ] = Point( nX, nY );
-                    pFlags[ nPnt ] = PolyFlags::Normal;
-                    ++nPnt;
-                }
-            }
-            else if( TT_PRIM_QSPLINE == pCurve->wType )
-            {
-                bHasOfflinePoints = true;
-                while( i < pCurve->cpfx )
-                {
-                    // get control point of quadratic bezier spline
-                    nX = IntTimes256FromFixed( pCurve->apfx[ i ].x );
-                    nY = IntTimes256FromFixed( pCurve->apfx[ i ].y );
-                    ++i;
-                    Point aControlP( nX, nY );
-
-                    // calculate first cubic control point
-                    // P0 = 1/3 * (PBeg + 2 * PQControl)
-                    nX = pPoints[ nPnt-1 ].X() + 2 * aControlP.X();
-                    nY = pPoints[ nPnt-1 ].Y() + 2 * aControlP.Y();
-                    pPoints[ nPnt+0 ] = Point( (2*nX+3)/6, (2*nY+3)/6 );
-                    pFlags[ nPnt+0 ] = PolyFlags::Control;
-
-                    // calculate endpoint of segment
-                    nX = IntTimes256FromFixed( pCurve->apfx[ i ].x );
-                    nY = IntTimes256FromFixed( pCurve->apfx[ i ].y );
-
-                    if ( i+1 >= pCurve->cpfx )
-                    {
-                        // endpoint is either last point in segment => advance
-                        ++i;
-                    }
-                    else
-                    {
-                        // or endpoint is the middle of two control points
-                        nX += IntTimes256FromFixed( pCurve->apfx[ i-1 ].x );
-                        nY += IntTimes256FromFixed( pCurve->apfx[ i-1 ].y );
-                        nX = (nX + 1) / 2;
-                        nY = (nY + 1) / 2;
-                        // no need to advance, because the current point
-                        // is the control point in next bezier spline
-                    }
-
-                    pPoints[ nPnt+2 ] = Point( nX, nY );
-                    pFlags[ nPnt+2 ] = PolyFlags::Normal;
-
-                    // calculate second cubic control point
-                    // P1 = 1/3 * (PEnd + 2 * PQControl)
-                    nX = pPoints[ nPnt+2 ].X() + 2 * aControlP.X();
-                    nY = pPoints[ nPnt+2 ].Y() + 2 * aControlP.Y();
-                    pPoints[ nPnt+1 ] = Point( (2*nX+3)/6, (2*nY+3)/6 );
-                    pFlags[ nPnt+1 ] = PolyFlags::Control;
-
-                    nPnt += 3;
-                }
-            }
-
-            // next curve segment
-            pCurve = reinterpret_cast<TTPOLYCURVE*>(&pCurve->apfx[ i ]);
-        }
-
-        // end point is start point for closed contour
-        // disabled, because Polygon class closes the contour itself
-        // pPoints[nPnt++] = pPoints[0];
-        // #i35928#
-        // Added again, but add only when not yet closed
-        if(pPoints[nPnt - 1] != pPoints[0])
-        {
-            if( bHasOfflinePoints )
-                pFlags[nPnt] = pFlags[0];
-
-            pPoints[nPnt++] = pPoints[0];
-        }
-
-        // convert y-coordinates W32 -> VCL
-        for( int i = 0; i < nPnt; ++i )
-            pPoints[i].setY(-pPoints[i].Y());
-
-        // insert into polypolygon
-        tools::Polygon aPoly( nPnt, pPoints, (bHasOfflinePoints ? pFlags : nullptr) );
-        // convert to B2DPolyPolygon
-        // TODO: get rid of the intermediate PolyPolygon
-        rB2DPolyPoly.append( aPoly.getB2DPolygon() );
-    }
-
-    delete[] pPoints;
-    delete[] pFlags;
-
-    delete[] pData;
-
-    // rescaling needed for the tools::PolyPolygon conversion
-    if( rB2DPolyPoly.count() )
-    {
-        const double fFactor(1.0f/256);
-        rB2DPolyPoly.transform(basegfx::utils::createScaleB2DHomMatrix(fFactor, fFactor));
-    }
-
-    return true;
-}
-
 const sal::systools::COMReference<IDWriteFontFace>& WinFontInstance::GetDWFontFace() const
 {
     if (!mxDWFontFace)
     {
-        assert(m_pGraphics);
-        HDC hDC = m_pGraphics->getHDC();
-        const HFONT hOrigFont = static_cast<HFONT>(GetCurrentObject(hDC, OBJ_FONT));
-        const HFONT hFont = GetHFONT();
-        if (hFont != hOrigFont)
-            SelectObject(hDC, hFont);
+        IDWriteFont* pDWFont = GetFontFace()->GetDWFont();
+        if (!pDWFont)
+            return mxDWFontFace;
 
-        const ::comphelper::ScopeGuard aFontRestoreScopeGuard([hFont, hOrigFont, hDC]() {
-            if (hFont != hOrigFont)
-                SelectObject(hDC, hOrigFont);
-        });
+        // Simulate bold and italic when they are requested but the face does not
+        // provide them, like GDI font selection does.
+        DWRITE_FONT_SIMULATIONS eSimulations = DWRITE_FONT_SIMULATIONS_NONE;
+        const vcl::font::FontSelectPattern& rFSD = GetFontSelectPattern();
+        if (rFSD.GetWeight() > WEIGHT_MEDIUM && GetFontFace()->GetWeight() <= WEIGHT_MEDIUM)
+            eSimulations |= DWRITE_FONT_SIMULATIONS_BOLD;
+        if (rFSD.GetItalic() != ITALIC_NONE && GetFontFace()->GetItalic() == ITALIC_NONE)
+            eSimulations |= DWRITE_FONT_SIMULATIONS_OBLIQUE;
 
-        IDWriteGdiInterop* pDWriteGdiInterop = WinSalGraphics::getDWriteGdiInterop();
-
-        HRESULT hr = pDWriteGdiInterop->CreateFontFaceFromHdc(hDC, &mxDWFontFace);
+        HRESULT hr = S_OK;
+        if (eSimulations == DWRITE_FONT_SIMULATIONS_NONE)
+            mxDWFontFace
+                = sal::systools::COMReference<IDWriteFontFace>(GetFontFace()->GetDWFontFace());
+        else
+        {
+            auto xDWFont = sal::systools::COMReference<IDWriteFont>(pDWFont)
+                               .QueryInterface<IDWriteFont3>();
+            sal::systools::COMReference<IDWriteFontFaceReference> xFaceRef;
+            hr = xDWFont ? xDWFont->GetFontFaceReference(&xFaceRef) : E_NOINTERFACE;
+            if (SUCCEEDED(hr))
+            {
+                sal::systools::COMReference<IDWriteFontFace3> xFontFace;
+                hr = xFaceRef->CreateFontFaceWithSimulations(eSimulations, &xFontFace);
+                if (SUCCEEDED(hr))
+                    mxDWFontFace = sal::systools::COMReference<IDWriteFontFace>(xFontFace.get());
+            }
+        }
         if (FAILED(hr))
         {
             SAL_WARN("vcl.fonts", "HRESULT 0x" << OUString::number(hr, 16) << ": "

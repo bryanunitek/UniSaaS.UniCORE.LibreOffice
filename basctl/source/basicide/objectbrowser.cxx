@@ -29,6 +29,7 @@
 #include <svl/itemset.hxx>
 #include <sfx2/sfxsids.hrc>
 #include <sfx2/viewfrm.hxx>
+#include <unotools/localedatawrapper.hxx>
 #include <vcl/taskpanelist.hxx>
 #include <vcl/svapp.hxx>
 #include <vcl/weld/Builder.hxx>
@@ -224,22 +225,22 @@ void FormatMethodSignature(rtl::OUStringBuffer& rBuffer, const basctl::IdeSymbol
             const auto& param = rSymbol.aParameters[i];
             if (param.bIsOptional)
             {
-                rBuffer.append(IDEResId(RID_STR_OB_OPTIONAL) + u" ");
+                rBuffer.append(u"Optional ");
             }
             if (!param.bIsByVal)
             {
-                rBuffer.append(IDEResId(RID_STR_OB_BYREF) + u" ");
+                rBuffer.append(u"ByRef ");
             }
             if (param.bIsOut && !param.bIsIn)
             {
-                rBuffer.append(IDEResId(RID_STR_OB_OUT_PARAM) + u" ");
+                rBuffer.append(u"[out] ");
             }
             else if (param.bIsOut && param.bIsIn)
             {
-                rBuffer.append(IDEResId(RID_STR_OB_INOUT_PARAM) + u" ");
+                rBuffer.append(u"[inout] ");
             }
 
-            rBuffer.append(param.sName + IDEResId(RID_STR_OB_AS) + param.sTypeName);
+            rBuffer.append(param.sName + u" As " + param.sTypeName);
             if (i < rSymbol.aParameters.size() - 1)
             {
                 rBuffer.append(u", ");
@@ -249,7 +250,7 @@ void FormatMethodSignature(rtl::OUStringBuffer& rBuffer, const basctl::IdeSymbol
     rBuffer.append(u")");
     if (!rSymbol.sReturnTypeName.isEmpty() && rSymbol.sReturnTypeName != "Void")
     {
-        rBuffer.append(IDEResId(RID_STR_OB_AS) + rSymbol.sReturnTypeName);
+        rBuffer.append(u" As " + rSymbol.sReturnTypeName);
     }
 }
 
@@ -259,7 +260,7 @@ void FormatPropertySignature(rtl::OUStringBuffer& rBuffer, const basctl::IdeSymb
     OUString sType = !rSymbol.sTypeName.isEmpty() ? rSymbol.sTypeName : rSymbol.sReturnTypeName;
     if (!sType.isEmpty())
     {
-        rBuffer.append(IDEResId(RID_STR_OB_AS) + sType);
+        rBuffer.append(u" As " + sType);
     }
 }
 
@@ -325,22 +326,19 @@ OUString FormatSymbolSignature(const IdeSymbolInfo& rSymbol)
             rtl::OUStringBuffer sModifiers;
             if (param.bIsOptional)
             {
-                sModifiers.append(IDEResId(RID_STR_OB_OPTIONAL));
+                sModifiers.append(u"Optional");
             }
             if (param.bIsOut && !param.bIsIn)
             {
-                OUString sOut = IDEResId(RID_STR_OB_OUT_PARAM);
-                sModifiers.append(sModifiers.getLength() ? (u", "_ustr + sOut) : sOut);
+                sModifiers.append(sModifiers.getLength() ? u", [out]" : u"[out]");
             }
             else if (param.bIsOut && param.bIsIn)
             {
-                OUString sInOut = IDEResId(RID_STR_OB_INOUT_PARAM);
-                sModifiers.append(sModifiers.getLength() ? (u", "_ustr + sInOut) : sInOut);
+                sModifiers.append(sModifiers.getLength() ? u", [inout]" : u"[inout]");
             }
             if (!param.bIsByVal)
             {
-                OUString sByRef = IDEResId(RID_STR_OB_BYREF);
-                sModifiers.append(sModifiers.getLength() ? (u", "_ustr + sByRef) : sByRef);
+                sModifiers.append(sModifiers.getLength() ? u", ByRef" : u"ByRef");
             }
             if (sModifiers.getLength() > 0)
             {
@@ -418,9 +416,9 @@ OUString FormatContainerSignature(const IdeSymbolInfo& rSymbol,
     {
         auto aChildren = pDataProvider->GetChildNodes(rSymbol);
         sal_Int64 nChildren = static_cast<sal_Int64>(aChildren.size());
-        sInfo.append(
-            IDEResId(RID_STR_OB_CONTENTS_HEADER)
-            + IDEResId(RID_STR_OB_CONTAINS_ITEMS).replaceFirst(u"%1", OUString::number(nChildren)));
+        sInfo.append(IDEResId(RID_STR_OB_CONTENTS_HEADER)
+                     + IDEResId(RID_STR_OB_CONTAINS_ITEMS, nChildren)
+                           .replaceFirst(u"%1", OUString::number(nChildren)));
     }
 
     if (!rSymbol.sQualifiedName.isEmpty() && rSymbol.sQualifiedName != rSymbol.sName)
@@ -790,10 +788,13 @@ void ObjectBrowser::Show(bool bVisible)
 
             if (!m_bFirstLoadComplete)
             {
+                const LocaleDataWrapper& rLocaleData
+                    = Application::GetSettings().GetUILocaleDataWrapper();
+                OUString sElapsedSeconds
+                    = rLocaleData.getNum(aTotalInitTimer.getElapsedTimeMs(), 3, false);
                 m_bFirstLoadComplete = true;
-                double fElapsedSeconds = aTotalInitTimer.getElapsedTimeMs() / 1000.0;
-                OUString sStatus = IDEResId(RID_STR_OB_READY_LOADED)
-                                       .replaceFirst(u"%1", OUString::number(fElapsedSeconds));
+                OUString sStatus
+                    = IDEResId(RID_STR_OB_READY_LOADED).replaceFirst(u"%1", sElapsedSeconds);
                 m_xStatusLabel->set_label(sStatus);
             }
         }
@@ -1007,16 +1008,15 @@ void ObjectBrowser::UpdateStatusBar(const IdeSymbolInfo* pLeftSymbol,
             for (const auto& pair : aMembers)
                 nTotalMembers += pair.second.size();
             sStatusText
-                = IDEResId(RID_STR_OB_MEMBERS_COUNT)
+                = IDEResId(RID_STR_OB_MEMBERS_COUNT, nTotalMembers)
                       .replaceFirst(u"%1", OUString::number(static_cast<sal_Int64>(nTotalMembers)));
         }
         else if (IsExpandable(*pLeftSymbol))
         {
-            auto aChildren = m_pDataProvider->GetChildNodes(*pLeftSymbol);
+            size_t nChildren = m_pDataProvider->GetChildNodes(*pLeftSymbol).size();
             sStatusText
-                = IDEResId(RID_STR_OB_ITEMS_COUNT)
-                      .replaceFirst(u"%1",
-                                    OUString::number(static_cast<sal_Int64>(aChildren.size())));
+                = IDEResId(RID_STR_OB_ITEMS_COUNT, nChildren)
+                      .replaceFirst(u"%1", OUString::number(static_cast<sal_Int64>(nChildren)));
         }
         else
         {

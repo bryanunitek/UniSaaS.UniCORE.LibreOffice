@@ -1632,7 +1632,7 @@ void SdOutliner::SetViewMode (PageKind ePageKind)
             break;
     }
     // The text object iterator is destroyed when the shells are
-    // switched but we need it so save it and restore it afterwards.
+    // switched but we need it to save it and restore it afterwards.
     sd::outliner::Iterator aIterator (maObjectIterator);
     bool bMatchMayExist = mbMatchMayExist;
 
@@ -1658,7 +1658,7 @@ void SdOutliner::SetViewMode (PageKind ePageKind)
     if (xFuSearch.is() && pNewViewShell->GetView())
         pNewViewShell->GetView()->getSearchContext().setSearchFunction(xFuSearch);
 
-    // Switching to another view shell has intermediatly called
+    // Switching to another view shell has intermediately called
     // EndSpelling().  A PrepareSpelling() is pending, so call that now.
     PrepareSpelling();
 
@@ -1715,7 +1715,7 @@ void SdOutliner::EnterEditMode (bool bGrabFocus)
 
     if (mpView->IsTextEdit())
     {
-        // end text edition before starting it again
+        // end text editing before starting it again
         mpView->SdrEndTextEdit();
     }
 
@@ -2057,7 +2057,7 @@ weld::Window* SdOutliner::GetMessageBoxParent()
             break;
 
         case TEXT_CONVERSION:
-            // There should no messages boxes be displayed while doing the
+            // There should be no message boxes displayed while doing the
             // hangul hanja conversion.
             break;
     }

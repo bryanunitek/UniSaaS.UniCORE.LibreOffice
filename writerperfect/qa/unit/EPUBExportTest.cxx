@@ -294,13 +294,13 @@ CPPUNIT_TEST_FIXTURE(EPUBExportTest, testMeta)
                        u"2017-09-27T09:51:19Z");
 
     // Make sure that cover image next to the source document is picked up.
-    assertXPath(mpXmlDoc, "/opf:package/opf:manifest/opf:item[@href='images/image0001.png']",
+    assertXPath(mpXmlDoc, "/opf:package/opf:manifest/opf:item[@href='images/cover0001.png']",
                 "properties", u"cover-image");
-    assertXPath(mpXmlDoc, "/opf:package/opf:manifest/opf:item[@href='images/image0001.png']",
+    assertXPath(mpXmlDoc, "/opf:package/opf:manifest/opf:item[@href='images/cover0001.png']",
                 "media-type", u"image/png");
     uno::Reference<packages::zip::XZipFileAccess2> xZipFile
         = packages::zip::ZipFileAccess::createWithURL(m_xContext, maTempFile.GetURL());
-    CPPUNIT_ASSERT(xZipFile->hasByName(u"OEBPS/images/image0001.png"_ustr));
+    CPPUNIT_ASSERT(xZipFile->hasByName(u"OEBPS/images/cover0001.png"_ustr));
 }
 
 CPPUNIT_TEST_FIXTURE(EPUBExportTest, testMetaXMP)
@@ -358,13 +358,13 @@ CPPUNIT_TEST_FIXTURE(EPUBExportTest, testCoverImage)
 
     // Make sure that the explicitly set cover image is used.
     // This failed, as the image was not part of the package.
-    assertXPath(mpXmlDoc, "/opf:package/opf:manifest/opf:item[@href='images/image0001.png']",
+    assertXPath(mpXmlDoc, "/opf:package/opf:manifest/opf:item[@href='images/cover0001.png']",
                 "properties", u"cover-image");
-    assertXPath(mpXmlDoc, "/opf:package/opf:manifest/opf:item[@href='images/image0001.png']",
+    assertXPath(mpXmlDoc, "/opf:package/opf:manifest/opf:item[@href='images/cover0001.png']",
                 "media-type", u"image/png");
     uno::Reference<packages::zip::XZipFileAccess2> xZipFile
         = packages::zip::ZipFileAccess::createWithURL(m_xContext, maTempFile.GetURL());
-    CPPUNIT_ASSERT(xZipFile->hasByName(u"OEBPS/images/image0001.png"_ustr));
+    CPPUNIT_ASSERT(xZipFile->hasByName(u"OEBPS/images/cover0001.png"_ustr));
 }
 
 CPPUNIT_TEST_FIXTURE(EPUBExportTest, testParaNamedstyle)
@@ -496,10 +496,10 @@ CPPUNIT_TEST_FIXTURE(EPUBExportTest, testList)
 
     xmlDocUniquePtr mpXmlDoc = parseExport(u"OEBPS/sections/section0001.xhtml"_ustr);
     // This was "C", i.e. in-list content was ignored.
-    assertXPathContent(mpXmlDoc, "//xhtml:ol[1]/xhtml:li[1]/xhtml:p[1]/xhtml:span", u"B");
+    assertXPathContent(mpXmlDoc, "//xhtml:ul[1]/xhtml:li[1]/xhtml:p[1]/xhtml:span", u"B");
     // Test nested list content.
     assertXPathContent(
-        mpXmlDoc, "//xhtml:ol[2]/xhtml:li[1]/xhtml:ol[1]/xhtml:li[1]/xhtml:p[1]/xhtml:span", u"F");
+        mpXmlDoc, "//xhtml:ul[2]/xhtml:li[1]/xhtml:ol[1]/xhtml:li[1]/xhtml:p[1]/xhtml:span", u"F");
 }
 
 CPPUNIT_TEST_FIXTURE(EPUBExportTest, testImage)
@@ -693,7 +693,6 @@ CPPUNIT_TEST_FIXTURE(EPUBExportTest, testTextBox)
 
 CPPUNIT_TEST_FIXTURE(EPUBExportTest, testFontEmbedding)
 {
-#if !defined(MACOSX)
     loadFromFile(u"font-embedding.fodt");
     save(TestFilter::EPUB);
 
@@ -718,7 +717,6 @@ CPPUNIT_TEST_FIXTURE(EPUBExportTest, testFontEmbedding)
     // librevenge:font-weight
     CPPUNIT_ASSERT_EQUAL(u"normal"_ustr,
                          EPUBExportTest::getCss(aCssDoc, u"font-face"_ustr, u"font-weight"));
-#endif
 }
 
 CPPUNIT_TEST_FIXTURE(EPUBExportTest, testImageLink)

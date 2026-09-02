@@ -35,17 +35,15 @@
 
 enum class SvListAction
 {
-    INSERTED         = 1,
-    REMOVING         = 2,
-    REMOVED          = 3,
-    MOVING           = 4,
-    MOVED            = 5,
-    CLEARING         = 6,
-    INSERTED_TREE    = 7,
-    INVALIDATE_ENTRY = 8,
-    RESORTING        = 9,
-    RESORTED         = 10,
-    CLEARED          = 11
+    INSERTED,
+    REMOVING,
+    REMOVED,
+    MOVING,
+    MOVED,
+    INSERTED_TREE,
+    INVALIDATE_ENTRY,
+    RESORTING,
+    RESORTED,
 };
 
 class SvTreeListBox;
@@ -81,25 +79,25 @@ class UNLESS_MERGELIBS_MORE(VCL_DLLPUBLIC) SvTreeList final
     std::unique_ptr<SvTreeListEntry> m_pRootItem;
 
     SvTreeListEntry*        FirstVisible() const { return First(); }
-    SvTreeListEntry* NextVisible(const SvTreeListBox*, SvTreeListEntry* pEntry,
+    SvTreeListEntry* NextVisible(const SvTreeListBox& rView, SvTreeListEntry* pEntry,
                                  sal_uInt16* pDepth = nullptr) const;
-    SvTreeListEntry* PrevVisible(const SvTreeListBox*, SvTreeListEntry* pEntry) const;
-    SvTreeListEntry* LastVisible(const SvTreeListBox*) const;
-    SvTreeListEntry* NextVisible(const SvTreeListBox*, SvTreeListEntry* pEntry,
+    SvTreeListEntry* PrevVisible(const SvTreeListBox& rView, SvTreeListEntry* pEntry) const;
+    SvTreeListEntry* LastVisible(const SvTreeListBox& rView) const;
+    SvTreeListEntry* NextVisible(const SvTreeListBox& rView, SvTreeListEntry* pEntry,
                                  sal_uInt16& rDelta) const;
-    SvTreeListEntry* PrevVisible(const SvTreeListBox*, SvTreeListEntry* pEntry,
+    SvTreeListEntry* PrevVisible(const SvTreeListBox& rView, SvTreeListEntry* pEntry,
                                  sal_uInt16& rDelta) const;
 
-    bool IsEntryVisible(const SvTreeListBox*, SvTreeListEntry* pEntry) const;
-    SvTreeListEntry* GetEntryAtVisPos(const SvTreeListBox*, sal_uInt32 nVisPos) const;
-    sal_uInt32 GetVisiblePos(const SvTreeListBox*, SvTreeListEntry const* pEntry) const;
-    sal_uInt32 GetVisibleCount(SvTreeListBox*) const;
-    sal_uInt32 GetVisibleChildCount(const SvTreeListBox*, SvTreeListEntry* pParent) const;
+    bool IsEntryVisible(const SvTreeListBox& rView, SvTreeListEntry* pEntry) const;
+    SvTreeListEntry* GetEntryAtVisPos(const SvTreeListBox& rView, sal_uInt32 nVisPos) const;
+    sal_uInt32 GetVisiblePos(const SvTreeListBox& rView, SvTreeListEntry const* pEntry) const;
+    sal_uInt32 GetVisibleCount(SvTreeListBox& rView) const;
+    sal_uInt32 GetVisibleChildCount(const SvTreeListBox& rView, SvTreeListEntry* pParent) const;
 
-    SvTreeListEntry* FirstSelected(const SvTreeListBox*) const;
-    SvTreeListEntry* NextSelected(const SvTreeListBox*, SvTreeListEntry* pEntry) const;
+    SvTreeListEntry* FirstSelected(const SvTreeListBox& rView) const;
+    SvTreeListEntry* NextSelected(const SvTreeListBox& rView, SvTreeListEntry* pEntry) const;
 
-    sal_uInt32 GetChildSelectionCount(const SvTreeListBox*, SvTreeListEntry* pParent) const;
+    sal_uInt32 GetChildSelectionCount(const SvTreeListBox& rView, SvTreeListEntry* pParent) const;
 
     SAL_DLLPRIVATE void SetAbsolutePositions();
 
@@ -130,13 +128,13 @@ public:
                         SvTreeList(SvTreeListBox&);
                         ~SvTreeList();
 
-    void Broadcast(SvListAction nActionId, SvTreeListEntry* pEntry = nullptr);
+    void Broadcast(SvListAction eAction, SvTreeListEntry* pEntry = nullptr);
 
     void                EnableInvalidate( bool bEnable );
     bool                IsEnableInvalidate() const { return mbEnableInvalidate; }
 
     // Notify all Listeners
-    void                InvalidateEntry( SvTreeListEntry* );
+    void InvalidateEntry(SvTreeListEntry& rEntry);
 
     sal_uInt32 GetEntryCount() const { return m_nEntryCount; }
     SvTreeListEntry*    First() const;
@@ -145,11 +143,7 @@ public:
 
     SvTreeListEntry* FirstChild(const SvTreeListEntry* pParent) const;
 
-    void Insert(SvTreeListEntry* pEntry, SvTreeListEntry* pPar, sal_uInt32 nPos = TREELIST_APPEND);
-    void Insert(SvTreeListEntry* pEntry, sal_uInt32 nRootPos = TREELIST_APPEND)
-    {
-        Insert(pEntry, m_pRootItem.get(), nRootPos);
-    }
+    void Insert(SvTreeListEntry* pEntry, sal_uInt32 nPos, SvTreeListEntry* pPar);
 
     void                InsertTree( SvTreeListEntry* pTree, SvTreeListEntry* pTargetParent, sal_uInt32 nListPos );
 
@@ -168,11 +162,9 @@ public:
     SvTreeListEntry*        GetEntry( sal_uInt32 nRootPos ) const;
     SvTreeListEntry*        GetEntryAtAbsPos( sal_uInt32 nAbsPos ) const;
 
-    const SvTreeListEntry* GetParent( const SvTreeListEntry* pEntry ) const;
-    SvTreeListEntry* GetParent( SvTreeListEntry* pEntry );
+    SvTreeListEntry* GetParent(const SvTreeListEntry* pEntry) const;
 
     const SvTreeListEntries& GetChildList( SvTreeListEntry* pParent ) const;
-    SvTreeListEntries& GetChildList( SvTreeListEntry* pParent );
 
     sal_uInt32 GetAbsPos( const SvTreeListEntry* pEntry ) const;
     static sal_uInt32 GetRelPos( const SvTreeListEntry* pChild );

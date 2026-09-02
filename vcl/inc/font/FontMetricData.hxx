@@ -120,7 +120,7 @@ private:
     tools::Long            mnExtLeading;               // External Leading
     int             mnSlant;                    // Slant (Italic/Oblique)
     double                 mnMinKashida;               // Minimal width of kashida (Arabic)
-    tools::Long            mnHangingBaseline;          // Offset of hanging baseline to Romn baseline
+    tools::Long            mnHangingBaseline;          // Offset of hanging baseline to Roman baseline
     double mdEmSize; // Size of an 'em'
     double mdHorCJKAdvanceSize; // Size of an 'ic' in horizontal text
     double mdVertCJKAdvanceSize; // Size of an 'ic' in vertical text
@@ -138,7 +138,7 @@ private:
     tools::Long            mnDUnderlineOffset1;        // Offset from double underline to baseline
     tools::Long            mnDUnderlineOffset2;        // Offset from double underline to baseline
     tools::Long            mnWUnderlineSize;           // Height of WaveLine underline
-    tools::Long            mnWUnderlineOffset;         // Offset from WaveLine underline to baseline, but centrered to WaveLine
+    tools::Long            mnWUnderlineOffset;         // Offset from WaveLine underline to baseline, but centred to WaveLine
     tools::Long            mnAboveUnderlineSize;       // Height of single underline (for Vertical Right)
     tools::Long            mnAboveUnderlineOffset;     // Offset from single underline to baseline (for Vertical Right)
     tools::Long            mnAboveBUnderlineSize;      // Height of bold underline (for Vertical Right)
@@ -146,8 +146,8 @@ private:
     tools::Long            mnAboveDUnderlineSize;      // Height of double underline (for Vertical Right)
     tools::Long            mnAboveDUnderlineOffset1;   // Offset from double underline to baseline (for Vertical Right)
     tools::Long            mnAboveDUnderlineOffset2;   // Offset from double underline to baseline (for Vertical Right)
-    tools::Long            mnAboveWUnderlineSize;      // Height of WaveLine-strike-out (for Vertical Right)
-    tools::Long            mnAboveWUnderlineOffset;    // Offset from WaveLine-strike-out to baseline, but centrered to the WaveLine (for Vertical Right)
+    tools::Long            mnAboveWUnderlineSize;      // Height of WaveLine underline (for Vertical Right)
+    tools::Long            mnAboveWUnderlineOffset;    // Offset from WaveLine underline to baseline, but centred to the WaveLine (for Vertical Right)
     tools::Long            mnStrikeoutSize;            // Height of single strike-out
     tools::Long            mnStrikeoutOffset;          // Offset from single strike-out to baseline
     tools::Long            mnBStrikeoutSize;           // Height of bold strike-out

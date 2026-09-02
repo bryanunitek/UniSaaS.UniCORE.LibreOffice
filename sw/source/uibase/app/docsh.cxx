@@ -107,6 +107,7 @@
 #include <iodetect.hxx>
 
 #include <comphelper/processfactory.hxx>
+#include <svx/fillbitmaplink.hxx>
 #include <unotxdoc.hxx>
 
 using namespace ::com::sun::star;
@@ -1319,7 +1320,9 @@ void SwDocShell::PerformLinkUpdate()
 {
     sfx2::LinkManager& rLinkMgr
         = GetDoc()->getIDocumentLinksAdministration().GetLinkManager();
-    rLinkMgr.UpdateAllLinks(false, nullptr,
+    registerDeferredFormImageLinks(GetDeferredFormControlImages(), rLinkMgr);
+    ClearDeferredFormControlImages();
+    rLinkMgr.UpdateAllLinks(false,
                             GetMedium() ? GetMedium()->GetName() : OUString());
 }
 

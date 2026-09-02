@@ -10,6 +10,7 @@
 #include <tools/color.hxx>
 #include <test/bootstrapfixture.hxx>
 #include <test/outputdevice.hxx>
+#include <config_fonts.h>
 
 #include <basegfx/matrix/b2dhommatrix.hxx>
 #include <basegfx/numeric/ftools.hxx>
@@ -19,6 +20,7 @@
 #include <basegfx/matrix/b2dhommatrixtools.hxx>
 #include <tools/mapunit.hxx>
 
+#include <vcl/font.hxx>
 #include <vcl/gradient.hxx>
 #include <vcl/lineinfo.hxx>
 #include <vcl/print.hxx>
@@ -34,12 +36,35 @@
 
 #include <vcl/BitmapWriteAccess.hxx>
 #include <bufferdevice.hxx>
+#include <font/PhysicalFontCollection.hxx>
+#include <svdata.hxx>
 #include <window.h>
 
 const size_t INITIAL_SETUP_ACTION_COUNT = 5;
 
 class VclOutdevTest : public test::BootstrapFixture
 {
+// skip test for macOS (missing fonts?)
+#if !defined(MACOSX)
+
+    OUString maDataUrl = u"/vcl/qa/cppunit/data/"_ustr;
+
+    OUString getFullUrl(std::u16string_view sFileName)
+    {
+        return m_directories.getURLFromSrc(maDataUrl) + sFileName;
+    }
+
+protected:
+    bool addFont(OutputDevice* pOutDev, std::u16string_view sFileName,
+                 std::u16string_view sFamilyName)
+    {
+        OutputDevice::ImplClearAllFontData(true);
+        bool bAdded = pOutDev->AddTempDevFont(getFullUrl(sFileName), OUString(sFamilyName));
+        OutputDevice::ImplRefreshAllFontData(true);
+        return bAdded;
+    }
+#endif
+
 public:
     VclOutdevTest()
         : BootstrapFixture(true, false)
@@ -2118,6 +2143,173 @@ CPPUNIT_TEST_FIXTURE(VclOutdevTest, testDrawGradient_rect_complex)
     MetaAction* pAction = aMtf.GetAction(nIndex);
     CPPUNIT_ASSERT_EQUAL_MESSAGE("Not a gradient action (rectangle area)", MetaActionType::GRADIENT,
                                  pAction->GetType());
+}
+
+CPPUNIT_TEST_FIXTURE(VclOutdevTest, testGetTypographicFontName)
+{
+#if HAVE_MORE_FONTS
+    ScopedVclPtrInstance<VirtualDevice> pVDev;
+
+    // A legacy family name (name ID 1) converts to the typographic family
+    // (name ID 16) + subfamily (name ID 17) of the face it selects.
+    OUString aFamily, aSubfamily;
+    CPPUNIT_ASSERT(pVDev->GetTypographicFontName(u"DejaVu Sans Condensed", WEIGHT_NORMAL,
+                                                 WIDTH_DONTKNOW, ITALIC_NONE, aFamily, aSubfamily));
+    CPPUNIT_ASSERT_EQUAL(u"DejaVu Sans"_ustr, aFamily);
+    CPPUNIT_ASSERT_EQUAL(u"Condensed"_ustr, aSubfamily);
+
+    CPPUNIT_ASSERT(pVDev->GetTypographicFontName(u"DejaVu Sans Condensed", WEIGHT_BOLD,
+                                                 WIDTH_DONTKNOW, ITALIC_NONE, aFamily, aSubfamily));
+    CPPUNIT_ASSERT_EQUAL(u"DejaVu Sans"_ustr, aFamily);
+    CPPUNIT_ASSERT_EQUAL(u"Condensed Bold"_ustr, aSubfamily);
+
+    // An unknown family is left to the caller (no conversion).
+    CPPUNIT_ASSERT(!pVDev->GetTypographicFontName(
+        u"No Such Font ZZZ", WEIGHT_NORMAL, WIDTH_DONTKNOW, ITALIC_NONE, aFamily, aSubfamily));
+#endif
+}
+
+CPPUNIT_TEST_FIXTURE(VclOutdevTest, testGetTypographicFontNameFamilyAlias)
+{
+#if HAVE_MORE_FONTS
+    ScopedVclPtrInstance<VirtualDevice> pVDev;
+    CPPUNIT_ASSERT(pVDev->IsFontAvailable(u"DejaVu Sans"));
+
+    // If a condensed face happens to be enumerated first, its legacy family
+    // name gets registered as an alias of the family (tdf#63011), and the
+    // family lookup then succeeds where it otherwise wouldn't. Inject the
+    // alias to simulate such enumeration order; the legacy name must still
+    // resolve to the condensed face, not to the family's default one.
+    ImplGetSVData()->maGDIData.mxScreenFontList->AddFontFamilyAlias(u"DejaVu Sans Condensed"_ustr,
+                                                                    u"DejaVu Sans"_ustr);
+
+    OUString aFamily, aSubfamily;
+    CPPUNIT_ASSERT(pVDev->GetTypographicFontName(u"DejaVu Sans Condensed", WEIGHT_NORMAL,
+                                                 WIDTH_DONTKNOW, ITALIC_NONE, aFamily, aSubfamily));
+    CPPUNIT_ASSERT_EQUAL(u"DejaVu Sans"_ustr, aFamily);
+    CPPUNIT_ASSERT_EQUAL(u"Condensed"_ustr, aSubfamily);
+
+    CPPUNIT_ASSERT(pVDev->GetTypographicFontName(u"DejaVu Sans Condensed", WEIGHT_BOLD,
+                                                 WIDTH_DONTKNOW, ITALIC_NONE, aFamily, aSubfamily));
+    CPPUNIT_ASSERT_EQUAL(u"DejaVu Sans"_ustr, aFamily);
+    CPPUNIT_ASSERT_EQUAL(u"Condensed Bold"_ustr, aSubfamily);
+
+    // Drop the injected alias, so the other tests see the real font lists.
+    OutputDevice::ImplClearAllFontData(true);
+    OutputDevice::ImplRefreshAllFontData(true);
+#endif
+}
+
+CPPUNIT_TEST_FIXTURE(VclOutdevTest, testGetLegacyFontName)
+{
+#if HAVE_MORE_FONTS
+    ScopedVclPtrInstance<VirtualDevice> pVDev;
+
+    // A typographic family and subfamily to the legacy names.
+    OUString aLegacy;
+    CPPUNIT_ASSERT(pVDev->GetLegacyFontName(u"DejaVu Sans", u"Condensed", WEIGHT_NORMAL,
+                                            ITALIC_NONE, aLegacy));
+    CPPUNIT_ASSERT_EQUAL(u"DejaVu Sans Condensed"_ustr, aLegacy);
+
+    // The bold of the same subfamily shares the legacy family name.
+    OUString aLegacyBold;
+    CPPUNIT_ASSERT(pVDev->GetLegacyFontName(u"DejaVu Sans", u"Condensed", WEIGHT_BOLD, ITALIC_NONE,
+                                            aLegacyBold));
+    CPPUNIT_ASSERT_EQUAL(u"DejaVu Sans Condensed"_ustr, aLegacyBold);
+
+    // A plain style has no extended subfamily, so the family name is kept (no recomposition).
+    OUString aRibbi;
+    CPPUNIT_ASSERT(
+        !pVDev->GetLegacyFontName(u"DejaVu Sans", u"", WEIGHT_NORMAL, ITALIC_NONE, aRibbi));
+
+    // An unknown family is left to the caller.
+    OUString aUnknown;
+    CPPUNIT_ASSERT(!pVDev->GetLegacyFontName(u"No Such Font ZZZ", u"Condensed", WEIGHT_NORMAL,
+                                             ITALIC_NONE, aUnknown));
+#endif
+}
+
+CPPUNIT_TEST_FIXTURE(VclOutdevTest, TestSupportsOpenTypeMath)
+{
+// skip test for macOS
+#if !defined(MACOSX)
+
+    ScopedVclPtrInstance<VirtualDevice> pOutDev;
+
+    // Font with a MATH table
+    bool bAdded = addFont(pOutDev, u"STIXTwoMath-subset.otf", u"STIX Two Math");
+    CPPUNIT_ASSERT_MESSAGE("Failed to load STIX Two Math Font", bAdded);
+
+    vcl::Font aMathFont(u"STIX Two Math"_ustr, u"Regular"_ustr, Size(0, 72));
+    pOutDev->SetFont(aMathFont);
+    bool bSupportsMath = pOutDev->SupportsOpenTypeMath();
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("STIX Two Math has a MATH table and should support OpenType Math",
+                                 true, bSupportsMath);
+
+    // Font without a MATH table
+    bAdded = addFont(pOutDev, u"tdf107718.otf", u"Source Han Sans");
+    CPPUNIT_ASSERT_MESSAGE("Failed to load Source Han Sans Font", bAdded);
+
+    vcl::Font aFont(u"Source Han Sans"_ustr, u"Regular"_ustr, Size(0, 72));
+    pOutDev->SetFont(aFont);
+    bSupportsMath = pOutDev->SupportsOpenTypeMath();
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("Source Han Sans is a normal font and shouldn't OpenType Math",
+                                 false, bSupportsMath);
+
+#endif
+}
+
+CPPUNIT_TEST_FIXTURE(VclOutdevTest, TestGetOpenTypeMathConstant)
+{
+// skip test for macOS
+#if !defined(MACOSX)
+
+    ScopedVclPtrInstance<VirtualDevice> pOutDev;
+
+    // Source Han Sans Font doesn't return OpenType Math Constant
+    bool bAdded = addFont(pOutDev, u"tdf107718.otf", u"Source Han Sans");
+    CPPUNIT_ASSERT_MESSAGE("Failed to load Source Han Sans Font", bAdded);
+
+    vcl::Font aFont(u"Source Han Sans"_ustr, u"Regular"_ustr, Size(0, 72));
+    pOutDev->SetFont(aFont);
+
+    for (int i = vcl::OpenTypeMathConstant::ScriptPercentScaleDown;
+         i <= vcl::OpenTypeMathConstant::RadicalDegreeBottomRaisePercent; ++i)
+    {
+        auto eMathConstant = static_cast<vcl::OpenTypeMathConstant>(i);
+        double nResult = pOutDev->GetOpenTypeMathConstant(eMathConstant);
+
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(
+            "Source Han Sans is a normal font and it should return 0 for Math Constants", 0,
+            static_cast<int>(nResult));
+    }
+
+    // STIX Two Math Font returns OpenType Math Constant
+    bAdded = addFont(pOutDev, u"STIXTwoMath-subset.otf", u"STIX Two Math");
+    CPPUNIT_ASSERT_MESSAGE("Failed to load STIX Two Math Font", bAdded);
+
+    vcl::Font aMathFont(u"STIX Two Math"_ustr, u"Regular"_ustr, Size(0, 72));
+    pOutDev->SetFont(aMathFont);
+
+    double nFractionRuleThickness
+        = pOutDev->GetOpenTypeMathConstant(vcl::OpenTypeMathConstant::FractionRuleThickness);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE(
+        "STIX Two Math has a MATH table and should return FractionRuleThickness's value", 4.896,
+        nFractionRuleThickness);
+
+    double nScriptScriptPercentScaleDown
+        = pOutDev->GetOpenTypeMathConstant(vcl::OpenTypeMathConstant::ScriptScriptPercentScaleDown);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE(
+        "STIX Two Math has a MATH table and should return ScriptScriptPercentScaleDown's value",
+        0.55, nScriptScriptPercentScaleDown);
+
+    double nSubscriptShiftDown
+        = pOutDev->GetOpenTypeMathConstant(vcl::OpenTypeMathConstant::SubscriptShiftDown);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE(
+        "STIX Two Math has a MATH table and should return SubscriptShiftDown's value", 15.12,
+        nSubscriptShiftDown);
+
+#endif
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

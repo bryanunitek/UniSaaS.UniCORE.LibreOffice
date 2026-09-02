@@ -797,7 +797,7 @@ DECLARE_OOXMLEXPORT_TEST(testTdf136841, "tdf136841.docx")
     // - Expected: Color: R:228 G:71 B:69 A:0
     // - Actual  : Color: R:0 G:0 B:0 A:0
 
-#if defined(_WIN32) || defined(MACOSX)
+#if defined(_WIN32) || (defined(MACOSX) && !USE_HEADLESS_CODE)
     CPPUNIT_ASSERT_EQUAL( Color(228,71,69), bitmap.GetPixelColor(38,38));
 #else
     // NOTE: For CairoSDPR the Color changes slightly from (228,71,69)
@@ -1149,6 +1149,30 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf152152)
     // - Actual  : 1
     // i.e. the once WDP picture wouldn't have been saved.
     CPPUNIT_ASSERT_EQUAL(2, nImageFiles);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testWebSettingsPreserved)
+{
+    // this test file has word/webSettings.xml
+    createSwDoc("1_page.docx");
+    save(TestFilter::DOCX);
+    // before this change the file would not exist
+    xmlDocUniquePtr pXmlDoc = parseExport(u"word/webSettings.xml"_ustr);
+    // test the content and that the relationship is present
+    assertXPath(pXmlDoc, "/w:webSettings/w:optimizeForBrowser", 1);
+    xmlDocUniquePtr pRels = parseExport(u"word/_rels/document.xml.rels"_ustr);
+    assertXPath(pRels, "/rels:Relationships/rels:Relationship[@Target='webSettings.xml']", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testNoWebSettings)
+{
+    // no word/webSettings.xml to roundtrip in this document
+    createSwDoc("cloud.docx");
+    save(TestFilter::DOCX);
+    uno::Reference<packages::zip::XZipFileAccess2> xNameAccess
+        = packages::zip::ZipFileAccess::createWithURL(comphelper::getComponentContext(m_xSFactory),
+                                                      maTempFile.GetURL());
+    CPPUNIT_ASSERT(!xNameAccess->hasByName(u"word/webSettings.xml"_ustr));
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

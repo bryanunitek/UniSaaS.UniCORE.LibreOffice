@@ -9,31 +9,51 @@
 
 #pragma once
 
-#include "scriptbrowser.hxx"
+#include <com/sun/star/script/browse/XBrowseNode.hpp>
+#include <com/sun/star/script/browse/XCopyableBrowseNode.hpp>
+#include <com/sun/star/script/browse/XEditableBrowseNode.hpp>
+#include <cppuhelper/implbase.hxx>
+#include <memory>
+#include <optional>
 
 namespace singleprovider
 {
-class ScriptFile : public ScriptBrowser
+class ProviderContext;
+
+class ScriptFile : public cppu::WeakImplHelper<css::script::browse::XBrowseNode,
+                                               css::script::browse::XCopyableBrowseNode,
+                                               css::script::browse::XEditableBrowseNode>
 {
 public:
     ScriptFile(const std::shared_ptr<ProviderContext>& pProviderContext, const OUString& sName,
                const OUString& sBaseUri);
 
     // XBrowseNode
+    OUString SAL_CALL getName() override;
     css::uno::Sequence<css::uno::Reference<css::script::browse::XBrowseNode>>
         SAL_CALL getChildNodes() override;
     sal_Bool SAL_CALL hasChildNodes() override;
     sal_Int16 SAL_CALL getType() override;
 
-    // XPropertySet
-    css::uno::Any SAL_CALL getPropertyValue(const OUString& sPropertyName) override;
+    // XCopyableBrowseNode
+    sal_Bool SAL_CALL isCopyableNode() override;
+    sal_Bool SAL_CALL nodeCanBeCopiedTo(
+        const css::uno::Reference<css::script::browse::XBrowseNode>& xParentNode) override;
+    css::uno::Reference<css::script::browse::XBrowseNode> SAL_CALL
+    copyNode(const css::uno::Reference<css::script::browse::XBrowseNode>& xParentNode) override;
 
-    // XInvocation
-    css::uno::Any SAL_CALL invoke(const OUString& sFunctionName,
-                                  const css::uno::Sequence<css::uno::Any>& aParams,
-                                  css::uno::Sequence<sal_Int16>& aOutParamIndex,
-                                  css::uno::Sequence<css::uno::Any>& aOutParam) override;
-    sal_Bool SAL_CALL hasMethod(const OUString& sFunctionName) override;
+    // XEditableBrowseNode
+    sal_Bool SAL_CALL isEditableNode() override;
+    sal_Bool SAL_CALL editNode() override;
+
+private:
+    std::shared_ptr<ProviderContext> m_pProviderContext;
+
+    OUString m_sName;
+    OUString m_sBaseUri;
+
+    std::optional<OUString>
+    getCopyDestinationUri(const css::uno::Reference<css::script::browse::XBrowseNode>& xDest) const;
 };
 }
 

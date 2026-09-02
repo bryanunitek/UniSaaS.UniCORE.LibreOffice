@@ -159,7 +159,8 @@ bool SwTextGuess::maybeAdjustPositionsForBlockAdjust(tools::Long& rMaxSizeDiff,
 // otherwise possible break or hyphenation position is determined
 bool SwTextGuess::Guess( const SwTextPortion& rPor, SwTextFormatInfo &rInf,
                             const sal_uInt16 nPorHeight, sal_Int32 nSpacesInLine,
-                            sal_uInt16 nPropWordSpacing, sal_Int16 nSpaceWidth )
+                            sal_uInt16 nPropWordSpacing, sal_Int16 nSpaceWidth,
+                            sal_uInt16 nExtraWordSpacing )
 {
     m_nCutPos = rInf.GetIdx();
 
@@ -192,7 +193,6 @@ bool SwTextGuess::Guess( const SwTextPortion& rPor, SwTextFormatInfo &rInf,
         nLineWidth -= pLay->GetParaComposerBreak();
 
     SvxAdjustItem aAdjustItem = rInf.GetTextFrame()->GetTextNodeForParaProps()->GetSwAttrSet().GetAdjust();
-    const SvxAdjust aAdjust = aAdjustItem.GetAdjust();
     // Maximum word spacing allows bigger spaces to limit hyphenation,
     // implement it based on the hyphenation zone: calculate a hyphenation zone
     // from maximum word spacing and space count of the line
@@ -203,9 +203,9 @@ bool SwTextGuess::Guess( const SwTextPortion& rPor, SwTextFormatInfo &rInf,
         SwTwips nExtraSpace = nSpacesInLine * nSpaceWidth/10.0 * (1.0 - nPropWordSpacing / 100.0);
         nLineWidth += nExtraSpace;
         // convert maximum word spacing to hyphenation zone, if defined
-        if ( nPropWordSpacing == aAdjustItem.GetPropWordSpacing() )
+        if ( nPropWordSpacing == aAdjustItem.GetPropWordSpacing() || nExtraWordSpacing )
         {
-            SwTwips nMaxDif = aAdjustItem.GetPropWordSpacingMaximum() - nPropWordSpacing;
+            SwTwips nMaxDif = aAdjustItem.GetPropWordSpacingMaximum() - 100.0 + nExtraWordSpacing;
             nWordSpacingMaximumZone = nSpacesInLine * nSpaceWidth/10.0 * nMaxDif / 100.0;
         }
 
@@ -299,10 +299,7 @@ bool SwTextGuess::Guess( const SwTextPortion& rPor, SwTextFormatInfo &rInf,
         }
     }
 
-    bool bHyph = rInf.IsHyphenate() && !rInf.IsHyphForbud() &&
-            // disable hyphenation at minimum word spacing
-            // (and at weighted word spacing between minimum and desired word spacing)
-            !( nPropWordSpacing < aAdjustItem.GetPropWordSpacing() );
+    bool bHyph = rInf.IsHyphenate() && !rInf.IsHyphForbud();
 
     // disable hyphenation according to hyphenation-keep and hyphenation-keep-type,
     // or modify hyphenation according to hyphenation-zone-column/page/spread (see widorp.cxx)
@@ -626,7 +623,7 @@ bool SwTextGuess::Guess( const SwTextPortion& rPor, SwTextFormatInfo &rInf,
 #endif
 
         // be careful: a field portion can be both: 0x01 (common field)
-        // or 0x02 (the follow of a footnode)
+        // or 0x02 (the follow of a footnote)
         if ( rInf.GetLast() && rInf.GetLast()->InFieldGrp() &&
              ! rInf.GetLast()->IsFootnotePortion() &&
              rInf.GetIdx() > rInf.GetLineStart() &&
@@ -816,20 +813,19 @@ bool SwTextGuess::Guess( const SwTextPortion& rPor, SwTextFormatInfo &rInf,
                 m_nBreakPos = rInf.GetIdx() - TextFrameIndex(1);
             }
 
-            if( aAdjust != SvxAdjust::ParaStart && aAdjust != SvxAdjust::Left )
+            // Delete any blanks at the end of a line, but be careful:
+            // If a field has been expanded, we do not want to delete any
+            // blanks inside the field portion. This would cause an unwanted
+            // underflow
+            TextFrameIndex nX = m_nBreakPos;
+            while (nX > rInf.GetLineStart()
+                   && (CH_TXTATR_BREAKWORD != cFieldChr || nX > rInf.GetIdx())
+                   && (CH_BLANK == rInf.GetChar(--nX) || CH_SIX_PER_EM == rInf.GetChar(nX)
+                       || CH_FULL_BLANK == rInf.GetChar(nX)))
             {
-                // Delete any blanks at the end of a line, but be careful:
-                // If a field has been expanded, we do not want to delete any
-                // blanks inside the field portion. This would cause an unwanted
-                // underflow
-                TextFrameIndex nX = m_nBreakPos;
-                while( nX > rInf.GetLineStart() &&
-                       ( CH_TXTATR_BREAKWORD != cFieldChr || nX > rInf.GetIdx() ) &&
-                       ( CH_BLANK == rInf.GetChar( --nX ) ||
-                         CH_SIX_PER_EM == rInf.GetChar( nX ) ||
-                         CH_FULL_BLANK == rInf.GetChar( nX ) ) )
-                    m_nBreakPos = nX;
+                m_nBreakPos = nX;
             }
+
             if( m_nBreakPos > rInf.GetIdx() )
                 nPorLen = m_nBreakPos - rInf.GetIdx();
         }

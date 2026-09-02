@@ -527,8 +527,7 @@ namespace dxcanvas
                 Gdiplus::Color(
                     dxcanvastools::sequenceToArgb(renderState.DeviceColor)));
 
-            CanvasFont::ImplRef pFont(
-                dxcanvastools::canvasFontFromXFont(xFont) );
+            rtl::Reference<CanvasFont> pFont(dxcanvastools::canvasFontFromXFont(xFont));
 
             // Move glyphs up, such that output happens at the font
             // baseline.
@@ -754,7 +753,7 @@ namespace dxcanvas
         {
             GraphicsPathSharedPtr aClipPath( dxcanvastools::graphicsPathFromXPolyPolygon2D( viewState.Clip ) );
 
-            // TODO(P3): Cache clip. SetClip( GraphicsPath ) performs abyssmally on GDI+.
+            // TODO(P3): Cache clip. SetClip( GraphicsPath ) performs abysmally on GDI+.
             // Try SetClip( Rect ) or similar for simple clip paths (need some support in
             // LinePolyPolygon, then)
             ENSURE_OR_THROW(
@@ -787,7 +786,7 @@ namespace dxcanvas
         {
             GraphicsPathSharedPtr aClipPath( dxcanvastools::graphicsPathFromXPolyPolygon2D( renderState.Clip ) );
 
-            // TODO(P3): Cache clip. SetClip( GraphicsPath ) performs abyssmally on GDI+.
+            // TODO(P3): Cache clip. SetClip( GraphicsPath ) performs abysmally on GDI+.
             // Try SetClip( Rect ) or similar for simple clip paths (need some support in
             // LinePolyPolygon, then)
             ENSURE_OR_THROW(
@@ -800,7 +799,7 @@ namespace dxcanvas
         const Gdiplus::CompositingMode eCompositing( calcCompositingMode( renderState.CompositeOperation ) );
         ENSURE_OR_THROW(
             Gdiplus::Ok == rGraphics->SetCompositingMode( eCompositing ),
-            "CanvasHelper::setupGraphicsState(): Cannot set GDI* compositing mode)" );
+            "CanvasHelper::setupGraphicsState(): Cannot set GDI+ compositing mode" );
     }
 
     void CanvasHelper::flush() const

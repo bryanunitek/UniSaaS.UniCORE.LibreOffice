@@ -48,7 +48,7 @@ protected:
     virtual OUString SAL_CALL getImplementationName() override;
     virtual css::uno::Sequence<OUString> SAL_CALL getSupportedServiceNames() override;
 
-    // XPropertyHandler overriables
+    // XPropertyHandler overridables
     virtual css::uno::Any SAL_CALL getPropertyValue(const OUString& _rPropertyName) override;
     virtual void SAL_CALL setPropertyValue(const OUString& _rPropertyName,
                                            const css::uno::Any& _rValue) override;
@@ -72,7 +72,7 @@ private:
     /** updates a property (UI) whose state depends on more than one other property
 
             ->actuatingPropertyChanged is called for certain properties in whose changes
-            we expressed interes (->getActuatingProperty). Now such a property change can
+            we expressed interest (->getActuatingProperty). Now such a property change can
             result in simple UI updates, for instance another property being enabled or disabled.
 
             However, it can also result in a more complex change: The current (UI) state might

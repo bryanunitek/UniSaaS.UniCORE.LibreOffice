@@ -119,6 +119,7 @@
         { UNO_NAME_PARA_HYPHENATION_MAX_TRAILING_CHARS, RES_PARATR_HYPHENZONE,         cppu::UnoType<sal_Int16>::get(),         PropertyAttribute::MAYBEVOID, MID_HYPHEN_MIN_TRAIL                   }, \
         { UNO_NAME_PARA_HYPHENATION_COMPOUND_MIN_LEADING_CHARS, RES_PARATR_HYPHENZONE, cppu::UnoType<sal_Int16>::get(),         PropertyAttribute::MAYBEVOID, MID_HYPHEN_COMPOUND_MIN_LEAD           }, \
         { UNO_NAME_PARA_HYPHENATION_COMPOUND_MIN_TRAILING_CHARS, RES_PARATR_HYPHENZONE, cppu::UnoType<sal_Int16>::get(),        PropertyAttribute::MAYBEVOID, MID_HYPHEN_COMPOUND_MIN_TRAIL          }, \
+        { UNO_NAME_PARA_HYPHENATION_LEVEL,              RES_PARATR_HYPHENZONE,         cppu::UnoType<sal_Int16>::get(),         PropertyAttribute::MAYBEVOID, MID_HYPHEN_LEVEL                       }, \
         { UNO_NAME_PARA_HYPHENATION_MAX_HYPHENS,        RES_PARATR_HYPHENZONE,         cppu::UnoType<sal_Int16>::get(),         PropertyAttribute::MAYBEVOID, MID_HYPHEN_MAX_HYPHENS                 }, \
         { UNO_NAME_PARA_HYPHENATION_MIN_WORD_LENGTH,    RES_PARATR_HYPHENZONE,         cppu::UnoType<sal_Int16>::get(),         PropertyAttribute::MAYBEVOID, MID_HYPHEN_MIN_WORD_LENGTH             }, \
         { UNO_NAME_PARA_HYPHENATION_ZONE,               RES_PARATR_HYPHENZONE,         cppu::UnoType<sal_Int16>::get(),         PropertyAttribute::MAYBEVOID, MID_HYPHEN_ZONE}, \
@@ -174,6 +175,8 @@
         { UNO_NAME_CHAR_NO_HYPHENATION,                 RES_CHRATR_NOHYPHEN,           cppu::UnoType<bool>::get(),       PropertyAttribute::MAYBEVOID, 0                                      }, \
         { UNO_NAME_CHAR_OPTICAL_SIZING,                 RES_CHRATR_OPTICAL_SIZING,     cppu::UnoType<bool>::get(),       PropertyAttribute::MAYBEVOID, 0                                      }, \
         { UNO_NAME_CHAR_FONT_VARIATIONS,                RES_CHRATR_FONT_VARIATIONS,    cppu::UnoType<OUString>::get(),   PropertyAttribute::MAYBEVOID, 0                                      }, \
+        { UNO_NAME_CHAR_CJK_FONT_VARIATIONS,            RES_CHRATR_CJK_FONT_VARIATIONS, cppu::UnoType<OUString>::get(),  PropertyAttribute::MAYBEVOID, 0                                      }, \
+        { UNO_NAME_CHAR_CTL_FONT_VARIATIONS,            RES_CHRATR_CTL_FONT_VARIATIONS, cppu::UnoType<OUString>::get(),  PropertyAttribute::MAYBEVOID, 0                                      }, \
         { UNO_NAME_CHAR_SHADOWED,                       RES_CHRATR_SHADOWED,           cppu::UnoType<bool>::get(),       PropertyAttribute::MAYBEVOID, 0                                      }, \
         { UNO_NAME_CHAR_CONTOURED,                      RES_CHRATR_CONTOUR,            cppu::UnoType<bool>::get(),       PropertyAttribute::MAYBEVOID, 0                                      }, \
         { UNO_NAME_DROP_CAP_FORMAT,                     RES_PARATR_DROP,               cppu::UnoType<css::style::DropCapFormat>::get(),    PropertyAttribute::MAYBEVOID, MID_DROPCAP_FORMAT     | CONVERT_TWIPS }, \
@@ -451,6 +454,8 @@
                     { UNO_NAME_CHAR_NO_HYPHENATION, RES_CHRATR_NOHYPHEN   ,   cppu::UnoType<bool>::get()  ,       PROPERTY_NONE,     0},\
                     { UNO_NAME_CHAR_OPTICAL_SIZING, RES_CHRATR_OPTICAL_SIZING ,  cppu::UnoType<bool>::get()  ,       PROPERTY_NONE,     0},\
                     { UNO_NAME_CHAR_FONT_VARIATIONS, RES_CHRATR_FONT_VARIATIONS ,  cppu::UnoType<OUString>::get()  ,       PROPERTY_NONE,     0},\
+                    { UNO_NAME_CHAR_CJK_FONT_VARIATIONS, RES_CHRATR_CJK_FONT_VARIATIONS ,  cppu::UnoType<OUString>::get()  ,       PROPERTY_NONE,     0},\
+                    { UNO_NAME_CHAR_CTL_FONT_VARIATIONS, RES_CHRATR_CTL_FONT_VARIATIONS ,  cppu::UnoType<OUString>::get()  ,       PROPERTY_NONE,     0},\
                     { UNO_NAME_CHAR_SHADOWED, RES_CHRATR_SHADOWED  ,  cppu::UnoType<bool>::get()  ,       PROPERTY_NONE, 0},\
                     { UNO_NAME_CHAR_CONTOURED, RES_CHRATR_CONTOUR,    cppu::UnoType<bool>::get()  ,       PROPERTY_NONE, 0},\
                     { UNO_NAME_DROP_CAP_FORMAT, RES_PARATR_DROP,        cppu::UnoType<css::style::DropCapFormat>::get()  , PROPERTY_NONE, MID_DROPCAP_FORMAT|CONVERT_TWIPS     },\
@@ -517,6 +522,7 @@
                     { UNO_NAME_PARA_HYPHENATION_MAX_TRAILING_CHARS, RES_PARATR_HYPHENZONE,        cppu::UnoType<sal_Int16>::get(),   PropertyAttribute::MAYBEVOID, MID_HYPHEN_MIN_TRAIL  },\
                     { UNO_NAME_PARA_HYPHENATION_COMPOUND_MIN_LEADING_CHARS, RES_PARATR_HYPHENZONE, cppu::UnoType<sal_Int16>::get(),  PropertyAttribute::MAYBEVOID, MID_HYPHEN_COMPOUND_MIN_LEAD },\
                     { UNO_NAME_PARA_HYPHENATION_COMPOUND_MIN_TRAILING_CHARS, RES_PARATR_HYPHENZONE, cppu::UnoType<sal_Int16>::get(), PropertyAttribute::MAYBEVOID, MID_HYPHEN_COMPOUND_MIN_TRAIL },\
+                    { UNO_NAME_PARA_HYPHENATION_LEVEL, RES_PARATR_HYPHENZONE, cppu::UnoType<sal_Int16>::get(), PropertyAttribute::MAYBEVOID, MID_HYPHEN_LEVEL },\
                     { UNO_NAME_PARA_HYPHENATION_MAX_HYPHENS, RES_PARATR_HYPHENZONE,       cppu::UnoType<sal_Int16>::get(),   PropertyAttribute::MAYBEVOID, MID_HYPHEN_MAX_HYPHENS},\
                     { UNO_NAME_PARA_HYPHENATION_MIN_WORD_LENGTH, RES_PARATR_HYPHENZONE,       cppu::UnoType<sal_Int16>::get(),   PropertyAttribute::MAYBEVOID, MID_HYPHEN_MIN_WORD_LENGTH},\
                     { UNO_NAME_PARA_HYPHENATION_ZONE, RES_PARATR_HYPHENZONE,                      cppu::UnoType<sal_Int16>::get(),   PropertyAttribute::MAYBEVOID, MID_HYPHEN_ZONE},\

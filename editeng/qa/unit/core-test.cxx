@@ -14,6 +14,7 @@
 #include <cppunit/extensions/HelperMacros.h>
 
 #include <editdoc.hxx>
+#include <com/sun/star/i18n/ScriptType.hpp>
 #include <EditSelection.hxx>
 #include <ParagraphPortionList.hxx>
 
@@ -141,8 +142,10 @@ public:
     void testTdf162803StaleKashidaArray();
     void testTdf157037PasteTextAutoDirection();
     void testFontVariationsItem();
+    void testFontVariationsScript();
     void testEscapementNotPreservedOnParaBreak();
     void testAutoDirNotPreservedOnParaBreak();
+    void testFontTypographicConversion();
 
     DECL_STATIC_LINK(Test, CalcFieldValueHdl, EditFieldInfo*, void);
 
@@ -179,8 +182,10 @@ public:
     CPPUNIT_TEST(testTdf162803StaleKashidaArray);
     CPPUNIT_TEST(testTdf157037PasteTextAutoDirection);
     CPPUNIT_TEST(testFontVariationsItem);
+    CPPUNIT_TEST(testFontVariationsScript);
     CPPUNIT_TEST(testEscapementNotPreservedOnParaBreak);
     CPPUNIT_TEST(testAutoDirNotPreservedOnParaBreak);
+    CPPUNIT_TEST(testFontTypographicConversion);
     CPPUNIT_TEST_SUITE_END();
 
 private:
@@ -2468,6 +2473,26 @@ void Test::testTdf157037PasteTextAutoDirection()
     CPPUNIT_ASSERT(!aEditEngine.IsRightToLeft(4));
 }
 
+void Test::testFontVariationsScript()
+{
+    CPPUNIT_ASSERT(IsScriptItemValid(EE_CHAR_FONTVARIATIONS, i18n::ScriptType::LATIN));
+    CPPUNIT_ASSERT(!IsScriptItemValid(EE_CHAR_FONTVARIATIONS, i18n::ScriptType::ASIAN));
+    CPPUNIT_ASSERT(!IsScriptItemValid(EE_CHAR_FONTVARIATIONS, i18n::ScriptType::COMPLEX));
+
+    CPPUNIT_ASSERT(!IsScriptItemValid(EE_CHAR_FONTVARIATIONS_CJK, i18n::ScriptType::LATIN));
+    CPPUNIT_ASSERT(IsScriptItemValid(EE_CHAR_FONTVARIATIONS_CJK, i18n::ScriptType::ASIAN));
+    CPPUNIT_ASSERT(!IsScriptItemValid(EE_CHAR_FONTVARIATIONS_CJK, i18n::ScriptType::COMPLEX));
+
+    CPPUNIT_ASSERT(!IsScriptItemValid(EE_CHAR_FONTVARIATIONS_CTL, i18n::ScriptType::LATIN));
+    CPPUNIT_ASSERT(!IsScriptItemValid(EE_CHAR_FONTVARIATIONS_CTL, i18n::ScriptType::ASIAN));
+    CPPUNIT_ASSERT(IsScriptItemValid(EE_CHAR_FONTVARIATIONS_CTL, i18n::ScriptType::COMPLEX));
+
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(EE_CHAR_FONTVARIATIONS_CJK),
+                         GetScriptItemId(EE_CHAR_FONTVARIATIONS, SvtScriptType::ASIAN));
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(EE_CHAR_FONTVARIATIONS_CTL),
+                         GetScriptItemId(EE_CHAR_FONTVARIATIONS, SvtScriptType::COMPLEX));
+}
+
 void Test::testFontVariationsItem()
 {
     // Test default construction (empty variations)
@@ -2581,6 +2606,24 @@ void Test::testAutoDirNotPreservedOnParaBreak()
     const auto* pNode2 = rDoc.GetObject(1);
     CPPUNIT_ASSERT(pNode2);
     CPPUNIT_ASSERT(!pNode2->GetContentAttribs().HasItem(EE_PARA_AUTOWRITINGDIR));
+}
+
+void Test::testFontTypographicConversion()
+{
+#if HAVE_MORE_FONTS
+    EditEngine aEditEngine(mpItemPool.get());
+
+    SfxItemSet aSet(aEditEngine.GetEmptyItemSet());
+    SvxFontItem aFont(EE_CHAR_FONTINFO);
+    aFont.SetFamilyName(u"DejaVu Sans Condensed"_ustr);
+    aSet.Put(aFont);
+    aEditEngine.QuickSetAttribs(aSet, ESelection(0, 0, 0, 1));
+
+    const SfxItemSet aStored = aEditEngine.GetAttribs(ESelection(0, 0, 0, 1));
+    const SvxFontItem& rStored = aStored.Get(EE_CHAR_FONTINFO);
+    CPPUNIT_ASSERT_EQUAL(u"DejaVu Sans"_ustr, rStored.GetFamilyName());
+    CPPUNIT_ASSERT_EQUAL(u"Condensed"_ustr, rStored.GetStyleName());
+#endif
 }
 
 CPPUNIT_TEST_SUITE_REGISTRATION(Test);

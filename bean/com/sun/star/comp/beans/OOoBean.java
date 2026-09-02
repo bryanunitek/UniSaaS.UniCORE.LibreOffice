@@ -440,7 +440,7 @@ public class OOoBean
 
         If no document is loaded and the instance is added to a Java container that
         is showing, then this method needs not to be called. If later one of the methods
-        {@link #loadFromURL loadFromURL}, {@link #loadFromStream loadFromStream1},
+        {@link #loadFromURL loadFromURL}, {@link #loadFromStream loadFromStream},
         or {@link #loadFromByteArray loadFromByteArray}
         is called, then the document is automatically displayed.
 
@@ -787,7 +787,7 @@ public class OOoBean
 
     /** Stores a document to the given URL.
         <p>
-        Due due a bug (50651) calling this method may cause the office to crash,
+        Due to a bug (50651) calling this method may cause the office to crash,
         when at the same time the office writes a backup of the document. This bug
         also affects {@link #storeToByteArray storeToByteArray} and
         {@link #storeToStream storeToStream}. The workaround

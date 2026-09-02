@@ -2449,6 +2449,7 @@ ScChart2DataSequence::ScChart2DataSequence( ScDocument* pDoc,
         bool bIncludeHiddenCells )
     : m_xDataArray(new std::vector<Item>)
     , m_bIncludeHiddenCells( bIncludeHiddenCells)
+    , m_eDimType(DataSourceType::UNKNOWN)
     , m_nObjectId( 0 )
     , m_pDocument( pDoc)
     , m_aTokens(std::move(rTokens))
@@ -3403,7 +3404,10 @@ void SAL_CALL ScChart2DataSequence::setPropertyValue(
     }
     else if( rPropertyName == "ChartExDimType" )
     {
-        if ( !(rValue >>= m_eDimType))
+        sal_Int32 nDimType;
+        if (rValue >>= nDimType)
+            m_eDimType = static_cast<DataSourceType>(nDimType);
+        else
             throw lang::IllegalArgumentException();
     }
     else if( rPropertyName == "ChartExFormula" )
@@ -3452,7 +3456,7 @@ uno::Any SAL_CALL ScChart2DataSequence::getPropertyValue(const OUString& rProper
         aRet <<= bHasStringLabel;
     }
     else if ( rPropertyName == "ChartExDimType" )
-        aRet <<= m_eDimType;
+        aRet <<= static_cast<sal_Int32>(m_eDimType);
     else if ( rPropertyName == "ChartExFormula" )
         aRet <<= m_sFormula;
     else if ( rPropertyName == "ChartExNFormula" )

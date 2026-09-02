@@ -818,11 +818,10 @@ void PSWriter::ImplWriteActions( const GDIMetaFile& rMtf, VirtualDevice& rVDev )
 
             case MetaActionType::BMPEX :
             {
-                Bitmap aBitmapEx( static_cast<MetaBmpExAction*>(pMA)->GetBitmap() );
-                Bitmap aBitmap( aBitmapEx.CreateColorBitmap() );
+                auto [ aBitmap, aMask ]
+                    = static_cast<MetaBmpExAction*>(pMA)->GetBitmap().SplitIntoColorAndAlpha();
                 if ( mbGrayScale )
                     aBitmap.Convert( BmpConversion::N8BitGreys );
-                const AlphaMask aMask( aBitmapEx.CreateAlphaMask() );
                 Point aPoint( static_cast<const MetaBmpExAction*>(pMA)->GetPoint() );
                 Size aSize( rVDev.PixelToLogic( aBitmap.GetSizePixel() ) );
                 ImplBmp( &aBitmap, &aMask, aPoint, aSize.Width(), aSize.Height() );
@@ -831,11 +830,10 @@ void PSWriter::ImplWriteActions( const GDIMetaFile& rMtf, VirtualDevice& rVDev )
 
             case MetaActionType::BMPEXSCALE :
             {
-                Bitmap aBitmapEx( static_cast<MetaBmpExScaleAction*>(pMA)->GetBitmap() );
-                Bitmap aBitmap( aBitmapEx.CreateColorBitmap() );
+                auto [ aBitmap, aMask ]
+                    = static_cast<MetaBmpExScaleAction*>(pMA)->GetBitmap().SplitIntoColorAndAlpha();
                 if ( mbGrayScale )
                     aBitmap.Convert( BmpConversion::N8BitGreys );
-                const AlphaMask aMask( aBitmapEx.CreateAlphaMask() );
                 Point aPoint = static_cast<const MetaBmpExScaleAction*>(pMA)->GetPoint();
                 Size aSize( static_cast<const MetaBmpExScaleAction*>(pMA)->GetSize() );
                 ImplBmp( &aBitmap, &aMask, aPoint, aSize.Width(), aSize.Height() );
@@ -847,10 +845,9 @@ void PSWriter::ImplWriteActions( const GDIMetaFile& rMtf, VirtualDevice& rVDev )
                 Bitmap      aBitmapEx( static_cast<const MetaBmpExScalePartAction*>(pMA)->GetBitmap() );
                 aBitmapEx.Crop( tools::Rectangle( static_cast<const MetaBmpExScalePartAction*>(pMA)->GetSrcPoint(),
                     static_cast<const MetaBmpExScalePartAction*>(pMA)->GetSrcSize() ) );
-                Bitmap      aBitmap( aBitmapEx.CreateColorBitmap() );
+                auto [ aBitmap, aMask ] = aBitmapEx.SplitIntoColorAndAlpha();
                 if ( mbGrayScale )
                     aBitmap.Convert( BmpConversion::N8BitGreys );
-                AlphaMask   aMask( aBitmapEx.CreateAlphaMask() );
                 Point aPoint = static_cast<const MetaBmpExScalePartAction*>(pMA)->GetDestPoint();
                 Size aSize = static_cast<const MetaBmpExScalePartAction*>(pMA)->GetDestSize();
                 ImplBmp( &aBitmap, &aMask, aPoint, aSize.Width(), aSize.Height() );
@@ -903,14 +900,13 @@ void PSWriter::ImplWriteActions( const GDIMetaFile& rMtf, VirtualDevice& rVDev )
                     Bitmap aBitmap(aWallpaper.GetBitmap());
                     if ( aBitmap.HasAlpha() )
                     {
-                        const Bitmap aBitmap2( aBitmap.CreateColorBitmap() );
+                        auto [ aBitmap2, aMask ] = aBitmap.SplitIntoColorAndAlpha();
                         if ( aWallpaper.IsGradient() )
                         {
 
                         // gradient action
 
                         }
-                        const AlphaMask aMask( aBitmap.CreateAlphaMask() );
                         ImplBmp( &aBitmap2, &aMask, Point( aRect.Left(), aRect.Top() ), aRect.GetWidth(), aRect.GetHeight() );
                     }
                     else
@@ -1304,12 +1300,12 @@ void PSWriter::ImplWriteActions( const GDIMetaFile& rMtf, VirtualDevice& rVDev )
                                 {
                                     aFill.getPath( aFillPath );
 
-                                    /* normally an object filling is consisting of three MetaActions:
+                                    /* normally an object filling consists of three MetaActions:
                                         MetaBitmapAction        using RasterOp xor,
                                         MetaPolyPolygonAction   using RasterOp rop_0
                                         MetaBitmapAction        using RasterOp xor
 
-                                        Because RasterOps cannot been used in Postscript, we have to
+                                        Because RasterOps cannot be used in Postscript, we have to
                                         replace these actions. The MetaComment "XPATHFILL_SEQ_BEGIN" is
                                         providing the clippath of the object. The following loop is
                                         trying to find the bitmap that is matching the clippath, so that
@@ -1813,7 +1809,7 @@ void PSWriter::ImplBmp( Bitmap const * pBitmap, AlphaMask const * pAlphaMaskBitm
             }
             else
             {
-                // have we to write a palette ?
+                // do we have to write a palette ?
 
                 if ( pAcc->HasPalette() )
                 {

@@ -56,8 +56,12 @@
 #include <oox/token/tokens.hxx>
 #include <com/sun/star/document/XDocumentPropertiesSupplier.hpp>
 #include <com/sun/star/document/XOOXMLDocumentPropertiesImporter.hpp>
+#include <com/sun/star/io/XOutputStream.hpp>
+#include <com/sun/star/io/XStream.hpp>
 #include <com/sun/star/xml/dom/DocumentBuilder.hpp>
 #include <comphelper/diagnose_ex.hxx>
+#include <officecfg/Office/Common.hxx>
+#include <sfx2/objsh.hxx>
 #include <comphelper/processfactory.hxx>
 #include <comphelper/memorystream.hxx>
 #include <oox/core/filterdetect.hxx>
@@ -226,7 +230,7 @@ XmlFilterBase::~XmlFilterBase()
     // their stuff (creating objects, setting attributes, ...) on being destroyed.
     // They get destroyed by setting a new DocumentHandler. This also happens in
     // the following implicit destruction chain of ~XmlFilterBaseImpl, but in that
-    // case it's member RelationsMap maRelationsMap will be destroyed, but maybe
+    // case its member RelationsMap maRelationsMap will be destroyed, but maybe
     // still be used by ~FragmentHandler -> crash.
     mxImpl->maFastParser.clearDocumentHandler();
 }
@@ -342,7 +346,7 @@ OUString getStrictRelationshipOfficeDocType(std::u16string_view rPart)
 
 OUString XmlFilterBase::getFragmentPathFromFirstTypeFromOfficeDoc( std::u16string_view rPart )
 {
-    // importRelations() caches the relations map for subsequence calls
+    // importRelations() caches the relations map for subsequent calls
     const OUString aTransitionalRelationshipType = getTransitionalRelationshipOfficeDocType(rPart);
     OUString aFragment = importRelations( OUString() )->getFragmentPathFromFirstType( aTransitionalRelationshipType );
     if(aFragment.isEmpty())
@@ -1030,12 +1034,48 @@ writeCustomProperties( XmlFilterBase& rSelf, const Reference< XDocumentPropertie
     pAppProps->endDocument();
 }
 
+static void writeThumbnail(XmlFilterBase& rSelf)
+{
+    if (!officecfg::Office::Common::Save::Document::GenerateThumbnail::get())
+        return;
+
+    SfxObjectShell* pDocShell = SfxObjectShell::GetShellFromComponent(rSelf.getModel());
+    if (!pDocShell || pDocShell->GetCreateMode() == SfxObjectCreateMode::EMBEDDED
+        || !pDocShell->IsUseThumbnailSave())
+        return;
+
+    const Sequence<NamedValue> aEncryptionData
+        = rSelf.getMediaDescriptor().getUnpackedValueOrDefault(
+            utl::MediaDescriptor::PROP_ENCRYPTIONDATA, Sequence<NamedValue>());
+    bool bEncrypted = aEncryptionData.hasElements();
+
+    try
+    {
+        StorageRef xStorage = rSelf.getStorage();
+        StorageRef xPropsDir = xStorage->openSubStorage(u"docProps"_ustr, false);
+        if (!xPropsDir)
+            return;
+
+        Reference<XStream> xStream(xPropsDir->openOutputStream(u"thumbnail.png"_ustr), UNO_QUERY);
+        if (xStream.is() && pDocShell->WriteThumbnail(bEncrypted, xStream))
+        {
+            rSelf.addRelation(
+                u"http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"_ustr,
+                u"docProps/thumbnail.png");
+        }
+    }
+    catch (Exception&)
+    {
+    }
+}
+
 void XmlFilterBase::exportDocumentProperties( const Reference< XDocumentProperties >& xProperties, bool bSecurityOptOpenReadOnly )
 {
     if( xProperties.is() )
     {
         writeCoreProperties( *this, xProperties );
         writeAppProperties( *this, xProperties );
+        writeThumbnail( *this );
         writeCustomProperties( *this, xProperties, bSecurityOptOpenReadOnly );
     }
 }
@@ -1183,7 +1223,7 @@ void XmlFilterBase::importCustomFragments(css::uno::Reference<css::embed::XStora
 
     std::vector<uno::Reference<xml::dom::XDocument>> aCustomXmlDomList;
     std::vector<uno::Reference<xml::dom::XDocument>> aCustomXmlDomPropsList;
-    //FIXME: Ideally, we should get these the relations, but it seems that is not consistently set.
+    //FIXME: Ideally, we should get these from the relations, but it seems that is not consistently set.
     // In some cases it's stored in the workbook relationships, which is unexpected. So we discover them directly.
     for (int i = 1; ; ++i)
     {

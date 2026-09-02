@@ -75,9 +75,7 @@ void AquaSalTimer::queueDispatchTimerEvent( bool bAtStart )
 
 void AquaSalTimer::Start( sal_uInt64 nMS )
 {
-    SalData* pSalData = GetSalData();
-
-    if( !pSalData->mpInstance->IsMainThread() )
+    if (!GetAquaSalInstance()->IsMainThread())
     {
         ImplNSAppPostEvent( AquaSalInstance::AppStartTimerEvent, YES, nMS );
         return;
@@ -111,7 +109,7 @@ void AquaSalTimer::Start( sal_uInt64 nMS )
                                                     repeats: NO
                                            ] retain];
             /* #i84055# add timer to tracking run loop mode,
-               so they also elapse while e.g. life resize
+               so it also elapses during e.g. live resize
             */
             [[NSRunLoop currentRunLoop] addTimer: m_pRunningTimer forMode: NSEventTrackingRunLoopMode];
         }
@@ -120,7 +118,7 @@ void AquaSalTimer::Start( sal_uInt64 nMS )
 
 void AquaSalTimer::Stop()
 {
-    assert( GetSalData()->mpInstance->IsMainThread() );
+    assert(GetAquaSalInstance()->IsMainThread());
 
     if( m_pRunningTimer != nil )
     {

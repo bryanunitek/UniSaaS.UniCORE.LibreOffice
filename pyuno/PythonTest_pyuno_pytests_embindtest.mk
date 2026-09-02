@@ -11,8 +11,10 @@ $(eval $(call gb_PythonTest_PythonTest,pyuno_pytests_embindtest))
 
 $(eval $(call gb_PythonTest_add_modules,pyuno_pytests_embindtest,$(SRCDIR)/pyuno/qa/pytests, \
     embindtest \
+    passthrough \
     serviceconstructors \
     singleton \
+    xinvocation \
 ))
 
 # vim: set noet sw=4 ts=4:

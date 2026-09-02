@@ -38,6 +38,7 @@ class GraphicFormatDetectorTest : public test::BootstrapFixtureBase
     void testDetectWMZ();
     void testDetectPCX();
     void testDetectJPG();
+    void testDetectJXL();
     void testDetectPNG();
     void testDetectAPNG();
     void testDetectGIF();
@@ -66,6 +67,7 @@ class GraphicFormatDetectorTest : public test::BootstrapFixtureBase
     CPPUNIT_TEST(testDetectWMZ);
     CPPUNIT_TEST(testDetectPCX);
     CPPUNIT_TEST(testDetectJPG);
+    CPPUNIT_TEST(testDetectJXL);
     CPPUNIT_TEST(testDetectPNG);
     CPPUNIT_TEST(testDetectAPNG);
     CPPUNIT_TEST(testDetectGIF);
@@ -177,6 +179,21 @@ void GraphicFormatDetectorTest::testDetectJPG()
     OUString rFormatExtension;
     CPPUNIT_ASSERT(vcl::peekGraphicFormat(aFileStream, rFormatExtension, false));
     CPPUNIT_ASSERT_EQUAL(u"JPG"_ustr, rFormatExtension);
+}
+
+void GraphicFormatDetectorTest::testDetectJXL()
+{
+    SvFileStream aFileStream(getFullUrl(u"TypeDetectionExample.jxl"), StreamMode::READ);
+    vcl::GraphicFormatDetector aDetector(aFileStream, u"JXL"_ustr);
+
+    CPPUNIT_ASSERT(aDetector.detect());
+    CPPUNIT_ASSERT(aDetector.checkJXL());
+
+    aFileStream.Seek(aDetector.mnStreamPosition);
+
+    OUString rFormatExtension;
+    CPPUNIT_ASSERT(vcl::peekGraphicFormat(aFileStream, rFormatExtension, false));
+    CPPUNIT_ASSERT_EQUAL(u"JXL"_ustr, rFormatExtension);
 }
 
 void GraphicFormatDetectorTest::testDetectPNG()
@@ -484,7 +501,7 @@ void GraphicFormatDetectorTest::testMatchArray()
     CPPUNIT_ASSERT_EQUAL(119, int(pMatchPointer - pCompleteStringPointer));
     CPPUNIT_ASSERT_EQUAL(true, o3tl::starts_with(pMatchPointer, "/svg>"));
 
-    // Check that non-existing search string
+    // Check non-existing search string
     pMatchPointer = vcl::matchArrayWithString(aString.c_str(), nCheckSize, "none"_ostr);
     CPPUNIT_ASSERT(pMatchPointer == nullptr);
 }

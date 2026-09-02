@@ -350,7 +350,7 @@ void importSheetFragments( WorkbookFragment& rWorkbookHandler, SheetFragmentVect
     // coverity[loop_top] - this isn't an infinite loop where nSheetsLeft gets decremented by the above threads
     while( nSheetsLeft > 0 && !Application::IsQuit())
     {
-        // This is a much more controlled re-enterancy hazard than
+        // This is a much more controlled re-entrancy hazard than
         // allowing a yield deeper inside the filter code for progress
         // bar updating.
         Application::Yield();
@@ -487,7 +487,7 @@ void WorkbookFragment::finalizeImport()
                          (pRelation->maType == CREATE_MSOFFICE_RELATION_TYPE( "xlIntlMacrosheet" )) )
                     eSheetType = WorksheetType::Macro;
                 else if( pRelation->maType == CREATE_OFFICEDOC_RELATION_TYPE( "dialogsheet" ) ||
-                        pRelation->maType == CREATE_OFFICEDOC_RELATION_TYPE_STRICT(" dialogsheet" ))
+                        pRelation->maType == CREATE_OFFICEDOC_RELATION_TYPE_STRICT("dialogsheet" ))
                     eSheetType = WorksheetType::Dialog;
                 OSL_ENSURE( eSheetType != WorksheetType::Empty, "WorkbookFragment::finalizeImport - unknown sheet type" );
                 if( eSheetType != WorksheetType::Empty )

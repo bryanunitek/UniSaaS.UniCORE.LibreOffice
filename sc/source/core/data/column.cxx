@@ -1038,7 +1038,7 @@ void ScColumn::CopyCellToDocument( SCROW nSrcRow, SCROW nDestRow, ScColumn& rDes
         {
             EditTextObject* p = sc::edittext_block::at(*it->data, aPos.second);
             if (&rDocument == &rDestCol.GetDoc())
-                rDestCol.maCells.set(nDestRow, p->Clone().release());
+                rDestCol.maCells.set(nDestRow, new EditTextObject(*p));
             else
                 rDestCol.maCells.set(nDestRow, ScEditUtil::Clone(*p, rDestCol.GetDoc()).release());
         }
@@ -2374,7 +2374,7 @@ bool ScColumn::UpdateReference( sc::RefUpdateContext& rCxt, ScDocument* pUndoDoc
                             rCxt.maRange.aStart.Col() <= nCol && nCol <= rCxt.maRange.aEnd.Col());
     if (bThisColShifted)
     {
-        // Cells in this column is being shifted.  Split formula grouping at
+        // Cells in this column are being shifted.  Split formula grouping at
         // the top and bottom boundaries before they get shifted.
         // Also, for deleted rows split at the top of the deleted area to adapt
         // the affected group length.
@@ -2849,7 +2849,7 @@ struct CalcAllHandler
         if (pCell->GetCode()->IsRecalcModeNormal())
             nNewVal = pCell->GetValue();
         else
-            nNewVal = nOldVal;  // random(), jetzt() etc.
+            nNewVal = nOldVal;  // random(), now() etc.
 
         assert(nOldVal == nNewVal);
 #endif
@@ -2989,7 +2989,7 @@ public:
     bool operator() (size_t nRow, const ScFormulaCell* p)
     {
         // With a formula cell, it's considered an edit text cell when either
-        // the result is multi-line or it has more than one script types.
+        // the result is multi-line or it has more than one script type.
         SvtScriptType nScriptType = mrColumn.GetRangeScriptType(miAttrPos, nRow, nRow, miCellPos);
         if (IsAmbiguousScriptNonZero(nScriptType))
             return true;

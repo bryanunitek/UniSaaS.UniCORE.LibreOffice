@@ -669,7 +669,7 @@ public:
     void BroadcastCells( const std::vector<SCROW>& rRows, SfxHintId nHint );
     void BroadcastRows( SCROW nStartRow, SCROW nEndRow, SfxHintId nHint );
 
-    // Spaklines
+    // Sparklines
     sc::SparklineCell* GetSparklineCell(SCROW nRow);
     void CreateSparklineCell(SCROW nRow, std::shared_ptr<sc::Sparkline> const& pSparkline);
     void DeleteSparklineCells(sc::ColumnBlockPosition& rBlockPos, SCROW nRow1, SCROW nRow2);
@@ -1033,7 +1033,7 @@ inline void ScColumn::ClearItems( SCROW nStartRow, SCROW nEndRow, const sal_uInt
 
 inline void ScColumn::SetPattern( SCROW nRow, const CellAttributeHolder& rHolder )
 {
-    return pAttrArray->SetPattern( nRow, rHolder );
+    pAttrArray->SetPattern( nRow, rHolder );
 }
 
 inline void ScColumn::SetPattern( SCROW nRow, const ScPatternAttr& rPattern )

@@ -21,6 +21,7 @@
 #include <editeng/borderline.hxx>
 #include <editeng/brushitem.hxx>
 #include <editutil.hxx>
+#include <formula/errorcodes.hxx>
 #include <formulacell.hxx>
 #include <impex.hxx>
 #include <iostream>
@@ -30,6 +31,9 @@
 #include <refundo.hxx>
 #include <scitems.hxx>
 #include <scopetools.hxx>
+#include <stlpool.hxx>
+#include <stlsheet.hxx>
+#include <svl/style.hxx>
 
 #include <sfx2/docfile.hxx>
 
@@ -258,14 +262,14 @@ CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyPaste)
     static constexpr OUString aGlobal2Symbol(u"$Sheet1.$A$1:$A$23"_ustr);
     ScRangeData* pGlobal2 = new ScRangeData(*m_pDoc, u"global2"_ustr, aGlobal2Symbol);
     std::unique_ptr<ScRangeName> pGlobalRangeName(new ScRangeName());
-    pGlobalRangeName->insert(pGlobal);
-    pGlobalRangeName->insert(pGlobal2);
+    pGlobalRangeName->insert(std::unique_ptr<ScRangeData>(pGlobal));
+    pGlobalRangeName->insert(std::unique_ptr<ScRangeData>(pGlobal2));
     std::unique_ptr<ScRangeName> pLocalRangeName1(new ScRangeName());
-    pLocalRangeName1->insert(pLocal1);
-    pLocalRangeName1->insert(pLocal2);
-    pLocalRangeName1->insert(pLocal3);
-    pLocalRangeName1->insert(pLocal4);
-    pLocalRangeName1->insert(pLocal5);
+    pLocalRangeName1->insert(std::unique_ptr<ScRangeData>(pLocal1));
+    pLocalRangeName1->insert(std::unique_ptr<ScRangeData>(pLocal2));
+    pLocalRangeName1->insert(std::unique_ptr<ScRangeData>(pLocal3));
+    pLocalRangeName1->insert(std::unique_ptr<ScRangeData>(pLocal4));
+    pLocalRangeName1->insert(std::unique_ptr<ScRangeData>(pLocal5));
     m_pDoc->SetRangeName(std::move(pGlobalRangeName));
     m_pDoc->SetRangeName(0, std::move(pLocalRangeName1));
 
@@ -398,12 +402,96 @@ CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyPaste)
     m_pDoc->CopyFromClip(aRange, aMark, InsertDeleteFlags::ALL, nullptr, &aClipDoc2);
 
     // The global2 range must not have changed.
-    pGlobal2 = m_pDoc->GetRangeName()->findByUpperName(u"GLOBAL2"_ustr);
+    pGlobal2 = m_pDoc->GetRangeName().findByUpperName(u"GLOBAL2"_ustr);
     CPPUNIT_ASSERT_MESSAGE("GLOBAL2 name not found", pGlobal2);
     OUString aSymbol = pGlobal2->GetSymbol();
     CPPUNIT_ASSERT_EQUAL_MESSAGE("GLOBAL2 named range changed", aGlobal2Symbol, aSymbol);
 
     m_pDoc->DeleteTab(1);
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyPasteKeepDestProtection)
+{
+    // tdf#123974, tdf#150910: an interactive paste changes a cell's content,
+    // not whether it is locked. Copying a protected cell onto a cell the user
+    // explicitly unprotected must leave it editable, and this must not depend
+    // on whether the source spans a single row (the replicated-single-row fast
+    // path) or several rows (the general path) - the two used to disagree.
+    m_pDoc->InsertTab(0, u"Sheet1"_ustr);
+
+    // Source column A: two protected cells carrying values.
+    m_pDoc->SetValue(0, 0, 0, 1.0);
+    m_pDoc->SetValue(0, 1, 0, 2.0);
+    m_pDoc->ApplyAttr(0, 0, 0, ScProtectionAttr(true));
+    m_pDoc->ApplyAttr(0, 1, 0, ScProtectionAttr(true));
+
+    // Targets the user explicitly unprotected by direct formatting: C1 (a
+    // single-row target) and D1:D2 (a multi-row target).
+    m_pDoc->ApplyAttr(2, 0, 0, ScProtectionAttr(false));
+    m_pDoc->ApplyAttr(3, 0, 0, ScProtectionAttr(false));
+    m_pDoc->ApplyAttr(3, 1, 0, ScProtectionAttr(false));
+
+    auto paste = [this](const ScRange& rSrc, const ScRange& rDest, bool bPreserveProtection) {
+        ScDocument aClipDoc(SCDOCMODE_CLIP);
+        copyToClip(m_pDoc, rSrc, &aClipDoc);
+        ScMarkData aMark(m_pDoc->GetSheetLimits());
+        aMark.SetMarkArea(rDest);
+        m_pDoc->CopyFromClip(rDest, aMark, InsertDeleteFlags::ALL, nullptr, &aClipDoc, true, false,
+                             true, false, nullptr, bPreserveProtection);
+    };
+
+    // Single-row source exercises the replicated-single-row fast path.
+    paste(ScRange(0, 0, 0, 0, 0, 0), ScRange(2, 0, 0, 2, 0, 0), /*bPreserveProtection*/ true);
+    CPPUNIT_ASSERT_EQUAL(1.0, m_pDoc->GetValue(2, 0, 0));
+    CPPUNIT_ASSERT_MESSAGE("single-row paste must keep the target unprotected",
+                           !m_pDoc->GetAttr(2, 0, 0, ATTR_PROTECTION).GetProtection());
+
+    // Multi-row source exercises the general path.
+    paste(ScRange(0, 0, 0, 0, 1, 0), ScRange(3, 0, 0, 3, 1, 0), /*bPreserveProtection*/ true);
+    CPPUNIT_ASSERT_EQUAL(1.0, m_pDoc->GetValue(3, 0, 0));
+    CPPUNIT_ASSERT_EQUAL(2.0, m_pDoc->GetValue(3, 1, 0));
+    CPPUNIT_ASSERT_MESSAGE("multi-row paste must keep the target unprotected (row 1)",
+                           !m_pDoc->GetAttr(3, 0, 0, ATTR_PROTECTION).GetProtection());
+    CPPUNIT_ASSERT_MESSAGE("multi-row paste must keep the target unprotected (row 2)",
+                           !m_pDoc->GetAttr(3, 1, 0, ATTR_PROTECTION).GetProtection());
+
+    // The whole protection item is preserved, not just its Protected bit: an
+    // unprotected source pasted onto a protected + hidden-formula target keeps
+    // the target's own settings.
+    m_pDoc->SetValue(0, 5, 0, 9.0); // A6, unprotected source
+    m_pDoc->ApplyAttr(0, 5, 0, ScProtectionAttr(false));
+    m_pDoc->ApplyAttr(2, 5, 0, ScProtectionAttr(true, /*bHideFormula*/ true)); // C6 target
+    paste(ScRange(0, 5, 0, 0, 5, 0), ScRange(2, 5, 0, 2, 5, 0), /*bPreserveProtection*/ true);
+    const ScProtectionAttr& rC6 = m_pDoc->GetAttr(2, 5, 0, ATTR_PROTECTION);
+    CPPUNIT_ASSERT_MESSAGE("paste must keep the target protected", rC6.GetProtection());
+    CPPUNIT_ASSERT_MESSAGE("paste must keep the target's hide-formula flag", rC6.GetHideFormula());
+
+    // Without the flag (the programmatic copyRange path) attributes are copied
+    // verbatim, so the source's protection is carried over as before.
+    m_pDoc->ApplyAttr(4, 5, 0, ScProtectionAttr(true)); // E6 target, protected
+    paste(ScRange(0, 5, 0, 0, 5, 0), ScRange(4, 5, 0, 4, 5, 0), /*bPreserveProtection*/ false);
+    CPPUNIT_ASSERT_MESSAGE("paste without the flag must copy the source's state",
+                           !m_pDoc->GetAttr(4, 5, 0, ATTR_PROTECTION).GetProtection());
+
+    // Protection that comes from a cell style, not from direct formatting, is
+    // not preserved: only direct protection is. Give G6 an unprotected cell
+    // style (no direct protection) and paste the protected A1 onto it - it must
+    // end up protected, following the paste like any other styled attribute.
+    ScStyleSheet& rUnprotectedStyle = static_cast<ScStyleSheet&>(
+        m_pDoc->GetStyleSheetPool()->Make(u"Unprotected"_ustr, SfxStyleFamily::Para));
+    rUnprotectedStyle.GetItemSet().Put(ScProtectionAttr(false));
+    m_pDoc->ApplyStyle(6, 5, 0, rUnprotectedStyle); // G6
+    CPPUNIT_ASSERT_MESSAGE("precondition: the style leaves G6 unprotected",
+                           !m_pDoc->GetAttr(6, 5, 0, ATTR_PROTECTION).GetProtection());
+    CPPUNIT_ASSERT_MESSAGE(
+        "precondition: G6 has no direct protection",
+        SfxItemState::SET
+            != m_pDoc->GetPattern(6, 5, 0)->GetItemSet().GetItemState(ATTR_PROTECTION, false));
+    paste(ScRange(0, 0, 0, 0, 0, 0), ScRange(6, 5, 0, 6, 5, 0), /*bPreserveProtection*/ true);
+    CPPUNIT_ASSERT_MESSAGE("style-based protection is not preserved; it follows the paste",
+                           m_pDoc->GetAttr(6, 5, 0, ATTR_PROTECTION).GetProtection());
+
     m_pDoc->DeleteTab(0);
 }
 
@@ -9909,6 +9997,397 @@ CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyPasteFormulas)
     CPPUNIT_ASSERT_EQUAL(u"=$Sheet2.K11"_ustr, m_pDoc->GetFormula(10, 12, 0));
     CPPUNIT_ASSERT_EQUAL(u"=$Sheet2.$A$1"_ustr, m_pDoc->GetFormula(10, 13, 0));
     CPPUNIT_ASSERT_EQUAL(u"=$Sheet2.K$1"_ustr, m_pDoc->GetFormula(10, 14, 0));
+}
+
+CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyToClipCarriesNamedDBs)
+{
+    // A copy whose range intersects a named table must carry that table
+    // into the clipboard document, otherwise structured-reference tokens
+    // in the copied formulas have nothing to resolve against and any
+    // textual form of those formulas produces #REF!.
+    m_pDoc->InsertTab(0, u"Test"_ustr);
+
+    // Named table area B3:E6 on sheet 0.
+    auto pTable = std::make_unique<ScDBData>(u"MyTable"_ustr, 0, 1, 2, 4, 5, true, true);
+    ScDBData* pTableRaw = pTable.get();
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pTable)));
+
+    // A second named table on sheet 0 that the copy does not touch.
+    auto pOther = std::make_unique<ScDBData>(u"AwayTable"_ustr, 0, 10, 20, 12, 25, true, true);
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pOther)));
+
+    // Copy a single row inside MyTable's body.
+    ScRange aClipRange(1, 3, 0, 4, 3, 0); // B4:E4
+    ScClipParam aClipParam(aClipRange, false);
+    ScMarkData aMark(m_pDoc->GetSheetLimits());
+    aMark.SelectOneTable(0);
+    aMark.SetMarkArea(aClipRange);
+
+    ScDocument aClipDoc(SCDOCMODE_CLIP);
+    m_pDoc->CopyToClip(aClipParam, &aClipDoc, &aMark, false, false);
+
+    ScDBCollection::NamedDBs& rClipDBs = aClipDoc.GetDBCollection()->getNamedDBs();
+    CPPUNIT_ASSERT_EQUAL(size_t(1), rClipDBs.size());
+    const ScDBData* pClone = rClipDBs.findByUpperName(u"MYTABLE"_ustr);
+    CPPUNIT_ASSERT(pClone);
+    CPPUNIT_ASSERT_EQUAL(pTableRaw->GetIndex(), pClone->GetIndex());
+    ScRange aCloneArea;
+    pClone->GetArea(aCloneArea);
+    CPPUNIT_ASSERT_EQUAL(ScRange(1, 2, 0, 4, 5, 0), aCloneArea);
+
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyFromClipShiftsNamedDBs)
+{
+    // Pasting a fully-copied named table into a document that does not already
+    // own it must recreate the table anchored to the paste location, not at the
+    // source coordinates, and the column names the copy carried must survive
+    // the re-anchor so a structured reference still resolves against the
+    // pasted table instead of evaluating to #REF!.
+    m_pDoc->InsertTab(0, u"Src"_ustr);
+
+    // Named table MyTable over A1:C3 on the source sheet, with some content so
+    // the paste carries cells.
+    auto pTable = std::make_unique<ScDBData>(u"MyTable"_ustr, 0, 0, 0, 2, 2, true, true);
+    pTable->SetTableColumnNames(std::vector<OUString>{ u"Name"_ustr, u"A"_ustr, u"B"_ustr });
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pTable)));
+    m_pDoc->SetString(0, 0, 0, u"Name"_ustr);
+    m_pDoc->SetString(1, 0, 0, u"A"_ustr);
+    m_pDoc->SetString(2, 0, 0, u"B"_ustr);
+    m_pDoc->SetValue(2, 2, 0, 42.0);
+
+    // Copy the whole table A1:C3.
+    ScRange aClipRange(0, 0, 0, 2, 2, 0);
+    ScClipParam aClipParam(aClipRange, false);
+    ScMarkData aMark(m_pDoc->GetSheetLimits());
+    aMark.SelectOneTable(0);
+    aMark.SetMarkArea(aClipRange);
+
+    ScDocument aClipDoc(SCDOCMODE_CLIP);
+    m_pDoc->CopyToClip(aClipParam, &aClipDoc, &aMark, false, false);
+
+    // Fresh destination document that has no MyTable of its own.
+    ScDocShellRef xDestDocSh = new ScDocShell;
+    xDestDocSh->DoLoad(new SfxMedium(u"file:///dbshift.fake"_ustr, StreamMode::STD_READWRITE));
+    ScDocument& rDestDoc = xDestDocSh->GetDocument();
+    rDestDoc.InsertTab(0, u"Dest"_ustr);
+
+    // Paste with the top-left at C5: the block shifts by (+2 col, +4 row).
+    ScRange aDestRange(2, 4, 0, 4, 6, 0); // C5:E7
+    ScMarkData aDestMark(rDestDoc.GetSheetLimits());
+    aDestMark.SelectOneTable(0);
+    rDestDoc.CopyFromClip(aDestRange, aDestMark, InsertDeleteFlags::ALL, nullptr, &aClipDoc);
+
+    // The destination now owns MyTable, anchored to the pasted location.
+    ScDBCollection* pDestDBs = rDestDoc.GetDBCollection();
+    CPPUNIT_ASSERT(pDestDBs);
+    const ScDBData* pPasted = pDestDBs->getNamedDBs().findByUpperName(u"MYTABLE"_ustr);
+    CPPUNIT_ASSERT(pPasted);
+    ScRange aPastedArea;
+    pPasted->GetArea(aPastedArea);
+    CPPUNIT_ASSERT_EQUAL(ScRange(2, 4, 0, 4, 6, 0), aPastedArea);
+
+    // The column names the copy carried survive the re-anchor, so a structured
+    // reference can still resolve a column by name against the pasted table.
+    CPPUNIT_ASSERT_EQUAL(size_t(3), pPasted->GetTableColumnNames().size());
+    CPPUNIT_ASSERT_EQUAL(u"Name"_ustr, pPasted->GetTableColumnNames()[0]);
+    CPPUNIT_ASSERT_EQUAL(u"A"_ustr, pPasted->GetTableColumnNames()[1]);
+    CPPUNIT_ASSERT_EQUAL(u"B"_ustr, pPasted->GetTableColumnNames()[2]);
+
+    // A structured reference resolves against the pasted table by column
+    // name and computes against the cells the copy carried. Without the
+    // names, this would fail to resolve and the cell would hold a #REF!
+    // error.
+    rDestDoc.SetString(0, 9, 0, u"=SUM(MyTable[B])"_ustr); // A10
+    rDestDoc.CalcAll();
+    ScFormulaCell* pFC = rDestDoc.GetFormulaCell(ScAddress(0, 9, 0));
+    CPPUNIT_ASSERT(pFC);
+    CPPUNIT_ASSERT_EQUAL(int(FormulaError::NONE), int(pFC->GetErrCode()));
+    CPPUNIT_ASSERT_EQUAL(42.0, rDestDoc.GetValue(0, 9, 0));
+
+    // The source table must be left untouched at its original coordinates.
+    const ScDBData* pSrc
+        = m_pDoc->GetDBCollection()->getNamedDBs().findByUpperName(u"MYTABLE"_ustr);
+    CPPUNIT_ASSERT(pSrc);
+    ScRange aSrcArea;
+    pSrc->GetArea(aSrcArea);
+    CPPUNIT_ASSERT_EQUAL(ScRange(0, 0, 0, 2, 2, 0), aSrcArea);
+
+    xDestDocSh->DoClose();
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestCopyPaste, testRefUndoRestoresEmptyDBCollection)
+{
+    // Pasting a named table into a document that had none adds a DB range; the
+    // paste's ScRefUndoData must be able to restore the empty pre-state on undo.
+    // That requires snapshotting even an empty collection - otherwise undo
+    // leaves the table orphaned. Regression guard for that orphaned table.
+    m_pDoc->InsertTab(0, u"Test"_ustr);
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().empty());
+
+    // Snapshot the (empty) pre-state, exactly as the paste undo does up front -
+    // forcing the DB-range snapshot (see ScViewFunc::PasteFromClip).
+    ScRefUndoData aRefUndo(*m_pDoc, /*bForceDBSnapshot*/ true);
+
+    // Simulate the paste adding a named table to the empty collection.
+    auto pTable = std::make_unique<ScDBData>(u"MyTable"_ustr, 0, 0, 0, 2, 2, true, true);
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pTable)));
+    CPPUNIT_ASSERT(!m_pDoc->GetDBCollection()->getNamedDBs().empty());
+
+    // DeleteUnchanged must keep the snapshot (collection changed), and DoUndo
+    // must restore the empty collection.
+    aRefUndo.DeleteUnchanged(*m_pDoc);
+    aRefUndo.DoUndo(*m_pDoc, true);
+
+    CPPUNIT_ASSERT_MESSAGE("undo must drop a table added over an empty DB collection",
+                           m_pDoc->GetDBCollection()->getNamedDBs().empty());
+
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyFromClipPartialTableNoPhantom)
+{
+    // A partial copy (one that does not cover the whole table) carrying a
+    // structured reference must NOT fabricate a table in the destination.
+    // CopyDBsFromClip only recreates a fully-covered table; for a partial copy
+    // adjustDBRange must leave the reference unresolved (#REF!) instead of
+    // cloning a misplaced, header-less table at the source coordinates.
+    m_pDoc->InsertTab(0, u"Src"_ustr);
+
+    // Named table MyTable over A1:C4 (header + 3 data rows) with explicit column
+    // names so a structured reference compiles, and H1-column data so it computes.
+    auto pTable = std::make_unique<ScDBData>(u"MyTable"_ustr, 0, 0, 0, 2, 3, true, true);
+    pTable->SetTableColumnNames(std::vector<OUString>{ u"H1"_ustr, u"H2"_ustr, u"H3"_ustr });
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pTable)));
+    m_pDoc->SetValue(0, 1, 0, 1.0); // A2
+    m_pDoc->SetValue(0, 2, 0, 4.0); // A3
+    m_pDoc->SetValue(0, 3, 0, 16.0); // A4
+    m_pDoc->SetString(2, 1, 0, u"=SUM(MyTable[H1])"_ustr); // C2, a structured-ref formula
+    m_pDoc->CalcAll();
+    // Confirm the structured reference actually compiled and resolved, so the
+    // test really exercises adjustDBRange rather than passing trivially.
+    CPPUNIT_ASSERT_EQUAL(21.0, m_pDoc->GetValue(2, 1, 0));
+
+    // Copy a partial block A2:C3 - it intersects MyTable but does not cover it.
+    ScRange aClipRange(0, 1, 0, 2, 2, 0);
+    ScClipParam aClipParam(aClipRange, false);
+    ScMarkData aMark(m_pDoc->GetSheetLimits());
+    aMark.SelectOneTable(0);
+    aMark.SetMarkArea(aClipRange);
+
+    ScDocument aClipDoc(SCDOCMODE_CLIP);
+    m_pDoc->CopyToClip(aClipParam, &aClipDoc, &aMark, false, false);
+    // The table was carried into the clip (it intersects the copied range).
+    CPPUNIT_ASSERT(aClipDoc.GetDBCollection()->getNamedDBs().findByUpperName(u"MYTABLE"_ustr));
+
+    // Paste into a fresh document that has no MyTable, at a different position.
+    ScDocShellRef xDestDocSh = new ScDocShell;
+    xDestDocSh->DoLoad(new SfxMedium(u"file:///nophantom.fake"_ustr, StreamMode::STD_READWRITE));
+    ScDocument& rDestDoc = xDestDocSh->GetDocument();
+    rDestDoc.InsertTab(0, u"Dest"_ustr);
+
+    ScRange aDestRange(5, 10, 0, 7, 11, 0); // F11:H12
+    ScMarkData aDestMark(rDestDoc.GetSheetLimits());
+    aDestMark.SelectOneTable(0);
+    rDestDoc.CopyFromClip(aDestRange, aDestMark, InsertDeleteFlags::ALL, nullptr, &aClipDoc);
+
+    // No phantom table must have been registered in the destination.
+    ScDBCollection* pDestDBs = rDestDoc.GetDBCollection();
+    CPPUNIT_ASSERT_MESSAGE("partial copy must not fabricate a table in the destination",
+                           !pDestDBs || pDestDBs->getNamedDBs().empty());
+
+    xDestDocSh->DoClose();
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyFromClipCrossDocSameNameNoBind)
+{
+    // A full table copy pasted into a different document that already owns an
+    // unrelated table of the same name must not bind the pasted structured
+    // reference to that destination table. The name is document-global and
+    // cannot be recreated, so the reference is left unresolved (#REF!) instead
+    // of silently computing the wrong table's data.
+    m_pDoc->InsertTab(0, u"Src"_ustr);
+
+    // Source MyTable A1:C4; a structured-ref formula in C2 reads its H1
+    // column.
+    auto pTable = std::make_unique<ScDBData>(u"MyTable"_ustr, 0, 0, 0, 2, 3, true, true);
+    pTable->SetTableColumnNames(std::vector<OUString>{ u"H1"_ustr, u"H2"_ustr, u"H3"_ustr });
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pTable)));
+    m_pDoc->SetValue(0, 1, 0, 1.0); // A2
+    m_pDoc->SetValue(0, 2, 0, 4.0); // A3
+    m_pDoc->SetValue(0, 3, 0, 16.0); // A4
+    m_pDoc->SetString(2, 1, 0, u"=SUM(MyTable[H1])"_ustr); // C2
+    m_pDoc->CalcAll();
+    CPPUNIT_ASSERT_EQUAL(21.0, m_pDoc->GetValue(2, 1, 0));
+
+    // Copy the whole table A1:C4.
+    ScRange aClipRange(0, 0, 0, 2, 3, 0);
+    ScClipParam aClipParam(aClipRange, false);
+    ScMarkData aMark(m_pDoc->GetSheetLimits());
+    aMark.SelectOneTable(0);
+    aMark.SetMarkArea(aClipRange);
+    ScDocument aClipDoc(SCDOCMODE_CLIP);
+    m_pDoc->CopyToClip(aClipParam, &aClipDoc, &aMark, false, false);
+
+    // Destination document with its OWN unrelated MyTable at F11:H14
+    // carrying distinct H1 data.
+    ScDocShellRef xDestDocSh = new ScDocShell;
+    xDestDocSh->DoLoad(
+        new SfxMedium(u"file:///crossdocnameclash.fake"_ustr, StreamMode::STD_READWRITE));
+    ScDocument& rDestDoc = xDestDocSh->GetDocument();
+    rDestDoc.InsertTab(0, u"Dest"_ustr);
+    auto pDestTable = std::make_unique<ScDBData>(u"MyTable"_ustr, 0, 5, 10, 7, 13, true, true);
+    pDestTable->SetTableColumnNames(std::vector<OUString>{ u"H1"_ustr, u"H2"_ustr, u"H3"_ustr });
+    CPPUNIT_ASSERT(rDestDoc.GetDBCollection()->getNamedDBs().insert(std::move(pDestTable)));
+    rDestDoc.SetValue(5, 11, 0, 100.0); // F12
+    rDestDoc.SetValue(5, 12, 0, 200.0); // F13
+    rDestDoc.SetValue(5, 13, 0, 400.0); // F14
+
+    // Paste the copied table at A1, clear of the destination's own table.
+    ScRange aDestRange(0, 0, 0, 2, 3, 0);
+    ScMarkData aDestMark(rDestDoc.GetSheetLimits());
+    aDestMark.SelectOneTable(0);
+    rDestDoc.CopyFromClip(aDestRange, aDestMark, InsertDeleteFlags::ALL, nullptr, &aClipDoc);
+    rDestDoc.CalcAll();
+
+    // The pasted formula resolves to FormulaError::NoRef.
+    CPPUNIT_ASSERT_EQUAL(int(FormulaError::NoRef), int(rDestDoc.GetErrCode(ScAddress(2, 1, 0))));
+
+    // The source's H1 data landed in the destination at A2:A4.
+    CPPUNIT_ASSERT_EQUAL(1.0, rDestDoc.GetValue(0, 1, 0));
+    CPPUNIT_ASSERT_EQUAL(4.0, rDestDoc.GetValue(0, 2, 0));
+    CPPUNIT_ASSERT_EQUAL(16.0, rDestDoc.GetValue(0, 3, 0));
+
+    // The destination's own table stays at its original area with its data
+    // untouched by the paste.
+    const ScDBData* pDestOwn
+        = rDestDoc.GetDBCollection()->getNamedDBs().findByUpperName(u"MYTABLE"_ustr);
+    CPPUNIT_ASSERT(pDestOwn);
+    ScRange aDestOwnArea;
+    pDestOwn->GetArea(aDestOwnArea);
+    CPPUNIT_ASSERT_EQUAL(ScRange(5, 10, 0, 7, 13, 0), aDestOwnArea);
+    CPPUNIT_ASSERT_EQUAL(100.0, rDestDoc.GetValue(5, 11, 0));
+    CPPUNIT_ASSERT_EQUAL(200.0, rDestDoc.GetValue(5, 12, 0));
+    CPPUNIT_ASSERT_EQUAL(400.0, rDestDoc.GetValue(5, 13, 0));
+
+    xDestDocSh->DoClose();
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyToClipMultiRangeGapTable)
+{
+    // A non-contiguous copy must carry only the tables that lie inside a copied
+    // range, not one sitting in the gap between two ranges. The gap table is
+    // inside the bounding box of the selection but none of its cells are copied.
+    m_pDoc->InsertTab(0, u"Test"_ustr);
+
+    // Column-direction multi-selection A1:B3 and E1:F3; the gap is columns C, D.
+
+    // InRangeTable at A1:B3 lies inside the first range. The clip carries it.
+    auto pInRange = std::make_unique<ScDBData>(u"InRangeTable"_ustr, 0, 0, 0, 1, 2, true, true);
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pInRange)));
+
+    // GapTable at C1:D3 lies in the gap. The clip leaves it out.
+    auto pGap = std::make_unique<ScDBData>(u"GapTable"_ustr, 0, 2, 0, 3, 2, true, true);
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pGap)));
+
+    ScMarkData aMark(m_pDoc->GetSheetLimits());
+    aMark.SelectOneTable(0);
+    ScClipParam aClipParam;
+    aClipParam.meDirection = ScClipParam::Column;
+    aClipParam.maRanges.push_back(ScRange(0, 0, 0, 1, 2, 0)); // A1:B3
+    aClipParam.maRanges.push_back(ScRange(4, 0, 0, 5, 2, 0)); // E1:F3
+
+    ScDocument aClipDoc(SCDOCMODE_CLIP);
+    m_pDoc->CopyToClip(aClipParam, &aClipDoc, &aMark, false, false);
+
+    ScDBCollection::NamedDBs& rClipDBs = aClipDoc.GetDBCollection()->getNamedDBs();
+    CPPUNIT_ASSERT_MESSAGE("a table inside a copied range is carried",
+                           rClipDBs.findByUpperName(u"INRANGETABLE"_ustr));
+    CPPUNIT_ASSERT_MESSAGE("a table in the gap between copied ranges must not be carried",
+                           !rClipDBs.findByUpperName(u"GAPTABLE"_ustr));
+
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyToClipMultiSheetForeignTable)
+{
+    // A grouped-sheet copy carries only the tables on the sheet whose cells are
+    // copied, not a same-area table living on another selected sheet. So the
+    // paste side never receives tables from several sheets that would all be
+    // placed onto a single destination sheet.
+    m_pDoc->InsertTab(0, u"Sheet1"_ustr);
+    m_pDoc->InsertTab(1, u"Sheet2"_ustr);
+
+    auto pTab0 = std::make_unique<ScDBData>(u"Table0"_ustr, 0, 0, 0, 1, 1, true, true);
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pTab0)));
+    auto pTab1 = std::make_unique<ScDBData>(u"Table1"_ustr, 1, 0, 0, 1, 1, true, true);
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pTab1)));
+
+    // Copy A1:B2 with both sheets grouped. The copied ranges live on sheet 0.
+    ScMarkData aMark(m_pDoc->GetSheetLimits());
+    aMark.SelectTable(0, true);
+    aMark.SelectTable(1, true);
+    ScRange aClipRange(0, 0, 0, 1, 1, 0); // A1:B2 on sheet 0
+    aMark.SetMarkArea(aClipRange);
+    ScClipParam aClipParam(aClipRange, false);
+
+    ScDocument aClipDoc(SCDOCMODE_CLIP);
+    m_pDoc->CopyToClip(aClipParam, &aClipDoc, &aMark, false, false);
+
+    ScDBCollection::NamedDBs& rClipDBs = aClipDoc.GetDBCollection()->getNamedDBs();
+    CPPUNIT_ASSERT_MESSAGE("the copied sheet's table is carried",
+                           rClipDBs.findByUpperName(u"TABLE0"_ustr));
+    CPPUNIT_ASSERT_MESSAGE("a table on another sheet is not carried",
+                           !rClipDBs.findByUpperName(u"TABLE1"_ustr));
+
+    m_pDoc->DeleteTab(1);
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyFromClipValuesOnlyNoTable)
+{
+    // Pasting only values of a copied table must not recreate the table in the
+    // destination. The table is recreated so structured-reference formulas can
+    // resolve against it. A values-only paste carries no such formula, so it
+    // should leave the destination without a table.
+    m_pDoc->InsertTab(0, u"Src"_ustr);
+
+    auto pTable = std::make_unique<ScDBData>(u"MyTable"_ustr, 0, 0, 0, 2, 2, true, true);
+    CPPUNIT_ASSERT(m_pDoc->GetDBCollection()->getNamedDBs().insert(std::move(pTable)));
+    m_pDoc->SetString(0, 0, 0, u"Name"_ustr);
+    m_pDoc->SetValue(2, 2, 0, 42.0);
+
+    // Copy the whole table A1:C3.
+    ScRange aClipRange(0, 0, 0, 2, 2, 0);
+    ScClipParam aClipParam(aClipRange, false);
+    ScMarkData aMark(m_pDoc->GetSheetLimits());
+    aMark.SelectOneTable(0);
+    aMark.SetMarkArea(aClipRange);
+    ScDocument aClipDoc(SCDOCMODE_CLIP);
+    m_pDoc->CopyToClip(aClipParam, &aClipDoc, &aMark, false, false);
+
+    // Fresh destination document that has no MyTable of its own.
+    ScDocShellRef xDestDocSh = new ScDocShell;
+    xDestDocSh->DoLoad(new SfxMedium(u"file:///valuesonly.fake"_ustr, StreamMode::STD_READWRITE));
+    ScDocument& rDestDoc = xDestDocSh->GetDocument();
+    rDestDoc.InsertTab(0, u"Dest"_ustr);
+
+    // Paste values only, no formulas.
+    ScRange aDestRange(0, 0, 0, 2, 2, 0);
+    ScMarkData aDestMark(rDestDoc.GetSheetLimits());
+    aDestMark.SelectOneTable(0);
+    rDestDoc.CopyFromClip(aDestRange, aDestMark, InsertDeleteFlags::VALUE, nullptr, &aClipDoc);
+
+    ScDBCollection* pDestDBs = rDestDoc.GetDBCollection();
+    CPPUNIT_ASSERT_MESSAGE("a values-only paste must not recreate the table",
+                           !pDestDBs || pDestDBs->getNamedDBs().empty());
+
+    xDestDocSh->DoClose();
+    m_pDoc->DeleteTab(0);
 }
 
 CPPUNIT_TEST_FIXTURE(TestCopyPaste, testCopyPasteFormulasExternalDoc)

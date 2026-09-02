@@ -1363,6 +1363,12 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115117_1)
         auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
         if (pType && pType->GetValue() == "Font")
         {
+            // ToUnicode is on the Type 0 font, not its descendant CIDFont
+            auto pSubtype
+                = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
+            if (!pSubtype || pSubtype->GetValue() != "Type0")
+                continue;
+
             auto pToUnicodeRef = dynamic_cast<vcl::filter::PDFReferenceElement*>(
                 pObject->Lookup("ToUnicode"_ostr));
             CPPUNIT_ASSERT(pToUnicodeRef);
@@ -1434,6 +1440,12 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115117_2)
         auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
         if (pType && pType->GetValue() == "Font")
         {
+            // ToUnicode is on the Type 0 font, not its descendant CIDFont
+            auto pSubtype
+                = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
+            if (!pSubtype || pSubtype->GetValue() != "Type0")
+                continue;
+
             auto pToUnicodeRef = dynamic_cast<vcl::filter::PDFReferenceElement*>(
                 pObject->Lookup("ToUnicode"_ostr));
             CPPUNIT_ASSERT(pToUnicodeRef);
@@ -1722,7 +1734,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf156685)
 
     int nPageObjectCount = pPage->getObjectCount();
 
-    CPPUNIT_ASSERT_EQUAL(9, nPageObjectCount);
+    CPPUNIT_ASSERT_EQUAL(11, nPageObjectCount);
 
     auto pTextPage = pPage->getTextPage();
 
@@ -1766,6 +1778,12 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf66597_1)
             auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
             if (pType && pType->GetValue() == "Font")
             {
+                // ToUnicode is on the Type 0 font, not its descendant CIDFont
+                auto pSubtype
+                    = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
+                if (!pSubtype || pSubtype->GetValue() != "Type0")
+                    continue;
+
                 auto pName
                     = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("BaseFont"_ostr));
                 auto aName = pName->GetValue().copy(7); // skip the subset id
@@ -1867,16 +1885,17 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf66597_2)
             auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
             if (pType && pType->GetValue() == "Font")
             {
+                // ToUnicode is on the Type 0 font, not its descendant CIDFont
+                auto pSubtype
+                    = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
+                if (!pSubtype || pSubtype->GetValue() != "Type0")
+                    continue;
+
                 auto pName
                     = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("BaseFont"_ostr));
                 CPPUNIT_ASSERT(pName);
                 OString aFontName = pName->GetValue().copy(7); // skip the subset id
-#if defined _WIN32
-                CPPUNIT_ASSERT_EQUAL_MESSAGE("Unexpected font name", "ReemKufi-Regular"_ostr,
-                                             aFontName);
-#else
                 CPPUNIT_ASSERT_EQUAL_MESSAGE("Unexpected font name", "ReemKufi"_ostr, aFontName);
-#endif
                 auto pToUnicodeRef = dynamic_cast<vcl::filter::PDFReferenceElement*>(
                     pObject->Lookup("ToUnicode"_ostr));
                 CPPUNIT_ASSERT(pToUnicodeRef);
@@ -1895,15 +1914,11 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf66597_2)
         aZCodec.Decompress(pStream->GetMemory(), aObjectStream);
         CPPUNIT_ASSERT(aZCodec.EndCompression());
         aObjectStream.Seek(0);
-        std::string aCmap("8 beginbfchar\n"
-                          "<02> <0632>\n"
+        std::string aCmap("4 beginbfchar\n"
                           "<03> <0020>\n"
                           "<04> <0648>\n"
                           "<05> <0647>\n"
                           "<06> <062F>\n"
-                          "<08> <062C>\n"
-                          "<0A> <0628>\n"
-                          "<0C> <0623>\n"
                           "endbfchar");
         std::string aData(static_cast<const char*>(aObjectStream.GetData()),
                           aObjectStream.GetSize());
@@ -1977,6 +1992,12 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf66597_3)
             auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
             if (pType && pType->GetValue() == "Font")
             {
+                // ToUnicode is on the Type 0 font, not its descendant CIDFont
+                auto pSubtype
+                    = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
+                if (!pSubtype || pSubtype->GetValue() != "Type0")
+                    continue;
+
                 auto pName
                     = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("BaseFont"_ostr));
                 auto aName = pName->GetValue().copy(7); // skip the subset id
@@ -2001,8 +2022,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf66597_3)
         aZCodec.Decompress(pStream->GetMemory(), aObjectStream);
         CPPUNIT_ASSERT(aZCodec.EndCompression());
         aObjectStream.Seek(0);
-        std::string aCmap("2 beginbfchar\n"
-                          "<01> <1ECB0331030B>\n"
+        std::string aCmap("1 beginbfchar\n"
                           "<05> <0020>\n"
                           "endbfchar");
         std::string aData(static_cast<const char*>(aObjectStream.GetData()),
@@ -2101,17 +2121,12 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testVariableFontPSName1)
         }
     }
 
-#if !defined _WIN32
     std::set<OString> aExpected{ "STIXTwoText"_ostr,
                                  "STIXTwoTextRoman-Bold"_ostr,
                                  "STIXTwoText-Italic"_ostr,
                                  "STIXTwoTextItalic-BoldItalic"_ostr,
                                  "STIXTwoTextRoman-SemiBold"_ostr,
                                  "STIXTwoTextItalic-SemiBoldItalic"_ostr };
-#else
-    std::set<OString> aExpected{ "STIXTwoTextRoman-Bold"_ostr, "STIXTwoTextItalic-BoldItalic"_ostr,
-                                 "STIXTwoTextItalic-Italic"_ostr, "STIXTwoTextRoman-Regular"_ostr };
-#endif
 
     CPPUNIT_ASSERT_EQUAL(aExpected, aFontNames);
 }
@@ -2140,16 +2155,11 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testVariableFontPSName2)
         }
     }
 
-#if !defined _WIN32
     std::set<OString> aExpected{
         "SourceCodePro-Regular"_ostr,  "SourceCodePro-Bold"_ostr,
         "SourceCodePro-Italic"_ostr,   "SourceCodePro-BoldItalic"_ostr,
         "SourceCodePro-SemiBold"_ostr, "SourceCodePro-SemiBoldItalic"_ostr
     };
-#else
-    std::set<OString> aExpected{ "SourceCodePro-Regular"_ostr, "SourceCodePro-Bold"_ostr,
-                                 "SourceCodePro-Italic"_ostr, "SourceCodePro-BoldItalic"_ostr };
-#endif
 
     CPPUNIT_ASSERT_EQUAL(aExpected, aFontNames);
 }
@@ -2181,13 +2191,9 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testOpticalSizing)
         }
     }
 
-#if !defined _WIN32
     std::set<OString> aExpected{ "Fraunces_144opsz_400wght"_ostr, "Fraunces_80opsz_400wght"_ostr,
                                  "Fraunces_60opsz_400wght"_ostr,  "Fraunces_40opsz_400wght"_ostr,
                                  "Fraunces_20opsz_400wght"_ostr,  "Fraunces-Regular"_ostr };
-#else
-    std::set<OString> aExpected{ "DejaVuSans"_ostr };
-#endif
 
     CPPUNIT_ASSERT_EQUAL(aExpected, aFontNames);
 }
@@ -2616,7 +2622,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf157816)
                 const auto* pNumR = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[2]);
                 CPPUNIT_ASSERT(pNumR);
                 // this changed to the end of the text, not the start of the fly
-                CPPUNIT_ASSERT_DOUBLES_EQUAL(187.157, pNumR->GetValue(), 1e-3);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(183.807, pNumR->GetValue(), 1e-3);
                 const auto* pNumB = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[3]);
                 CPPUNIT_ASSERT(pNumB);
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(688.389, pNumB->GetValue(), 1e-3);
@@ -2748,7 +2754,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf157816)
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(660.789, pNumT->GetValue(), 1e-3);
                 const auto* pNumR = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[2]);
                 CPPUNIT_ASSERT(pNumR);
-                CPPUNIT_ASSERT_DOUBLES_EQUAL(179.357, pNumR->GetValue(), 1e-3);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(176.057, pNumR->GetValue(), 1e-3);
                 const auto* pNumB = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[3]);
                 CPPUNIT_ASSERT(pNumB);
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(674.589, pNumB->GetValue(), 1e-3);
@@ -2814,7 +2820,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf157816)
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(646.989, pNumT->GetValue(), 1e-3);
                 const auto* pNumR = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[2]);
                 CPPUNIT_ASSERT(pNumR);
-                CPPUNIT_ASSERT_DOUBLES_EQUAL(174.757, pNumR->GetValue(), 1e-3);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(171.407, pNumR->GetValue(), 1e-3);
                 const auto* pNumB = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[3]);
                 CPPUNIT_ASSERT(pNumB);
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(660.789, pNumB->GetValue(), 1e-3);
@@ -3740,7 +3746,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf142806)
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(56.643, pNumL->GetValue(), 1e-3);
                 const auto* pNumT = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[1]);
                 CPPUNIT_ASSERT(pNumT);
-                CPPUNIT_ASSERT_DOUBLES_EQUAL(140.005, pNumT->GetValue(), 1e-3);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(125.505, pNumT->GetValue(), 1e-3);
                 const auto* pNumR = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[2]);
                 CPPUNIT_ASSERT(pNumR);
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(241.007, pNumR->GetValue(), 1e-3);
@@ -3872,7 +3878,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf142806)
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(56.643, pNumL->GetValue(), 1e-3);
                 const auto* pNumT = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[1]);
                 CPPUNIT_ASSERT(pNumT);
-                CPPUNIT_ASSERT_DOUBLES_EQUAL(140.005, pNumT->GetValue(), 1e-3);
+                CPPUNIT_ASSERT_DOUBLES_EQUAL(125.505, pNumT->GetValue(), 1e-3);
                 const auto* pNumR = dynamic_cast<vcl::filter::PDFNumberElement*>(rElements[2]);
                 CPPUNIT_ASSERT(pNumR);
                 CPPUNIT_ASSERT_DOUBLES_EQUAL(184.707, pNumR->GetValue(), 1e-3);

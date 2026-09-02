@@ -23,7 +23,11 @@
 #include <unotools/resmgr.hxx>
 #include <dialmgr.hxx>
 #include <rtl/ustrbuf.hxx>
+#include <vcl/svapp.hxx>
+#include <vcl/vclenum.hxx>
 #include <vcl/weld/Builder.hxx>
+#include <comphelper/processfactory.hxx>
+#include <svtools/restartdialog.hxx>
 
 namespace
 {
@@ -90,8 +94,7 @@ SvxAccessibilityOptionsTabPage::SvxAccessibilityOptionsTabPage(weld::Container* 
     , m_xOptionsLB(m_xBuilder->weld_tree_view(u"options"_ustr))
     , m_xDefaultPB(m_xBuilder->weld_button(u"default"_ustr))
 {
-
-    m_xOptionsLB->enable_toggle_buttons(weld::ColumnToggleType::Check);
+    m_xOptionsLB->enable_toggle_buttons();
 
     auto pos = m_xOptionsLB->make_iterator();
     for (const auto& [compatId, a11yId] : options_list)
@@ -313,6 +316,15 @@ bool SvxAccessibilityOptionsTabPage::FillItemSet( SfxItemSet* )
     }
     batch->commit();
 
+    if (m_xHighContrast->get_value_changed_from_saved())
+    {
+        SolarMutexGuard aGuard;
+        if (svtools::executeRestartDialog(
+                comphelper::getProcessComponentContext(), nullptr,
+                svtools::RESTART_REASON_HIGH_CONTRAST))
+            GetDialogController()->response(RET_OK);
+    }
+
     return false;
 }
 
@@ -364,6 +376,7 @@ void SvxAccessibilityOptionsTabPage::Reset( const SfxItemSet* )
     }
 
     m_xHighContrast->set_active( officecfg::Office::Common::Accessibility::HighContrast::get() );
+    m_xHighContrast->save_value();
     if (officecfg::Office::Common::Accessibility::HighContrast::isReadOnly())
     {
         m_xHighContrast->set_sensitive(false);

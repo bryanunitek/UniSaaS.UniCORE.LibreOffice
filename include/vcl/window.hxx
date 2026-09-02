@@ -746,7 +746,6 @@ public:
     WindowExtendedStyle                 GetExtendedStyle() const;
     void                                SetType( WindowType eType );
     WindowType                          GetType() const;
-    std::string_view GetTypeName() const;
     bool IsFormControl() const;
     void SetFormControl(bool bFormControl);
     bool                                IsSystemWindow() const;
@@ -1479,8 +1478,8 @@ public:
                                              TextRectInfo* pInfo = nullptr,
                                              const vcl::TextLayoutCommon* _pTextLayout = nullptr ) const;
     float                       GetDPIScaleFactor() const;
-    tools::Long                 GetOutOffXPixel() const;
-    tools::Long                 GetOutOffYPixel() const;
+    tools::Long                 GetDeviceOriginX() const;
+    tools::Long                 GetDeviceOriginY() const;
 
     void                        EnableMapMode( bool bEnable = true );
     bool                        IsMapModeEnabled() const;

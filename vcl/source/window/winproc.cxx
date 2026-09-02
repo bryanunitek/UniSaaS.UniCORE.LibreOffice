@@ -1505,7 +1505,7 @@ static void ImplHandleExtTextInputPos( vcl::Window* pWindow,
                 rRect = tools::Rectangle( aPos, aSize );
             }
             else
-                rRect = tools::Rectangle( Point( pChild->GetOutOffXPixel(), pChild->GetOutOffYPixel() ), Size() );
+                rRect = tools::Rectangle( Point( pChild->GetDeviceOriginX(), pChild->GetDeviceOriginY() ), Size() );
         }
         rInputWidth = pChild->GetOutDev()->LogicWidthToDevicePixel(pChild->GetCursorExtTextInputWidth());
         if ( !rInputWidth )
@@ -2808,10 +2808,8 @@ bool ImplWindowFrameProc( vcl::Window* _pWindow, SalEvent nEvent, const void* pE
 
         case SalEvent::Resize:
             {
-            tools::Long nNewWidth;
-            tools::Long nNewHeight;
-            pWindow->ImplGetWindowImpl()->mpFrame->GetClientSize( nNewWidth, nNewHeight );
-            ImplHandleResize( pWindow, nNewWidth, nNewHeight );
+            const Size aNewSize = pWindow->ImplGetWindowImpl()->mpFrame->GetClientSize();
+            ImplHandleResize( pWindow, aNewSize.Width(), aNewSize.Height());
             }
             break;
 

@@ -28,6 +28,7 @@
 #include <svl/cjkoptions.hxx>
 #include <vcl/svapp.hxx>
 #include <vcl/weld/Builder.hxx>
+#include <vcl/weld/Dialog.hxx>
 #include <numpara.hxx>
 #include <swmodule.hxx>
 #include <wrtsh.hxx>
@@ -166,10 +167,7 @@ SwTemplateDlgController::SwTemplateDlgController(weld::Window* pParent,
                 RemoveTabPage(u"outline"_ustr);
                 RemoveTabPage(u"asianlayout"_ustr);
                 if(!(m_nHtmlMode & HTMLMODE_FULL_STYLES))
-                {
-                    RemoveTabPage(u"background"_ustr);
                     RemoveTabPage(u"dropcaps"_ustr);
-                }
             }
             else
             {
@@ -207,13 +205,6 @@ SwTemplateDlgController::SwTemplateDlgController(weld::Window* pParent,
                     AddTabPage(u"textgrid"_ustr, TabResId(RID_TAB_TEXTGRID.aLabel),
                                SwTextGridPage::Create, SwTextGridPage::GetRanges,
                                RID_M + RID_TAB_TEXTGRID.sIconName);
-            }
-            else
-            {
-                RemoveTabPage(u"borders"_ustr);
-                RemoveTabPage(u"columns"_ustr);
-                RemoveTabPage(u"footnotes"_ustr);
-                RemoveTabPage(u"textgrid"_ustr);
             }
         }
         break;
@@ -302,7 +293,7 @@ void SwTemplateDlgController::RefreshInputSet()
 
 void SwTemplateDlgController::PageCreated(const OUString& rId, SfxTabPage &rPage )
 {
-    // set style's and metric's names
+    // set style and metric names
     UIName sNumCharFormat, sBulletCharFormat;
     SwStyleNameMapper::FillUIName( SwPoolFormatId::CHR_NUM_LEVEL, sNumCharFormat);
     SwStyleNameMapper::FillUIName( SwPoolFormatId::CHR_BULLET_LEVEL, sBulletCharFormat);
@@ -444,7 +435,7 @@ void SwTemplateDlgController::PageCreated(const OUString& rId, SfxTabPage &rPage
         rPage.PageCreated(aSet);
     }
     // inits for Area and Transparency TabPages
-    // The selection attribute lists (XPropertyList derivates, e.g. XColorList for
+    // The selection attribute lists (XPropertyList subclasses, e.g. XColorList for
     // the color table) need to be added as items (e.g. SvxColorTableItem) to make
     // these pages find the needed attributes for fill style suggestions.
     // These are added in SwDocStyleSheet::GetItemSet() for the SfxStyleFamily::Para on
@@ -504,7 +495,7 @@ void SwTemplateDlgController::PageCreated(const OUString& rId, SfxTabPage &rPage
         aSet.Put (SfxStringItem(SID_BULLET_CHAR_FMT,sBulletCharFormat.toString()));
 
         // collect character styles
-        std::unique_ptr<weld::Builder> xBuilder(Application::CreateBuilder(nullptr, u"modules/swriter/ui/comboboxfragment.ui"_ustr));
+        std::unique_ptr<weld::Builder> xBuilder(Application::CreateBuilder(getDialog(), u"modules/swriter/ui/comboboxfragment.ui"_ustr));
         std::unique_ptr<weld::ComboBox> xCharFormatLB(xBuilder->weld_combo_box(u"combobox"_ustr));
         xCharFormatLB->clear();
         xCharFormatLB->append_text(SwViewShell::GetShellRes()->aStrNone);
@@ -530,7 +521,7 @@ void SwTemplateDlgController::PageCreated(const OUString& rId, SfxTabPage &rPage
         {
             constexpr tools::Long constTwips_0_5mm = o3tl::toTwips(5, o3tl::Length::mm10);
             aSet.Put(SfxUInt32Item(SID_SVXSTDPARAGRAPHTABPAGE_ABSLINEDIST, constTwips_0_5mm));
-            aSet.Put(SfxUInt32Item(SID_SVXSTDPARAGRAPHTABPAGE_FLAGSET,0x000F));
+            aSet.Put(SfxUInt32Item(SID_SVXSTDPARAGRAPHTABPAGE_FLAGSET,0x001F));
             rPage.PageCreated(aSet);
         }
     }

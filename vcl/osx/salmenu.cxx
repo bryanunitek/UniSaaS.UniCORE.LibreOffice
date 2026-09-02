@@ -122,7 +122,7 @@ static void initAppMenu()
     static bool bInitialized = false;
     if (bInitialized)
         return;
-    OSX_SALDATA_RUNINMAIN(initAppMenu())
+    OSX_RUNINMAIN(initAppMenu())
     bInitialized = true;
 
     NSMenu* pAppMenu = nil;
@@ -296,8 +296,6 @@ AquaSalMenu::~AquaSalMenu()
     }
 
     [mpMenuTranslations autorelease];
-    if( mpAltTitle )
-        [mpAltTitle autorelease];
 }
 
 bool AquaSalMenu::ShowNativePopupMenu(FloatingWindow * pWin, const tools::Rectangle& rRect, FloatWinPopupFlags nFlags)
@@ -403,7 +401,9 @@ void AquaSalMenu::unsetMainMenu()
     pCurrentMenuBar = nullptr;
 
     // remove all menus except the app menu
-    NSMenu* pMenu = [NSApp mainMenu];
+    // retain and autorelease the menu so it survives being detached from NSApp
+    NSMenu* pMenu = [[[NSApp mainMenu] retain] autorelease];
+
     [NSApp setMainMenu:nil];
     for( int nItems = [pMenu numberOfItems]; nItems > 1; nItems-- )
         [pMenu removeItemAtIndex: 1];
@@ -462,7 +462,7 @@ void AquaSalMenu::setMainMenu()
 void AquaSalMenu::setDefaultMenu()
 {
     // tdf#160427 native menu changes can only be done on the main thread
-    OSX_SALDATA_RUNINMAIN(AquaSalMenu::setDefaultMenu())
+    OSX_RUNINMAIN(AquaSalMenu::setDefaultMenu())
 
     NSMenu* pMenu = [NSApp mainMenu];
 
@@ -566,7 +566,7 @@ void AquaSalMenu::SetFrame( const SalFrame *pFrame )
 
 void AquaSalMenu::InsertItem( SalMenuItem* pSalMenuItem, unsigned nPos )
 {
-    OSX_SALDATA_RUNINMAIN(InsertItem(pSalMenuItem, nPos))
+    OSX_RUNINMAIN(InsertItem(pSalMenuItem, nPos))
 
     AquaSalMenuItem *pAquaSalMenuItem = static_cast<AquaSalMenuItem*>(pSalMenuItem);
 
@@ -595,7 +595,7 @@ void AquaSalMenu::InsertItem( SalMenuItem* pSalMenuItem, unsigned nPos )
 void AquaSalMenu::RemoveItem( unsigned nPos )
 {
     // tdf#160427 native menu changes can only be done on the main thread
-    OSX_SALDATA_RUNINMAIN(RemoveItem(nPos))
+    OSX_RUNINMAIN(RemoveItem(nPos))
 
     AquaSalMenuItem* pRemoveItem = nullptr;
     if( nPos == MENU_APPEND || nPos == (maItems.size()-1) )
@@ -935,6 +935,8 @@ SAL_WNODEPRECATED_DECLARATIONS_POP
             );
 }
 
+// Returns a copy of the translated string, if found in the translations dictionary,
+// that the caller owns and is responsible for releasing.
 static NSString *getMenuTranslation( NSDictionary *pDict, OUString rUnoCommand )
 {
     NSDictionary *pLangs = pDict[ [CreateNSString(rUnoCommand) autorelease] ];
@@ -961,7 +963,7 @@ static NSString *getMenuTranslation( NSDictionary *pDict, OUString rUnoCommand )
     if ( !pAltTitle )
         pAltTitle = pLangs[pLang];
 
-    return pAltTitle;
+    return [pAltTitle copy];
 }
 
 /*
@@ -974,6 +976,8 @@ AquaSalMenuItem::AquaSalMenuItem( const SalItemParams* pItemData, NSDictionary *
     mpParentMenu( nullptr ),
     mpSubMenu( nullptr ),
     mpMenuItem( nil ),
+    mpOrigTitle( nil ),
+    mpAltTitle( nil ),
     mpMenuTranslations( [pMenuTranslations retain] )
 {
     if (pItemData->eType == MenuItemType::SEPARATOR)
@@ -1040,6 +1044,9 @@ void AquaSalMenuItem::setTitle(const OUString& i_rText)
     if (aText.endsWith("...", &aText))
         aText += u"\u2026";
 
+    // autorelease on nil should be a noop, but better be safe than sorry
+    if (mpOrigTitle)
+        [mpOrigTitle autorelease];
     mpOrigTitle = CreateNSString( aText );
     if ( !mpOrigTitle )
         return;

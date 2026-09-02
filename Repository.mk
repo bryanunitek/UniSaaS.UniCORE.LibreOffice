@@ -168,7 +168,6 @@ $(eval $(call gb_Helper_register_executables_for_install,OOO,brand, \
 	$(call gb_Helper_optional,FUZZERS,mmlfuzzer) \
 	$(call gb_Helper_optional,FUZZERS,mtpfuzzer) \
 	$(call gb_Helper_optional,FUZZERS,htmlfuzzer) \
-	$(call gb_Helper_optional,FUZZERS,sftfuzzer) \
 	$(call gb_Helper_optional,FUZZERS,eotfuzzer) \
 	$(call gb_Helper_optional,FUZZERS,dbffuzzer) \
 	$(call gb_Helper_optional,FUZZERS,webpfuzzer) \
@@ -364,7 +363,6 @@ $(eval $(call gb_Helper_register_libraries_for_install,OOOLIBS,ooo, \
 	$(if $(filter WNT,$(OS)),directx9canvas) \
 	$(if $(ENABLE_OPENGL_CANVAS),oglcanvas) \
 	$(if $(filter WNT,$(OS)),gdipluscanvas) \
-	simplecanvas \
 	vclcanvas \
 ))
 endif
@@ -921,6 +919,9 @@ $(eval $(call gb_Helper_register_packages_for_install,sdk,\
 		odk_javadoc \
 		odk_uno_loader_classes \
 	) \
+	$(if $(ENABLE_DOTNET), \
+		odk_dotnet \
+	) \
 	odk_scripts \
 ))
 
@@ -1080,13 +1081,6 @@ $(eval $(call gb_Helper_register_packages_for_install,ooo_fonts,\
 		fonts_noto_serif_lao \
 		fonts_reem \
 		fonts_scheherazade \
-		$(if $(WITH_DOCREPAIR_FONTS),fonts_agdasima,) \
-		$(if $(WITH_DOCREPAIR_FONTS),fonts_bacasime_antique,) \
-		$(if $(WITH_DOCREPAIR_FONTS),fonts_belanosima,) \
-		$(if $(WITH_DOCREPAIR_FONTS),fonts_caprasimo,) \
-		$(if $(WITH_DOCREPAIR_FONTS),fonts_lugrasimo,) \
-		$(if $(WITH_DOCREPAIR_FONTS),fonts_lumanosimo,) \
-		$(if $(WITH_DOCREPAIR_FONTS),fonts_lunasima,) \
 	) \
 ))
 
@@ -1214,7 +1208,6 @@ $(eval $(call gb_Helper_register_mos,\
 	$(call gb_Helper_optional,SCRIPTING,sb) \
 	sc \
 	sca \
-	scc \
 	sd \
 	sdext \
 	sfx \

@@ -41,6 +41,7 @@ struct SwFindParas
     // @param xSearchItem allocate in parent so we can do so outside the calling loop
     virtual int DoFind(SwPaM &, SwMoveFnCollection const &, const SwPaM&, bool, std::unique_ptr<SvxSearchItem>& xSearchItem) = 0;
     virtual bool IsReplaceMode() const = 0;
+    virtual void SetMustStartWithCurrentNode(bool) {}
 
 protected:
     ~SwFindParas() {}
@@ -77,7 +78,7 @@ class SAL_DLLPUBLIC_RTTI SwCursor : public SwPaM
     std::vector<SwCursor_SavePos> m_vSavePos; // the current entry is the last element
     sal_Int32 m_nRowSpanOffset;        // required for travelling in tabs with rowspans
     sal_uInt8 m_nCursorBidiLevel; // bidi level of the cursor
-    bool m_bColumnSelection;      // true: cursor is aprt of a column selection
+    bool m_bColumnSelection;      // true: cursor is part of a column selection
 
     sal_Int32 FindAll( SwFindParas& , SwDocPositions, SwDocPositions, FindRanges, bool& bCancel );
 
@@ -205,7 +206,7 @@ public:
     // true: cursor can be set at this position.
     virtual bool IsAtValidPos( bool bPoint = true ) const;
 
-    // Is cursor allowed in ready only ranges?
+    // Is cursor allowed in read only ranges?
     virtual bool IsReadOnlyAvailable() const;
 
     virtual bool IsSkipOverProtectSections() const;

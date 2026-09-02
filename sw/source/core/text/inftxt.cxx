@@ -701,8 +701,11 @@ void SwTextPaintInfo::DrawText_( const OUString &rText, const SwLinePortion &rPo
 
     aDrawInf.SetUnderFnt( m_pUnderFnt );
 
+    // tdf#171959: a hole portion carries the trailing blank that hangs outside the line, so it
+    // takes no part in the justification of the line's content
     const tools::Long nSpaceAdd = ( rPor.IsBlankPortion() || rPor.IsDropPortion() ||
-                             rPor.InNumberGrp() ) ? 0 : GetSpaceAdd(/*bShrink=*/true);
+                             rPor.InNumberGrp() || rPor.IsHolePortion() )
+                                 ? 0 : GetSpaceAdd(/*bShrink=*/true);
     if ( nSpaceAdd )
     {
         TextFrameIndex nCharCnt(0);
@@ -840,22 +843,11 @@ void SwTextPaintInfo::CalcRect( const SwLinePortion& rPor,
 
     // we should take line spacing into account.
     // otherwise, bottom of some letters will be cut because of the "field shading" background layer.
-    switch (rSpace.GetInterLineSpaceRule())
+    if (rSpace.GetLineSpaceRule() == SvxLineSpaceRule::Auto
+        && rSpace.GetInterLineSpaceRule() == SvxInterLineSpaceRule::Prop) // proportional
     {
-        case SvxInterLineSpaceRule::Prop: // proportional
-        {
-            if (nPropLineSpace < 100)
-                nHeight = rPor.Height() * nPropLineSpace / 100;
-        }
-        break;
-        case SvxInterLineSpaceRule::Fix: // fixed
-        {
-            if (rSpace.GetInterLineSpace() > 0)
-                nHeight = std::min<SwTwips>(rSpace.GetInterLineSpace(), rPor.Height());
-        }
-        break;
-        default:
-            break;
+        if (nPropLineSpace < 100)
+            nHeight = rPor.Height() * nPropLineSpace / 100;
     }
 
     Size aSize( rPor.Width(), nHeight);
@@ -896,23 +888,11 @@ void SwTextPaintInfo::CalcRect( const SwLinePortion& rPor,
         else
         {
             SwTwips nAscent = rPor.GetAscent();
-
-            switch (rSpace.GetInterLineSpaceRule())
+            if (rSpace.GetLineSpaceRule() == SvxLineSpaceRule::Auto
+                && rSpace.GetInterLineSpaceRule() == SvxInterLineSpaceRule::Prop) // proportional
             {
-                case SvxInterLineSpaceRule::Prop: // proportional
-                {
-                    if (nPropLineSpace < 100)
-                        nAscent = (rPor.GetAscent() * nPropLineSpace / 100);
-                }
-                break;
-                case SvxInterLineSpaceRule::Fix: // fixed
-                {
-                    if (rSpace.GetInterLineSpace() > 0)
-                        nAscent = std::min<SwTwips>(rSpace.GetInterLineSpace(), rPor.GetAscent());
-                }
-                break;
-                default:
-                    break;
+                if (nPropLineSpace < 100)
+                    nAscent = (rPor.GetAscent() * nPropLineSpace / 100);
             }
 
             aPoint.setY( Y() - nAscent);
@@ -1582,6 +1562,10 @@ void SwTextPaintInfo::DrawViewOpt( const SwLinePortion &rPor,
         case PortionType::InputField:
             // input field shading also in read-only mode
             if (GetOpt().IsFieldShadings()
+                // tdf#172263 custom white color disables metadata shadings
+                // TODO add a new expert or UX option for it?
+                && ( PortionType::Meta != nWhich || !pColor
+                    || pColor->GetRGBColor() != COL_WHITE )
                 && ( PortionType::Number != nWhich
                     || m_pFrame->GetTextNodeForParaProps()->HasMarkedLabel())) // #i27615#
             {
@@ -1638,13 +1622,13 @@ static void lcl_InitHyphValues( PropertyValues &rVals,
             bool bNoCapsHyphenation, bool bNoLastWordHyphenation,
             sal_Int16 nMinWordLength, sal_Int16 nTextHyphZone, bool bKeep, sal_Int16 nKeepType,
             bool bKeepLine, sal_Int16 nCompoundMinLeading,
-            sal_Int16 nCompoundMinTrailing, sal_Int16 nTextHyphZoneAlways )
+            sal_Int16 nCompoundMinTrailing, sal_Int16 nTextHyphZoneAlways, sal_Int16 nLevel )
 {
     sal_Int32 nLen = rVals.getLength();
 
     if (0 == nLen)  // yet to be initialized?
     {
-        rVals.realloc( 12 );
+        rVals.realloc( 13 );
         PropertyValue *pVal = rVals.getArray();
 
         pVal[0].Name    = UPN_HYPH_MIN_LEADING;
@@ -1694,8 +1678,12 @@ static void lcl_InitHyphValues( PropertyValues &rVals,
         pVal[11].Name    = UPN_HYPH_ZONE_ALWAYS;
         pVal[11].Handle  = UPH_HYPH_ZONE_ALWAYS;
         pVal[11].Value   <<= nTextHyphZoneAlways;
+
+        pVal[12].Name    = UPN_HYPH_LEVEL;
+        pVal[12].Handle  = UPH_HYPH_LEVEL;
+        pVal[12].Value   <<= nLevel;
     }
-    else if (12 == nLen) // already initialized once?
+    else if (13 == nLen) // already initialized once?
     {
         PropertyValue *pVal = rVals.getArray();
         pVal[0].Value <<= nMinLeading;
@@ -1710,6 +1698,7 @@ static void lcl_InitHyphValues( PropertyValues &rVals,
         pVal[9].Value <<= bKeep;
         pVal[10].Value <<= bKeepLine;
         pVal[11].Value <<= nTextHyphZoneAlways;
+        pVal[12].Value <<= nLevel;
     }
     else {
         OSL_FAIL( "unexpected size of sequence" );
@@ -1718,7 +1707,7 @@ static void lcl_InitHyphValues( PropertyValues &rVals,
 
 const PropertyValues & SwTextFormatInfo::GetHyphValues() const
 {
-    OSL_ENSURE( 12 == m_aHyphVals.getLength(),
+    OSL_ENSURE( 13 == m_aHyphVals.getLength(),
             "hyphenation values not yet initialized" );
     return m_aHyphVals;
 }
@@ -1746,11 +1735,12 @@ bool SwTextFormatInfo::InitHyph( const bool bAutoHyphen )
         const bool bKeepLine = rAttr.IsKeepLine();
         const sal_Int16 nCompoundMinimalLeading  = rAttr.GetCompoundMinLead();
         const sal_Int16 nCompoundMinimalTrailing  = rAttr.GetCompoundMinTrail();
+        const sal_Int16 nLevel  = rAttr.GetLevel();
         lcl_InitHyphValues( m_aHyphVals, nMinimalLeading, nMinimalTrailing,
                  bNoCapsHyphenation, bNoLastWordHyphenation,
                  nMinimalWordLength, nTextHyphZone, bKeep, nKeepType,
                  bKeepLine, nCompoundMinimalLeading,
-                 nCompoundMinimalTrailing, nTextHyphZoneAlways );
+                 nCompoundMinimalTrailing, nTextHyphZoneAlways, nLevel );
     }
     return bAuto;
 }

@@ -87,56 +87,6 @@
 #include <salvtables.hxx>
 #include <comphelper/lok.hxx>
 
-SalFrame::SalFrame()
-    : m_pWindow(nullptr)
-    , m_pProc(nullptr)
-{
-}
-
-// this file contains the virtual destructors of the sal interface
-// compilers usually put their vtables where the destructor is
-
-SalFrame::~SalFrame() {}
-
-void SalFrame::SetCallback(vcl::Window* pWindow, SALFRAMEPROC pProc)
-{
-    m_pWindow = pWindow;
-    m_pProc = pProc;
-}
-
-// default to full-frame flushes
-// on ports where partial-flushes are much cheaper this method should be overridden
-void SalFrame::Flush(const tools::Rectangle&) { Flush(); }
-
-void SalFrame::SetRepresentedURL(const OUString&)
-{
-    // currently this is Mac only functionality
-}
-
-OUString SalFrame::DumpSetPosSize(tools::Long nX, tools::Long nY, tools::Long nWidth,
-                                  tools::Long nHeight, sal_uInt16 nFlags)
-{
-    // assuming the 4 integers normally don't have more than 4 digits, but might be negative
-    OUStringBuffer aBuffer(4 * 5 + 5);
-    if (nFlags & SAL_FRAME_POSSIZE_WIDTH)
-        aBuffer << nWidth << "x";
-    else
-        aBuffer << "?x";
-    if (nFlags & SAL_FRAME_POSSIZE_HEIGHT)
-        aBuffer << nHeight << "@(";
-    else
-        aBuffer << "?@(";
-    if (nFlags & SAL_FRAME_POSSIZE_X)
-        aBuffer << nX << ",";
-    else
-        aBuffer << "?,";
-    if (nFlags & SAL_FRAME_POSSIZE_Y)
-        aBuffer << nY << ")";
-    else
-        aBuffer << "?)";
-    return aBuffer.makeStringAndClear();
-}
-
 SalTimer::~SalTimer() {}
 
 void SalBitmap::DropScaledCache()
@@ -1412,13 +1362,13 @@ void SalInstanceWidget::DoRecursivePaint(vcl::Window* pWindow, const Point& rRen
             continue;
 
         tools::Long nDeltaX
-            = pChild->GetOutDev()->GetOutOffXPixel() - pWindow->GetOutDev()->GetOutOffXPixel();
+            = pChild->GetOutDev()->GetDeviceOriginX() - pWindow->GetOutDev()->GetDeviceOriginX();
         if (bHasMirroredGraphics)
             nDeltaX = pWindow->GetOutDev()->GetOutputWidthPixel() - nDeltaX
                       - pChild->GetOutDev()->GetOutputWidthPixel();
 
         tools::Long nDeltaY
-            = pChild->GetOutDev()->GetOutOffYPixel() - pWindow->GetOutDev()->GetOutOffYPixel();
+            = pChild->GetOutDev()->GetDeviceOriginY() - pWindow->GetOutDev()->GetDeviceOriginY();
 
         Point aPos(rRenderLogicPos);
         aPos += Point(nDeltaX, nDeltaY);
@@ -1600,14 +1550,14 @@ void SalInstanceWindow::present()
     m_xWindow->ToTop(ToTopFlags::RestoreWhenMin | ToTopFlags::ForegroundTask);
 }
 
-void SalInstanceWindow::set_window_state(const OUString& rStr)
+void SalInstanceWindow::set_window_state(const vcl::WindowData& rState)
 {
     SystemWindow* pSysWin = dynamic_cast<SystemWindow*>(m_xWindow.get());
     assert(pSysWin);
-    pSysWin->SetWindowState(rStr);
+    pSysWin->SetWindowState(rState);
 }
 
-OUString SalInstanceWindow::get_window_state(vcl::WindowDataMask nMask) const
+vcl::WindowData SalInstanceWindow::get_window_state(vcl::WindowDataMask nMask) const
 {
     SystemWindow* pSysWin = dynamic_cast<SystemWindow*>(m_xWindow.get());
     assert(pSysWin);
@@ -3578,6 +3528,11 @@ int SalInstanceTreeView::to_external_model(int col) const
     return col;
 }
 
+SvTreeListEntry& SalInstanceTreeView::InsertDummyEntry(SvTreeListEntry* pParent)
+{
+    return m_xTreeView->InsertEntry(u"<dummy>"_ustr, pParent, 0);
+}
+
 bool SalInstanceTreeView::IsDummyEntry(SvTreeListEntry* pEntry) const
 {
     return o3tl::trim(m_xTreeView->GetEntryText(pEntry)) == u"<dummy>";
@@ -3603,12 +3558,12 @@ void SalInstanceTreeView::set_font_color(SvTreeListEntry* pEntry, const Color& r
         pEntry->SetTextColor(rColor);
 }
 
-void SalInstanceTreeView::AddStringItem(SvTreeListEntry* pEntry, const OUString& rStr, int nCol)
+void SalInstanceTreeView::AddStringItem(SvTreeListEntry& rEntry, const OUString& rStr, int nCol)
 {
     auto xCell = std::make_unique<SvLBoxString>(rStr);
     if (m_aCustomRenders.contains(nCol))
         xCell->SetCustomRender();
-    pEntry->AddItem(std::move(xCell));
+    rEntry.AddItem(std::move(xCell));
 }
 
 void SalInstanceTreeView::do_insert(const weld::TreeIter* pParent, int pos, const OUString* pStr,
@@ -3633,22 +3588,22 @@ void SalInstanceTreeView::do_insert(const weld::TreeIter* pParent, int pos, cons
         pEntry->SetSeparator();
 
     if (m_xTreeView->m_nTreeFlags & SvTreeFlags::CHKBTN)
-        AddStringItem(pEntry, u""_ustr, -1);
+        AddStringItem(*pEntry, u""_ustr, -1);
 
     if (pIconName || pImageSurface)
     {
         Image aImage(pIconName ? createImage(*pIconName) : createImage(*pImageSurface));
-        pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(aImage, aImage, false));
+        pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(aImage, aImage));
     }
     else
     {
         Image aDummy;
-        pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(aDummy, aDummy, false));
+        pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(aDummy, aDummy));
     }
     if (pStr)
-        AddStringItem(pEntry, *pStr, pEntry->ItemCount());
+        AddStringItem(*pEntry, *pStr, pEntry->ItemCount());
     pEntry->SetUserData(pUserData);
-    m_xTreeView->Insert(pEntry, iter, nInsertPos);
+    m_xTreeView->Insert(pEntry, nInsertPos, iter);
 
     if (pRet)
     {
@@ -3658,24 +3613,23 @@ void SalInstanceTreeView::do_insert(const weld::TreeIter* pParent, int pos, cons
 
     if (bChildrenOnDemand)
     {
-        SvTreeListEntry* pPlaceHolder
-            = m_xTreeView->InsertEntry(u"<dummy>"_ustr, pEntry, false, 0, nullptr);
-        SvViewDataEntry* pViewData = m_xTreeView->GetViewDataEntry(pPlaceHolder);
-        pViewData->SetSelectable(false);
+        SvTreeListEntry& rPlaceHolder = InsertDummyEntry(pEntry);
+        SvViewDataEntry& rViewData = m_xTreeView->GetViewDataEntry(rPlaceHolder);
+        rViewData.SetSelectable(false);
     }
 
     if (bIsSeparator)
     {
-        SvViewDataEntry* pViewData = m_xTreeView->GetViewDataEntry(pEntry);
-        pViewData->SetSelectable(false);
+        SvViewDataEntry& rViewData = m_xTreeView->GetViewDataEntry(*pEntry);
+        rViewData.SetSelectable(false);
     }
 }
 
 void SalInstanceTreeView::update_checkbutton_column_width(SvTreeListEntry& rEntry)
 {
-    SvViewDataEntry* pViewData = m_xTreeView->GetViewDataEntry(&rEntry);
-    m_xTreeView->InitViewData(pViewData, &rEntry);
-    m_xTreeView->CheckBoxInserted(&rEntry);
+    SvViewDataEntry& rViewData = m_xTreeView->GetViewDataEntry(rEntry);
+    m_xTreeView->InitViewData(rViewData, rEntry);
+    m_xTreeView->CheckBoxInserted(rEntry);
 }
 
 void SalInstanceTreeView::InvalidateModelEntry(SvTreeListEntry* pEntry)
@@ -3685,14 +3639,14 @@ void SalInstanceTreeView::InvalidateModelEntry(SvTreeListEntry* pEntry)
     m_xTreeView->ModelHasEntryInvalidated(pEntry);
 }
 
-void SalInstanceTreeView::do_set_toggle(SvTreeListEntry& rEntry, TriState eState, int col)
+void SalInstanceTreeView::set_toggle(SvTreeListEntry& rEntry, TriState eState, int col)
 {
     assert(col >= 0 && o3tl::make_unsigned(col) < rEntry.ItemCount());
     // if it's the placeholder to allow a blank column, replace it now
     if (rEntry.GetItem(col).GetType() != SvLBoxItemType::Button)
     {
-        SvLBoxButtonData* pData = m_bTogglesAsRadio ? &m_aRadioButtonData : &m_aCheckButtonData;
-        rEntry.ReplaceItem(std::make_unique<SvLBoxButton>(pData), 0);
+        SvLBoxButtonData& rData = m_bTogglesAsRadio ? m_aRadioButtonData : m_aCheckButtonData;
+        rEntry.ReplaceItem(std::make_unique<SvLBoxButton>(rData), 0);
         update_checkbutton_column_width(rEntry);
     }
     SvLBoxItem& rItem = rEntry.GetItem(col);
@@ -3738,31 +3692,6 @@ TriState SalInstanceTreeView::get_toggle(SvTreeListEntry* pEntry, int col) const
     }
     col = to_internal_model(col);
     return do_get_toggle(pEntry, col);
-}
-
-void SalInstanceTreeView::set_toggle(SvTreeListEntry& rEntry, TriState eState, int col)
-{
-    if (col == -1)
-    {
-        assert(m_xTreeView->m_nTreeFlags & SvTreeFlags::CHKBTN);
-        do_set_toggle(rEntry, eState, 0);
-        return;
-    }
-
-    col = to_internal_model(col);
-
-    // blank out missing entries
-    for (int i = rEntry.ItemCount(); i < col; ++i)
-        AddStringItem(&rEntry, u""_ustr, i - 1);
-
-    if (static_cast<size_t>(col) == rEntry.ItemCount())
-    {
-        SvLBoxButtonData* pData = m_bTogglesAsRadio ? &m_aRadioButtonData : &m_aCheckButtonData;
-        rEntry.AddItem(std::make_unique<SvLBoxButton>(pData));
-        update_checkbutton_column_width(rEntry);
-    }
-
-    do_set_toggle(rEntry, eState, col);
 }
 
 bool SalInstanceTreeView::get_text_emphasis(SvTreeListEntry* pEntry, int col) const
@@ -3983,9 +3912,8 @@ void SalInstanceTreeView::set_column_custom_renderer(int nColumn, bool bEnable)
 void SalInstanceTreeView::queue_draw()
 {
     // invalidate the entries
-    SvTreeList* pModel = m_xTreeView->GetModel();
     for (SvTreeListEntry* pEntry = m_xTreeView->First(); pEntry; pEntry = m_xTreeView->Next(pEntry))
-        pModel->InvalidateEntry(pEntry);
+        m_xTreeView->InvalidateEntry(*pEntry);
 }
 
 void SalInstanceTreeView::show()
@@ -4046,13 +3974,13 @@ void SalInstanceTreeView::bulk_insert_for_each(
     {
         aVclIter.iter = new SvTreeListEntry;
         if (bHasAutoCheckButton)
-            AddStringItem(aVclIter.iter, u""_ustr, -1);
-        aVclIter.iter->AddItem(std::make_unique<SvLBoxContextBmp>(aDummy, aDummy, false));
+            AddStringItem(*aVclIter.iter, u""_ustr, -1);
+        aVclIter.iter->AddItem(std::make_unique<SvLBoxContextBmp>(aDummy, aDummy));
         if (bGoingToSetText)
-            AddStringItem(aVclIter.iter, u""_ustr, aVclIter.iter->ItemCount());
-        m_xTreeView->Insert(aVclIter.iter, pVclParent, TREELIST_APPEND);
+            AddStringItem(*aVclIter.iter, u""_ustr, aVclIter.iter->ItemCount());
+        m_xTreeView->Insert(aVclIter.iter, TREELIST_APPEND, pVclParent);
         func(aVclIter, i);
-        m_xTreeView->CalcEntryHeight(aVclIter.iter);
+        m_xTreeView->CalcEntryHeight(*aVclIter.iter);
 
         if (!pFixedWidths)
             continue;
@@ -4061,7 +3989,7 @@ void SalInstanceTreeView::bulk_insert_for_each(
         for (size_t j = 0; j < nFixedWidths; ++j)
         {
             SvLBoxItem& rItem = aVclIter.iter->GetItem(j + nExtraCols);
-            SvViewDataItem& rViewDataItem = m_xTreeView->GetViewDataItem(aVclIter.iter, rItem);
+            SvViewDataItem& rViewDataItem = m_xTreeView->GetViewDataItem(*aVclIter.iter, rItem);
             rViewDataItem.mnWidth = (*pFixedWidths)[j];
         }
     }
@@ -4110,7 +4038,7 @@ void SalInstanceTreeView::swap(int pos1, int pos2)
     pModel->Move(pEntry1, pEntry2);
 }
 
-int SalInstanceTreeView::iter_n_children(const weld::TreeIter& rIter) const
+int SalInstanceTreeView::do_iter_n_children(const weld::TreeIter& rIter) const
 {
     const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
     return m_xTreeView->GetModel()->GetChildList(rVclIter.iter).size();
@@ -4139,27 +4067,11 @@ std::vector<int> SalInstanceTreeView::get_selected_rows() const
     return aRows;
 }
 
-OUString SalInstanceTreeView::get_text(SvTreeListEntry* pEntry, int col) const
-{
-    if (col == -1)
-        return SvTabListBox::GetEntryText(pEntry, 0);
-
-    col = to_internal_model(col);
-
-    if (static_cast<size_t>(col) == pEntry->ItemCount())
-        return OUString();
-
-    assert(col >= 0 && o3tl::make_unsigned(col) < pEntry->ItemCount());
-    SvLBoxItem& rItem = pEntry->GetItem(col);
-    assert(dynamic_cast<SvLBoxString*>(&rItem));
-    return static_cast<SvLBoxString&>(rItem).GetText();
-}
-
 void SalInstanceTreeView::set_text(SvTreeListEntry& rEntry, const OUString& rText, int col)
 {
     if (col == -1)
     {
-        m_xTreeView->SetEntryText(&rEntry, rText);
+        m_xTreeView->SetEntryText(rEntry, rText);
         return;
     }
 
@@ -4167,13 +4079,13 @@ void SalInstanceTreeView::set_text(SvTreeListEntry& rEntry, const OUString& rTex
 
     // blank out missing entries
     for (int i = rEntry.ItemCount(); i < col; ++i)
-        AddStringItem(&rEntry, u""_ustr, i - 1);
+        AddStringItem(rEntry, u""_ustr, i - 1);
 
     if (static_cast<size_t>(col) == rEntry.ItemCount())
     {
-        AddStringItem(&rEntry, rText, col - 1);
-        SvViewDataEntry* pViewData = m_xTreeView->GetViewDataEntry(&rEntry);
-        m_xTreeView->InitViewData(pViewData, &rEntry);
+        AddStringItem(rEntry, rText, col - 1);
+        SvViewDataEntry& rViewData = m_xTreeView->GetViewDataEntry(rEntry);
+        m_xTreeView->InitViewData(rViewData, rEntry);
     }
     else
     {
@@ -4252,22 +4164,51 @@ TriState SalInstanceTreeView::get_toggle(const weld::TreeIter& rIter, int col) c
     return get_toggle(rVclIter.iter, col);
 }
 
-void SalInstanceTreeView::enable_toggle_buttons(weld::ColumnToggleType eType)
+void SalInstanceTreeView::enable_toggle_buttons()
+{
+    assert(n_children() == 0 && "tree must be empty");
+
+    SvLBoxButtonData& rData = m_bTogglesAsRadio ? m_aRadioButtonData : m_aCheckButtonData;
+    m_xTreeView->EnableCheckButton(rData);
+}
+
+void SalInstanceTreeView::set_toggle_button_type(weld::ColumnToggleType eType)
 {
     assert(n_children() == 0 && "tree must be empty");
     m_bTogglesAsRadio = eType == weld::ColumnToggleType::Radio;
 
-    SvLBoxButtonData& rData = m_bTogglesAsRadio ? m_aRadioButtonData : m_aCheckButtonData;
-    m_xTreeView->EnableCheckButton(rData);
-    // EnableCheckButton clobbered this, restore it
-    rData.SetLink(LINK(this, SalInstanceTreeView, ToggleHdl));
+    // Update type of check buttons to use for the special toggle button column, if active
+    if (m_xTreeView->m_nTreeFlags & SvTreeFlags::CHKBTN)
+        enable_toggle_buttons();
 }
 
-void SalInstanceTreeView::set_toggle(const weld::TreeIter& rIter, TriState eState, int col)
+void SalInstanceTreeView::do_set_toggle(const weld::TreeIter& rIter, TriState eState, int col)
 {
     const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
     assert(rVclIter.iter && "Invalid iter");
-    set_toggle(*rVclIter.iter, eState, col);
+    SvTreeListEntry& rEntry = *rVclIter.iter;
+
+    if (col == -1)
+    {
+        assert(m_xTreeView->m_nTreeFlags & SvTreeFlags::CHKBTN);
+        set_toggle(rEntry, eState, 0);
+        return;
+    }
+
+    col = to_internal_model(col);
+
+    // blank out missing entries
+    for (int i = rEntry.ItemCount(); i < col; ++i)
+        AddStringItem(rEntry, u""_ustr, i - 1);
+
+    if (static_cast<size_t>(col) == rEntry.ItemCount())
+    {
+        SvLBoxButtonData& rData = m_bTogglesAsRadio ? m_aRadioButtonData : m_aCheckButtonData;
+        rEntry.AddItem(std::make_unique<SvLBoxButton>(rData));
+        update_checkbutton_column_width(rEntry);
+    }
+
+    set_toggle(rEntry, eState, col);
 }
 
 void SalInstanceTreeView::set_clicks_to_toggle(int nToggleBehavior)
@@ -4348,12 +4289,16 @@ void SalInstanceTreeView::start_editing(const weld::TreeIter& rIter)
 
 void SalInstanceTreeView::end_editing() { m_xTreeView->EndEditing(); }
 
-void SalInstanceTreeView::set_image(SvTreeListEntry* pEntry, const Image& rImage, int col)
+void SalInstanceTreeView::set_image(const weld::TreeIter& rIter, const Image& rImage, int col)
 {
+    const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
+    SvTreeListEntry* pEntry = rVclIter.iter;
+    assert(pEntry);
+
     if (col == -1 || col == 0)
     {
-        m_xTreeView->SetExpandedEntryBmp(pEntry, rImage);
-        m_xTreeView->SetCollapsedEntryBmp(pEntry, rImage);
+        m_xTreeView->SetExpandedEntryBmp(*pEntry, rImage);
+        m_xTreeView->SetCollapsedEntryBmp(*pEntry, rImage);
         return;
     }
 
@@ -4361,13 +4306,13 @@ void SalInstanceTreeView::set_image(SvTreeListEntry* pEntry, const Image& rImage
 
     // blank out missing entries
     for (int i = pEntry->ItemCount(); i < col; ++i)
-        AddStringItem(pEntry, u""_ustr, i - 1);
+        AddStringItem(*pEntry, u""_ustr, i - 1);
 
     if (static_cast<size_t>(col) == pEntry->ItemCount())
     {
-        pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(rImage, rImage, false));
-        SvViewDataEntry* pViewData = m_xTreeView->GetViewDataEntry(pEntry);
-        m_xTreeView->InitViewData(pViewData, pEntry);
+        pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(rImage, rImage));
+        SvViewDataEntry& rViewData = m_xTreeView->GetViewDataEntry(*pEntry);
+        m_xTreeView->InitViewData(rViewData, *pEntry);
     }
     else
     {
@@ -4378,28 +4323,25 @@ void SalInstanceTreeView::set_image(SvTreeListEntry* pEntry, const Image& rImage
         static_cast<SvLBoxContextBmp&>(rItem).SetBitmap2(rImage);
     }
 
-    m_xTreeView->CalcEntryHeight(pEntry);
+    m_xTreeView->CalcEntryHeight(*pEntry);
     InvalidateModelEntry(pEntry);
 }
 
 void SalInstanceTreeView::set_image(const weld::TreeIter& rIter, const OUString& rImage, int col)
 {
-    const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
-    set_image(rVclIter.iter, createImage(rImage), col);
+    set_image(rIter, createImage(rImage), col);
 }
 
 void SalInstanceTreeView::set_image(const weld::TreeIter& rIter,
                                     const css::uno::Reference<css::graphic::XGraphic>& rImage,
                                     int col)
 {
-    const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
-    set_image(rVclIter.iter, Image(rImage), col);
+    set_image(rIter, Image(rImage), col);
 }
 
 void SalInstanceTreeView::set_image(const weld::TreeIter& rIter, VirtualDevice& rImage, int col)
 {
-    const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
-    set_image(rVclIter.iter, createImage(rImage), col);
+    set_image(rIter, createImage(rImage), col);
 }
 
 void SalInstanceTreeView::copy_iterator(const weld::TreeIter& rSource, weld::TreeIter& rDest) const
@@ -4496,9 +4438,9 @@ void SalInstanceTreeView::do_set_children_on_demand(const weld::TreeIter& rIter,
 
     if (bChildrenOnDemand && !pPlaceHolder)
     {
-        pPlaceHolder = m_xTreeView->InsertEntry(u"<dummy>"_ustr, rVclIter.iter, false, 0, nullptr);
-        SvViewDataEntry* pViewData = m_xTreeView->GetViewDataEntry(pPlaceHolder);
-        pViewData->SetSelectable(false);
+        pPlaceHolder = &InsertDummyEntry(rVclIter.iter);
+        SvViewDataEntry& rViewData = m_xTreeView->GetViewDataEntry(*pPlaceHolder);
+        rViewData.SetSelectable(false);
     }
     else if (!bChildrenOnDemand && pPlaceHolder)
         m_xTreeView->RemoveEntry(pPlaceHolder);
@@ -4508,8 +4450,9 @@ void SalInstanceTreeView::expand_row(const weld::TreeIter& rIter)
 {
     assert(m_xTreeView->IsUpdateMode() && "don't expand when frozen");
     const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
+    assert(rVclIter.iter);
     if (!m_xTreeView->IsExpanded(rVclIter.iter) && ExpandRow(rVclIter))
-        m_xTreeView->Expand(rVclIter.iter);
+        m_xTreeView->Expand(*rVclIter.iter);
 }
 
 void SalInstanceTreeView::collapse_row(const weld::TreeIter& rIter)
@@ -4522,7 +4465,19 @@ void SalInstanceTreeView::collapse_row(const weld::TreeIter& rIter)
 OUString SalInstanceTreeView::get_text(const weld::TreeIter& rIter, int col) const
 {
     const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
-    return get_text(rVclIter.iter, col);
+
+    if (col == -1)
+        return SvTabListBox::GetEntryText(rVclIter.iter, 0);
+
+    col = to_internal_model(col);
+
+    if (static_cast<size_t>(col) == rVclIter.iter->ItemCount())
+        return OUString();
+
+    assert(col >= 0 && o3tl::make_unsigned(col) < rVclIter.iter->ItemCount());
+    SvLBoxItem& rItem = rVclIter.iter->GetItem(col);
+    assert(dynamic_cast<SvLBoxString*>(&rItem));
+    return static_cast<SvLBoxString&>(rItem).GetText();
 }
 
 void SalInstanceTreeView::set_text(const weld::TreeIter& rIter, const OUString& rText, int col)
@@ -4755,7 +4710,9 @@ void SalInstanceTreeView::unset_drag_dest_row() { m_xTreeView->UnsetDropTarget()
 
 tools::Rectangle SalInstanceTreeView::get_row_area(const weld::TreeIter& rIter) const
 {
-    return m_xTreeView->GetBoundingRect(static_cast<const SalInstanceTreeIter&>(rIter).iter);
+    const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
+    assert(rVclIter.iter && "invalid iter");
+    return m_xTreeView->GetBoundingRect(*rVclIter.iter);
 }
 
 weld::TreeView* SalInstanceTreeView::get_drag_source() const { return g_DragSource; }
@@ -4966,7 +4923,7 @@ IMPL_LINK(SalInstanceTreeView, HeaderBarClickedHdl, HeaderBar*, pHeaderBar, void
     sal_uInt16 nId = pHeaderBar->GetCurItemId();
     if (!(pHeaderBar->GetItemBits(nId) & HeaderBarItemBits::CLICKABLE))
         return;
-    signal_column_clicked(pHeaderBar->GetItemPos(nId));
+    signal_column_header_clicked(pHeaderBar->GetItemPos(nId));
 }
 
 IMPL_LINK_NOARG(SalInstanceTreeView, ExpandingHdl, SvTreeListBox*, bool)
@@ -5003,9 +4960,9 @@ bool SalInstanceTreeView::ExpandRow(const SalInstanceTreeIter& rIter)
         //expand disallowed, restore placeholder
         if (!bRet)
         {
-            pPlaceHolder = m_xTreeView->InsertEntry(u"<dummy>"_ustr, pEntry, false, 0, nullptr);
-            SvViewDataEntry* pViewData = m_xTreeView->GetViewDataEntry(pPlaceHolder);
-            pViewData->SetSelectable(false);
+            pPlaceHolder = &InsertDummyEntry(pEntry);
+            SvViewDataEntry& rViewData = m_xTreeView->GetViewDataEntry(*pPlaceHolder);
+            rViewData.SetSelectable(false);
         }
         m_aExpandingPlaceHolderParents.erase(pEntry);
     }
@@ -5073,12 +5030,12 @@ void SalInstanceIconView::do_insert(int pos, const OUString* pStr, const OUStrin
         pUserData = nullptr;
 
     SvTreeListEntry* pEntry = new SvTreeListEntry;
-    pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(rImage, rImage, false));
+    pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(rImage, rImage));
 
     if (pStr)
         pEntry->AddItem(std::make_unique<SvLBoxString>(*pStr));
     pEntry->SetUserData(pUserData);
-    m_xIconView->Insert(pEntry, nullptr, nInsertPos);
+    m_xIconView->Insert(pEntry, nInsertPos);
     if (!m_bFixedItemWidth)
         m_xIconView->UpdateEntrySize(*pEntry);
 
@@ -5110,12 +5067,12 @@ void SalInstanceIconView::insert_separator(int pos, const OUString* /* pId */)
     SvTreeListEntry* pEntry = new SvTreeListEntry;
     pEntry->SetSeparator();
     const Image aDummy;
-    pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(aDummy, aDummy, false));
+    pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(aDummy, aDummy));
     pEntry->AddItem(std::make_unique<SvLBoxString>(sSep));
     pEntry->SetUserData(nullptr);
-    m_xIconView->Insert(pEntry, nullptr, nInsertPos);
-    SvViewDataEntry* pViewData = m_xIconView->GetViewDataEntry(pEntry);
-    pViewData->SetSelectable(false);
+    m_xIconView->Insert(pEntry, nInsertPos);
+    SvViewDataEntry& rViewData = m_xIconView->GetViewDataEntry(*pEntry);
+    rViewData.SetSelectable(false);
 }
 
 IMPL_LINK(SalInstanceIconView, TooltipHdl, SvTreeListEntry&, rEntry, OUString)
@@ -5162,7 +5119,7 @@ void SalInstanceIconView::set_image(int pos, VirtualDevice& rIcon)
     Image aImage = createImage(rIcon);
     if (pItem == nullptr)
     {
-        pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(aImage, aImage, false));
+        pEntry->AddItem(std::make_unique<SvLBoxContextBmp>(aImage, aImage));
     }
     else
     {
@@ -5176,14 +5133,14 @@ void SalInstanceIconView::set_image(int pos, VirtualDevice& rIcon)
 
 void SalInstanceIconView::set_text(int pos, const OUString& rText)
 {
-    SvTreeListEntry* aEntry = m_xIconView->GetEntry(nullptr, pos);
-    if (aEntry == nullptr)
+    SvTreeListEntry* pEntry = m_xIconView->GetEntry(nullptr, pos);
+    if (!pEntry)
         return;
 
-    SvLBoxString* aItem = static_cast<SvLBoxString*>(aEntry->GetFirstItem(SvLBoxItemType::String));
+    SvLBoxString* aItem = static_cast<SvLBoxString*>(pEntry->GetFirstItem(SvLBoxItemType::String));
     if (aItem == nullptr)
     {
-        aEntry->AddItem(std::make_unique<SvLBoxString>(rText));
+        pEntry->AddItem(std::make_unique<SvLBoxString>(rText));
     }
     else
     {
@@ -5191,7 +5148,7 @@ void SalInstanceIconView::set_text(int pos, const OUString& rText)
     }
 
     if (!m_xIconView->GetModel()->IsEnableInvalidate())
-        m_xIconView->ModelHasEntryInvalidated(aEntry);
+        m_xIconView->ModelHasEntryInvalidated(pEntry);
 }
 
 void SalInstanceIconView::set_item_accessible_name(int pos, const OUString& rName)
@@ -5218,7 +5175,8 @@ OUString SalInstanceIconView::get_item_tooltip_text(const weld::TreeIter& rIter)
 tools::Rectangle SalInstanceIconView::get_rect(const weld::TreeIter& rIter) const
 {
     const SalInstanceTreeIter& rVclIter = static_cast<const SalInstanceTreeIter&>(rIter);
-    return m_xIconView->GetBoundingRect(rVclIter.iter);
+    assert(rVclIter.iter && "invalid iter");
+    return m_xIconView->GetBoundingRect(*rVclIter.iter);
 }
 
 SalInstanceIconView::~SalInstanceIconView()
@@ -5354,6 +5312,15 @@ SalInstanceFormattedSpinButton::SalInstanceFormattedSpinButton(FormattedField* p
     m_xButton->SetUpHdl(LINK(this, SalInstanceFormattedSpinButton, UpDownHdl));
     m_xButton->SetDownHdl(LINK(this, SalInstanceFormattedSpinButton, UpDownHdl));
     m_xButton->SetLoseFocusHdl(LINK(this, SalInstanceFormattedSpinButton, LoseFocusHdl));
+
+    if (Edit* pEdit = m_xButton->GetSubEdit())
+    {
+        pEdit->SetActivateHdl(LINK(this, SalInstanceFormattedSpinButton, ActivateHdl));
+    }
+    else
+    {
+        m_xButton->SetActivateHdl(LINK(this, SalInstanceFormattedSpinButton, ActivateHdl));
+    }
 }
 
 void SalInstanceFormattedSpinButton::do_set_text(const OUString& rText)
@@ -5361,7 +5328,7 @@ void SalInstanceFormattedSpinButton::do_set_text(const OUString& rText)
     m_xButton->SpinField::SetText(rText);
 }
 
-void SalInstanceFormattedSpinButton::connect_changed(const Link<weld::Entry&, void>& rLink)
+void SalInstanceFormattedSpinButton::connect_changed(const Link<weld::TextWidget&, void>& rLink)
 {
     if (!m_pFormatter) // once a formatter is set, it takes over "changed"
     {
@@ -5394,6 +5361,15 @@ SalInstanceFormattedSpinButton::~SalInstanceFormattedSpinButton()
     m_xButton->SetLoseFocusHdl(Link<Control&, void>());
     m_xButton->SetDownHdl(Link<SpinField&, void>());
     m_xButton->SetUpHdl(Link<SpinField&, void>());
+
+    if (Edit* pEdit = m_xButton->GetSubEdit())
+    {
+        pEdit->SetActivateHdl(Link<Edit&, bool>());
+    }
+    else
+    {
+        m_xButton->SetActivateHdl(Link<Edit&, bool>());
+    }
 }
 
 IMPL_LINK_NOARG(SalInstanceFormattedSpinButton, UpDownHdl, SpinField&, void)
@@ -5406,6 +5382,17 @@ IMPL_LINK_NOARG(SalInstanceFormattedSpinButton, LoseFocusHdl, Control&, void)
     if (!m_pFormatter)
         signal_value_changed();
     m_aLoseFocusHdl.Call(*this);
+}
+
+IMPL_LINK_NOARG(SalInstanceFormattedSpinButton, ActivateHdl, Edit&, bool)
+{
+    // Return commits the typed text through the formatter the same way losing focus does, so
+    // the value read during the notification is the reformatted one.
+    if (m_pFormatter)
+        m_pFormatter->EntryLostFocus();
+
+    signal_value_changed();
+    return m_aActivateHdl.Call(*this);
 }
 
 SalInstanceLabel::SalInstanceLabel(Control* pLabel, SalInstanceBuilder* pBuilder,
@@ -5790,7 +5777,7 @@ IMPL_LINK(SalInstanceDrawingArea, PaintHdl, target_and_area, aPayload, void)
 
 IMPL_LINK(SalInstanceDrawingArea, ResizeHdl, const Size&, rSize, void)
 {
-    m_aSizeAllocateHdl.Call(rSize);
+    signal_size_allocate(rSize);
 }
 
 IMPL_LINK(SalInstanceDrawingArea, MousePressHdl, const MouseEvent&, rEvent, bool)
@@ -5894,7 +5881,7 @@ void SalInstanceComboBoxWithoutEdit::set_entry_message_type(weld::EntryMessageTy
     assert(false);
 }
 
-void SalInstanceComboBoxWithoutEdit::set_entry_text(const OUString& /*rText*/) { assert(false); }
+void SalInstanceComboBoxWithoutEdit::do_set_entry_text(const OUString& /*rText*/) { assert(false); }
 
 void SalInstanceComboBoxWithoutEdit::select_entry_region(int /*nStartPos*/, int /*nEndPos*/)
 {
@@ -6041,7 +6028,7 @@ void SalInstanceComboBoxWithEdit::insert_separator(int pos, const OUString& /*rI
     m_xComboBox->AddSeparator(nInsertPos - 1);
 }
 
-void SalInstanceComboBoxWithEdit::set_entry_text(const OUString& rText)
+void SalInstanceComboBoxWithEdit::do_set_entry_text(const OUString& rText)
 {
     m_xComboBox->SetText(rText);
 }
@@ -6829,72 +6816,6 @@ void SalInstanceWindow::help()
         }
     }
     pHelp->Start(sHelpId, pSource);
-}
-
-weld::Window* SalFrame::GetFrameWeld() const
-{
-    if (!m_xFrameWeld)
-    {
-        vcl::Window* pWindow = GetWindow();
-        if (pWindow)
-        {
-            assert(pWindow == pWindow->GetFrameWindow());
-            // resolve from a possible BorderWindow to the ClientWindow (returns itself if not)
-            pWindow = pWindow->ImplGetWindow();
-            m_xFrameWeld.reset(new SalInstanceWindow(pWindow, nullptr, false));
-        }
-    }
-    return m_xFrameWeld.get();
-}
-
-Selection SalFrame::CalcDeleteSurroundingSelection(std::u16string_view rSurroundingText,
-                                                   sal_Int32 nCursorIndex, int nOffset, int nChars)
-{
-    Selection aInvalid(SAL_MAX_UINT32, SAL_MAX_UINT32);
-
-    if (nCursorIndex == -1)
-        return aInvalid;
-
-    if (nOffset > 0)
-    {
-        while (nOffset && nCursorIndex < static_cast<sal_Int32>(rSurroundingText.size()))
-        {
-            o3tl::iterateCodePoints(rSurroundingText, &nCursorIndex, 1);
-            --nOffset;
-        }
-    }
-    else if (nOffset < 0)
-    {
-        while (nOffset && nCursorIndex > 0)
-        {
-            o3tl::iterateCodePoints(rSurroundingText, &nCursorIndex, -1);
-            ++nOffset;
-        }
-    }
-
-    if (nOffset)
-    {
-        SAL_WARN("vcl",
-                 "SalFrame::CalcDeleteSurroundingSelection, unable to move to offset: " << nOffset);
-        return aInvalid;
-    }
-
-    sal_Int32 nCursorEndIndex(nCursorIndex);
-    sal_Int32 nCount(0);
-    while (nCount < nChars && nCursorEndIndex < static_cast<sal_Int32>(rSurroundingText.size()))
-    {
-        o3tl::iterateCodePoints(rSurroundingText, &nCursorEndIndex, 1);
-        ++nCount;
-    }
-
-    if (nCount != nChars)
-    {
-        SAL_WARN("vcl", "SalFrame::CalcDeleteSurroundingSelection, unable to select: "
-                            << nChars << " characters");
-        return aInvalid;
-    }
-
-    return Selection(nCursorIndex, nCursorEndIndex);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

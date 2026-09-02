@@ -195,7 +195,7 @@ typedef ::cppu::WeakComponentImplHelper<
 class PackageRegistryBackend
     : protected cppu::BaseMutex, public t_BackendBase
 {
-    //The map held originally WeakReferences. The map entries are removed in the disposing
+    //The map originally held WeakReferences. The map entries are removed in the disposing
     //function, which is called when the XPackages are destructed or they are
     //explicitly disposed. The latter happens, for example, when an extension is
     //removed (see dp_manager.cxx). However, because of how the help systems work, now
@@ -242,7 +242,7 @@ protected:
         css::uno::Reference<css::ucb::XCommandEnvironment> const & xCmdEnv);
     /* deletes folders and files.
 
-       All folder all files which end with ".tmp" or ".tmp_" and which are
+       All folders and files which end with ".tmp" or ".tmp_" and which are
        not used are deleted.
      */
     void deleteUnusedFolders(

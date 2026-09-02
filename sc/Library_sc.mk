@@ -217,6 +217,7 @@ $(eval $(call gb_Library_add_exception_objects,sc,\
     sc/source/core/data/userdat \
     sc/source/core/data/validat \
     sc/source/core/data/pivot/PivotTableResultTraverser \
+    sc/source/core/data/pivot/StyleOutput \
     sc/source/core/tool/addincfg \
     sc/source/core/tool/addincol \
     sc/source/core/tool/addinhelpid \
@@ -227,6 +228,7 @@ $(eval $(call gb_Library_add_exception_objects,sc,\
     sc/source/core/tool/arraysumSSE2 \
     sc/source/core/tool/autoform \
     sc/source/core/tool/calcconfig \
+    sc/source/core/tool/callable \
     sc/source/core/tool/callform \
     sc/source/core/tool/cellform \
     sc/source/core/tool/cellkeytranslator \
@@ -513,7 +515,6 @@ $(eval $(call gb_Library_add_exception_objects,sc,\
     sc/source/ui/miscdlgs/datatableview \
     sc/source/ui/miscdlgs/highred \
     sc/source/ui/miscdlgs/mergecellsdialog \
-    sc/source/ui/miscdlgs/onlyactivesheetsaveddlg \
     sc/source/ui/miscdlgs/optsolver \
     sc/source/ui/miscdlgs/protectiondlg \
     sc/source/ui/miscdlgs/duplicaterecordsdlg \
@@ -556,6 +557,7 @@ $(eval $(call gb_Library_add_exception_objects,sc,\
     sc/source/ui/operation/InsertNameListOperation \
     sc/source/ui/operation/InsertSheetViewOperation \
     sc/source/ui/operation/InsertSparklinesOperation \
+    sc/source/ui/operation/InsertThreadedCommentOperation \
     sc/source/ui/operation/MergeCellsOperation \
     sc/source/ui/operation/MoveBlockOperation \
     sc/source/ui/operation/MultipleOpsOperation \

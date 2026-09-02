@@ -280,11 +280,7 @@ void SvpSalFrame::SetPosSize( tools::Long nX, tools::Long nY, tools::Long nWidth
 #endif
 }
 
-void SvpSalFrame::GetClientSize( tools::Long& rWidth, tools::Long& rHeight )
-{
-    rWidth = maGeometry.width();
-    rHeight = maGeometry.height();
-}
+Size SvpSalFrame::GetClientSize() { return maGeometry.size(); }
 
 void SvpSalFrame::GetWorkArea( AbsoluteScreenPixelRectangle& rRect )
 {
@@ -297,13 +293,10 @@ SalFrame* SvpSalFrame::GetParent() const
     return m_pParent;
 }
 
-void SvpSalFrame::SetWindowState(const vcl::WindowData *pState)
+void SvpSalFrame::SetWindowState(const vcl::WindowData& rState)
 {
-    if (pState == nullptr)
-        return;
-
     // Request for position or size change
-    if (!(pState->mask() & vcl::WindowDataMask::PosSize))
+    if (!(rState.mask() & vcl::WindowDataMask::PosSize))
         return;
 
     tools::Long nX = maGeometry.x();
@@ -312,26 +305,27 @@ void SvpSalFrame::SetWindowState(const vcl::WindowData *pState)
     tools::Long nHeight = maGeometry.height();
 
     // change requested properties
-    if (pState->mask() & vcl::WindowDataMask::X)
-        nX = pState->x();
-    if (pState->mask() & vcl::WindowDataMask::Y)
-        nY = pState->y();
-    if (pState->mask() & vcl::WindowDataMask::Width)
-        nWidth = pState->width();
-    if (pState->mask() & vcl::WindowDataMask::Height)
-        nHeight = pState->height();
+    if (rState.mask() & vcl::WindowDataMask::X)
+        nX = rState.x();
+    if (rState.mask() & vcl::WindowDataMask::Y)
+        nY = rState.y();
+    if (rState.mask() & vcl::WindowDataMask::Width)
+        nWidth = rState.width();
+    if (rState.mask() & vcl::WindowDataMask::Height)
+        nHeight = rState.height();
 
     SetPosSize( nX, nY, nWidth, nHeight,
                 SAL_FRAME_POSSIZE_X | SAL_FRAME_POSSIZE_Y |
                 SAL_FRAME_POSSIZE_WIDTH | SAL_FRAME_POSSIZE_HEIGHT );
 }
 
-bool SvpSalFrame::GetWindowState(vcl::WindowData* pState)
+vcl::WindowData SvpSalFrame::GetWindowState()
 {
-    pState->setPosSize(maGeometry.posSize());
-    pState->setState(vcl::WindowState::Normal);
-    pState->setMask(vcl::WindowDataMask::PosSizeState);
-    return true;
+    vcl::WindowData aState;
+    aState.setPosSize(maGeometry.posSize());
+    aState.setState(vcl::WindowState::Normal);
+    aState.setMask(vcl::WindowDataMask::PosSizeState);
+    return aState;
 }
 
 void SvpSalFrame::ShowFullScreen( bool, sal_Int32 )
@@ -525,10 +519,6 @@ SalFrame::SalPointerState SvpSalFrame::GetPointerState()
 KeyIndicatorState SvpSalFrame::GetIndicatorState()
 {
     return KeyIndicatorState::NONE;
-}
-
-void SvpSalFrame::SimulateKeyPress( sal_uInt16 /*nKeyCode*/ )
-{
 }
 
 void SvpSalFrame::SetParent( SalFrame* pNewParent )

@@ -59,7 +59,7 @@ namespace
         double fW = aRange.getWidth(), fH = aRange.getHeight();
         if (0.0 < fW && 0.0 < fH && (fW <= 1.0 || fH <= 1.0))
         {
-            // This polygon not empty but is too small to display.  Approximate it
+            // This polygon is not empty but is too small to display.  Approximate it
             // with a rectangle large enough to be displayed.
             double nX = aRange.getMinX(), nY = aRange.getMinY();
             double nW = std::max<double>(1.0, rtl::math::round(fW));
@@ -131,7 +131,7 @@ void OutputDevice::DrawTransparent(
         }
 
         // create ObjectToDevice transformation
-        const basegfx::B2DHomMatrix aFullTransform(ImplGetDeviceTransformation() * rObjectTransform);
+        const basegfx::B2DHomMatrix aFullTransform(mpMapper->GetDeviceTransformation() * rObjectTransform);
         // TODO: this must not drop transparency for mpAlphaVDev case, but instead use premultiplied
         // alpha... but that requires using premultiplied alpha also for already drawn data
 
@@ -219,7 +219,7 @@ bool OutputDevice::DrawTransparentNatively ( const tools::PolyPolygon& rPolyPoly
 
         // get the polygon in device coordinates
         basegfx::B2DPolyPolygon aB2DPolyPolygon(rPolyPoly.getB2DPolyPolygon());
-        const basegfx::B2DHomMatrix aTransform(ImplGetDeviceTransformation());
+        const basegfx::B2DHomMatrix aTransform(mpMapper->GetDeviceTransformation());
 
         const double fTransparency = 0.01 * nTransparencePercent;
         if( mbFillColor )
@@ -533,7 +533,7 @@ void OutputDevice::DrawTransparent( const GDIMetaFile& rMtf, const Point& rPos, 
                     // For MetaFile replay (see task) it may now be necessary to take
                     // into account that the content is AntiAlialiased and needs to be masked
                     // like that. Instead of masking, i will use a copy-modify-paste cycle
-                    // here (as i already use in the VclPrimiziveRenderer with success)
+                    // here (as i already use in the VclPrimitiveRenderer with success)
                     xVDev->SetAntialiasing(GetAntialiasing());
 
                     // create MapMode for buffer (offset needed) and set
@@ -588,7 +588,7 @@ void OutputDevice::DrawTransparent( const GDIMetaFile& rMtf, const Point& rPos, 
                     xVDev.disposeAndClear();
 
                     // draw masked content to target and restore MapMode
-                    DrawBitmap(aDstRect.TopLeft(), Bitmap(aPaint.CreateColorBitmap(), aAlpha));
+                    DrawBitmap(aDstRect.TopLeft(), Bitmap(aPaint, aAlpha));
                     mpMapper->EnableMapMode(bOrigMapModeEnabled);
                 }
                 else
@@ -625,7 +625,7 @@ void OutputDevice::DrawTransparent( const GDIMetaFile& rMtf, const Point& rPos, 
                     xVDev.disposeAndClear();
 
                     mpMapper->EnableMapMode( false );
-                    DrawBitmap(aDstRect.TopLeft(), Bitmap(aPaint.CreateColorBitmap(), aAlpha));
+                    DrawBitmap(aDstRect.TopLeft(), Bitmap(aPaint, aAlpha));
                     mpMapper->EnableMapMode( bOldMap );
                 }
             }
@@ -1463,7 +1463,7 @@ bool OutputDevice::RemoveTransparenciesFromMetaFile( const GDIMetaFile& rInMtf, 
 
                 bool                                    bSomeComponentsChanged;
 
-                // now, this is unfortunate: since changing anyone of
+                // now, this is unfortunate: since changing any one of
                 // the aCCList elements (e.g. by merging or addition
                 // of an action) might generate new intersection with
                 // other aCCList elements, have to repeat the whole

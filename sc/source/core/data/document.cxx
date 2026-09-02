@@ -2320,6 +2320,7 @@ void ScDocument::CopyToClip(const ScClipParam& rClipParam,
 
     sc::CopyToClipContext aCxt(*pClipDoc, bKeepScenarioFlags);
     CopyRangeNamesToClip(pClipDoc, aClipRange, pMarks);
+    CopyDBsToClip(pClipDoc, rClipParam.maRanges, pMarks);
 
     // 1. Copy selected cells
     for (SCTAB i = 0; i < nEndTab; ++i)
@@ -2446,12 +2447,12 @@ void ScDocument::TransposeClip(ScDocument* pTransClip, InsertDeleteFlags nFlags,
 
     if (pRangeName)
     {
-        pTransClip->GetRangeName()->clear();
+        pTransClip->GetRangeName().clear();
         for (const auto& rEntry : *pRangeName)
         {
             sal_uInt16 nIndex = rEntry.second->GetIndex();
-            ScRangeData* pData = new ScRangeData(*rEntry.second);
-            if (pTransClip->pRangeName->insert(pData))
+            ScRangeData* pData = pTransClip->pRangeName->insert(std::make_unique<ScRangeData>(*rEntry.second));
+            if (pData)
                 pData->SetIndex(nIndex);
         }
     }
@@ -2544,10 +2545,10 @@ void ScDocument::TransposeClip(ScDocument* pTransClip, InsertDeleteFlags nFlags,
 
 namespace {
 
-void copyUsedNamesToClip(ScRangeName* pClipRangeName, ScRangeName* pRangeName,
+void copyUsedNamesToClip(ScRangeName& rClipRangeName, ScRangeName* pRangeName,
         const sc::UpdatedRangeNames::NameIndicesType& rUsedNames)
 {
-    pClipRangeName->clear();
+    rClipRangeName.clear();
     for (const auto& rEntry : *pRangeName)        //TODO: also DB and Pivot regions!!!
     {
         sal_uInt16 nIndex = rEntry.second->GetIndex();
@@ -2555,8 +2556,8 @@ void copyUsedNamesToClip(ScRangeName* pClipRangeName, ScRangeName* pRangeName,
         if (!bInUse)
             continue;
 
-        ScRangeData* pData = new ScRangeData(*rEntry.second);
-        if (pClipRangeName->insert(pData))
+        ScRangeData* pData = rClipRangeName.insert(std::make_unique<ScRangeData>(*rEntry.second));
+        if (pData)
             pData->SetIndex(nIndex);
     }
 }
@@ -2580,6 +2581,100 @@ void ScDocument::CopyRangeNamesToClip(ScDocument* pClipDoc, const ScRange& rClip
     /* TODO: handle also sheet-local names */
     sc::UpdatedRangeNames::NameIndicesType aUsedGlobalNames( aUsedNames.getUpdatedNames(-1));
     copyUsedNamesToClip(pClipDoc->GetRangeName(), pRangeName.get(), aUsedGlobalNames);
+}
+
+// Carry named database ranges that overlap the copied area into the
+// clipboard document. Without this, structured-reference tokens in the
+// copied formulas have no ScDBData to resolve against on the clip side,
+// so any later stringification of those formulas writes #REF! in place
+// of the column name.
+void ScDocument::CopyDBsToClip(ScDocument* pClipDoc, const ScRangeList& rClipRanges, const ScMarkData* pMarks)
+{
+    if (!pDBCollection || pDBCollection->getNamedDBs().empty())
+        return;
+
+    ScDBCollection* pClipDBs = pClipDoc->GetDBCollection();
+    if (!pClipDBs)
+        return;
+    ScDBCollection::NamedDBs& rDest = pClipDBs->getNamedDBs();
+
+    for (const auto& rxSrc : pDBCollection->getNamedDBs())
+    {
+        ScRange aArea;
+        rxSrc->GetArea(aArea);
+        if (pMarks && !pMarks->GetTableSelect(aArea.aStart.Tab()))
+            continue;
+        // Carry only a table that overlaps a copied range. A table sitting in
+        // the gap of a non-contiguous selection falls inside the bounding box
+        // but in none of the copied ranges, and its cells are not copied.
+        if (!rClipRanges.Intersects(aArea))
+            continue;
+        auto pClone = std::make_unique<ScDBData>(*rxSrc);
+        rDest.insert(std::move(pClone));
+    }
+}
+
+// Counterpart of CopyDBsToClip on the paste side: recreate a fully-copied
+// named table in the destination, anchored to the paste location rather than
+// the source coordinates it was carried with - otherwise the table, with its
+// autofilter and style, would sit over the wrong (usually empty) cells.
+// A same-document paste keeps the existing table instead (reconstructing an
+// independent copy with a fresh unique name is intentionally out of scope).
+void ScDocument::CopyDBsFromClip(const ScRange& rDestRange, const ScRange& rClipRange,
+                                 const ScDocument* pClipDoc)
+{
+    if (!pClipDoc)
+        return;
+    const ScDBCollection* pClipDBs = pClipDoc->GetDBCollection();
+    if (!pClipDBs || pClipDBs->getNamedDBs().empty())
+        return;
+
+    if (!pDBCollection)
+        SetDBCollection(std::unique_ptr<ScDBCollection>(new ScDBCollection(*this)));
+    ScDBCollection::NamedDBs& rDest = pDBCollection->getNamedDBs();
+
+    // The whole copied block shifts uniformly from the clip origin to the
+    // paste origin; the table area moves by the same delta and onto the
+    // destination sheet.
+    const SCCOL nDx = rDestRange.aStart.Col() - rClipRange.aStart.Col();
+    const SCROW nDy = rDestRange.aStart.Row() - rClipRange.aStart.Row();
+    const SCTAB nDestTab = rDestRange.aStart.Tab();
+
+    for (const auto& rxClip : pClipDBs->getNamedDBs())
+    {
+        // Only recreate a table the copy fully covered; a partial copy must
+        // not register a clipped or misplaced table.
+        ScRange aSrcArea;
+        rxClip->GetArea(aSrcArea);
+        if (!rClipRange.Contains(aSrcArea))
+            continue;
+
+        // Destination already owns a table of this name (same-document paste):
+        // leave it, and any references resolving to it, alone.
+        if (rDest.findByUpperName(rxClip->GetUpperName()))
+            continue;
+
+        const SCCOL nNewCol1 = aSrcArea.aStart.Col() + nDx;
+        const SCROW nNewRow1 = aSrcArea.aStart.Row() + nDy;
+        const SCCOL nNewCol2 = aSrcArea.aEnd.Col() + nDx;
+        const SCROW nNewRow2 = aSrcArea.aEnd.Row() + nDy;
+        if (!ValidColRowTab(nNewCol1, nNewRow1, nDestTab) || !ValidColRowTab(nNewCol2, nNewRow2, nDestTab))
+            continue;
+
+        auto pClone = std::make_unique<ScDBData>(*rxClip);
+        pClone->SetIndex(0); // let the destination assign a fresh, collision-free index
+
+        // Changing the area resets the table column names, because the header
+        // range moves. Keep the names the clip carried so a structured
+        // reference still resolves a column by name. The block is a pure
+        // translation, so the names map to the same columns as before.
+        std::vector<OUString> aColumnNames = pClone->GetTableColumnNames();
+        pClone->MoveTo(nDestTab, nNewCol1, nNewRow1, nNewCol2, nNewRow2);
+        if (!aColumnNames.empty())
+            pClone->SetTableColumnNames(std::move(aColumnNames));
+
+        rDest.insert(std::move(pClone));
+    }
 }
 
 ScDocument::NumFmtMergeHandler::NumFmtMergeHandler(ScDocument& rDoc, const ScDocument& rSrcDoc)
@@ -2953,7 +3048,7 @@ void ScDocument::CopyFromClip(
     const ScRange& rDestRange, const ScMarkData& rMark, InsertDeleteFlags nInsFlag,
     ScDocument* pRefUndoDoc, ScDocument* pClipDoc, bool bResetCut,
     bool bAsLink, bool bIncludeFiltered, bool bSkipEmptyCells,
-    const ScRangeList * pDestRanges )
+    const ScRangeList * pDestRanges, bool bPreserveDestProtection )
 {
     if (bIsClip)
         return;
@@ -3034,9 +3129,59 @@ void ScDocument::CopyFromClip(
         pDestRanges = &aLocalRangeList;
     }
 
+    // Recreate named tables the copy fully covered at the paste location, so the
+    // structured-reference tokens resolved further down bind to a table placed
+    // at the paste position. Only a formula paste carries such tokens, so a
+    // values-only paste needs no table. Must run before the cells, and their
+    // formulas, are copied in.
+    if (nInsFlag & InsertDeleteFlags::FORMULA)
+        CopyDBsFromClip(rDestRange, aClipRange, pClipDoc);
+
     bInsertingFromOtherDoc = true;  // No Broadcast/Listener created at Insert
 
     sc::ColumnSpanSet aBroadcastSpans;
+
+    // An interactive paste treats a cell's own directly applied protection as
+    // a property of the cell, not of the pasted data: copying a protected cell
+    // onto a cell the user directly unprotected must leave it editable (and
+    // vice versa). Note the directly set protection over the destination now,
+    // and put it back once the pasted attributes have overwritten it below.
+    // Only direct formatting is handled here; protection that instead comes
+    // from a cell style (including a style that conditional formatting applies)
+    // is left to follow the usual paste. A moved cell (cut and paste) keeps its
+    // own protection, so it is excluded.
+    struct KeptProtection
+    {
+        SCTAB nTab;
+        SCCOL nCol;
+        SCROW nRow1;
+        SCROW nRow2;
+        ScProtectionAttr aProtection;
+    };
+    std::vector<KeptProtection> aKeptProtection;
+    const bool bKeepDestProtection = bPreserveDestProtection
+        && (nInsFlag & InsertDeleteFlags::ATTRIB)
+        && !pClipDoc->GetClipParam().mbCutMode;
+    if (bKeepDestProtection)
+    {
+        for (const SCTAB nTab : rMark)
+        {
+            for (const ScRange& rRange : *pDestRanges)
+            {
+                ScDocAttrIterator aIter(*this, nTab, rRange.aStart.Col(), rRange.aStart.Row(),
+                                        rRange.aEnd.Col(), rRange.aEnd.Row());
+                SCCOL nAttrCol;
+                SCROW nAttrRow1, nAttrRow2;
+                while (const ScPatternAttr* pPattern = aIter.GetNext(nAttrCol, nAttrRow1, nAttrRow2))
+                {
+                    if (const ScProtectionAttr* pProtect
+                            = pPattern->GetItemSet().GetItemIfSet(ATTR_PROTECTION, false))
+                        aKeptProtection.push_back(
+                            { nTab, nAttrCol, nAttrRow1, nAttrRow2, *pProtect });
+                }
+            }
+        }
+    }
 
     SCCOL nClipStartCol = aClipRange.aStart.Col();
     SCROW nClipStartRow = aClipRange.aStart.Row();
@@ -3145,6 +3290,15 @@ void ScDocument::CopyFromClip(
     }
 
     bInsertingFromOtherDoc = false;
+
+    // Put back the destination's own direct protection that the paste above
+    // overwrote (see the note where aKeptProtection is filled).
+    for (const KeptProtection& rKept : aKeptProtection)
+    {
+        ScPatternAttr aPattern(getCellAttributeHelper());
+        aPattern.ItemSetPut(rKept.aProtection);
+        ApplyPatternAreaTab(rKept.nCol, rKept.nRow1, rKept.nCol, rKept.nRow2, rKept.nTab, aPattern);
+    }
 
     if (nInsFlag & InsertDeleteFlags::CONTENTS)
     {
@@ -4103,9 +4257,6 @@ void ScDocument::CalcAll()
     // presented with outdated data.
     if (GetHardRecalcState() == HardRecalcState::ETERNAL)
         ClearLookupCaches();
-
-    // Process any dynamic-array expansions queued during interpretation.
-    ProcessPendingMatrixResizes();
 }
 
 void ScDocument::CompileAll()

@@ -65,6 +65,7 @@
 #include <sdpage.hxx>
 #include <docmodel/theme/Theme.hxx>
 #include <Outliner.hxx>
+#include <svx/fillbitmaplink.hxx>
 
 using namespace sd;
 #define ShellClass_DrawDocShell
@@ -371,8 +372,10 @@ void DrawDocShell::PerformLinkUpdate()
 {
     if (mpDoc && mpDoc->GetLinkManager())
     {
+        registerDeferredFormImageLinks(GetDeferredFormControlImages(), *mpDoc->GetLinkManager());
+        ClearDeferredFormControlImages();
         SdDrawDocument::s_pDocLockedInsertingLinks = mpDoc;
-        mpDoc->GetLinkManager()->UpdateAllLinks(false, nullptr, u""_ustr);
+        mpDoc->GetLinkManager()->UpdateAllLinks(false, u""_ustr);
         if (SdDrawDocument::s_pDocLockedInsertingLinks == mpDoc)
             SdDrawDocument::s_pDocLockedInsertingLinks = nullptr;
     }

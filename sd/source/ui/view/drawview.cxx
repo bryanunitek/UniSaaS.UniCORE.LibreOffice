@@ -93,7 +93,7 @@ void DrawView::ModelHasChanged()
 {
     ::sd::View::ModelHasChanged();
 
-    // force framer to rerender
+    // force frame to rerender
     SfxStyleSheetBasePool* pSSPool = mrDoc.GetStyleSheetPool();
     pSSPool->Broadcast(SfxStyleSheetPoolHint());
 
@@ -395,7 +395,7 @@ void DrawView::SetMasterAttributes( SdrObject* pObject, const SdPage& rPage, con
 }
 
 /**
- * Notify for change of site arrangement
+ * Notify for change of page arrangement
  */
 
 void DrawView::Notify(SfxBroadcaster& rBC, const SfxHint& rHint)

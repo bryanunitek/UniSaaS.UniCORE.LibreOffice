@@ -228,6 +228,7 @@ $(eval $(call gb_Library_add_exception_objects,sw,\
     sw/source/core/doc/DocumentChartDataProviderManager \
     sw/source/core/doc/DocumentTimerManager \
     sw/source/core/doc/DocumentLinksAdministrationManager \
+    sw/source/core/doc/FillBitmapLinkTracker \
     sw/source/core/doc/DocumentListItemsManager \
     sw/source/core/doc/DocumentListsManager \
     sw/source/core/doc/DocumentOutlineNodesManager \
@@ -545,6 +546,7 @@ $(eval $(call gb_Library_add_exception_objects,sw,\
     sw/source/filter/basflt/fltshell \
     sw/source/filter/basflt/iodetect \
     sw/source/filter/basflt/shellio \
+    sw/source/filter/html/SwAppletImpl \
     sw/source/filter/html/css1atr \
     sw/source/filter/html/htmlatr \
     sw/source/filter/html/htmlbas \
@@ -714,7 +716,7 @@ $(eval $(call gb_Library_add_exception_objects,sw,\
     sw/source/uibase/shells/grfsh \
     sw/source/uibase/shells/grfshex \
     sw/source/uibase/shells/langhelper \
-    sw/source/uibase/shells/translatehelper \
+    sw/source/uibase/shells/pam2html \
     sw/source/uibase/shells/listsh \
     sw/source/uibase/shells/mediash \
     sw/source/uibase/shells/navsh \

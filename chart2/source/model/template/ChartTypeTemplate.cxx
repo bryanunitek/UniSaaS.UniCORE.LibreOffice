@@ -370,7 +370,7 @@ void ChartTypeTemplate::applyStyle2(
     ::sal_Int32 /* nSeriesIndex */,
     ::sal_Int32 /* nSeriesCount */ )
 {
-    // sset stacking mode
+    // set stacking mode
     if( !xSeries.is())
         return;
 
@@ -585,6 +585,7 @@ void ChartTypeTemplate::adaptScales(
                                     m_aServiceName.indexOf("Column") != -1 ||
                                     (m_aServiceName.indexOf("Bar") != -1 &&
                                      !m_aServiceName.indexOf("BarOfPie")) ||
+                                    m_aServiceName.indexOf("Funnel") != -1 ||
                                     m_aServiceName.endsWith("Close");
                             }
                             bool bSupportsDates = xChartType.is() ? xChartType->isSupportingDateAxis(nDimensionX) : true;

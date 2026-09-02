@@ -351,7 +351,7 @@ OutlineView::OutlineView(DrawDocShell& rDocSh, vcl::Window* pWindow,
     maSlideImage = vcl::CommandInfoProvider::GetImageForCommand(u".uno:ShowSlide"_ustr, xFrame, vcl::ImageType::Size26);
 
     // Tell undo manager of the document about the undo manager of the
-    // outliner, so that the former can synchronize with the later.
+    // outliner, so that the former can synchronize with the latter.
     sd::UndoManager* pDocUndoMgr = dynamic_cast<sd::UndoManager*>(mpDocSh->GetUndoManager());
     if (pDocUndoMgr != nullptr)
         pDocUndoMgr->SetLinkedUndoManager(&mrOutliner.GetUndoManager());
@@ -1273,7 +1273,7 @@ void OutlineView::FillOutliner()
         pTO = static_cast<SdrTextObj*>(pPage->GetPresObj(PresObjKind::Text));
         const bool bSubTitle = pTO != nullptr;
 
-        if (!pTO) // if no subtile found, try outline
+        if (!pTO) // if no subtitle found, try outline
             pTO = GetOutlineTextObject(pPage);
 
         if(pTO && !(pTO->IsEmptyPresObj())) // found some text

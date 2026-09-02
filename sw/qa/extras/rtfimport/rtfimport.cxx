@@ -12,6 +12,7 @@
 
 #include <com/sun/star/awt/FontDescriptor.hpp>
 #include <com/sun/star/awt/FontWeight.hpp>
+#include <com/sun/star/document/XEmbeddedObjectSupplier2.hpp>
 #include <com/sun/star/drawing/EnhancedCustomShapeParameterPair.hpp>
 #include <com/sun/star/drawing/EnhancedCustomShapeSegment.hpp>
 #include <com/sun/star/drawing/FillStyle.hpp>
@@ -487,6 +488,11 @@ CPPUNIT_TEST_FIXTURE(Test, testFdo79319)
     createSwDoc("fdo79319.rtf");
     // the thin horizontal rule was imported as a big fat rectangle
     uno::Reference<drawing::XShape> xShape = getShape(1);
+    // tdf#167714 the rule has to stay recognisable as one, so that layout can size it from the
+    // text column and crop it to the cell the way Word does
+    CPPUNIT_ASSERT(getProperty<bool>(xShape, u"HorizontalRule"_ustr));
+    // and it has to be the same model object the VML import makes for o:hr, a plain rectangle
+    CPPUNIT_ASSERT_EQUAL(u"com.sun.star.drawing.RectangleShape"_ustr, xShape->getShapeType());
     CPPUNIT_ASSERT_EQUAL(sal_Int16(100), getProperty<sal_Int16>(xShape, u"RelativeWidth"_ustr));
     CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(16508), xShape->getSize().Width, 10);
     CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(53), xShape->getSize().Height, 10);
@@ -996,6 +1002,63 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf166191)
     uno::Reference<text::XTextRange> textRun = getRun(getParagraph(2), 1);
     CPPUNIT_ASSERT_EQUAL(awt::FontWeight::NORMAL, getProperty<float>(textRun, u"CharWeight"_ustr));
     CPPUNIT_ASSERT_EQUAL(12.0f, getProperty<float>(textRun, u"CharHeight"_ustr));
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testInlineFormulaTextMode)
+{
+    // An equation that shares its paragraph with other content is inline, and is typeset
+    // in non-display ("text") style: fraction numerators and denominators are drawn at a
+    // reduced size. StarMath models this with text mode; without it an inline formula is
+    // imported taller than intended. An equation that is a paragraph's only content is a
+    // display equation and keeps its full size.
+    createSwDoc("inline-formula-text-mode.rtf");
+
+    // First equation shares its paragraph with text => inline => text mode.
+    uno::Reference<document::XEmbeddedObjectSupplier2> xInline(getShape(1), uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xInline.is());
+    CPPUNIT_ASSERT_EQUAL(true, getProperty<bool>(xInline->getEmbeddedObject(), u"IsTextMode"_ustr));
+
+    // Second equation is alone in its paragraph => display => not text mode.
+    uno::Reference<document::XEmbeddedObjectSupplier2> xDisplay(getShape(2), uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xDisplay.is());
+    CPPUNIT_ASSERT_EQUAL(false,
+                         getProperty<bool>(xDisplay->getEmbeddedObject(), u"IsTextMode"_ustr));
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf167713)
+{
+    // A picture is inserted while its row is still being buffered, and the cells do not exist until
+    // the row is replayed, so every picture in a row used to end up in the row's first cell.
+    createSwDoc("tdf167713.rtf");
+
+    // The row holds text in A1, then a picture in B1 and another in C1.
+    CPPUNIT_ASSERT_EQUAL(2, getShapes());
+    auto xImage1 = getShape(1).queryThrow<text::XTextContent>();
+    CPPUNIT_ASSERT_EQUAL(u"B1"_ustr,
+                         getProperty<OUString>(xImage1->getAnchor()->getText(), u"CellName"_ustr));
+
+    auto xImage2 = getShape(2).queryThrow<text::XTextContent>();
+    CPPUNIT_ASSERT_EQUAL(u"C1"_ustr,
+                         getProperty<OUString>(xImage2->getAnchor()->getText(), u"CellName"_ustr));
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf167713ShapeText)
+{
+    // Importing this used to abort in DomainMapper_Impl::substream(), asserting on an empty table
+    // manager stack: a shape with text in a buffered row was closed without ever being opened, and
+    // took the manager that the next substream needed.
+    createSwDoc("tdf167713-shapetext.rtf");
+
+    // Each shape stayed in the cell it was written in: the footer's, which the draw page hands out
+    // first, in C1, and the header's in B1.
+    CPPUNIT_ASSERT_EQUAL(2, getShapes());
+    auto xShape1 = getShape(1).queryThrow<text::XTextContent>();
+    CPPUNIT_ASSERT_EQUAL(u"C1"_ustr,
+                         getProperty<OUString>(xShape1->getAnchor()->getText(), u"CellName"_ustr));
+
+    auto xShape2 = getShape(2).queryThrow<text::XTextContent>();
+    CPPUNIT_ASSERT_EQUAL(u"B1"_ustr,
+                         getProperty<OUString>(xShape2->getAnchor()->getText(), u"CellName"_ustr));
 }
 
 // tests should only be added to rtfIMPORT *if* they fail round-tripping in rtfEXPORT

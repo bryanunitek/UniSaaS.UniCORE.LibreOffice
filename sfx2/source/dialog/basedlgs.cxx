@@ -19,7 +19,7 @@
 
 #include <vcl/help.hxx>
 #include <svl/eitem.hxx>
-#include <unotools/viewoptions.hxx>
+#include <svtools/viewoptions.hxx>
 #include <vcl/idle.hxx>
 #include <vcl/weld/Builder.hxx>
 #include <vcl/weld/Button.hxx>
@@ -42,7 +42,7 @@ constexpr OUString USERITEM_NAME = u"UserItem"_ustr;
 class SfxModelessDialog_Impl : public SfxListener
 {
 public:
-    OUString aWinState;
+    vcl::WindowData aWinState;
     SfxChildWindow* pMgr;
     bool            bClosing;
     void            Notify( SfxBroadcaster& rBC, const SfxHint& rHint ) override;
@@ -57,7 +57,7 @@ void SfxModelessDialog_Impl::Notify( SfxBroadcaster&, const SfxHint& rHint )
     }
 }
 
-void SfxModelessDialogController::Initialize(SfxChildWinInfo const *pInfo)
+void SfxModelessDialogController::Initialize(const SfxChildWinInfo& rInfo)
 
 /*  [Description]
 
@@ -68,20 +68,22 @@ void SfxModelessDialogController::Initialize(SfxChildWinInfo const *pInfo)
 */
 
 {
-    if (!pInfo)
-        return;
-    m_xImpl->aWinState = pInfo->aWinState;
-    if (m_xImpl->aWinState.isEmpty())
-        return;
+    m_xImpl->aWinState = rInfo.aWinState;
     m_xDialog->set_window_state(m_xImpl->aWinState);
 }
 
-SfxModelessDialogController::SfxModelessDialogController(SfxBindings* pBindinx,
-    SfxChildWindow *pCW, weld::Window *pParent, const OUString& rUIXMLDescription,
-    const OUString& rID)
+SfxModelessDialogController::SfxModelessDialogController(SfxBindings* pBindinx, SfxChildWindow* pCW,
+                                                         weld::Window* pParent,
+                                                         const OUString& rUIXMLDescription,
+                                                         const OUString& rID)
     : SfxDialogController(pParent, rUIXMLDescription, rID)
+    , m_pBindings(pBindinx)
 {
-    Init(pBindinx, pCW);
+    m_xImpl.reset(new SfxModelessDialog_Impl);
+    m_xImpl->pMgr = pCW;
+    m_xImpl->bClosing = false;
+    if (pBindinx)
+        m_xImpl->StartListening(*pBindinx);
 }
 
 /*  [Description]
@@ -95,16 +97,6 @@ SfxModelessDialogController::SfxModelessDialogController(SfxBindings* pBindinx,
 void SfxModelessDialogController::FillInfo(SfxChildWinInfo& rInfo) const
 {
     rInfo.aSize = m_xDialog->get_size();
-}
-
-void SfxModelessDialogController::Init(SfxBindings *pBindinx, SfxChildWindow *pCW)
-{
-    m_pBindings = pBindinx;
-    m_xImpl.reset(new SfxModelessDialog_Impl);
-    m_xImpl->pMgr = pCW;
-    m_xImpl->bClosing = false;
-    if (pBindinx)
-        m_xImpl->StartListening( *pBindinx );
 }
 
 /*  [Description]

@@ -17,6 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <algorithm>
 #include <memory>
 #include <lotattr.hxx>
 
@@ -171,7 +172,7 @@ const SvxColorItem& LotAttrCache::GetColorItem( const sal_uInt8 nLotIndex ) cons
 const Color& LotAttrCache::GetColor( const sal_uInt8 nLotIndex ) const
 {
     // color <-> index fits background, but not for fonts (0 <-> 7)!
-    // *LotAttrCache::GetColor(): Index > 7, caller hast to check index!"
+    // *LotAttrCache::GetColor(): Index > 7, caller has to check index!
     assert( nLotIndex < 8 );
 
     return pColTab[ nLotIndex ];
@@ -187,13 +188,13 @@ void LotAttrCol::SetAttr( const ScDocument* pDoc, const SCROW nRow, const ScPatt
 
     if(iterLast != aEntries.rend())
     {
-        if( ( (*iterLast)->nLastRow == nRow - 1 ) && ScPatternAttr::areSame( &rAttr, (*iterLast)->pPattAttr ) )
+        if( ( (*iterLast)->nLastRow == nRow - 1 ) && ScPatternAttr::areSame( &rAttr, (*iterLast)->pPattAttr.getScPatternAttr() ) )
             (*iterLast)->nLastRow = nRow;
         else
         {
             ENTRY *pCurrent = new ENTRY;
 
-            pCurrent->pPattAttr = &rAttr;
+            pCurrent->pPattAttr.setScPatternAttr(&rAttr);
             pCurrent->nFirstRow = pCurrent->nLastRow = nRow;
 
             aEntries.push_back(std::unique_ptr<ENTRY>(pCurrent));
@@ -202,7 +203,7 @@ void LotAttrCol::SetAttr( const ScDocument* pDoc, const SCROW nRow, const ScPatt
     else
     {   // first entry
         ENTRY *pCurrent = new ENTRY;
-        pCurrent->pPattAttr = &rAttr;
+        pCurrent->pPattAttr.setScPatternAttr(&rAttr);
         pCurrent->nFirstRow = pCurrent->nLastRow = nRow;
 
         aEntries.push_back(std::unique_ptr<ENTRY>(pCurrent));
@@ -216,7 +217,7 @@ void LotAttrCol::Apply(LotusContext& rContext, const SCCOL nColNum, const SCTAB 
     for (const auto& rxEntry : aEntries)
     {
         rDoc.ApplyPatternAreaTab(nColNum, rxEntry->nFirstRow, nColNum, rxEntry->nLastRow,
-                                 nTabNum, *(rxEntry->pPattAttr));
+                                 nTabNum, *(rxEntry->pPattAttr.getScPatternAttr()));
     }
 }
 
@@ -228,13 +229,16 @@ LotAttrTable::LotAttrTable(LotusContext& rContext):
 void LotAttrTable::SetAttr( const LotusContext& rContext, const SCCOL nColFirst, const SCCOL nColLast, const SCROW nRow,
                             const LotAttrWK3& rAttr )
 {
-    // With the current implementation of MAXCOLCOUNT>=1024 and nColFirst and
-    // nColLast being calculated as sal_uInt8+sal_uInt8 there's no chance that
-    // they would be invalid.
+    // nColFirst and nColLast are derived from the imported file. Clamp the
+    // range to keep the pCols index valid.
+    if (nColFirst > rContext.rDoc.MaxCol())
+        return;
+    const SCCOL nClampedLast = std::min(nColLast, rContext.rDoc.MaxCol());
+
     const ScPatternAttr &rPattAttr = aAttrCache.GetPattAttr( rAttr );
     SCCOL nColCnt;
 
-    for( nColCnt = nColFirst ; nColCnt <= nColLast ; nColCnt++ )
+    for( nColCnt = nColFirst ; nColCnt <= nClampedLast ; nColCnt++ )
         pCols[ nColCnt ].SetAttr( &rContext.rDoc, nRow, rPattAttr );
 }
 

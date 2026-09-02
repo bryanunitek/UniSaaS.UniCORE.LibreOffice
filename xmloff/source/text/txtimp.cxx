@@ -2221,14 +2221,14 @@ void XMLTextImportHelper::ConnectFrameChains(
     {
         if((*j) == rFrmName)
         {
-            // The previous frame must exist, because it existing than
+            // The previous frame must exist, because it existed when
             // inserting the entry
             rFrmPropSet->setPropertyValue(u"ChainPrevName"_ustr, Any(*i));
 
             i = m_xImpl->m_xPrevFrmNames->erase(i);
             j = m_xImpl->m_xNextFrmNames->erase(j);
 
-            // There cannot be more than one previous frames
+            // There cannot be more than one previous frame
             break;
         }
     }

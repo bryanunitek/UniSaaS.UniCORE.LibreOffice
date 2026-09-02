@@ -80,7 +80,7 @@ sal_Int32 SAL_CALL
         the given index.
 
         @param nIndex
-            This index specifies the relatio to return.
+            This index specifies the relation to return.
 
         @return
             For a valid index, i.e. inside the range 0 to the number of
@@ -103,7 +103,7 @@ sal_Int32 SAL_CALL
     /** Tests whether the relation set contains a relation matching the
         specified key.
 
-        @param aRelationType
+        @param eRelationType
             The type of relation to look for in this set of relations.  This
             has to be one of the constants of
             <type>AccessibleRelationType</type>.

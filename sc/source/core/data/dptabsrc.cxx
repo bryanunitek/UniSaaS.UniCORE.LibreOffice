@@ -955,8 +955,8 @@ void ScDPSource::CreateRes_Impl()
     tools::Long nRowDimCount2 = maRowDims.size() - (nDataLayoutOrient == sheet::DataPilotFieldOrientation_ROW ? 1 : 0);
     bool bShowColGrand = mbColumnGrand && nColDimCount2 > 0;
     bool bShowRowGrand = mbRowGrand && nRowDimCount2 > 0;
-    mpColumnResultRoot.reset( new ScDPResultMember(mpResultData.get(), bShowColGrand) );
-    mpRowResultRoot.reset( new ScDPResultMember(mpResultData.get(), bShowRowGrand) );
+    mpColumnResultRoot.reset(new ScDPResultMemberFull(mpResultData.get(), bShowColGrand));
+    mpRowResultRoot.reset(new ScDPResultMemberFull(mpResultData.get(), bShowRowGrand));
 
     FillCalcInfo(false, aInfo, bHasAutoShow);
     tools::Long nColLevelCount = aInfo.aColLevels.size();
@@ -2670,6 +2670,10 @@ uno::Reference<beans::XPropertySetInfo> SAL_CALL ScDPMember::getPropertySetInfo(
         { SC_UNO_DP_POSITION, 0,  cppu::UnoType<sal_Int32>::get(),        0, 0 },
         { SC_UNO_DP_SHOWDETAILS, 0,  cppu::UnoType<bool>::get(),              0, 0 },
         { SC_UNO_DP_LAYOUTNAME, 0, cppu::UnoType<OUString>::get(), 0, 0 },
+        { SC_UNO_DP_MEMBER_VALUE, 0, cppu::UnoType<double>::get(),
+          beans::PropertyAttribute::READONLY, 0 },
+        { SC_UNO_DP_MEMBER_HAS_VALUE, 0, cppu::UnoType<bool>::get(),
+          beans::PropertyAttribute::READONLY, 0 },
     };
     static uno::Reference<beans::XPropertySetInfo> aRef =
         new SfxItemPropertySetInfo( aDPMemberMap_Impl );
@@ -2707,6 +2711,16 @@ uno::Any SAL_CALL ScDPMember::getPropertyValue( const OUString& aPropertyName )
         aRet <<= nPosition;
     else if (aPropertyName == SC_UNO_DP_LAYOUTNAME)
         aRet <<= mpLayoutName ? *mpLayoutName : OUString();
+    else if (aPropertyName == SC_UNO_DP_MEMBER_VALUE)
+    {
+        const ScDPItemData* pData = GetItemData();
+        aRet <<= pData ? pData->GetValue() : 0.0;
+    }
+    else if (aPropertyName == SC_UNO_DP_MEMBER_HAS_VALUE)
+    {
+        const ScDPItemData* pData = GetItemData();
+        aRet <<= pData && pData->IsValue();
+    }
     else
     {
         OSL_FAIL("unknown property");

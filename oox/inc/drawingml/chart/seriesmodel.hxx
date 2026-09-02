@@ -186,6 +186,8 @@ struct BinningModel
 
     std::optional<std::variant<double, sal_uInt32>> maBinSizeOrCount;
     std::optional<ClosedSide> meIntervalClosed;   // Which side of an interval is closed
+    std::optional<double> mfUnderflow;
+    std::optional<double> mfOverflow;
 
     explicit            BinningModel();
 };
@@ -211,26 +213,6 @@ struct LayoutPropsModel
     std::vector<sal_Int32>  maSubtotalIndices;
 
     std::optional<GeographyModel> mxGeography;
-};
-
-/// Dimension/data source type. The STR_ and NUM_ values correspond to chartex
-/// ST_StringDimensionType and ST_NumericDimensionType, respectively. STR_CAT
-/// and NUM_VAL are also used by traditional (non-chartex) charts.
-enum class DataSourceType: sal_Int32
-{
-    // String dimension types (strDim)
-    STR_CAT,            /// "cat" - categories (also used by traditional charts)
-    STR_COLORSTR,       /// "colorStr" - color strings
-    STR_ENTITYID,       /// "entityId" - entity identifiers
-    // Numeric dimension types (numDim)
-    NUM_VAL,            /// "val" - numeric values (also used by traditional charts)
-    NUM_X,              /// "x" - x-axis values
-    NUM_Y,              /// "y" - y-axis values
-    NUM_SIZE,           /// "size" - size values (e.g. sunburst, treemap)
-    NUM_COLORVAL,       /// "colorVal" - color values (e.g. region map)
-    // Non-dimension types (traditional charts only)
-    POINTS,             /// Data point size (e.g. bubble size in bubble charts).
-    DATALABELS,         /// Data point labels.
 };
 
 struct SeriesModel
@@ -261,6 +243,7 @@ struct SeriesModel
     sal_Int32           mnMarkerSize;       /// Size of the series line marker (2...72).
     sal_Int32           mnMarkerSymbol;     /// Series line marker symbol.
     sal_Int32           mnOrder;            /// Series order.
+    sal_Int32           mnTypeId;           /// Chart type
     sal_Int32           mnDataId;           /// Reference to correct data chunk (chartex)
     bool                mbBubble3d;         /// True = show bubbles with 3D shade.
     bool                mbInvertNeg;        /// True = invert negative data points.
@@ -268,8 +251,14 @@ struct SeriesModel
     std::vector<sal_Int32>
                         maAxisIds;          /// List of axis identifiers used
                                             // (Only used by chartex)
+    std::optional<sal_Int32>
+                        monOwnerIdx;        /// cx:series/@ownerIdx (chartex):
+                                            /// zero-based index of the series
+                                            /// in the same plotAreaRegion whose
+                                            /// data this series shares. When
+                                            /// set, no cx:dataId is emitted.
 
-    explicit            SeriesModel(bool bMSO2007Doc);
+    explicit            SeriesModel(bool bMSO2007Doc, sal_Int32 nTypeId = -1);
                         ~SeriesModel();
 };
 

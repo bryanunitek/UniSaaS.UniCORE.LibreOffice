@@ -390,7 +390,7 @@ void ScContentTree::ActivateSelectedEntry()
                 if (ScPostIt* pNote = pSrcDoc ? pSrcDoc->GetNote(aPos.Col(), aPos.Row(), aPos.Tab()) : nullptr)
                 {
                     bool bVisible = pNote->IsCaptionShown();
-                    // Effectivelly set the visibility of the comment
+                    // Effectively set the visibility of the comment
                     GetManualOrCurrent()->GetDocFunc().ShowNote(aPos, !bVisible);
                     // Put the note in edit mode
                     ScTabViewShell* pScTabViewShell = ScNavigatorDlg::GetTabViewShell();
@@ -601,9 +601,9 @@ IMPL_LINK(ScContentTree, CommandHdl, const CommandEvent&, rCEvt, bool)
                         OUString aName = pSh->GetTitle();
                         OUString aEntry = aName;
                         if ( pSh == pCurrentSh )
-                            aEntry += pParentWindow->aStrActive;
+                            aEntry += pParentWindow->m_aStrActive;
                         else
-                            aEntry += pParentWindow->aStrNotActive;
+                            aEntry += pParentWindow->m_aStrNotActive;
                         ++i;
                         sId = "document" + OUString::number(i);
                         xDocMenu->append_radio(sId, aEntry);
@@ -615,7 +615,7 @@ IMPL_LINK(ScContentTree, CommandHdl, const CommandEvent&, rCEvt, bool)
                 //  "active window"
                 ++i;
                 sId = "document" + OUString::number(i);
-                xDocMenu->append_radio(sId, pParentWindow->aStrActiveWin);
+                xDocMenu->append_radio(sId, pParentWindow->m_aStrActiveWin);
                 if (aManualDoc.isEmpty())
                     sActive = sId;
                 xDocMenu->set_active(sActive, true);
@@ -790,8 +790,8 @@ void ScContentTree::GetAreaNames()
 
     ScRange aDummy;
     std::set<OUString> aSet;
-    ScRangeName* pRangeNames = pDoc->GetRangeName();
-    for (const auto& rEntry : *pRangeNames)
+    ScRangeName& rRangeNames = pDoc->GetRangeName();
+    for (const auto& rEntry : rRangeNames)
     {
         if (rEntry.second->IsValidReference(aDummy))
             aSet.insert(rEntry.second->GetName());
@@ -1108,13 +1108,10 @@ static bool lcl_GetRange( const ScDocument& rDoc, ScContentId nType, const OUStr
 
     if ( nType == ScContentId::RANGENAME )
     {
-        ScRangeName* pList = rDoc.GetRangeName();
-        if (pList)
-        {
-            const ScRangeData* p = pList->findByUpperName(ScGlobal::getCharClass().uppercase(rName));
-            if (p && p->IsValidReference(rRange))
-                bFound = true;
-        }
+        ScRangeName& rList = rDoc.GetRangeName();
+        const ScRangeData* p = rList.findByUpperName(ScGlobal::getCharClass().uppercase(rName));
+        if (p && p->IsValidReference(rRange))
+            bFound = true;
     }
     else if ( nType == ScContentId::DBAREA )
     {
@@ -1457,7 +1454,7 @@ void ScContentTree::SetManualDoc(const OUString& rName)
 
 void ScContentTree::SelectDoc(const OUString& rName)      // rName like shown in Menu/Listbox
 {
-    if ( rName == pParentWindow->aStrActiveWin )
+    if (rName == pParentWindow->m_aStrActiveWin)
     {
         ResetManualDoc();
         return;
@@ -1467,11 +1464,11 @@ void ScContentTree::SelectDoc(const OUString& rName)      // rName like shown in
 
     OUString aRealName = rName;
     sal_Int32 nLen = rName.getLength();
-    sal_Int32 nActiveStart = nLen - pParentWindow->aStrActive.getLength();
-    if ( rName.subView( nActiveStart ) == pParentWindow->aStrActive )
+    sal_Int32 nActiveStart = nLen - pParentWindow->m_aStrActive.getLength();
+    if (rName.subView(nActiveStart) == pParentWindow->m_aStrActive)
         aRealName = rName.copy( 0, nActiveStart );
-    sal_Int32 nNotActiveStart = nLen - pParentWindow->aStrNotActive.getLength();
-    if ( rName.subView( nNotActiveStart ) == pParentWindow->aStrNotActive )
+    sal_Int32 nNotActiveStart = nLen - pParentWindow->m_aStrNotActive.getLength();
+    if (rName.subView(nNotActiveStart) == pParentWindow->m_aStrNotActive)
         aRealName = rName.copy( 0, nNotActiveStart );
 
     bool bLoaded = false;

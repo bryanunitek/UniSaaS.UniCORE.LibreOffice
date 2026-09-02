@@ -1205,7 +1205,7 @@ std::unique_ptr<EditTextObject> ImpEditEngine::CreateTextObject( EditSelection a
     // (Only the name and family, template itself must be in App!)
 
     const MapUnit eMapUnit = maEditDoc.GetItemPool().GetMetric(DEF_METRIC);
-    auto pTxtObj(std::make_unique<EditTextObjectImpl>(pPool, eMapUnit, GetVertical(), GetRotation(),
+    auto pTxtObj(std::make_unique<EditTextObject>(pPool, eMapUnit, GetVertical(), GetRotation(),
                                                       GetItemScriptType(aSel)));
 
     // iterate over the paragraphs ...
@@ -1257,7 +1257,7 @@ std::unique_ptr<EditTextObject> ImpEditEngine::CreateTextObject( EditSelection a
             if ( bEmptyPara ||
                  ( ( pAttr->GetEnd() > nStartPos ) && ( pAttr->GetStart() < nEndPos ) ) )
             {
-                XEditAttribute aX = pTxtObj->CreateAttrib(*pAttr->GetItem(), pAttr->GetStart(), pAttr->GetEnd());
+                XEditAttribute aX(*pTxtObj->GetPool(), *pAttr->GetItem(), pAttr->GetStart(), pAttr->GetEnd());
                 // Possibly Correct ...
                 if ( ( nNode == nStartNode ) && ( nStartPos != 0 ) )
                 {
@@ -1370,8 +1370,7 @@ EditSelection ImpEditEngine::InsertTextObject( const EditTextObject& rTextObject
     DBG_ASSERT( !aSel.DbgIsBuggy( maEditDoc ), "InsertBibTextObject: Selection broken!(1)" );
 
     bool bUsePortionInfo = false;
-    const EditTextObjectImpl& rTextObjectImpl = toImpl(rTextObject);
-    XParaPortionList* pPortionInfo = rTextObjectImpl.GetPortionInfo();
+    XParaPortionList* pPortionInfo = rTextObject.GetPortionInfo();
 
     if (pPortionInfo && ( static_cast<tools::Long>(pPortionInfo->GetPaperWidth()) == GetColumnWidth(maPaperSize))
             && pPortionInfo->GetRefMapMode() == GetRefDevice()->GetMapMode()
@@ -1387,9 +1386,9 @@ EditSelection ImpEditEngine::InsertTextObject( const EditTextObject& rTextObject
 
     bool bConvertMetricOfItems = false;
     MapUnit eSourceUnit = MapUnit(), eDestUnit = MapUnit();
-    if (rTextObjectImpl.HasMetric())
+    if (rTextObject.HasMetric())
     {
-        eSourceUnit = rTextObjectImpl.GetMetric();
+        eSourceUnit = rTextObject.GetMetric();
         eDestUnit = maEditDoc.GetItemPool().GetMetric( DEF_METRIC );
         if ( eSourceUnit != eDestUnit )
             bConvertMetricOfItems = true;
@@ -1398,13 +1397,13 @@ EditSelection ImpEditEngine::InsertTextObject( const EditTextObject& rTextObject
     // Before, paragraph count was of type sal_uInt16 so if nContents exceeded
     // 0xFFFF this wouldn't have worked anyway, given that nPara is used to
     // number paragraphs and is fearlessly incremented.
-    sal_Int32 nContents = static_cast<sal_Int32>(rTextObjectImpl.GetContents().size());
+    sal_Int32 nContents = static_cast<sal_Int32>(rTextObject.GetContents().size());
     SAL_WARN_IF( nContents < 0, "editeng", "ImpEditEngine::InsertTextObject - contents overflow " << nContents);
     sal_Int32 nPara = maEditDoc.GetPos( aPaM.GetNode() );
 
     for (sal_Int32 n = 0; n < nContents; ++n, ++nPara)
     {
-        const ContentInfo* pC = rTextObjectImpl.GetContents()[n].get();
+        const ContentInfo* pC = rTextObject.GetContents()[n].get();
         bool bNewContent = aPaM.GetNode()->Len() == 0;
         const sal_Int32 nStartPos = aPaM.GetIndex();
 
@@ -1427,6 +1426,19 @@ EditSelection ImpEditEngine::InsertTextObject( const EditTextObject& rTextObject
                     //TODO! Still true, still needed?
                 if ( rX.GetEnd() <= aPaM.GetNode()->Len() )
                 {
+                    // tdf#172647: this load path bypasses SetAttribs, so
+                    // convert to typographic names here too.
+                    const SfxPoolItem* pSrcItem = rX.GetItem();
+                    std::unique_ptr<SvxFontItem> pConvFont;
+                    const sal_uInt16 nFontWhich = pSrcItem->Which();
+                    if ((nFontWhich == EE_CHAR_FONTINFO || nFontWhich == EE_CHAR_FONTINFO_CJK
+                         || nFontWhich == EE_CHAR_FONTINFO_CTL)
+                        && GetRefDevice())
+                    {
+                        pConvFont.reset(static_cast<SvxFontItem*>(pSrcItem->Clone()));
+                        pConvFont->makeTypographic(*GetRefDevice());
+                        pSrcItem = pConvFont.get();
+                    }
                     if ( !bAllreadyHasAttribs || rX.IsFeature() )
                     {
                         // Normal attributes then go faster ...
@@ -1436,10 +1448,10 @@ EditSelection ImpEditEngine::InsertTextObject( const EditTextObject& rTextObject
                         DBG_ASSERT( rX.GetEnd() <= aPaM.GetNode()->Len(), "InsertBinTextObject: Attribute too large!" );
                         EditCharAttrib* pAttr;
                         if ( !bConvertMetricOfItems )
-                            pAttr = MakeCharAttrib( maEditDoc.GetItemPool(), *(rX.GetItem()), rX.GetStart()+nStartPos, rX.GetEnd()+nStartPos );
+                            pAttr = MakeCharAttrib( maEditDoc.GetItemPool(), *pSrcItem, rX.GetStart()+nStartPos, rX.GetEnd()+nStartPos );
                         else
                         {
-                            std::unique_ptr<SfxPoolItem> pNew(rX.GetItem()->Clone());
+                            std::unique_ptr<SfxPoolItem> pNew(pSrcItem->Clone());
                             ConvertItem( pNew, eSourceUnit, eDestUnit );
                             pAttr = MakeCharAttrib( maEditDoc.GetItemPool(), *pNew, rX.GetStart()+nStartPos, rX.GetEnd()+nStartPos );
                         }
@@ -1452,7 +1464,7 @@ EditSelection ImpEditEngine::InsertTextObject( const EditTextObject& rTextObject
                     {
                         DBG_ASSERT( rX.GetEnd()+nStartPos <= aPaM.GetNode()->Len(), "InsertBinTextObject: Attribute does not fit! (2)" );
                         // Tabs and other Features can not be inserted through InsertAttrib:
-                        maEditDoc.InsertAttrib( aPaM.GetNode(), rX.GetStart()+nStartPos, rX.GetEnd()+nStartPos, *rX.GetItem() );
+                        maEditDoc.InsertAttrib( aPaM.GetNode(), rX.GetStart()+nStartPos, rX.GetEnd()+nStartPos, *pSrcItem );
                     }
                 }
             }
@@ -3241,16 +3253,11 @@ short ImpEditEngine::ReplaceTextOnly(
 
             DBG_ASSERT( (nCurrentPos+1) < pNode->Len(), "TransliterateText - String smaller than expected!" );
             GetEditDoc().RemoveChars( EditPaM( pNode, nCurrentPos+1 ), -nDiff);
-            ESelection const deleted{maEditDoc.GetPos(pNode), nCurrentPos+1, maEditDoc.GetPos(pNode), nCurrentPos-nDiff};
-            UpdateSelectionsDelete(deleted);
         }
         else
         {
             DBG_ASSERT( nDiff == 1, "TransliterateText - Diff other than expected! But should work..." );
             GetEditDoc().InsertText( EditPaM( pNode, nCurrentPos ), OUStringChar(rNewText[n]) );
-            ESelection const inserted{maEditDoc.GetPos(pNode), nCurrentPos, maEditDoc.GetPos(pNode), nCurrentPos+nDiff};
-            UpdateSelectionsInsert(inserted);
-
         }
         nDiffs = sal::static_int_cast< short >(nDiffs + nDiff);
     }

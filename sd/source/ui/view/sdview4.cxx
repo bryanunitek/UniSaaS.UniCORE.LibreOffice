@@ -83,8 +83,15 @@ namespace sd {
 SdrGrafObj* View::InsertGraphic( const Graphic& rGraphic, sal_Int8& rAction,
                                    const Point& rPos, SdrObject* pObj, ImageMap const * pImageMap )
 {
+    // Ending the text edit can replace the object the caller named, and what leaves the page is
+    // held by the undo action alone - of which there is none while undo is off.
+    rtl::Reference<SdrObject> xNamed(pObj);
     SdrEndTextEdit();
     mnAction = rAction;
+
+    // Which leaves a caller that named the object holding one that is no longer on a page.
+    if (xNamed && !xNamed->IsInserted())
+        pObj = GetPresentationObjectForGraphic();
 
     // Is there an object at the position rPos?
     rtl::Reference<SdrGrafObj> pNewGrafObj;
@@ -106,16 +113,22 @@ SdrGrafObj* View::InsertGraphic( const Graphic& rGraphic, sal_Int8& rAction,
 
     const bool bIsGraphic(dynamic_cast< const SdrGrafObj* >(pPickObj) !=  nullptr);
 
+    // A picture placeholder holding text is an outliner object, so it is neither a graphic object
+    // nor an empty one - but an image is still what it is a placeholder for.
+    SdPage* pPickPage
+        = pPickObj ? dynamic_cast<SdPage*>(pPickObj->getSdrPageFromSdrObject()) : nullptr;
+    const bool bIsPicturePlaceholder
+        = pPickPage && pPickPage->GetPresObjKind(pPickObj) == PresObjKind::Graphic;
+
+    // #121603# Do not use pObj, it may be NULL
     if (DND_ACTION_LINK == mnAction
         && pPickObj
         && pPV
-        && (bIsGraphic || (pPickObj->IsEmptyPresObj() && !bOnMaster))) // #121603# Do not use pObj, it may be NULL
+        && (bIsGraphic || ((pPickObj->IsEmptyPresObj() || bIsPicturePlaceholder) && !bOnMaster)))
     {
         // hit on SdrGrafObj with wanted new linked graphic (or PresObj placeholder hit)
         if( IsUndoEnabled() )
             BegUndo(SdResId(STR_INSERTGRAPHIC));
-
-        SdPage* pPage = static_cast<SdPage*>( pPickObj->getSdrPageFromSdrObject() );
 
         if( bIsGraphic )
         {
@@ -140,10 +153,10 @@ SdrGrafObj* View::InsertGraphic( const Graphic& rGraphic, sal_Int8& rAction,
             pNewGrafObj->SetEmptyPresObj(false);
         }
 
-        if (pPage && pPage->IsPresObj(pPickObj))
+        if (pPickPage && pPickPage->IsPresObj(pPickObj))
         {
             // Insert new PresObj into the list
-            pPage->InsertPresObj( pNewGrafObj.get(), PresObjKind::Graphic );
+            pPickPage->InsertPresObj( pNewGrafObj.get(), PresObjKind::Graphic );
             pNewGrafObj->SetUserCall(pPickObj->GetUserCall());
         }
 
@@ -324,7 +337,11 @@ void View::InsertMediaURL( const OUString& rMediaURL, sal_Int8& rAction,
 #endif
     }
 
-    InsertMediaObj(realURL, rAction, rPos, rSize);
+    SdrMediaObj* pMediaObj = InsertMediaObj(realURL, rAction, rPos, rSize);
+
+    // The user picked this media file, so its external reference is allowed without asking again.
+    if (bLink && pMediaObj)
+        pMediaObj->setLinkAllowed(true);
 }
 
 SdrMediaObj* View::InsertMediaObj( const OUString& rMediaURL, sal_Int8& rAction,
@@ -450,7 +467,23 @@ IMPL_LINK_NOARG(View, DropInsertFileHdl, Timer *, void)
             {
                 sal_Int8    nTempAction = ( aIter == maDropFileVector.begin() ) ? mnAction : 0;
                 const bool bLink = ( ( nTempAction & DND_ACTION_LINK ) != 0 );
-                SdrGrafObj* pGrafObj = InsertGraphic( aGraphic, nTempAction, maDropPos, nullptr, nullptr );
+                SdrObject* pTargetObj = nullptr;
+                SdrPageView* pPageView = GetSdrPageView();
+                bool bSingleInsert = (maDropFileVector.size() == 1);
+
+                if (pPageView && bSingleInsert)
+                {
+                    pTargetObj = PickObj(maDropPos, getHitTolLog(), pPageView);
+
+                    if (pTargetObj)
+                    {
+                        if (dynamic_cast<SdrGrafObj*>(pTargetObj) || pTargetObj->IsClosedObj())
+                            nTempAction = DND_ACTION_LINK;
+                        else
+                            nTempAction = DND_ACTION_MOVE;
+                    }
+                }
+                SdrGrafObj* pGrafObj = InsertGraphic( aGraphic, nTempAction, maDropPos, pTargetObj, nullptr );
                 if(pGrafObj && bLink)
                 {
                     pGrafObj->SetGraphicLink( aCurrentDropFile );

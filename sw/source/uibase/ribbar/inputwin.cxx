@@ -471,7 +471,7 @@ void SwInputWindow::SetFormula( const OUString& rFormula )
     m_bDelSel = true;
 }
 
-IMPL_LINK_NOARG(SwInputWindow, ModifyHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(SwInputWindow, ModifyHdl, weld::TextWidget&, void)
 {
     if (m_pWrtShell && m_bIsTable && m_bResetUndo)
     {
@@ -618,13 +618,11 @@ void InputEdit::UpdateRange(std::u16string_view rBoxes,
 
 }
 
-SwInputChild::SwInputChild(vcl::Window* _pParent,
-                                sal_uInt16 nId,
-                                SfxBindings const * pBindings,
-                                SfxChildWinInfo* ) :
-                                SfxChildWindow( _pParent, nId )
+SwInputChild::SwInputChild(vcl::Window* _pParent, sal_uInt16 nId, const SfxBindings& rBindings,
+                           SfxChildWinInfo&)
+    : SfxChildWindow(_pParent, nId)
 {
-    m_pDispatch = pBindings->GetDispatcher();
+    m_pDispatch = rBindings.GetDispatcher();
     SetWindow(VclPtr<SwInputWindow>::Create(_pParent, m_pDispatch));
     static_cast<SwInputWindow*>(GetWindow())->ShowWin();
     SetAlignment(SfxChildAlignment::LOWESTTOP);

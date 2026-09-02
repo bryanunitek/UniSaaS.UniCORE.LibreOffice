@@ -25,6 +25,7 @@
 #include <svx/svdview.hxx>
 #include <sfx2/objsh.hxx>
 #include <sfx2/request.hxx>
+#include <svtools/querydialog.hxx>
 #include <basic/sbxcore.hxx>
 #include <svl/stritem.hxx>
 #include <svl/whiter.hxx>
@@ -33,11 +34,12 @@
 
 #include <tabvwsh.hxx>
 #include <document.hxx>
+#include <globstr.hrc>
 #include <sc.hrc>
+#include <scresid.hxx>
 #include <drwlayer.hxx>
 #include <retypepassdlg.hxx>
 #include <tabprotection.hxx>
-#include <onlyactivesheetsaveddlg.hxx>
 
 #include <com/sun/star/embed/EmbedVerbs.hpp>
 
@@ -263,8 +265,13 @@ bool ScTabViewShell::ExecuteRetypePassDlg(ScPasswordHash eDesiredHash)
 
 void ScTabViewShell::ExecuteOnlyActiveSheetSavedDlg()
 {
-    ScOnlyActiveSheetSavedDlg aDlg(GetFrameWeld());
-    aDlg.run();
+    QueryDialog aQueryDialog(
+        GetFrameWeld(), ScResId(STR_WARN_ONLYACTIVESHEET_TITLE),
+        ScResId(STR_WARN_ONLYACTIVESHEET_TEXT), ScResId(STR_WARN_ONLYACTIVESHEET_QUEST), true);
+    aQueryDialog.SetNoLabel(u""_ustr); //empty to hide the button
+    aQueryDialog.SetYesLabel(ScResId(STR_WARN_ONLYACTIVESHEET_BUTTON));
+    aQueryDialog.SetTypeWarn();
+    aQueryDialog.run();
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

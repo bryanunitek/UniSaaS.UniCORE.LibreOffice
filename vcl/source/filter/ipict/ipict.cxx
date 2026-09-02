@@ -40,7 +40,7 @@
 namespace PictReaderInternal {
   namespace {
 
-  //! utilitary class to store a pattern, ...
+  //! utility class to store a pattern, ...
   class Pattern {
   public:
     //! constructor
@@ -240,7 +240,7 @@ private:
         // Reads the header of the Pict file, set IsVersion and aBoundingRect
 
     sal_uInt64 ReadData(sal_uInt16 nOpcode);
-        // Reads the date of anOopcode and executes the operation.
+        // Reads the data of an opcode and executes the operation.
         // The number of data bytes belonging to the opcode will be returned
         // in any case.
 
@@ -272,43 +272,48 @@ public:
 
 }
 
+static const Color& SanitizePaletteIndex(std::vector<Color> const & rvPalette, sal_uInt8 nIndex)
+{
+    return vcl::bitmap::sanitizedPaletteColor(rvPalette, nIndex);
+}
+
 static void SetByte(sal_uInt16& nx, sal_uInt16 ny, vcl::bitmap::RawBitmap& rBitmap, sal_uInt16 nPixelSize, sal_uInt8 nDat, sal_uInt16 nWidth, std::vector<Color> const & rvPalette)
 {
     switch (nPixelSize)
     {
         case 1:
-            rBitmap.SetPixel(ny, nx++, rvPalette[(nDat >> 7) & 1]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, (nDat >> 7) & 1));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[(nDat >> 6) & 1]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, (nDat >> 6) & 1));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[(nDat >> 5) & 1]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, (nDat >> 5) & 1));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[(nDat >> 4) & 1]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, (nDat >> 4) & 1));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[(nDat >> 3) & 1]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, (nDat >> 3) & 1));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[(nDat >> 2) & 1]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, (nDat >> 2) & 1));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[(nDat >> 1) & 1]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, (nDat >> 1) & 1));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[nDat & 1]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, nDat & 1));
             break;
         case 2:
-            rBitmap.SetPixel(ny, nx++, rvPalette[nDat >> 6]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, nDat >> 6));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[(nDat>>4)&3]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, (nDat>>4)&3));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[(nDat>>2)&3]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, (nDat>>2)&3));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[nDat & 3]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, nDat & 3));
             break;
         case 4:
-            rBitmap.SetPixel(ny, nx++, rvPalette[nDat >> 4]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, nDat >> 4));
             if ( nx == nWidth ) break;
-            rBitmap.SetPixel(ny, nx++, rvPalette[nDat & 0x0f]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, nDat & 0x0f));
             break;
         case 8:
-            rBitmap.SetPixel(ny, nx++, rvPalette[nDat]);
+            rBitmap.SetPixel(ny, nx++, SanitizePaletteIndex(rvPalette, nDat));
             break;
     }
 }
@@ -831,6 +836,9 @@ sal_uInt64 PictReader::ReadPixMapEtc( Bitmap &rBitmap, bool bBaseAddr, bool bCol
     // read and write Bitmap bits:
     if ( nPixelSize == 1 || nPixelSize == 2 || nPixelSize == 4 || nPixelSize == 8 )
     {
+        if (aPalette.empty())
+            return 0xffffffff;
+
         sal_uInt16  nSrcBPL, nDestBPL;
         size_t nCount;
 

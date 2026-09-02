@@ -320,22 +320,20 @@ namespace emfio
 
         // tdf#127471 adapt nFontWidth from Windows-like notation to
         // NormedFontScaling if used for text scaling
-#ifndef _WIN32
         const bool bFontScaledHorizontally(aFontSize.Width() != 0 && aFontSize.Width() != aFontSize.Height());
 
         if(bFontScaledHorizontally)
         {
-            // tdf#127471 nFontWidth is the Windows FontScaling, need to convert to
-            // Non-Windowslike notation relative to FontHeight.
+            // tdf#127471 nFontWidth is the Windows FontScaling, need to convert
+            // to notation relative to FontHeight.
             const tools::Long nAverageFontWidth(aFont.GetOrCalculateAverageFontWidth());
 
             if(nAverageFontWidth > 0)
             {
                 const double fScaleFactor(static_cast<double>(aFontSize.Height()) / static_cast<double>(nAverageFontWidth));
-                aFont.SetAverageFontWidth(static_cast<tools::Long>(static_cast<double>(aFontSize.Width()) * fScaleFactor));
+                aFont.SetFontWidth(static_cast<tools::Long>(static_cast<double>(aFontSize.Width()) * fScaleFactor));
             }
         }
-#endif
     };
 
     WinMtfFontStyle::~WinMtfFontStyle() = default;
@@ -400,7 +398,7 @@ namespace emfio
         // so this will already sort out most situations
         const vcl::Font& rCandidate(rNewMetaFontAction->GetFont());
 
-        if(0 != rCandidate.GetAverageFontWidth())
+        if(0 != rCandidate.GetFontWidth())
         {
             const tools::Long nUnscaledAverageFontWidth(rCandidate.GetOrCalculateAverageFontWidth());
 
@@ -437,27 +435,18 @@ namespace emfio
         const double fFactorTextPercent(fabs(1.0 - fFactorText) * 100.0);
 
         // if we assume that loaded file was written on old linux, we have to
-        // back-convert the scale value depending on which system we run
-#ifdef _WIN32
-        // When running on Windows the value was not adapted at font import (see WinMtfFontStyle
-        // constructor), so it is still NormedFontScaling and we need to convert to Windows-style
-        // scaling
-#else
-        // When running on unx (non-Windows) the value was already adapted at font import (see WinMtfFontStyle
-        // constructor). It was wrongly assumed to be Windows-style FontScaling, so we need to revert that
-        // to get back to the needed unx-style FontScale
-#endif
-        // Interestingly this leads to the *same* correction, so no need to make this
-        // system-dependent (!)
+        // back-convert the scale value: it was already adapted at font import (see
+        // WinMtfFontStyle constructor). It was wrongly assumed to be Windows-style
+        // FontScaling, so we need to revert that to get back to the needed FontScale
         const tools::Long nUnscaledAverageFontWidth(rFontCandidate.GetOrCalculateAverageFontWidth());
-        const tools::Long nScaledAverageFontWidth(rFontCandidate.GetAverageFontWidth());
+        const tools::Long nScaledAverageFontWidth(rFontCandidate.GetFontWidth());
         const double fScaleFactor(static_cast<double>(nUnscaledAverageFontWidth) / static_cast<double>(rFontCandidate.GetFontHeight()));
         const double fCorrectedAverageFontWidth(static_cast<double>(nScaledAverageFontWidth) * fScaleFactor);
         tools::Long nCorrectedTextLength(0);
 
         { // do in own scope, only need nUnscaledAverageFontWidth
             vcl::Font rFontCandidate2(rFontCandidate);
-            rFontCandidate2.SetAverageFontWidth(static_cast<tools::Long>(fCorrectedAverageFontWidth));
+            rFontCandidate2.SetFontWidth(static_cast<tools::Long>(fCorrectedAverageFontWidth));
             pTempVirtualDevice->SetFont(rFontCandidate2);
             nCorrectedTextLength = pTempVirtualDevice->GetTextWidth(rText);
             // on failure, use original length
@@ -1047,15 +1036,21 @@ namespace emfio
             }
         }
         std::vector<std::unique_ptr<GDIObj>>::size_type nIndex;
-        for ( nIndex = 0; nIndex < mvGDIObj.size(); nIndex++ )
+        for ( nIndex = mnLowestFreeGDIObj; nIndex < mvGDIObj.size(); nIndex++ )
         {
             if ( !mvGDIObj[ nIndex ] )
                 break;
+        }
+        if ( nIndex > 0xffff )   // the same ceiling an indexed object has
+        {
+            SAL_WARN( "emfio", "too many objects" );
+            return;
         }
         if ( nIndex == mvGDIObj.size() )
             ImplResizeObjectArry( mvGDIObj.size() + 16 );
 
         mvGDIObj[ nIndex ] = std::move(pObject);
+        mnLowestFreeGDIObj = nIndex + 1;
     }
 
     void MtfTools::CreateObjectIndexed( sal_uInt32 nIndex, std::unique_ptr<GDIObj> pObject )
@@ -1100,6 +1095,9 @@ namespace emfio
         if ( nIndex >= mvGDIObj.size() )
             ImplResizeObjectArry( nIndex + 16 );
 
+        if ( !pObject && nIndex < mnLowestFreeGDIObj )
+            mnLowestFreeGDIObj = nIndex;
+
         mvGDIObj[ nIndex ] = std::move(pObject);
     }
 
@@ -1115,6 +1113,8 @@ namespace emfio
             if ( nIndex < mvGDIObj.size() )
             {
                 mvGDIObj[ nIndex ].reset();
+                if ( nIndex < mnLowestFreeGDIObj )
+                    mnLowestFreeGDIObj = nIndex;
             }
         }
     }
@@ -1185,6 +1185,7 @@ namespace emfio
         mnBkMode(BackgroundMode::OPAQUE),
         meLatestRasterOp(RasterOp::Invert),
         meRasterOp(RasterOp::OverPaint),
+        mnLowestFreeGDIObj(0),
         mnRop(),
         meGfxMode(GraphicsMode::GM_COMPATIBLE),
         meMapMode(MappingMode::MM_TEXT),

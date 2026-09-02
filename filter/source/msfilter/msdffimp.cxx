@@ -4379,7 +4379,7 @@ rtl::Reference<SdrObject> SvxMSDffManager::ImportShape( const DffRecordHeader& r
             /*  After CWS aw033 has been integrated, an empty group object
                 cannot store its resulting bounding rectangle anymore. We have
                 to return this rectangle via rClientRect now, but only, if
-                caller has not passed an own bounding ractangle. */
+                caller has not passed an own bounding rectangle. */
             if ( rClientRect.IsEmpty() )
                  rClientRect = aObjData.aBoundRect;
             nGroupShapeFlags = aObjData.nSpFlags;
@@ -6462,7 +6462,7 @@ bool SvxMSDffManager::GetBLIP( sal_uLong nIdx_, Graphic& rGraphic, tools::Rectan
             bOk = GetBLIPDirect( *pStData, rGraphic, pVisArea );
         if( pStData2 && !bOk )
         {
-            // Error, but the is a second chance: There is a second
+            // Error, but there is a second chance: There is a second
             //         data stream in which the graphic could be stored!
             if( pStData2->GetError() )
                 pStData2->ResetError();
@@ -7241,11 +7241,10 @@ css::uno::Reference < css::embed::XEmbeddedObject >  SvxMSDffManager::CheckForCo
             }
 
             // JP 26.10.2001: Bug 93374 / 91928 the writer
-            // objects need the correct visarea needs the
-            // correct visarea, but this is not true for
+            // objects need the correct visarea, but this is not true for
             // PowerPoint (see bugdoc 94908b)
             // SJ: 19.11.2001 bug 94908, also chart objects
-            // needs the correct visarea
+            // need the correct visarea
 
             // If pName is set this is an own embedded object, it should have the correct size internally
             // TODO/LATER: it might make sense in future to set the size stored in internal object

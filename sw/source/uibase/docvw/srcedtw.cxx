@@ -65,8 +65,8 @@ struct TextPortion
 
 }
 
-#define MAX_SYNTAX_HIGHLIGHT 20
-#define MAX_HIGHLIGHTTIME 200
+constexpr sal_uInt16 MAX_SYNTAX_HIGHLIGHT = 20;
+constexpr sal_Int64 MAX_HIGHLIGHTTIME = 200;
 
 typedef std::vector<TextPortion> TextPortions;
 
@@ -589,7 +589,7 @@ IMPL_LINK( SwSrcEditWindow, SyntaxTimerHdl, Timer*, pIdle, void )
     if(!m_aSyntaxLineTable.empty())
         for(sal_uInt16 i = 0; i < 80 && nCount < 40; i++, nCur++)
         {
-            if(m_aSyntaxLineTable.find(nCur) != m_aSyntaxLineTable.end())
+            if(m_aSyntaxLineTable.contains(nCur))
             {
                 DoSyntaxHighlight( nCur );
                 m_aSyntaxLineTable.erase( nCur );

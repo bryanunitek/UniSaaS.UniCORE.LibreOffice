@@ -21,6 +21,7 @@
 
 #include <svx/svdobj.hxx>
 #include <sdpage.hxx>
+#include <xmloff/SoundReference.hxx>
 #include <tools/stream.hxx>
 #include <svx/unoapi.hxx>
 #include <sal/log.hxx>
@@ -484,7 +485,7 @@ void Ppt97Animation::UpdateCacheData() const
                     m_aPresetId = "ooo-entrance-swivel";
                     m_aSubType = "vertical";
                 break;
-                case 0x1c:                                                                              // --- spirale ---
+                case 0x1c:                                                                              // --- spiral ---
                     m_aPresetId = "ooo-entrance-spiral-in";
                 break;
             }
@@ -602,9 +603,9 @@ void Ppt97Animation::createAndSetCustomAnimationEffect( SdrObject* pObj )
             pEffect->setAfterEffectOnNext( HasAfterEffect_DimAtNextEffect() );
     }
 
-    // set sound effect
+    // set sound effect. Embedded in the .ppt, not a link: allow it.
     if( HasSoundEffect() )
-        pEffect->createAudio( uno::Any( m_aSoundFileUrl ) );
+        pEffect->createAudio( xmloff::makeSoundSource( m_aSoundFileUrl, /*bAllowed*/true ) );
 
     // text iteration
     pEffect->setIterateType( GetTextAnimationType() );
@@ -628,7 +629,7 @@ void Ppt97Animation::createAndSetCustomAnimationEffect( SdrObject* pObj )
         pEffect->setTargetSubItem( presentation::ShapeAnimationSubType::AS_WHOLE );
     }
 
-    //3. ------ put the created effect to the model and do some last changes fro paragraph effects ------
+    //3. ------ put the created effect to the model and do some last changes for paragraph effects ------
     pMainSequence->append( pEffect );
     if( HasParagraphEffect() )
     {

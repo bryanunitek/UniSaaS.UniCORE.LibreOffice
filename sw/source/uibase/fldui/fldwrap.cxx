@@ -54,13 +54,12 @@ SfxChildWinInfo SwFieldDlgWrapper::GetInfo() const
     return aInfo;
 }
 
-SwFieldDlgWrapper::SwFieldDlgWrapper( vcl::Window* _pParent, sal_uInt16 nId,
-                                    SfxBindings* pB,
-                                    SfxChildWinInfo*  )
-    : SwChildWinWrapper( _pParent, nId )
+SwFieldDlgWrapper::SwFieldDlgWrapper(vcl::Window* _pParent, sal_uInt16 nId, SfxBindings& rBindings,
+                                     SfxChildWinInfo&)
+    : SwChildWinWrapper(_pParent, nId)
 {
     SwAbstractDialogFactory* pFact = SwAbstractDialogFactory::Create();
-    m_pDlgInterface = pFact->CreateSwFieldDlg(pB, this, _pParent->GetFrameWeld());
+    m_pDlgInterface = pFact->CreateSwFieldDlg(&rBindings, this, _pParent->GetFrameWeld());
     SetController(m_pDlgInterface->GetController());
     m_pDlgInterface->StartExecuteAsync(nullptr);
 }
@@ -81,18 +80,17 @@ SfxChildWinInfo SwFieldDataOnlyDlgWrapper::GetInfo() const
     return aInfo;
 }
 
-SwFieldDataOnlyDlgWrapper::SwFieldDataOnlyDlgWrapper( vcl::Window* _pParent, sal_uInt16 nId,
-                                    SfxBindings* pB,
-                                    SfxChildWinInfo* pInfo )
-    : SwChildWinWrapper( _pParent, nId )
+SwFieldDataOnlyDlgWrapper::SwFieldDataOnlyDlgWrapper(vcl::Window* _pParent, sal_uInt16 nId,
+                                                     SfxBindings& rBindings, SfxChildWinInfo& rInfo)
+    : SwChildWinWrapper(_pParent, nId)
 {
     SwAbstractDialogFactory* pFact = SwAbstractDialogFactory::Create();
-    m_pDlgInterface = pFact->CreateSwFieldDlg(pB, this, _pParent->GetFrameWeld());
+    m_pDlgInterface = pFact->CreateSwFieldDlg(&rBindings, this, _pParent->GetFrameWeld());
 
     SetController(m_pDlgInterface->GetController());
     m_pDlgInterface->ActivateDatabasePage();
     m_pDlgInterface->StartExecuteAsync(nullptr);
-    m_pDlgInterface->Initialize( pInfo );
+    m_pDlgInterface->Initialize(&rInfo);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

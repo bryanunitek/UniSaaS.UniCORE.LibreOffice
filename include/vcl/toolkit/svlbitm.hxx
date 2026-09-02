@@ -23,7 +23,6 @@
 #error "don't use this in new code"
 #endif
 
-#include <map>
 #include <memory>
 #include <vcl/dllapi.h>
 #include <tools/link.hxx>
@@ -32,8 +31,6 @@
 #include <o3tl/typed_flags_set.hxx>
 
 class SvTreeListEntry;
-class SvLBoxButton;
-
 
 enum class SvBmp
 {
@@ -58,46 +55,6 @@ namespace o3tl
     template<> struct typed_flags<SvItemStateFlags> : is_typed_flags<SvItemStateFlags, 0x0f> {};
 }
 
-class SvLBoxButtonData
-{
-private:
-    Link<SvLBoxButtonData*,void> aLink;
-    Size                    m_aSize;
-    bool                    bDataOk;
-    std::map<SvBmp, Image> aBmps;
-
-    SvTreeListEntry* m_pEntry;
-    SvLBoxButton* m_pBox;
-    bool m_bShowRadioButton;
-
-    void                    SetWidthAndHeight();
-public:
-                            // include creating default images (CheckBox or RadioButton)
-                            SvLBoxButtonData(const Control& rControlForSettings, bool _bRadioBtn);
-
-                            ~SvLBoxButtonData();
-
-    static SvBmp            GetIndex( SvItemStateFlags nItemState );
-    const Size &            GetSize();
-    void                    SetLink( const Link<SvLBoxButtonData*,void>& rLink) { aLink=rLink; }
-    bool                    IsRadio() const;
-    // as buttons are not derived from LinkHdl
-    void                    CallLink();
-
-    void                    StoreButtonState(SvTreeListEntry* pActEntry, SvLBoxButton* pActBox);
-    static SvButtonState    ConvertToButtonState( SvItemStateFlags nItemFlags );
-
-    SvTreeListEntry*        GetActEntry() const;
-    SvLBoxButton*           GetActBox() const;
-
-    const Image& GetImage(SvBmp eIndex) const { return aBmps.at(eIndex); }
-
-    void                    SetDefaultImages(const Control& rControlForSettings);
-                                // set images according to the color scheme of the Control
-};
-
-// **********************************************************************
-
 class UNLESS_MERGELIBS(VCL_DLLPUBLIC) SvLBoxString : public SvLBoxItem
 {
 private:
@@ -114,7 +71,7 @@ public:
     virtual ~SvLBoxString() override;
 
     virtual SvLBoxItemType GetType() const override;
-    virtual void InitViewData(SvTreeListBox& rView, SvTreeListEntry* pEntry,
+    virtual void InitViewData(SvTreeListBox& rView, SvTreeListEntry& rEntry,
                               SvViewDataItem* pViewData = nullptr) override;
 
     virtual int CalcWidth(const SvTreeListBox& rView) const override;
@@ -125,7 +82,6 @@ public:
     bool IsEmphasized() const { return mbEmphasized; }
 
     void SetCustomRender() { mbCustom = true; }
-    bool IsCustomRender() const { return mbCustom; }
 
     const OUString& GetText() const
     {
@@ -144,97 +100,17 @@ public:
     virtual std::unique_ptr<SvLBoxItem> Clone(SvLBoxItem const * pSource) const override;
 };
 
-class SvLBoxButton final : public SvLBoxItem
-{
-    bool    isVis;
-    SvLBoxButtonData*   pData;
-    SvItemStateFlags nItemFlags;
-
-    static void ImplAdjustBoxSize( Size& io_rCtrlSize, ControlType i_eType, vcl::RenderContext const & pRenderContext);
-public:
-    SvLBoxButton( SvLBoxButtonData* pBData );
-    SvLBoxButton();
-    virtual ~SvLBoxButton() override;
-    virtual void InitViewData(SvTreeListBox& rView, SvTreeListEntry* pEntry,
-                              SvViewDataItem* pViewData = nullptr) override;
-
-    virtual SvLBoxItemType GetType() const override;
-    void ClickHdl( SvTreeListEntry* );
-
-    virtual void Paint(const Point& rPos,
-                       SvTreeListBox& rOutDev,
-                       vcl::RenderContext& rRenderContext,
-                       const SvViewDataEntry* pView,
-                       const SvTreeListEntry& rEntry) override;
-
-    virtual std::unique_ptr<SvLBoxItem> Clone(SvLBoxItem const * pSource) const override;
-
-    SvItemStateFlags GetButtonFlags() const
-    {
-        return nItemFlags;
-    }
-    bool IsStateChecked() const
-    {
-        return bool(nItemFlags & SvItemStateFlags::CHECKED);
-    }
-    bool IsStateUnchecked() const
-    {
-        return bool(nItemFlags & SvItemStateFlags::UNCHECKED);
-    }
-    bool IsStateTristate() const
-    {
-        return bool(nItemFlags & SvItemStateFlags::TRISTATE);
-    }
-    bool IsStateHilighted() const
-    {
-        return bool(nItemFlags & SvItemStateFlags::HIGHLIGHTED);
-    }
-    void SetStateChecked();
-    void SetStateUnchecked();
-    void SetStateTristate();
-    void SetStateHilighted(bool bHilight);
-};
-
-inline void SvLBoxButton::SetStateChecked()
-{
-    nItemFlags &= SvItemStateFlags::HIGHLIGHTED;
-    nItemFlags |= SvItemStateFlags::CHECKED;
-}
-
-inline void SvLBoxButton::SetStateUnchecked()
-{
-    nItemFlags &= SvItemStateFlags::HIGHLIGHTED;
-    nItemFlags |= SvItemStateFlags::UNCHECKED;
-}
-inline void SvLBoxButton::SetStateTristate()
-{
-    nItemFlags &= SvItemStateFlags::HIGHLIGHTED;
-    nItemFlags |= SvItemStateFlags::TRISTATE;
-}
-inline void SvLBoxButton::SetStateHilighted( bool bHilight )
-{
-    if ( bHilight )
-        nItemFlags |= SvItemStateFlags::HIGHLIGHTED;
-    else
-        nItemFlags &= ~SvItemStateFlags::HIGHLIGHTED;
-}
-
 class UNLESS_MERGELIBS(VCL_DLLPUBLIC) SvLBoxContextBmp : public SvLBoxItem
 {
     Image m_aImage1;
     Image m_aImage2;
 
-    bool m_bExpanded;
-
 public:
-    SvLBoxContextBmp(const Image& aBmp1,
-                     const Image& aBmp2,
-                     bool bExpanded);
-    SvLBoxContextBmp();
+    SvLBoxContextBmp(const Image& aBmp1, const Image& aBmp2);
     virtual ~SvLBoxContextBmp() override;
 
     virtual SvLBoxItemType GetType() const override;
-    virtual void InitViewData(SvTreeListBox& rView, SvTreeListEntry* pEntry,
+    virtual void InitViewData(SvTreeListBox& rView, SvTreeListEntry& rEntry,
                               SvViewDataItem* pViewData = nullptr) override;
     virtual void Paint(const Point& rPos,
                        SvTreeListBox& rOutDev,

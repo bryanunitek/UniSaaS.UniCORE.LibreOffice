@@ -15,9 +15,11 @@
 #include <com/sun/star/chart2/XChartDocument.hpp>
 #include <com/sun/star/chart/XChartDocument.hpp>
 #include <com/sun/star/chart2/XInternalDataProvider.hpp>
+#include <com/sun/star/chart2/data/XTextualDataSequence.hpp>
 #include <com/sun/star/chart/XAxisXSupplier.hpp>
 #include <com/sun/star/chart/DataLabelPlacement.hpp>
 #include <com/sun/star/text/XText.hpp>
+#include <com/sun/star/util/XNumberFormatsSupplier.hpp>
 #include <com/sun/star/drawing/FillStyle.hpp>
 #include <sal/log.hxx>
 
@@ -158,7 +160,7 @@ CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testTdf128634)
 CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testTdf130657)
 {
     loadFromFile(u"xlsx/tdf130657.xlsx");
-    // Test ShiftedCategoryPosition for charts which is not contain a "crossbetween" OOXML tag.
+    // Test ShiftedCategoryPosition for charts which do not contain a "crossbetween" OOXML tag.
     uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
     CPPUNIT_ASSERT_MESSAGE("failed to load chart", xChartDoc.is());
 
@@ -397,7 +399,7 @@ CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testTdf125444PercentageCustomLabel)
     Reference<beans::XPropertySet> xDp = xDataSeries->getDataPointByIndex(1);
     Sequence<Reference<chart2::XDataPointCustomLabelField>> aLabelFields;
     CPPUNIT_ASSERT(xDp->getPropertyValue(u"CustomLabelFields"_ustr) >>= aLabelFields);
-    // There are three label field: a value label, a newline and a percentage label. We want
+    // There are three label fields: a value label, a newline and a percentage label. We want
     // to assert the latter.
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(3), aLabelFields.getLength());
     CPPUNIT_ASSERT_EQUAL(chart2::DataPointCustomLabelFieldType_PERCENTAGE,
@@ -494,6 +496,119 @@ CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testStockChartShiftedCategoryPosition)
     chart2::ScaleData aScaleData = xAxis->getScaleData();
     CPPUNIT_ASSERT(aScaleData.Categories.is());
     CPPUNIT_ASSERT(aScaleData.ShiftedCategoryPosition);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testFunnelChartShiftedCategoryPosition)
+{
+    loadFromFile(u"xlsx/color_funnel.xlsx");
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT_MESSAGE("failed to load chart", xChartDoc.is());
+
+    Reference<chart2::XAxis> xAxis = getAxisFromDoc(xChartDoc, 0, 0, 0);
+    CPPUNIT_ASSERT(xAxis.is());
+
+    chart2::ScaleData aScaleData = xAxis->getScaleData();
+    CPPUNIT_ASSERT(aScaleData.ShiftedCategoryPosition);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testChartexDataLabelOptions)
+{
+    loadFromFile(u"xlsx/funnel-label-options.xlsx");
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XDataSeries> xDataSeries = getDataSeriesFromDoc(xChartDoc, 0);
+    CPPUNIT_ASSERT(xDataSeries.is());
+
+    // Series-level label settings from <cx:dataLabels>
+    Reference<beans::XPropertySet> xSeriesProp(xDataSeries, UNO_QUERY_THROW);
+    chart2::DataPointLabel aLabel;
+    CPPUNIT_ASSERT(xSeriesProp->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(aLabel.ShowNumber);
+    CPPUNIT_ASSERT(aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(!aLabel.ShowSeriesName);
+    CPPUNIT_ASSERT(!aLabel.ShowLegendSymbol);
+    OUString sSeparator;
+    CPPUNIT_ASSERT(xSeriesProp->getPropertyValue(u"LabelSeparator"_ustr) >>= sSeparator);
+    CPPUNIT_ASSERT_EQUAL(u", "_ustr, sSeparator);
+    sal_Int32 nPlacement = -1;
+    CPPUNIT_ASSERT(xSeriesProp->getPropertyValue(u"LabelPlacement"_ustr) >>= nPlacement);
+    CPPUNIT_ASSERT_EQUAL(chart::DataLabelPlacement::CENTER, nPlacement);
+
+    // <cx:dataLabel idx="0" pos="t">: value only, with a percentage number format
+    Reference<beans::XPropertySet> xPoint(xDataSeries->getDataPointByIndex(0), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(aLabel.ShowNumber);
+    CPPUNIT_ASSERT(!aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(!aLabel.ShowSeriesName);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"LabelPlacement"_ustr) >>= nPlacement);
+    CPPUNIT_ASSERT_EQUAL(chart::DataLabelPlacement::TOP, nPlacement);
+    sal_Int32 nNumFmt = -1;
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"NumberFormat"_ustr) >>= nNumFmt);
+    Reference<util::XNumberFormatsSupplier> xNFS(xChartDoc, uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_EQUAL(xNFS->getNumberFormats()->queryKey(u"0.00%"_ustr, lang::Locale(), false),
+                         nNumFmt);
+
+    // <cx:dataLabel idx="1">: series name only
+    xPoint.set(xDataSeries->getDataPointByIndex(1), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(!aLabel.ShowNumber);
+    CPPUNIT_ASSERT(!aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(aLabel.ShowSeriesName);
+
+    // <cx:dataLabel idx="7" pos="inEnd">
+    xPoint.set(xDataSeries->getDataPointByIndex(7), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"LabelPlacement"_ustr) >>= nPlacement);
+    CPPUNIT_ASSERT_EQUAL(chart::DataLabelPlacement::INSIDE, nPlacement);
+
+    // <cx:dataLabel idx="11">: category name only
+    xPoint.set(xDataSeries->getDataPointByIndex(11), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(!aLabel.ShowNumber);
+    CPPUNIT_ASSERT(aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(!aLabel.ShowSeriesName);
+
+    // <cx:dataLabelHidden idx="4">: no label parts are shown
+    xPoint.set(xDataSeries->getDataPointByIndex(4), UNO_SET_THROW);
+    CPPUNIT_ASSERT(xPoint->getPropertyValue(u"Label"_ustr) >>= aLabel);
+    CPPUNIT_ASSERT(!aLabel.ShowNumber);
+    CPPUNIT_ASSERT(!aLabel.ShowNumberInPercent);
+    CPPUNIT_ASSERT(!aLabel.ShowCategoryName);
+    CPPUNIT_ASSERT(!aLabel.ShowLegendSymbol);
+    CPPUNIT_ASSERT(!aLabel.ShowSeriesName);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testFunnelRendering)
+{
+    loadFromFile(u"pptx/funnel-pp1.pptx");
+    Reference<chart::XChartDocument> xChartDoc = getChartDocFromDrawImpress(0, 0);
+    Reference<drawing::XDrawPageSupplier> xDrawPageSupplier(xChartDoc, UNO_QUERY_THROW);
+    Reference<drawing::XDrawPage> xDrawPage(xDrawPageSupplier->getDrawPage(), UNO_SET_THROW);
+    Reference<drawing::XShapes> xShapes(xDrawPage->getByIndex(0), UNO_QUERY_THROW);
+    Reference<drawing::XShape> xSeries(getShapeByName(xShapes, u"CID/D=0:CS=0:CT=0:Series=0"_ustr),
+                                       UNO_SET_THROW);
+
+    Reference<container::XIndexAccess> xIndexAccess(xSeries, UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), xIndexAccess->getCount());
+
+    // Data values of the first series
+    const double aValues[] = { 4.3, 2.5, 3.5, 4.5 };
+
+    Reference<drawing::XShape> xBar0(xIndexAccess->getByIndex(0), UNO_QUERY_THROW);
+    const double fWidth0 = xBar0->getSize().Width;
+    const double fCenter0 = xBar0->getPosition().X + fWidth0 / 2.0;
+    CPPUNIT_ASSERT(fWidth0 > 0);
+
+    for (sal_Int32 i = 1; i < 4; ++i)
+    {
+        Reference<drawing::XShape> xBar(xIndexAccess->getByIndex(i), UNO_QUERY_THROW);
+        const double fWidth = xBar->getSize().Width;
+        const double fCenter = xBar->getPosition().X + fWidth / 2.0;
+        // All bars share a common vertical center line
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(fCenter0, fCenter, 30);
+        // Bar lengths are proportional to the data values
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(aValues[i] / aValues[0], fWidth / fWidth0, 0.02);
+    }
 }
 
 CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testTdf133376)
@@ -882,6 +997,32 @@ CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testChartDataTableWithMultipleLegendEntr
     CPPUNIT_ASSERT(xDataTableShape.is());
 }
 
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testTdf159450AxisTitleWithDataTable)
+{
+    // The chart has a vertical axis title and a data table below the plot area.
+    // The axis title must stay centered on the plot area, not on the whole
+    // diagram including the data table below it (which used to shift it down).
+    loadFromFile(u"xlsx/tdf159450.xlsx");
+    auto xDrawPage
+        = getChartDocFromSheet(0).queryThrow<drawing::XDrawPageSupplier>()->getDrawPage();
+    auto xShapes = xDrawPage->getByIndex(0).queryThrow<drawing::XShapes>();
+
+    // The chart has a data table, drawn below the plot area.
+    CPPUNIT_ASSERT(getShapeByName(xShapes, u"CID/D=0:DataTable="_ustr).is());
+    Reference<drawing::XShape> xPlotArea = getShapeByName(xShapes, u"PlotAreaExcludingAxes"_ustr);
+    CPPUNIT_ASSERT(xPlotArea.is());
+    Reference<drawing::XShape> xAxisTitle
+        = getShapeByName(xShapes, u"CID/D=0:CS=0:Axis=1,0:Title="_ustr);
+    CPPUNIT_ASSERT(xAxisTitle.is());
+
+    // The vertical axis title is centered on the plot area. Before the fix it was
+    // centered on the plot area plus the data table below it, so its center sat
+    // about half the data table height lower.
+    sal_Int32 nTitleCenterY = xAxisTitle->getPosition().Y + xAxisTitle->getSize().Height / 2;
+    sal_Int32 nPlotCenterY = xPlotArea->getPosition().Y + xPlotArea->getSize().Height / 2;
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(nPlotCenterY, nTitleCenterY, 20);
+}
+
 namespace
 {
 void lcl_assertAngles(const Reference<chart2::XAxis>& rAxis, const double& rExpectedLabelAngle,
@@ -941,7 +1082,7 @@ CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testTdf166428)
     // The file was generated in ODF 1.3 by LO 24.8
     loadFromFile(u"ods/tdf166428_Low_High_StockChart_LO248.ods");
 
-    // The attribute table:cell-range-address does not exist in ODF 1.4. and therefore may not be
+    // The attribute table:cell-range-address does not exist in ODF 1.4. and therefore may not
     // be written.
     saveAndReload(TestFilter::ODS);
     xmlDocUniquePtr pXmlDoc = parseExport(u"Object 1/content.xml"_ustr);
@@ -992,6 +1133,18 @@ CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramODSRoundtrip)
     Reference<chart2::data::XDataSequence> xCalculatedY
         = getDataSequenceFromDocByRole(xChartDoc, u"calculated-y");
     CPPUNIT_ASSERT(!xCalculatedY.is());
+
+    // After reload the series must carry a categories sequence with bin range
+    // labels, not just the raw values-y.
+    Reference<chart2::data::XDataSequence> xCategories
+        = getDataSequenceFromDocByRole(xChartDoc, u"categories");
+    CPPUNIT_ASSERT(xCategories.is());
+    Reference<chart2::data::XTextualDataSequence> xCategoriesText(xCategories, uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xCategoriesText.is());
+    const Sequence<OUString> aBinLabels = xCategoriesText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), aBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"[10-13.94]"_ustr, aBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(13.94-17.87]"_ustr, aBinLabels[1]);
 
     // Round trip 2: non-default binning parameters survive
     Reference<beans::XPropertySet> xProps(xChartType, uno::UNO_QUERY_THROW);
@@ -1053,6 +1206,30 @@ CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramXLSXRoundtrip)
     CPPUNIT_ASSERT_EQUAL(u"com.sun.star.chart2.HistogramChartType"_ustr,
                          xChartType->getChartType());
 
+    // Raw values-y must remain the source data; calculated-y is regenerated.
+    Reference<chart2::data::XDataSequence> xValuesY
+        = getDataSequenceFromDocByRole(xChartDoc, u"values-y");
+    CPPUNIT_ASSERT(xValuesY.is());
+
+    Reference<chart2::data::XDataSequence> xCalculatedY
+        = getDataSequenceFromDocByRole(xChartDoc, u"calculated-y");
+    CPPUNIT_ASSERT(!xCalculatedY.is());
+
+    // The X axis carries the bin range labels from the histogram template, not the generic
+    // "1", "2", ... labels that the OOXML axis converter produces by default. The axis and the
+    // series read the same sequence, so the labels match the ones asserted for the series.
+    Reference<chart2::XAxis> xXAxis = getAxisFromDoc(xChartDoc, 0, 0, 0);
+    CPPUNIT_ASSERT(xXAxis.is());
+    chart2::ScaleData aScaleData = xXAxis->getScaleData();
+    CPPUNIT_ASSERT(aScaleData.Categories.is());
+    Reference<chart2::data::XTextualDataSequence> xAxisCatText(aScaleData.Categories->getValues(),
+                                                               uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xAxisCatText.is());
+    const Sequence<OUString> aAxisBinLabels = xAxisCatText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), aAxisBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"[10-13.94]"_ustr, aAxisBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(13.94-17.87]"_ustr, aAxisBinLabels[1]);
+
     // Round trip 2: non-default binning parameters survive save + reload.
     Reference<beans::XPropertySet> xProperties(xChartType, uno::UNO_QUERY_THROW);
     xProperties->setPropertyValue(u"FrequencyType"_ustr, uno::Any(sal_Int32(1)));
@@ -1078,6 +1255,611 @@ CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramXLSXRoundtrip)
     double fBinWidth = 0.0;
     CPPUNIT_ASSERT(xReloadedProperties->getPropertyValue(u"BinWidth"_ustr) >>= fBinWidth);
     CPPUNIT_ASSERT_EQUAL(2.5, fBinWidth);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramBinCountLiveUpdate)
+{
+    loadFromFile(u"fods/tdf163727_histogram_roundtrip.fods");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    // Keep the category sequence currently held by the X axis. Changing the
+    // bin count must update this same sequence instead of leaving it stale
+    Reference<chart2::XAxis> xXAxis = getAxisFromDoc(xChartDoc, 0, 0, 0);
+    CPPUNIT_ASSERT(xXAxis.is());
+
+    chart2::ScaleData aScaleData = xXAxis->getScaleData();
+    CPPUNIT_ASSERT(aScaleData.Categories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xAxisCategories(
+        aScaleData.Categories->getValues(), uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xAxisCategories.is());
+
+    const Sequence<OUString> aOriginalLabels = xAxisCategories->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), aOriginalLabels.getLength());
+
+    Reference<beans::XPropertySet> xProperties(xChartType, uno::UNO_QUERY_THROW);
+
+    // Switching to fixed-count mode initially uses the stored default of ten bins.
+    xProperties->setPropertyValue(u"FrequencyType"_ustr, uno::Any(sal_Int32(2)));
+
+    const Sequence<OUString> aFixedCountLabels = xAxisCategories->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(10), aFixedCountLabels.getLength());
+
+    // Changing the count must update the same sequence without save/reload.
+    xProperties->setPropertyValue(u"BinCount"_ustr, uno::Any(sal_Int32(3)));
+
+    const Sequence<OUString> aUpdatedLabels = xAxisCategories->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(3), aUpdatedLabels.getLength());
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramBinWidthFarBelowRangeIsBounded)
+{
+    loadFromFile(u"fods/tdf163727_histogram_roundtrip.fods");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<chart2::XAxis> xXAxis = getAxisFromDoc(xChartDoc, 0, 0, 0);
+    CPPUNIT_ASSERT(xXAxis.is());
+
+    chart2::ScaleData aScaleData = xXAxis->getScaleData();
+    CPPUNIT_ASSERT(aScaleData.Categories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xAxisCategories(
+        aScaleData.Categories->getValues(), uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xAxisCategories.is());
+
+    Reference<beans::XPropertySet> xProperties(xChartType, uno::UNO_QUERY_THROW);
+    xProperties->setPropertyValue(u"FrequencyType"_ustr, uno::Any(sal_Int32(1)));
+
+    // The values span roughly eight units, so bins a millionth wide would number in the
+    // millions. The count stays within the limit the calculator caps it at.
+    xProperties->setPropertyValue(u"BinWidth"_ustr, uno::Any(0.000001));
+
+    const Sequence<OUString> aLabels = xAxisCategories->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(10000), aLabels.getLength());
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramBinCountRoundtrip_ODS)
+{
+    // ODF: fixed number of bins survives export/reload at the model level.
+    loadFromFile(u"fods/tdf163727_histogram_roundtrip.fods");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<beans::XPropertySet> xProps(xChartType, uno::UNO_QUERY_THROW);
+    xProps->setPropertyValue(u"FrequencyType"_ustr, uno::Any(sal_Int32(2)));
+    xProps->setPropertyValue(u"BinCount"_ustr, uno::Any(sal_Int32(3)));
+
+    saveAndReload(TestFilter::ODS);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"Object 1/content.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    static constexpr char sHistogramProps[]
+        = "/office:document-content/office:automatic-styles/style:style[@style:family='chart']/"
+          "style:chart-properties[@loext:frequency-type]";
+    assertXPath(pXmlDoc, sHistogramProps, "frequency-type", u"2");
+    assertXPath(pXmlDoc, sHistogramProps, "bin-count", u"3");
+
+    xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<beans::XPropertySet> xReloadedProps(xChartType, uno::UNO_QUERY_THROW);
+
+    sal_Int32 nFrequencyType = -1;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"FrequencyType"_ustr) >>= nFrequencyType);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), nFrequencyType);
+
+    sal_Int32 nBinCount = -1;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"BinCount"_ustr) >>= nBinCount);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(3), nBinCount);
+
+    Reference<chart2::data::XDataSequence> xCategories
+        = getDataSequenceFromDocByRole(xChartDoc, u"categories");
+    CPPUNIT_ASSERT(xCategories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xCategoriesText(xCategories, uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xCategoriesText.is());
+
+    const Sequence<OUString> aBinLabels = xCategoriesText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(3), aBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"[10-11.67]"_ustr, aBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(11.67-13.33]"_ustr, aBinLabels[1]);
+    CPPUNIT_ASSERT_EQUAL(u"(13.33-15]"_ustr, aBinLabels[2]);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogram_COExt)
+{
+    loadFromFile(u"fods/tdf163727_histogram_COExt.fods");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::data::XDataSequence> xCategories
+        = getDataSequenceFromDocByRole(xChartDoc, u"categories");
+    CPPUNIT_ASSERT(xCategories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xCategoriesText(xCategories, uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xCategoriesText.is());
+
+    const Sequence<OUString> aBinLabels = xCategoriesText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), aBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"[10-13.94]"_ustr, aBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(13.94-17.87]"_ustr, aBinLabels[1]);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramBinCountRoundtrip_XLSX)
+{
+    // XLSX: fixed number of bins is written as cx:binCount and survives reload.
+    loadFromFile(u"xlsx/SimpleHistogram.xlsx");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<beans::XPropertySet> xXlsxProps(xChartType, uno::UNO_QUERY_THROW);
+    xXlsxProps->setPropertyValue(u"FrequencyType"_ustr, uno::Any(sal_Int32(2)));
+    xXlsxProps->setPropertyValue(u"BinCount"_ustr, uno::Any(sal_Int32(3)));
+
+    saveAndReload(TestFilter::XLSX);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    assertXPath(pXmlDoc,
+                "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series/cx:layoutPr/"
+                "cx:binning/cx:binCount",
+                "val", u"3");
+
+    xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<chart2::XAxis> xXAxis = getAxisFromDoc(xChartDoc, 0, 0, 0);
+    CPPUNIT_ASSERT(xXAxis.is());
+
+    chart2::ScaleData aScaleData = xXAxis->getScaleData();
+    CPPUNIT_ASSERT(aScaleData.Categories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xAxisCatText(aScaleData.Categories->getValues(),
+                                                               uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xAxisCatText.is());
+
+    const Sequence<OUString> aAxisBinLabels = xAxisCatText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(3), aAxisBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"[10-11.67]"_ustr, aAxisBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(11.67-13.33]"_ustr, aAxisBinLabels[1]);
+    CPPUNIT_ASSERT_EQUAL(u"(13.33-15]"_ustr, aAxisBinLabels[2]);
+
+    Reference<beans::XPropertySet> xReloadedXlsxProps(xChartType, uno::UNO_QUERY_THROW);
+
+    sal_Int32 nFrequencyType = -1;
+    CPPUNIT_ASSERT(xReloadedXlsxProps->getPropertyValue(u"FrequencyType"_ustr) >>= nFrequencyType);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), nFrequencyType);
+
+    sal_Int32 nBinCount = -1;
+    CPPUNIT_ASSERT(xReloadedXlsxProps->getPropertyValue(u"BinCount"_ustr) >>= nBinCount);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(3), nBinCount);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramUnderflowOverflowBins)
+{
+    loadFromFile(u"fods/tdf163727_histogram_roundtrip.fods");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<beans::XPropertySet> xProps(xChartType, uno::UNO_QUERY_THROW);
+    xProps->setPropertyValue(u"FrequencyType"_ustr, uno::Any(sal_Int32(1)));
+    xProps->setPropertyValue(u"BinWidth"_ustr, uno::Any(2.0));
+    xProps->setPropertyValue(u"UseUnderflowBin"_ustr, uno::Any(true));
+    xProps->setPropertyValue(u"UnderflowBinValue"_ustr, uno::Any(11.0));
+    xProps->setPropertyValue(u"UseOverflowBin"_ustr, uno::Any(true));
+    xProps->setPropertyValue(u"OverflowBinValue"_ustr, uno::Any(14.0));
+
+    Reference<chart2::data::XDataSequence> xCategories
+        = getDataSequenceFromDocByRole(xChartDoc, u"categories");
+    CPPUNIT_ASSERT(xCategories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xCategoriesText(xCategories, uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xCategoriesText.is());
+
+    const Sequence<OUString> aBinLabels = xCategoriesText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), aBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"<= 11"_ustr, aBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(11-13]"_ustr, aBinLabels[1]);
+    CPPUNIT_ASSERT_EQUAL(u"(13-14]"_ustr, aBinLabels[2]);
+    CPPUNIT_ASSERT_EQUAL(u"> 14"_ustr, aBinLabels[3]);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramAutomaticODSToXLSXRoundtrip)
+{
+    loadFromFile(u"fods/tdf163727_histogram_roundtrip.fods");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    Reference<beans::XPropertySet> xProperties(xChartType, uno::UNO_QUERY_THROW);
+
+    sal_Int32 nFrequencyType = -1;
+    CPPUNIT_ASSERT(xProperties->getPropertyValue(u"FrequencyType"_ustr) >>= nFrequencyType);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(0), nFrequencyType);
+
+    saveAndReload(TestFilter::XLSX);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    static constexpr OString sBinning
+        = "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series/"
+          "cx:layoutPr/cx:binning"_ostr;
+
+    assertXPath(pXmlDoc, sBinning, 1);
+    assertXPath(pXmlDoc, sBinning + "/cx:binSize", 0);
+    assertXPath(pXmlDoc, sBinning + "/cx:binCount", 0);
+
+    xChartDoc = getChartDocFromSheet(0);
+    xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    xProperties.set(xChartType, uno::UNO_QUERY_THROW);
+
+    nFrequencyType = -1;
+    CPPUNIT_ASSERT(xProperties->getPropertyValue(u"FrequencyType"_ustr) >>= nFrequencyType);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(0), nFrequencyType);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramODSToXLSXExport)
+{
+    // Exporting an ODF-origin histogram to XLSX must write the raw
+    // cell range, not an _xlchart.v1.N alias with no matching definedName.
+    loadFromFile(u"fods/tdf163727_histogram_roundtrip.fods");
+    saveAndReload(TestFilter::XLSX);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    assertXPath(pXmlDoc, "/cx:chartSpace/cx:chartData/cx:data/cx:numDim", "type", u"val");
+
+    OUString aFormula
+        = getXPathContent(pXmlDoc, "/cx:chartSpace/cx:chartData/cx:data/cx:numDim/cx:f");
+    OString aMessage = "got formula: " + OUStringToOString(aFormula, RTL_TEXTENCODING_UTF8);
+    CPPUNIT_ASSERT_MESSAGE(aMessage.getStr(), !aFormula.startsWith("_xlchart"));
+    // The FODS series points at Sheet1.A1:A5. After conversion to XLSX
+    // notation the range should look like Sheet1!$A$1:$A$5.
+    CPPUNIT_ASSERT_MESSAGE(aMessage.getStr(), aFormula.indexOf(u"Sheet1") >= 0);
+    CPPUNIT_ASSERT_MESSAGE(aMessage.getStr(), aFormula.indexOf(u"$A$1") >= 0);
+    CPPUNIT_ASSERT_MESSAGE(aMessage.getStr(), aFormula.indexOf(u"$A$5") >= 0);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramMultiChartODSToXLSXExport)
+{
+    // Multi-chart export must not reuse the same ChartEx formula for all histograms.
+    loadFromFile(u"fods/tdf163727_histogram_roundtrip_multi_chart.fods");
+    saveAndReload(TestFilter::XLSX);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+    CPPUNIT_ASSERT_EQUAL(
+        u"Sheet1!$A$1:$A$6"_ustr,
+        getXPathContent(pXmlDoc, "/cx:chartSpace/cx:chartData/cx:data/cx:numDim/cx:f"));
+
+    pXmlDoc = parseExport(u"xl/charts/chartEx2.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+    CPPUNIT_ASSERT_EQUAL(
+        u"Sheet1!$B$1:$B$5"_ustr,
+        getXPathContent(pXmlDoc, "/cx:chartSpace/cx:chartData/cx:data/cx:numDim/cx:f"));
+
+    pXmlDoc = parseExport(u"xl/charts/chartEx3.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+    CPPUNIT_ASSERT_EQUAL(
+        u"Sheet1!$C$1:$C$6"_ustr,
+        getXPathContent(pXmlDoc, "/cx:chartSpace/cx:chartData/cx:data/cx:numDim/cx:f"));
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramMultiChartXLSXRoundtrip)
+{
+    // Native ChartEx roundtrip must keep each histogram bound to its own source range.
+    loadFromFile(u"xlsx/tdf163727_histogram_roundtrip_multi_chart.xlsx");
+    saveAndReload(TestFilter::XLSX);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+    CPPUNIT_ASSERT_EQUAL(
+        u"Sheet1!$A$1:$A$6"_ustr,
+        getXPathContent(pXmlDoc, "/cx:chartSpace/cx:chartData/cx:data/cx:numDim/cx:f"));
+
+    pXmlDoc = parseExport(u"xl/charts/chartEx2.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+    CPPUNIT_ASSERT_EQUAL(
+        u"Sheet1!$B$1:$B$5"_ustr,
+        getXPathContent(pXmlDoc, "/cx:chartSpace/cx:chartData/cx:data/cx:numDim/cx:f"));
+
+    pXmlDoc = parseExport(u"xl/charts/chartEx3.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+    CPPUNIT_ASSERT_EQUAL(
+        u"Sheet1!$C$1:$C$6"_ustr,
+        getXPathContent(pXmlDoc, "/cx:chartSpace/cx:chartData/cx:data/cx:numDim/cx:f"));
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramODFUnderflowOverflowRoundtrip)
+{
+    loadFromFile(u"fods/tdf163727_histogram_roundtrip.fods");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<beans::XPropertySet> xProps(xChartType, uno::UNO_QUERY_THROW);
+    xProps->setPropertyValue(u"FrequencyType"_ustr, uno::Any(sal_Int32(1)));
+    xProps->setPropertyValue(u"BinWidth"_ustr, uno::Any(2.0));
+    xProps->setPropertyValue(u"UseUnderflowBin"_ustr, uno::Any(true));
+    xProps->setPropertyValue(u"UnderflowBinValue"_ustr, uno::Any(11.0));
+    xProps->setPropertyValue(u"UseOverflowBin"_ustr, uno::Any(true));
+    xProps->setPropertyValue(u"OverflowBinValue"_ustr, uno::Any(14.0));
+
+    saveAndReload(TestFilter::ODS);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"Object 1/content.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    static constexpr char sHistogramProps[]
+        = "/office:document-content/office:automatic-styles/style:style[@style:family='chart']/"
+          "style:chart-properties[@loext:frequency-type]";
+
+    assertXPath(pXmlDoc, sHistogramProps, "frequency-type", u"1");
+    assertXPath(pXmlDoc, sHistogramProps, "bin-width", u"2");
+    assertXPath(pXmlDoc, sHistogramProps, "use-underflow-bin", u"true");
+    assertXPath(pXmlDoc, sHistogramProps, "underflow-bin-value", u"11");
+    assertXPath(pXmlDoc, sHistogramProps, "use-overflow-bin", u"true");
+    assertXPath(pXmlDoc, sHistogramProps, "overflow-bin-value", u"14");
+
+    xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<chart2::data::XDataSequence> xCategories
+        = getDataSequenceFromDocByRole(xChartDoc, u"categories");
+    CPPUNIT_ASSERT(xCategories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xCategoriesText(xCategories, uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xCategoriesText.is());
+
+    const Sequence<OUString> aBinLabels = xCategoriesText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), aBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"<= 11"_ustr, aBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(11-13]"_ustr, aBinLabels[1]);
+    CPPUNIT_ASSERT_EQUAL(u"(13-14]"_ustr, aBinLabels[2]);
+    CPPUNIT_ASSERT_EQUAL(u"> 14"_ustr, aBinLabels[3]);
+
+    Reference<beans::XPropertySet> xReloadedProps(xChartType, uno::UNO_QUERY_THROW);
+
+    bool bUseUnderflowBin = false;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"UseUnderflowBin"_ustr) >>= bUseUnderflowBin);
+    CPPUNIT_ASSERT(bUseUnderflowBin);
+
+    double fUnderflowBinValue = 0.0;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"UnderflowBinValue"_ustr)
+                   >>= fUnderflowBinValue);
+    CPPUNIT_ASSERT_EQUAL(11.0, fUnderflowBinValue);
+
+    bool bUseOverflowBin = false;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"UseOverflowBin"_ustr) >>= bUseOverflowBin);
+    CPPUNIT_ASSERT(bUseOverflowBin);
+
+    double fOverflowBinValue = 0.0;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"OverflowBinValue"_ustr)
+                   >>= fOverflowBinValue);
+    CPPUNIT_ASSERT_EQUAL(14.0, fOverflowBinValue);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramODFUnderflowOverflowImport)
+{
+    loadFromFile(u"fods/tdf163727_histogram_underflow_overflow.fods");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<beans::XPropertySet> xProps(xChartType, uno::UNO_QUERY_THROW);
+
+    sal_Int32 nFrequencyType = -1;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"FrequencyType"_ustr) >>= nFrequencyType);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1), nFrequencyType);
+
+    double fBinWidth = 0.0;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"BinWidth"_ustr) >>= fBinWidth);
+    CPPUNIT_ASSERT_EQUAL(2.0, fBinWidth);
+
+    bool bUseUnderflowBin = false;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"UseUnderflowBin"_ustr) >>= bUseUnderflowBin);
+    CPPUNIT_ASSERT(bUseUnderflowBin);
+
+    double fUnderflowBinValue = 0.0;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"UnderflowBinValue"_ustr) >>= fUnderflowBinValue);
+    CPPUNIT_ASSERT_EQUAL(11.0, fUnderflowBinValue);
+
+    bool bUseOverflowBin = false;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"UseOverflowBin"_ustr) >>= bUseOverflowBin);
+    CPPUNIT_ASSERT(bUseOverflowBin);
+
+    double fOverflowBinValue = 0.0;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"OverflowBinValue"_ustr) >>= fOverflowBinValue);
+    CPPUNIT_ASSERT_EQUAL(14.0, fOverflowBinValue);
+
+    Reference<chart2::data::XDataSequence> xCategories
+        = getDataSequenceFromDocByRole(xChartDoc, u"categories");
+    CPPUNIT_ASSERT(xCategories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xCategoriesText(xCategories, uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xCategoriesText.is());
+
+    const Sequence<OUString> aBinLabels = xCategoriesText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), aBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"<= 11"_ustr, aBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(11-13]"_ustr, aBinLabels[1]);
+    CPPUNIT_ASSERT_EQUAL(u"(13-14]"_ustr, aBinLabels[2]);
+    CPPUNIT_ASSERT_EQUAL(u"> 14"_ustr, aBinLabels[3]);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramOOXMLUnderflowOverflowRoundtrip)
+{
+    loadFromFile(u"fods/tdf163727_histogram_roundtrip.fods");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<beans::XPropertySet> xProps(xChartType, uno::UNO_QUERY_THROW);
+    xProps->setPropertyValue(u"FrequencyType"_ustr, uno::Any(sal_Int32(1)));
+    xProps->setPropertyValue(u"BinWidth"_ustr, uno::Any(2.0));
+    xProps->setPropertyValue(u"UseUnderflowBin"_ustr, uno::Any(true));
+    xProps->setPropertyValue(u"UnderflowBinValue"_ustr, uno::Any(11.0));
+    xProps->setPropertyValue(u"UseOverflowBin"_ustr, uno::Any(true));
+    xProps->setPropertyValue(u"OverflowBinValue"_ustr, uno::Any(14.0));
+
+    saveAndReload(TestFilter::XLSX);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"xl/charts/chartEx1.xml"_ustr);
+    CPPUNIT_ASSERT(pXmlDoc);
+
+    static constexpr char sBinSize[]
+        = "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series/cx:layoutPr/"
+          "cx:binning/cx:binSize";
+
+    assertXPath(pXmlDoc, sBinSize, "val", u"2");
+
+    static constexpr char sBinning[]
+        = "/cx:chartSpace/cx:chart/cx:plotArea/cx:plotAreaRegion/cx:series/cx:layoutPr/"
+          "cx:binning";
+
+    assertXPath(pXmlDoc, sBinning, "underflow", u"11");
+    assertXPath(pXmlDoc, sBinning, "overflow", u"14");
+
+    xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<chart2::XAxis> xXAxis = getAxisFromDoc(xChartDoc, 0, 0, 0);
+    CPPUNIT_ASSERT(xXAxis.is());
+
+    chart2::ScaleData aScaleData = xXAxis->getScaleData();
+    CPPUNIT_ASSERT(aScaleData.Categories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xAxisCatText(aScaleData.Categories->getValues(),
+                                                               uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xAxisCatText.is());
+
+    const Sequence<OUString> aAxisBinLabels = xAxisCatText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), aAxisBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"<= 11"_ustr, aAxisBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(11-13]"_ustr, aAxisBinLabels[1]);
+    CPPUNIT_ASSERT_EQUAL(u"(13-14]"_ustr, aAxisBinLabels[2]);
+    CPPUNIT_ASSERT_EQUAL(u"> 14"_ustr, aAxisBinLabels[3]);
+
+    Reference<beans::XPropertySet> xReloadedProps(xChartType, uno::UNO_QUERY_THROW);
+
+    bool bUseUnderflowBin = false;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"UseUnderflowBin"_ustr) >>= bUseUnderflowBin);
+    CPPUNIT_ASSERT(bUseUnderflowBin);
+
+    double fUnderflowBinValue = 0.0;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"UnderflowBinValue"_ustr)
+                   >>= fUnderflowBinValue);
+    CPPUNIT_ASSERT_EQUAL(11.0, fUnderflowBinValue);
+
+    bool bUseOverflowBin = false;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"UseOverflowBin"_ustr) >>= bUseOverflowBin);
+    CPPUNIT_ASSERT(bUseOverflowBin);
+
+    double fOverflowBinValue = 0.0;
+    CPPUNIT_ASSERT(xReloadedProps->getPropertyValue(u"OverflowBinValue"_ustr)
+                   >>= fOverflowBinValue);
+    CPPUNIT_ASSERT_EQUAL(14.0, fOverflowBinValue);
+}
+
+CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testHistogramOOXMLUnderflowOverflowImport)
+{
+    loadFromFile(u"xlsx/tdf163727_histogram_underflow_overflow.xlsx");
+
+    uno::Reference<chart2::XChartDocument> xChartDoc = getChartDocFromSheet(0);
+    CPPUNIT_ASSERT(xChartDoc.is());
+
+    Reference<chart2::XChartType> xChartType = getChartTypeFromDoc(xChartDoc, 0, 0);
+    CPPUNIT_ASSERT(xChartType.is());
+
+    Reference<beans::XPropertySet> xProps(xChartType, uno::UNO_QUERY_THROW);
+
+    bool bUseUnderflowBin = false;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"UseUnderflowBin"_ustr) >>= bUseUnderflowBin);
+    CPPUNIT_ASSERT(bUseUnderflowBin);
+
+    double fUnderflowBinValue = 0.0;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"UnderflowBinValue"_ustr) >>= fUnderflowBinValue);
+    CPPUNIT_ASSERT_EQUAL(11.0, fUnderflowBinValue);
+
+    bool bUseOverflowBin = false;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"UseOverflowBin"_ustr) >>= bUseOverflowBin);
+    CPPUNIT_ASSERT(bUseOverflowBin);
+
+    double fOverflowBinValue = 0.0;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"OverflowBinValue"_ustr) >>= fOverflowBinValue);
+    CPPUNIT_ASSERT_EQUAL(14.0, fOverflowBinValue);
+
+    sal_Int32 nFrequencyType = -1;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"FrequencyType"_ustr) >>= nFrequencyType);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1), nFrequencyType);
+
+    double fBinWidth = 0.0;
+    CPPUNIT_ASSERT(xProps->getPropertyValue(u"BinWidth"_ustr) >>= fBinWidth);
+    CPPUNIT_ASSERT_EQUAL(2.0, fBinWidth);
+
+    Reference<chart2::XAxis> xXAxis = getAxisFromDoc(xChartDoc, 0, 0, 0);
+    CPPUNIT_ASSERT(xXAxis.is());
+
+    chart2::ScaleData aScaleData = xXAxis->getScaleData();
+    CPPUNIT_ASSERT(aScaleData.Categories.is());
+
+    Reference<chart2::data::XTextualDataSequence> xAxisCatText(aScaleData.Categories->getValues(),
+                                                               uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xAxisCatText.is());
+
+    const Sequence<OUString> aAxisBinLabels = xAxisCatText->getTextualData();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(4), aAxisBinLabels.getLength());
+    CPPUNIT_ASSERT_EQUAL(u"<= 11"_ustr, aAxisBinLabels[0]);
+    CPPUNIT_ASSERT_EQUAL(u"(11-13]"_ustr, aAxisBinLabels[1]);
+    CPPUNIT_ASSERT_EQUAL(u"(13-14]"_ustr, aAxisBinLabels[2]);
+    CPPUNIT_ASSERT_EQUAL(u"> 14"_ustr, aAxisBinLabels[3]);
 }
 
 CPPUNIT_TEST_FIXTURE(Chart2ImportTest2, testTdf60316)

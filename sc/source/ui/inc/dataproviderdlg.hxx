@@ -62,15 +62,14 @@ private:
     ScDBData* pDBData;
     ScDBCollection* mpDestDBCollection;
 
-    DECL_LINK(ColumnMenuHdl, const weld::ComboBox&, void);
     DECL_LINK(ScrollToEnd, Timer*, void);
     DECL_LINK(ApplyQuitHdl, weld::Button&, void);
     DECL_LINK(CancelQuitHdl, weld::Button&, void);
     DECL_LINK(TransformationListHdl, weld::Button&, void);
     DECL_LINK(ProviderSelectHdl, weld::ComboBox&, void);
     DECL_LINK(TransformationSelectHdl, weld::ComboBox&, void);
-    DECL_LINK(IDEditHdl, weld::Entry&, void);
-    DECL_LINK(URLEditHdl, weld::Entry&, void);
+    DECL_LINK(IDEditHdl, weld::TextWidget&, void);
+    DECL_LINK(URLEditHdl, weld::TextWidget&, void);
     DECL_LINK(ApplyBtnHdl, weld::Button&, void);
     DECL_LINK(BrowseBtnHdl, weld::Button&, void);
 

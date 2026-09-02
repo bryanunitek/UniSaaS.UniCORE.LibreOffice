@@ -177,7 +177,7 @@ sal_uInt32 Decompression::ReadBits(sal_uInt16 iCount, sal_uInt32 & nBits)
         return 1;
     }
 
-    /* load at least need bits into val */
+    /* load at least needed bits into val */
     sal_uInt32 val = m_nCurrent4Byte; /* bit accumulator */
     while (m_nBitsLeft < iCount)
     {
@@ -192,11 +192,11 @@ sal_uInt32 Decompression::ReadBits(sal_uInt16 iCount, sal_uInt32 & nBits)
         m_nBitsLeft += 8;
     }
 
-    /* drop need bits and update buffer, always zero to seven bits left */
+    /* drop needed bits and update buffer, always zero to seven bits left */
     m_nCurrent4Byte = val >> iCount;
     m_nBitsLeft -= iCount;
 
-    /* return need bits, zeroing the bits above that */
+    /* return needed bits, zeroing the bits above that */
     nBits = val & ((1U << iCount) - 1);
 
     return 0;
@@ -248,7 +248,7 @@ sal_Int32 Decompression::explode()
             continue;
         }
         // if the bit is 1 we have here a length/distance pair:
-        // -decode a number with Hufmman Tree #1; variable bit length, result is 0x00 .. 0x0F -> L1
+        // -decode a number with Huffman Tree #1; variable bit length, result is 0x00 .. 0x0F -> L1
         sal_uInt32 L1 = Decode(m_Tree1.get());
         sal_uInt32 Length;
         if (L1 <= 7)
@@ -273,7 +273,7 @@ sal_Int32 Decompression::explode()
             break;
         }
 
-        // - decode another number with Hufmann Tree #2 giving result 0x00..0x3F -> D1
+        // - decode another number with Huffman Tree #2 giving result 0x00..0x3F -> D1
         sal_uInt32 D1 = Decode(m_Tree2.get());
         sal_uInt32 D2;
         if (Length == 2)

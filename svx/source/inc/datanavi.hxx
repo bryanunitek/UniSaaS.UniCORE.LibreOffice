@@ -336,7 +336,7 @@ namespace svxform
         virtual SfxChildAlignment   CheckAlignment( SfxChildAlignment, SfxChildAlignment ) override;
 
     public:
-        DataNavigator( SfxBindings* pBindings, SfxChildWindow* pMgr, vcl::Window* pParent );
+        DataNavigator(SfxBindings& rBindings, SfxChildWindow* pMgr, vcl::Window* pParent);
         virtual ~DataNavigator() override;
         virtual void dispose() override;
 
@@ -349,8 +349,8 @@ namespace svxform
     class UNLESS_MERGELIBS(SVXCORE_DLLPUBLIC) DataNavigatorManager final : public SfxChildWindow
     {
     public:
-        SVX_DLLPRIVATE DataNavigatorManager( vcl::Window* pParent, sal_uInt16 nId,
-                              SfxBindings* pBindings, SfxChildWinInfo* pInfo );
+        SVX_DLLPRIVATE DataNavigatorManager(vcl::Window* pParent, sal_uInt16 nId,
+                                            SfxBindings& rBindings, SfxChildWinInfo& rInfo);
         SFX_DECL_CHILDWINDOW( DataNavigatorManager );
     };
 
@@ -425,7 +425,7 @@ namespace svxform
         std::unique_ptr<weld::Button> m_xEditNamespacesBtn;
         std::unique_ptr<weld::Button> m_xOKBtn;
 
-        DECL_LINK(ModifyHdl, weld::TextView&, void);
+        DECL_LINK(ModifyHdl, weld::TextWidget&, void);
         DECL_LINK(ResultHdl, Timer *, void);
         DECL_LINK(EditHdl, weld::Button&, void);
         DECL_LINK(OKHdl, weld::Button&, void);

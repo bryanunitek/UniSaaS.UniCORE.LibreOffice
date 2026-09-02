@@ -598,6 +598,25 @@ void SectionPropertyMap::setHeaderFooterProperties(DomainMapper_Impl& rDM_Impl)
     {
         m_aPageStyle->setPropertyValue(sHeaderIsOn, uno::Any(false));
     }
+    else if (m_bTitlePage)
+    {
+        if (!m_bHadFirstHeader)
+        {
+            m_aPageStyle->setPropertyValue(getPropertyName(PROP_HEADER_NO_FIRST), uno::Any(true));
+        }
+    }
+    bool bHadFirstFooter = m_bHadFirstFooter && m_bTitlePage;
+    if (bHasFooter && !bHadFirstFooter && !m_bHadLeftFooter && !m_bHadRightFooter)
+    {
+        m_aPageStyle->setPropertyValue(sFooterIsOn, uno::Any(false));
+    }
+    else if (m_bTitlePage)
+    {
+        if (!m_bHadFirstFooter)
+        {
+            m_aPageStyle->setPropertyValue(getPropertyName(PROP_FOOTER_NO_FIRST), uno::Any(true));
+        }
+    }
 }
 
 void SectionPropertyMap::SetBorder( BorderPosition ePos, sal_Int32 nLineDistance, const table::BorderLine2& rBorderLine, bool bShadow )
@@ -1074,7 +1093,10 @@ void copyHeaderFooter(const DomainMapper_Impl& rDM_Impl,
         if (bCopyLeftHeader && bEvenAndOdd)
             copyHeaderFooterTextProperty(xPreviousStyle, xStyle, PROP_HEADER_TEXT_LEFT);
         if (bCopyFirstHeader && bTitlePage)
+        {
+            xStyle->setPropertyValue(getPropertyName(PROP_HEADER_NO_FIRST), uno::Any(false));
             copyHeaderFooterTextProperty(xPreviousStyle, xStyle, PROP_HEADER_TEXT_FIRST);
+        }
     }
 
     if (bPreviousHasFooter && bCopyFooter)
@@ -1084,7 +1106,10 @@ void copyHeaderFooter(const DomainMapper_Impl& rDM_Impl,
         if (bCopyLeftFooter && bEvenAndOdd)
             copyHeaderFooterTextProperty(xPreviousStyle, xStyle, PROP_FOOTER_TEXT_LEFT);
         if (bCopyFirstFooter && bTitlePage)
+        {
+            xStyle->setPropertyValue(getPropertyName(PROP_FOOTER_NO_FIRST), uno::Any(false));
             copyHeaderFooterTextProperty(xPreviousStyle, xStyle, PROP_FOOTER_TEXT_FIRST);
+        }
     }
 }
 
@@ -1126,6 +1151,9 @@ void SectionPropertyMap::PrepareHeaderFooterProperties()
     sal_Int32 nHeaderHeight = m_nHeaderTop;
     if (HasHeader())
     {
+        // in DOCX a negative value means a fixed margin even if it overlaps
+        // the header - import it as a min margin for now
+        Insert(PROP_MIN_TOP_BODY_DISTANCE, uno::Any(::std::abs(m_nTopMargin)));
         nTopMargin = m_nHeaderTop;
         nHeaderHeight = m_nTopMargin - m_nHeaderTop;
 
@@ -1144,6 +1172,9 @@ void SectionPropertyMap::PrepareHeaderFooterProperties()
     sal_Int32 nFooterHeight = m_nHeaderBottom;
     if (HasFooter())
     {
+        // in DOCX a negative value means a fixed margin even if it overlaps
+        // the footer - import it as a min margin for now
+        Insert(PROP_MIN_BOTTOM_BODY_DISTANCE, uno::Any(::std::abs(m_nBottomMargin)));
         nBottomMargin = m_nHeaderBottom;
         nFooterHeight = m_nBottomMargin - m_nHeaderBottom;
 
@@ -1581,7 +1612,7 @@ void SectionPropertyMap::EmulateSectPrBelowSpacing(DomainMapper_Impl& rDM_Impl)
     // Also, if m_xStartingRange starts with a table (which also doesn't have above spacing)
     // then again the below spacing can be ignored since no consolidation is needed.
     auto pCursor = dynamic_cast<SwXTextCursor*>(m_xStartingRange.get());
-    if (!pCursor || pCursor->GetPaM()->GetPointNode().FindTableNode())
+    if (!pCursor || !pCursor->GetPaM() || pCursor->GetPaM()->GetPointNode().FindTableNode())
         return; // no emulation needed: section starts with a table (i.e. a zero top margin)
 
     SwPaM aPaM(pCursor->GetPaM()->GetPointNode()); // at start of section, contentIndex(0)
@@ -1596,10 +1627,7 @@ void SectionPropertyMap::EmulateSectPrBelowSpacing(DomainMapper_Impl& rDM_Impl)
     {
         const uno::Any aBelowSpacingOfPrevSection(*pPrevSection->GetBelowSpacing());
         const OUString sProp(getPropertyName(PROP_PARA_BOTTOM_MARGIN));
-        if (m_xPreStartingRange)
-            m_xPreStartingRange->setPropertyValue(sProp, aBelowSpacingOfPrevSection);
-        else
-            SAL_WARN("writerfilter", "Failed to transfer below spacing to last para.");
+        m_xPreStartingRange->setPropertyValue(sProp, aBelowSpacingOfPrevSection);
     }
     catch (uno::Exception&)
     {

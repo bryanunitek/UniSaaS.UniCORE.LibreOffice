@@ -29,9 +29,11 @@ namespace emfplushelper
         sal_uInt32                   nPoints;
         std::deque<float>            xPoints, yPoints;
         std::unique_ptr<sal_uInt8[]> pPointTypes;
+        /// true when a point type byte follows each point in the stream
+        bool                         bHasPointTypes;
 
     public:
-        EMFPPath(sal_uInt32 _nPoints, bool bLines = false);
+        EMFPPath(sal_uInt32 _nPoints, bool _bHasPointTypes = true);
 
         virtual ~EMFPPath() override;
 
@@ -41,10 +43,6 @@ namespace emfplushelper
         ::basegfx::B2DPolyPolygon& GetCardinalSpline(EmfPlusHelperData const& rR, float fTension,
                                                      sal_uInt32 aOffset, sal_uInt32 aNumSegments);
         ::basegfx::B2DPolyPolygon& GetClosedCardinalSpline(EmfPlusHelperData const& rR, float fTension);
-        // Plain-vertex polygon (no Bezier-control / point-type
-        // interpretation). Useful for path-gradient boundary data which
-        // is stored as raw EmfPlusPointF arrays without point types.
-        ::basegfx::B2DPolygon GetRawPointsPolygon() const;
     };
 }
 

@@ -11,6 +11,7 @@
 
 #include <LibreOfficeKit/LibreOfficeKitEnums.h>
 
+#include <com/sun/star/animations/XAnimationNodeSupplier.hpp>
 #include <com/sun/star/beans/XPropertySet.hpp>
 #include <com/sun/star/frame/Desktop.hpp>
 #include <com/sun/star/uno/Reference.hxx>
@@ -27,6 +28,7 @@
 #include <comphelper/propertysequence.hxx>
 #include <editeng/adjustitem.hxx>
 #include <editeng/editobj.hxx>
+#include <editeng/editview.hxx>
 #include <editeng/eeitem.hxx>
 #include <editeng/flditem.hxx>
 #include <editeng/outliner.hxx>
@@ -66,6 +68,8 @@
 #include <ViewShell.hxx>
 #include <app.hrc>
 #include <sdpage.hxx>
+#include <vcl/bitmap.hxx>
+#include <vcl/transfer.hxx>
 #include <unomodel.hxx>
 #include <osl/thread.hxx>
 #include <slideshow.hxx>
@@ -1034,7 +1038,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy)
     OUString aMasterPageName = pMasterPage->GetName();
     CPPUNIT_ASSERT_EQUAL(u"master"_ustr, aMasterPageName);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pMasterPage);
 
@@ -1049,7 +1053,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy)
     OUString aNewMasterPageName = pNewMasterPage->GetName();
     CPPUNIT_ASSERT_EQUAL(u"1_master"_ustr, aNewMasterPageName);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pMasterPage);
 
@@ -1062,7 +1066,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy)
     OUString aNewMasterPageName2 = pNewMasterPage2->GetName();
     CPPUNIT_ASSERT_EQUAL(u"2_master"_ustr, aNewMasterPageName2);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pMasterPage);
 
@@ -1099,7 +1103,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy_Default)
     OUString aMasterPageName = pMasterPage->GetName();
     CPPUNIT_ASSERT_EQUAL(u"Default"_ustr, aMasterPageName);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pMasterPage);
 
@@ -1114,7 +1118,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy_Default)
     OUString aNewMasterPageName = pNewMasterPage->GetName();
     CPPUNIT_ASSERT_EQUAL(u"1_Default"_ustr, aNewMasterPageName);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pMasterPage);
     // Copy again
@@ -1126,7 +1130,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy_Default)
     OUString aNewMasterPageName2 = pNewMasterPage2->GetName();
     CPPUNIT_ASSERT_EQUAL(u"2_Default"_ustr, aNewMasterPageName2);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pMasterPage);
     // Copy again
@@ -1155,7 +1159,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy_CopiedPage)
     OUString aMasterPageName = pMasterPage->GetName();
     CPPUNIT_ASSERT_EQUAL(u"Master3"_ustr, aMasterPageName);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pMasterPage);
     // Copy and paste the master page
@@ -1168,7 +1172,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy_CopiedPage)
     OUString aNewMasterPageName = pNewMasterPage->GetName();
     CPPUNIT_ASSERT_EQUAL(u"1_Master3"_ustr, aNewMasterPageName);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pNewMasterPage);
     // Copy again
@@ -1181,7 +1185,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy_CopiedPage)
     OUString aNewMasterPageName2 = pNewMasterPage2->GetName();
     CPPUNIT_ASSERT_EQUAL(u"2_Master3"_ustr, aNewMasterPageName2);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pNewMasterPage2);
     // Copy again
@@ -1194,7 +1198,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_Double_Copy_CopiedPage)
     OUString aNewMasterPageName3 = pNewMasterPage3->GetName();
     CPPUNIT_ASSERT_EQUAL(u"3_Master3"_ustr, aNewMasterPageName3);
 
-    // Reslect the master page
+    // Reselect the master page
     rSSController.GetPageSelector().DeselectAllPages();
     rSSController.GetPageSelector().SelectPage(pNewMasterPage);
     // Copy again
@@ -1995,7 +1999,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf123841)
         drawing::FillStyle eFillStyle = drawing::FillStyle_NONE;
         XPropSet->getPropertyValue(u"FillStyle"_ustr) >>= eFillStyle;
 
-        // Without the fix in place, this test would have failed with
+        // Without the fix in place, this test would have failed
         // with drawing::FillStyle_NONE != drawing::FillStyle_SOLID
         CPPUNIT_ASSERT_EQUAL(drawing::FillStyle_NONE, eFillStyle);
     }
@@ -2342,7 +2346,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testThemeShapeInsert)
 
     dispatchCommand(mxComponent, ".uno:BasicShapes.round-rectangle", aArgs);
 
-    // Then make sure the that fill color of the last shape is the accent1 color:
+    // Then make sure that the fill color of the last shape is the accent1 color:
     sal_Int32 nShapeIndex = xDrawPage->getCount() - 1;
     uno::Reference<beans::XPropertySet> xShape(xDrawPage->getByIndex(nShapeIndex), uno::UNO_QUERY);
     sal_Int32 nFillColor{};
@@ -2476,7 +2480,7 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testNumToBullet)
 
 CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testBulletOffOn)
 {
-    // Given a document with a shape, last paragraph is has a bullet:
+    // Given a document with a shape, last paragraph it has a bullet:
     createSdImpressDoc("odp/bullet-off-on.odp");
     sd::ViewShell* pViewShell = getSdDocShell()->GetViewShell();
     CPPUNIT_ASSERT(pViewShell);
@@ -2522,6 +2526,212 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testBulletOffOn)
     // - Actual  : 0
     // i.e. the indent was 0cm, even if Level1 and Level2 had other values.
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(300), nLeftMargin + nFirstLineOffset);
+}
+
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testPasteInTextEditWithAnimationNode)
+{
+    createSdImpressDoc();
+
+    // Give the slide an (empty) animation node, so the paragraph removal that the
+    // paste below performs is reported to the animation sequence.
+    uno::Reference<frame::XModel> xModel(mxComponent, uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawView> xDrawView(xModel->getCurrentController(), uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawPage> xDrawPage(xDrawView->getCurrentPage(), uno::UNO_SET_THROW);
+    uno::Reference<animations::XAnimationNodeSupplier> xAnimNodeSupplier(xDrawPage,
+                                                                         uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT(xAnimNodeSupplier->getAnimationNode().is());
+
+    // Type a word into the title placeholder, staying in text edit.
+    insertStringToObject(0, u"blah", /*bUseEscape*/ false);
+
+    // Select and copy it, then put the caret at the end so the paste appends.
+    auto pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    dispatchCommand(mxComponent, u".uno:SelectAll"_ustr, {});
+    dispatchCommand(mxComponent, u".uno:Copy"_ustr, {});
+    typeKey(pImpressDocument, KEY_END);
+
+    // Without the accompanying fix, this paste asserts in a dbgutil build: the
+    // paragraph removal probes the shape text through the UNO forwarder, forcing
+    // a text frame layout recompute while the EditEngine layout is suspended.
+    dispatchCommand(mxComponent, u".uno:Paste"_ustr, {});
+
+    // The word got appended to itself.
+    sd::ViewShell* pViewShell = pImpressDocument->GetDocShell()->GetViewShell();
+    SdrView* pView = pViewShell->GetView();
+    dispatchCommand(mxComponent, u".uno:SelectAll"_ustr, {});
+    EditView& rEditView = pView->GetTextEditOutlinerView()->GetEditView();
+    CPPUNIT_ASSERT_EQUAL(u"blahblah"_ustr, rEditView.GetSelected());
+}
+
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testUndoRestoresDeletedPlaceholderText)
+{
+    // Given a slide whose title placeholder was typed into:
+    createSdImpressDoc();
+    auto* pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    sd::ViewShell* pViewShell = pXImpressDocument->GetDocShell()->GetViewShell();
+    sd::View* pView = pViewShell->GetView();
+    SdrObject* pTitle = pViewShell->GetActualPage()->GetObj(0);
+    CPPUNIT_ASSERT(pTitle);
+    pView->MarkObj(pTitle, pView->GetSdrPageView());
+
+    pView->SdrBeginTextEdit(pTitle);
+    pView->GetTextEditOutlinerView()->GetEditView().SetSelection(ESelection::All());
+    pView->GetTextEditOutlinerView()->GetEditView().InsertText(u"Typed"_ustr);
+    pView->SdrEndTextEdit();
+    CPPUNIT_ASSERT_EQUAL(u"Typed"_ustr,
+                         pTitle->GetOutlinerParaObject()->GetTextObject().GetText(0));
+
+    // When deleting all of that text, which puts the placeholder's prompt back:
+    pView->SdrBeginTextEdit(pTitle);
+    pView->GetTextEditOutlinerView()->GetEditView().SetSelection(ESelection::All());
+    pView->GetTextEditOutlinerView()->GetEditView().InsertText(OUString());
+    pView->SdrEndTextEdit();
+    CPPUNIT_ASSERT(pTitle->IsEmptyPresObj());
+
+    // Then one undo brings the text back. Without the fix the deletion was not undoable at all: the
+    // prompt goes in before svx captures the text change, which then looks like no change.
+    dispatchCommand(mxComponent, u".uno:Undo"_ustr, {});
+    CPPUNIT_ASSERT_EQUAL(u"Typed"_ustr,
+                         pTitle->GetOutlinerParaObject()->GetTextObject().GetText(0));
+    CPPUNIT_ASSERT(!pTitle->IsEmptyPresObj());
+}
+
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf166401_imageFillsAPlaceholderHoldingText)
+{
+    // Given a slide whose picture placeholder holds text, so an outliner object represents it:
+    createSdImpressDoc("pptx/pic-placeholder-with-text.pptx");
+    auto* pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    sd::ViewShell* pViewShell = pXImpressDocument->GetDocShell()->GetViewShell();
+    sd::View* pView = pViewShell->GetView();
+    SdrObject* pText = pViewShell->GetActualPage()->GetObj(0);
+    CPPUNIT_ASSERT_EQUAL(SdrObjKind::OutlineText, pText->GetObjIdentifier());
+
+    // When an image is put into it, which is what it is a placeholder for:
+    pView->MarkObj(pText, pView->GetSdrPageView());
+    Graphic aGraphic(Bitmap(Size(16, 16), vcl::PixelFormat::N24_BPP));
+    sal_Int8 nAction = DND_ACTION_LINK;
+    pView->InsertGraphic(aGraphic, nAction, pText->GetSnapRect().Center(), pText, nullptr);
+
+    // Then a graphic object represents it, still as the picture placeholder, and the text it held
+    // has given way to the image.
+    SdrObject* pFilled = pViewShell->GetActualPage()->GetObj(0);
+    CPPUNIT_ASSERT_EQUAL(SdrObjKind::Graphic, pFilled->GetObjIdentifier());
+    CPPUNIT_ASSERT(!pFilled->HasText());
+
+    // The shape type is what the page answers for the object, so it states the identity.
+    auto xPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                     ->getDrawPages()
+                     ->getByIndex(0)
+                     .queryThrow<drawing::XDrawPage>();
+    auto xShape = xPage->getByIndex(0).queryThrow<drawing::XShape>();
+    CPPUNIT_ASSERT_EQUAL(u"com.sun.star.presentation.GraphicObjectShape"_ustr,
+                         xShape->getShapeType());
+}
+
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf166401_textGivenThroughTheApi)
+{
+    // Given a slide with an empty picture placeholder:
+    createSdImpressDoc("pptx/picture-placeholder-custom-prompt.pptx");
+    auto xPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                     ->getDrawPages()
+                     ->getByIndex(0)
+                     .queryThrow<drawing::XDrawPage>();
+
+    // When text reaches it without any editing, which is the route a script takes:
+    xPage->getByIndex(0).queryThrow<text::XTextRange>()->setString(u"Given through the API"_ustr);
+    Scheduler::ProcessEventsToIdle();
+
+    // Then an outliner object represents it, as it does for text that arrives by any other route,
+    // and the placeholder is still the picture one. Without the fix the placeholder went on
+    // standing for itself, and the text was painted the way a prompt is - unwrapped.
+    auto xShape = xPage->getByIndex(0).queryThrow<drawing::XShape>();
+    CPPUNIT_ASSERT_EQUAL(u"com.sun.star.presentation.OutlinerShape"_ustr, xShape->getShapeType());
+    CPPUNIT_ASSERT_EQUAL(u"com.sun.star.presentation.GraphicObjectShape"_ustr,
+                         xShape.queryThrow<beans::XPropertySet>()
+                             ->getPropertyValue(u"PlaceholderShapeType"_ustr)
+                             .get<OUString>());
+    CPPUNIT_ASSERT_EQUAL(u"Given through the API"_ustr,
+                         xShape.queryThrow<text::XTextRange>()->getString());
+}
+
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf166401_theEditedObjectStaysWhileEditing)
+{
+    // Given an empty picture placeholder in text edit, with text typed into it:
+    createSdImpressDoc("pptx/picture-placeholder-custom-prompt.pptx");
+    auto* pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    sd::ViewShell* pViewShell = pXImpressDocument->GetDocShell()->GetViewShell();
+    sd::View* pView = pViewShell->GetView();
+    SdrObject* pEdited = pViewShell->GetActualPage()->GetObj(0);
+    pView->MarkObj(pEdited, pView->GetSdrPageView());
+    pView->SdrBeginTextEdit(pEdited);
+    CPPUNIT_ASSERT(pView->IsTextEdit());
+    pView->GetTextEditOutlinerView()->GetEditView().SetSelection(ESelection::All());
+    pView->GetTextEditOutlinerView()->GetEditView().InsertText(u"While editing"_ustr);
+
+    // When something asks that shape for its text through UNO, which is what another view does and
+    // which marks the object as no longer empty while the edit is still open:
+    auto xPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                     ->getDrawPages()
+                     ->getByIndex(0)
+                     .queryThrow<drawing::XDrawPage>();
+    xPage->getByIndex(0).queryThrow<text::XTextRange>()->getString();
+    Scheduler::ProcessEventsToIdle();
+
+    // Then the object the edit view is working on is still the one on the page. Switching what
+    // represents the placeholder here took it away mid-typing: the edit was lost and editeng
+    // aborted on its undo manager.
+    CPPUNIT_ASSERT_EQUAL(pEdited, pViewShell->GetActualPage()->GetObj(0));
+    if (pView->IsTextEdit())
+        pView->SdrEndTextEdit();
+}
+
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf166401_anEditElsewhereIsLeftAlone)
+{
+    // Given two slides with a picture placeholder each, one of them in text edit with text typed
+    // into it:
+    createSdImpressDoc("pptx/picture-placeholder-custom-prompt.pptx");
+    dispatchCommand(mxComponent, u".uno:DuplicatePage"_ustr, {});
+    Scheduler::ProcessEventsToIdle();
+    auto* pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    sd::ViewShell* pViewShell = pXImpressDocument->GetDocShell()->GetViewShell();
+    sd::View* pView = pViewShell->GetView();
+    SdrPage* pEditedPage = pViewShell->GetActualPage();
+    SdrObject* pEdited = pEditedPage->GetObj(0);
+    pView->MarkObj(pEdited, pView->GetSdrPageView());
+    pView->SdrBeginTextEdit(pEdited);
+    CPPUNIT_ASSERT(pView->IsTextEdit());
+    pView->GetTextEditOutlinerView()->GetEditView().SetSelection(ESelection::All());
+    pView->GetTextEditOutlinerView()->GetEditView().InsertText(u"While editing"_ustr);
+
+    // When another view asks that object for its text, which writes the typing back and marks it
+    // no longer empty while the edit is still open:
+    auto xPages = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()->getDrawPages();
+    xPages->getByIndex(pEditedPage->GetPageNum() / 2)
+        .queryThrow<drawing::XShapes>()
+        ->getByIndex(0)
+        .queryThrow<text::XTextRange>()
+        ->getString();
+
+    // and text then reaches the placeholder on the other slide, the pass that switches what
+    // represents a placeholder runs over every page - and the object in text edit is not the one
+    // that asked for it. That is what two views editing one document look like from here.
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), xPages->getCount());
+    const sal_Int32 nElsewhere = pEditedPage->GetPageNum() / 2 == 0 ? 1 : 0;
+    auto xElsewherePage = xPages->getByIndex(nElsewhere).queryThrow<drawing::XShapes>();
+    xElsewherePage->getByIndex(0).queryThrow<text::XTextRange>()->setString(
+        u"Given elsewhere"_ustr);
+    Scheduler::ProcessEventsToIdle();
+
+    // Then that one is switched, so the pass did run - and the one being edited is still the object
+    // the edit view holds. Taking it away mid-typing lost the edit and aborted editeng on its undo
+    // manager, and the pass had only the object that asked for it to go by. The shape is asked
+    // again, since a UNO shape keeps the type it was made with.
+    CPPUNIT_ASSERT_EQUAL(
+        u"com.sun.star.presentation.OutlinerShape"_ustr,
+        xElsewherePage->getByIndex(0).queryThrow<drawing::XShape>()->getShapeType());
+    CPPUNIT_ASSERT_EQUAL(pEdited, pEditedPage->GetObj(0));
+    if (pView->IsTextEdit())
+        pView->SdrEndTextEdit();
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

@@ -64,6 +64,7 @@
 #include <detfunc.hxx>
 #include <editutil.hxx>
 
+#include <MatrixResizeGuard.hxx>
 #include <SparklineRenderer.hxx>
 #include <colorscale.hxx>
 
@@ -682,7 +683,7 @@ void ScOutputData::SetCellRotations()
             for (SCCOL nX=0; nX<=nRotMax; nX++)
             {
                 ScCellInfo* pInfo = &pThisRowInfo->cellInfo(nX);
-                const ScPatternAttr* pPattern = pInfo->pPatternAttr;
+                const ScPatternAttr* pPattern = pInfo->getPatternAttr();
                 const SfxItemSet* pCondSet = pInfo->pConditionSet;
 
                 if ( !pPattern && !mpDoc->ColHidden(nX, mnTab) )
@@ -806,8 +807,8 @@ static bool lcl_EqualBack( const RowInfo& rFirst, const RowInfo& rOther,
     {
         for ( nX=mnX1; nX<=mnX2; nX++ )
         {
-            const ScPatternAttr* pPat1 = rFirst.cellInfo(nX).pPatternAttr;
-            const ScPatternAttr* pPat2 = rOther.cellInfo(nX).pPatternAttr;
+            const ScPatternAttr* pPat1 = rFirst.cellInfo(nX).getPatternAttr();
+            const ScPatternAttr* pPat2 = rOther.cellInfo(nX).getPatternAttr();
             if ( !pPat1 || !pPat2 ||
                     !SfxPoolItem::areSame(pPat1->GetItem(ATTR_PROTECTION), pPat2->GetItem(ATTR_PROTECTION) ) )
                 return false;
@@ -1076,7 +1077,9 @@ void ScOutputData::DrawBackground(vcl::RenderContext& rRenderContext)
 
     // See more about bWorksInPixels in ScOutputData::DrawGrid
     bool bWorksInPixels = (meType == OUTTYPE_WINDOW);
-    const tools::Long nOneX = bWorksInPixels ? 1 : nOneXLogic;
+    // tdf#135891 - avoid visible gaps for metafile and window output as in ScOutputData::DrawGrid
+    const tools::Long nOneX = (bWorksInPixels || mbMetaFile) ? 1 : nOneXLogic;
+    const tools::Long nOneY = (bWorksInPixels || mbMetaFile) ? 1 : nOneYLogic;
     const tools::Long nLayoutSign = mbLayoutRTL ? -1 : 1;
     const tools::Long nSignedOneX = nOneX * nLayoutSign;
 
@@ -1127,8 +1130,8 @@ void ScOutputData::DrawBackground(vcl::RenderContext& rRenderContext)
                 if ( mbLayoutRTL )
                     nPosX += mnMirrorW - nOneX;
 
-                // tdf#135891 - adjust the x position to ensure the correct starting point
-                if (!bWorksInPixels)
+                // tdf#135891 - adjust the x position for printer output
+                if (!bWorksInPixels && !mbMetaFile)
                     nPosX -= nLayoutSign + 1;
 
                 aRect = tools::Rectangle(nPosX, nPosY - 1, nPosX, nPosY - 1 + nRowHeight);
@@ -1155,7 +1158,7 @@ void ScOutputData::DrawBackground(vcl::RenderContext& rRenderContext)
                     if (pInfo->bMerged && pInfo->pPatternAttr)
                     {
                             const ScMergeAttr* pMerge =
-                                    &pInfo->pPatternAttr->GetItem(ATTR_MERGE);
+                                    &pInfo->getPatternAttr()->GetItem(ATTR_MERGE);
                             nMergedCols = std::max<SCCOL>(1, pMerge->GetColMerge());
                     }
 
@@ -1177,7 +1180,7 @@ void ScOutputData::DrawBackground(vcl::RenderContext& rRenderContext)
                     }
                     else if (bShowProt)         // show cell protection in syntax mode
                     {
-                        const ScPatternAttr* pP = pInfo->pPatternAttr;
+                        const ScPatternAttr* pP = pInfo->getPatternAttr();
                         if (pP)
                         {
                             const ScProtectionAttr& rProt = pP->GetItem(ATTR_PROTECTION);
@@ -1211,11 +1214,14 @@ void ScOutputData::DrawBackground(vcl::RenderContext& rRenderContext)
                     if (bWorksInPixels)
                         nPosXLogic = rRenderContext.PixelToLogic(Point(nPosX, 0)).X();
 
-                    drawCells(rRenderContext, pColor, pBackground, pOldColor, pOldBackground, aRect, nPosXLogic, nLayoutSign, nOneXLogic, nOneYLogic, pDataBarInfo, pOldDataBarInfo, pIconSetInfo, pOldIconSetInfo, mpDoc->GetIconSetBitmapMap());
+                    // tdf#135891 - use adjusted nOneX/nOneY to avoid white gaps between colored cells
+                    drawCells(rRenderContext, pColor, pBackground, pOldColor, pOldBackground, aRect,
+                              nPosXLogic, nLayoutSign, nOneX, nOneY, pDataBarInfo, pOldDataBarInfo,
+                              pIconSetInfo, pOldIconSetInfo, mpDoc->GetIconSetBitmapMap());
 
                     nPosX = nNewPosX;
-                    // tdf#135891 - adjust the x position to ensure the correct starting point
-                    if (!bWorksInPixels && nX == mnX1)
+                    // tdf#135891 - adjust the x position for printer output
+                    if (!bWorksInPixels && !mbMetaFile && nX == mnX1)
                         nPosX += nSignedOneX + 1;
                 }
 
@@ -1223,7 +1229,10 @@ void ScOutputData::DrawBackground(vcl::RenderContext& rRenderContext)
                 if (bWorksInPixels)
                     nPosXLogic = rRenderContext.PixelToLogic(Point(nPosX, 0)).X();
 
-                drawCells(rRenderContext, std::optional<Color>(), nullptr, pOldColor, pOldBackground, aRect, nPosXLogic, nLayoutSign, nOneXLogic, nOneYLogic, nullptr, pOldDataBarInfo, nullptr, pOldIconSetInfo, mpDoc->GetIconSetBitmapMap());
+                // tdf#135891 - use adjusted nOneX/nOneY to avoid white gaps between colored cells
+                drawCells(rRenderContext, std::optional<Color>(), nullptr, pOldColor,
+                          pOldBackground, aRect, nPosXLogic, nLayoutSign, nOneX, nOneY, nullptr,
+                          pOldDataBarInfo, nullptr, pOldIconSetInfo, mpDoc->GetIconSetBitmapMap());
 
                 nArrY += nSkip;
 
@@ -1592,7 +1601,7 @@ void ScOutputData::DrawRotatedFrame(vcl::RenderContext& rRenderContext)
         if (mpRowInfo[nRotY].nRotMaxCol != SC_ROTMAX_NONE && mpRowInfo[nRotY].nRotMaxCol > nRotMax)
             nRotMax = mpRowInfo[nRotY].nRotMaxCol;
 
-    const ScPatternAttr* pPattern;
+    CellAttributeHolder  aPatternHolder;
     const SfxItemSet*    pCondSet;
 
     const StyleSettings& rStyleSettings = Application::GetSettings().GetStyleSettings();
@@ -1643,21 +1652,21 @@ void ScOutputData::DrawRotatedFrame(vcl::RenderContext& rRenderContext)
                 if ( pInfo->nRotateDir > ScRotateDir::Standard &&
                         !pInfo->bHOverlapped && !pInfo->bVOverlapped )
                 {
-                    pPattern = pInfo->pPatternAttr;
+                    aPatternHolder.setScPatternAttr(pInfo->getPatternAttr());
                     pCondSet = pInfo->pConditionSet;
-                    if (!pPattern)
+                    if (!aPatternHolder)
                     {
-                        pPattern = mpDoc->GetPattern( nX, nY, mnTab );
-                        pInfo->pPatternAttr = pPattern;
+                        aPatternHolder.setScPatternAttr(mpDoc->GetPattern( nX, nY, mnTab ));
+                        pInfo->pPatternAttr = aPatternHolder;
                         pCondSet = mpDoc->GetCondResult( nX, nY, mnTab );
                         pInfo->pConditionSet = pCondSet;
                     }
 
                     //! LastPattern etc.
 
-                    Degree100 nAttrRotate = pPattern->GetRotateVal( pCondSet );
+                    Degree100 nAttrRotate = aPatternHolder.getScPatternAttr()->GetRotateVal( pCondSet );
                     SvxRotateMode eRotMode =
-                                    pPattern->GetItem(ATTR_ROTATE_MODE, pCondSet).GetValue();
+                                    aPatternHolder.getScPatternAttr()->GetItem(ATTR_ROTATE_MODE, pCondSet).GetValue();
 
                     if (nAttrRotate)
                     {
@@ -1721,7 +1730,7 @@ void ScOutputData::DrawRotatedFrame(vcl::RenderContext& rRenderContext)
 
                         const SvxBrushItem* pBackground(static_cast<const SvxBrushItem*>(pInfo->maBackground.getItem()));
                         if (!pBackground)
-                            pBackground = &pPattern->GetItem(ATTR_BACKGROUND, pCondSet);
+                            pBackground = &aPatternHolder.getScPatternAttr()->GetItem(ATTR_BACKGROUND, pCondSet);
                         if (bCellContrast)
                         {
                             //  high contrast for cell borders and backgrounds -> empty background
@@ -1947,6 +1956,8 @@ void ScOutputData::FindChanged()
 
     if (bAnyDirty || bAnyChanged)
     {
+        sc::MatrixResizeGuard aGuard(*mpDoc);
+
         if (bAnyDirty)
             mpDoc->EnsureFormulaCellResults(ScRange(nCol1, nRow1, mnTab, nCol2, nRow2, mnTab), true);
 
@@ -2814,7 +2825,7 @@ void ScOutputData::DrawClipMarks()
                             SCCOL nOverX = nX;
                             SCROW nOverY = nY;
                             const ScMergeAttr* pMerge =
-                                    &pInfo->pPatternAttr->GetItem(ATTR_MERGE);
+                                    &pInfo->getPatternAttr()->GetItem(ATTR_MERGE);
                             SCCOL nCountX = pMerge->GetColMerge();
                             for (SCCOL i=1; i<nCountX; i++)
                                 nOutWidth += mpDoc->GetColWidth(nOverX+i,mnTab) * mnPPTX;

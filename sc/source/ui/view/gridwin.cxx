@@ -392,7 +392,7 @@ ScGridWindow::ScGridWindow( vcl::Window* pParent, ScViewData& rData, ScSplitPos 
             aComboButton( GetOutDev() ),
             aCurMousePos( 0,0 ),
             nPaintCount( 0 ),
-            aDrawSelectionPos( 0,0 ),
+            aDrawMouseDownPos( 0,0 ),
             aRFSelectedCorned( NONE ),
             maShowPageBreaksTimer("ScGridWindow maShowPageBreaksTimer"),
             bEEMouse( false ),
@@ -2027,6 +2027,7 @@ void ScGridWindow::HandleMouseButtonDown( const MouseEvent& rMEvt, MouseEventSta
 
     RfCorner rCorner = NONE;
     bool bFound = HitRangeFinder(rMEvt.GetPosPixel(), rCorner, &nRFIndex, &nRFAddX, &nRFAddY);
+    bRFSize = (rCorner != NONE);
     aRFSelectedCorned = rCorner;
 
     if (bFound)
@@ -4070,7 +4071,7 @@ void ScGridWindow::DropScroll( const Point& rMousePos )
 
 static bool lcl_TestScenarioRedliningDrop( const ScDocument* pDoc, const ScRange& aDragRange)
 {
-    //  Test, if a scenario is affected by a drop when turing on RedLining,
+    //  Test, if a scenario is affected by a drop when turning on RedLining,
     bool bReturn = false;
     SCTAB nTab = aDragRange.aStart.Tab();
     SCTAB nTabCount = pDoc->GetTableCount();

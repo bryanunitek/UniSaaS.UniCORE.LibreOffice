@@ -18,7 +18,6 @@
 
 #include <hintids.hxx>
 #include <editeng/flditem.hxx>
-#include <editeng/editeng.hxx>
 #include <editeng/colritem.hxx>
 #include <svx/svdpage.hxx>
 #include <svx/svdogrp.hxx>
@@ -545,7 +544,7 @@ bool SwDoc::DeleteSelection( SwDrawView& rDrawView )
 
 ZSortFly::ZSortFly(const SwFrameFormat* pFrameFormat, const SwFormatAnchor* pFlyAn, sal_uInt32 nArrOrdNum)
     : m_pFormat(pFrameFormat)
-    , m_pAnchor(pFlyAn)
+    , m_aAnchor(*pFlyAn)
     , m_nOrdNum(nArrOrdNum)
 {
     SAL_WARN_IF(m_pFormat->Which() != RES_FLYFRMFMT && m_pFormat->Which() != RES_DRAWFRMFMT, "sw.core", "What kind of format is this?");

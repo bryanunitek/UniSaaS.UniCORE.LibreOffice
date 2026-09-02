@@ -122,7 +122,7 @@ CPPUNIT_TEST_FIXTURE(SwCoreTextTest, testLastBibliographyPdfExport)
     CPPUNIT_ASSERT(true);
 }
 
-CPPUNIT_TEST_FIXTURE(SwCoreTextTest, testTdf156146)
+CPPUNIT_TEST_FIXTURE(SwCoreTextTest, testLegacyListStylePreservesParagraphMarginOverride)
 {
     createSwDoc("tdf156146.fodt");
 
@@ -1409,8 +1409,14 @@ CPPUNIT_TEST_FIXTURE(SwCoreTextTest, testTdf41652NBSPWidth)
         MetafileXmlDump aDumper;
         xmlDocUniquePtr pXmlDoc = dumpAndParse(aDumper, *xMetaFile);
 
-        nSectionAfterNBSPX_legacy_leftAligned = getXPath(pXmlDoc, "//textarray[4]", "x").toInt32();
-        nSectionAfterNBSPX_legacy_justified = getXPath(pXmlDoc, "//textarray[10]", "x").toInt32();
+        assertXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/textarray[5]", "index", u"106");
+        nSectionAfterNBSPX_legacy_leftAligned
+            = getXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/textarray[5]", "x").toInt32();
+        assertXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/push[3]/textarray[3]", "index",
+                    u"106");
+        nSectionAfterNBSPX_legacy_justified
+            = getXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/push[3]/textarray[3]", "x")
+                  .toInt32();
         dispose();
     }
 
@@ -1422,10 +1428,14 @@ CPPUNIT_TEST_FIXTURE(SwCoreTextTest, testTdf41652NBSPWidth)
         MetafileXmlDump aDumper;
         xmlDocUniquePtr pXmlDoc = dumpAndParse(aDumper, *xMetaFile);
 
+        assertXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/textarray[5]", "index", u"106");
         nSectionAfterNBSPX_optionDisabled_leftAligned
-            = getXPath(pXmlDoc, "//textarray[4]", "x").toInt32();
+            = getXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/textarray[5]", "x").toInt32();
+        assertXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/push[3]/textarray[3]", "index",
+                    u"106");
         nSectionAfterNBSPX_optionDisabled_justified
-            = getXPath(pXmlDoc, "//textarray[10]", "x").toInt32();
+            = getXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/push[3]/textarray[3]", "x")
+                  .toInt32();
         dispose();
     }
 
@@ -1437,10 +1447,14 @@ CPPUNIT_TEST_FIXTURE(SwCoreTextTest, testTdf41652NBSPWidth)
         MetafileXmlDump aDumper;
         xmlDocUniquePtr pXmlDoc = dumpAndParse(aDumper, *xMetaFile);
 
+        assertXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/textarray[5]", "index", u"106");
         nSectionAfterNBSPX_optionEnabled_leftAligned
-            = getXPath(pXmlDoc, "//textarray[4]", "x").toInt32();
+            = getXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/textarray[5]", "x").toInt32();
+        assertXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/push[3]/textarray[3]", "index",
+                    u"106");
         nSectionAfterNBSPX_optionEnabled_justified
-            = getXPath(pXmlDoc, "//textarray[10]", "x").toInt32();
+            = getXPath(pXmlDoc, "/metafile/push[1]/push[1]/push[1]/push[3]/textarray[3]", "x")
+                  .toInt32();
     }
 
     // Assert left aligned NBSP for the legacy file is larger than zero

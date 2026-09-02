@@ -116,6 +116,11 @@ public:
     void createBackground( const oox::core::XmlFilterBase& rFilterBase );
     void applyTextStyles( const oox::core::XmlFilterBase& rFilterBase );
 
+    /// Release import-side shape data after createXShapes has pushed
+    /// everything into the core model.
+    void releaseShapes();
+
+
     std::map< OUString, css::uno::Reference< css::animations::XAnimationNode > >& getAnimNodesMap() { return maAnimNodesMap; };
     css::uno::Reference<css::animations::XAnimationNode> getAnimationNode(const OUString& sId) const;
     ::oox::drawingml::ShapePtr getShape( const OUString & id ) { return maShapeMap[ id ]; }
@@ -123,6 +128,8 @@ public:
 
     CommentList& getCommentsList() { return maCommentsList; }
     CommentAuthorList& getCommentAuthors() { return maCommentAuthors; }
+
+    const OUString& getTitleText() const { return maTitleText; }
 
     void createConnectorShapeConnection(const oox::drawingml::ShapePtr& pConnector);
 
@@ -153,6 +160,8 @@ private:
 
     std::map< OUString, css::uno::Reference< css::animations::XAnimationNode > > maAnimNodesMap;
     std::map< OUString, ::oox::drawingml::ShapePtr >                        maShapeMap;
+
+    OUString                                                                maTitleText;
 
     // slide comments
     CommentList                                                             maCommentsList;

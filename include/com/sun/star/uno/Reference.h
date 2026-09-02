@@ -61,7 +61,7 @@ enum UnoReference_NoAcquire
 };
 
 /** This base class serves as a base class for all template reference classes and
-    has been introduced due to compiler problems with templated operators ==, =!.
+    has been introduced due to compiler problems with templated operators ==, !=.
 */
 class BaseReference
 {
@@ -374,7 +374,7 @@ public:
 
     /** Cast operator to Reference< XInterface >: Reference objects are binary compatible and
         any interface must be derived from com.sun.star.uno.XInterface.
-        This a useful direct cast possibility.
+        This is a useful direct cast possibility.
     */
     SAL_CALL operator const Reference< XInterface > & () const
         { return * reinterpret_cast< const Reference< XInterface > * >( this ); }
@@ -564,14 +564,14 @@ public:
 #if defined LIBO_INTERNAL_ONLY
     /** Queries this for the required interface, and returns the requested reference, possibly empty.
         A syntactic sugar for 'Reference< other_type > xOther(xThis, UNO_QUERY)' that avoids some
-        verbocity.
+        verbosity.
 
         @return new reference
     */
     template< class other_type > inline Reference< other_type > query() const;
     /** Queries this for the required interface, and returns the requested reference, or throws
         on failure. A syntactic sugar for 'Reference< other_type > xOther(xThis, UNO_QUERY_THROW)'
-        that avoids some verbocity.
+        that avoids some verbosity.
 
         @return new reference
     */

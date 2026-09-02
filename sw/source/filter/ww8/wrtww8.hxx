@@ -321,6 +321,7 @@ public:
     wwFontHelper() : m_bLoadAllFonts(false) {}
     /// rDoc used only to get the initial standard font(s) in use.
     void InitFontTable(MSWordExportBase& rExport);
+    static OUString GetExportFontName(const SvxFontItem& rFont);
     sal_uInt16 GetId(const SvxFontItem& rFont);
     sal_uInt16 GetId(const wwFont& rFont);
     void WriteFontTable( SvStream *pTableStream, WW8Fib& pFib );
@@ -411,7 +412,7 @@ class WW8_WrtRedlineAuthor : public sw::util::WrtRedlineAuthor
 /** Structure that is used to save some of the WW8Export/DocxExport data.
 
     It is used to be able to recurse inside of the WW8Export/DocxExport (eg.
-    for the needs of the tables) - you need to tall WriteText() from there with
+    for the needs of the tables) - you need to call WriteText() from there with
     new values of PaM etc.
 
     It must contain all the stuff that might be saved either in WW8Export or in
@@ -657,7 +658,7 @@ public:
 
     /// List is set to restart at a particular value so for export make a
     /// completely new list based on this one and export that instead,
-    /// which duplicates words behaviour in this respect.
+    /// which duplicates Word's behaviour in this respect.
     sal_uInt16 DuplicateNumRule(const SwNumRule* pRule, sal_uInt8 nLevel, sal_uInt16 nVal);
     SwNumRule * DuplicateNumRuleImpl(const SwNumRule *pRule);
 
@@ -666,7 +667,7 @@ public:
                                SwNumRule const& rAbstractRule);
 
 
-    /// Create a overriding numbering definition (if it does not yet exist)
+    /// Create an overriding numbering definition (if it does not yet exist)
     /// @return index of the overriding numbering definition
     sal_uInt16 OverrideNumRule(SwNumRule const& rExistingRule,
                                OUString const& rListId,
@@ -680,7 +681,7 @@ public:
     /// Access to the attribute output class.
     virtual AttributeOutputBase& AttrOutput() const = 0;
 
-    /// Access to the sections/headers/footres.
+    /// Access to the sections/headers/footers.
     virtual MSWordSections& Sections() const = 0;
 
     /// Determines if the import filter already quoted fields or not.
@@ -710,6 +711,8 @@ public:
     virtual void AppendBookmarks( const SwTextNode& rNd, sal_Int32 nCurrentPos, sal_Int32 nLen, const SwRedlineData* pSwRedline = nullptr ) = 0;
 
     virtual void AppendBookmark( const OUString& rName ) = 0;
+    virtual void AppendBookmarkStart(const OUString& rName) = 0;
+    virtual void AppendBookmarkEnd(const OUString& rName, bool bIsFinal) = 0;
 
     virtual void AppendAnnotationMarks( const SwWW8AttrIter& rAttrs, sal_Int32 nCurrentPos, sal_Int32 nLen ) = 0;
 
@@ -1035,7 +1038,7 @@ public:
     /// Access to the attribute output class.
     virtual AttributeOutputBase& AttrOutput() const override;
 
-    /// Access to the sections/headers/footres.
+    /// Access to the sections/headers/footers.
     virtual MSWordSections& Sections() const override;
 
     virtual bool PreferPageBreakBefore() const override { return true; }
@@ -1100,6 +1103,9 @@ public:
 
     virtual void AppendBookmarks( const SwTextNode& rNd, sal_Int32 nCurrentPos, sal_Int32 nLen, const SwRedlineData* pRedlineData = nullptr ) override;
     virtual void AppendBookmark( const OUString& rName ) override;
+    virtual void AppendBookmarkStart(const OUString& rName) override;
+    virtual void AppendBookmarkEnd(const OUString& rName, bool bIsFinal) override;
+
     void AppendBookmarkEndWithCorrection( const OUString& rName );
 
     virtual void AppendAnnotationMarks( const SwWW8AttrIter& rAttrs, sal_Int32 nCurrentPos, sal_Int32 nLen ) override;
@@ -1560,7 +1566,7 @@ private:
 
     sal_Int32 SearchNext( sal_Int32 nStartPos );
 
-    void OutSwFormatRefMark(const SwFormatRefMark& rAttr);
+    void OutSwFormatRefMark(const SwFormatRefMark& rAttr, sal_Int32 nPos);
 
     void IterToCurrent();
 
@@ -1583,7 +1589,7 @@ public:
     virtual const SfxPoolItem* HasTextItem( sal_uInt16 nWhich ) const override;
     virtual const SfxPoolItem& GetItem( sal_uInt16 nWhich ) const override;
     template<class T> const T& GetItem( TypedWhichId<T> nWhich ) const { return MSWordAttrIter::GetItem(nWhich); }
-    int OutAttrWithRange(const SwTextNode& rNode, sal_Int32 nPos);
+    int OutAttrWithRange(sal_Int32 nPos);
     const SwRedlineData* GetParagraphLevelRedline( );
     const SwRedlineData* GetRunLevelRedline( sal_Int32 nPos );
     FlyProcessingState OutFlys(sal_Int32 nSwPos);

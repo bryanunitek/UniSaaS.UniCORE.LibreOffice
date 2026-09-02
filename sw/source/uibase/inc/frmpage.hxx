@@ -92,13 +92,11 @@ class SwFramePage final : public SfxTabPage
 
     // size
     std::unique_ptr<weld::Label> m_xWidthFT;
-    std::unique_ptr<weld::Label> m_xWidthAutoFT;
     std::unique_ptr<weld::CheckButton> m_xRelWidthCB;
     std::unique_ptr<weld::ComboBox> m_xRelWidthRelationLB;
     std::unique_ptr<weld::CheckButton> m_xAutoWidthCB;
 
     std::unique_ptr<weld::Label> m_xHeightFT;
-    std::unique_ptr<weld::Label> m_xHeightAutoFT;
     std::unique_ptr<weld::CheckButton> m_xRelHeightCB;
     std::unique_ptr<weld::ComboBox> m_xRelHeightRelationLB;
     std::unique_ptr<weld::CheckButton> m_xAutoHeightCB;
@@ -325,7 +323,7 @@ class SwFrameAddPage final : public SfxTabPage
     std::unique_ptr<weld::Label> m_xTextFlowFT;
     std::unique_ptr<svx::FrameDirectionListBox> m_xTextFlowLB;
 
-    DECL_LINK(EditModifyHdl, weld::Entry&, void);
+    DECL_LINK(EditModifyHdl, weld::TextWidget&, void);
     DECL_LINK(DecorativeHdl, weld::Toggleable&, void);
     DECL_LINK(ChainModifyHdl, weld::ComboBox&, void);
 

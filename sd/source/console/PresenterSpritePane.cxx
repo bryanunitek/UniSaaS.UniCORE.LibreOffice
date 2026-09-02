@@ -18,8 +18,9 @@
  */
 
 #include "PresenterController.hxx"
+#include "PresenterHelper.hxx"
 #include "PresenterSpritePane.hxx"
-#include <PresenterHelper.hxx>
+
 #include <com/sun/star/lang/XMultiComponentFactory.hpp>
 
 using namespace ::com::sun::star;
@@ -49,25 +50,13 @@ void PresenterSpritePane::disposing(std::unique_lock<std::mutex>& l)
 
 //----- AbstractPane -----------------------------------------------------------------
 
-Reference<awt::XWindow> PresenterSpritePane::getWindow()
-{
-    {
-        std::unique_lock l(m_aMutex);
-        throwIfDisposed(l);
-    }
-    return mxContentWindow;
-}
-
 Reference<rendering::XCanvas> PresenterSpritePane::getCanvas()
 {
-    {
-        std::unique_lock l(m_aMutex);
-        throwIfDisposed(l);
-    }
+    Reference<rendering::XCanvas> xCanvas = PresenterPaneBase::getCanvas();
+    if (xCanvas.is())
+        return xCanvas;
 
-    if ( ! mxContentCanvas.is())
-        UpdateCanvases();
-
+    UpdateCanvases();
     return mxContentCanvas;
 }
 

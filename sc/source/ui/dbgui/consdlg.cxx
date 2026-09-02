@@ -173,9 +173,9 @@ void ScConsolidateDlg::Init()
     // Use the ScAreaData helper class to save those range names from the
     // RangeNames and database ranges that appear in the ListBoxes.
 
-    ScRangeName*    pRangeNames  = rDoc.GetRangeName();
+    ScRangeName&    rRangeNames  = rDoc.GetRangeName();
     ScDBCollection* pDbNames     = rDoc.GetDBCollection();
-    size_t nRangeCount = pRangeNames ? pRangeNames->size() : 0;
+    size_t nRangeCount = rRangeNames.size();
     size_t nDbCount = pDbNames ? pDbNames->getNamedDBs().size() : 0;
 
     nAreaDataCount = nRangeCount+nDbCount;
@@ -228,7 +228,7 @@ void ScConsolidateDlg::FillAreaLists()
 }
 
 // Handover of a range within a table that has been selected by the mouse.
-// This range is then shown in the reference window as new selection.
+// This range is then shown in the reference window as the new selection.
 
 void ScConsolidateDlg::SetReference( const ScRange& rRef, ScDocument& rDocP )
 {

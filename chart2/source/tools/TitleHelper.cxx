@@ -262,7 +262,7 @@ rtl::Reference< Title > TitleHelper::createTitle(
 
         xTitled->setTitleObject( xTitle );
 
-        //default rotation 90 degree for y axis title in normal coordinatesystems or for x axis title for swapped coordinatesystems
+        //default rotation 90 degree for y axis title in normal coordinate systems or for x axis title for swapped coordinate systems
         if( eTitleType == TitleHelper::X_AXIS_TITLE ||
             eTitleType == TitleHelper::Y_AXIS_TITLE ||
             eTitleType == TitleHelper::SECONDARY_X_AXIS_TITLE ||
@@ -373,16 +373,16 @@ void TitleHelper::setCompleteString( const OUString& rNewText
         const OUString aFullString = getCompleteString(xTitle);
         if (bDialogTitle && aNewText.equals(getUnstackedStr(aFullString)))
         {
-            // If the new title setted from a dialog window to a new string
+            // If the new title is set from a dialog window to a new string
             // the first old text portion will be maintained if it's a new string,
             // otherwise we use the original one.
             aNewStringList = std::move(aOldStringList);
         }
         else
         {
-            // If the new title setted from a dialog to a new string the first
+            // If the new title is set from a dialog to a new string the first
             // old text portion will be maintained if there was any. Also in case of ODF
-            // import which still not support non-uniform formatted titles
+            // import which still does not support non-uniform formatted titles
             aNewStringList = { aOldStringList[0] };
             aNewStringList[0]->setString(aNewText);
         }

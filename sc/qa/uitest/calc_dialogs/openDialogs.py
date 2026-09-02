@@ -55,7 +55,7 @@ dialogs = [
     # {"command": ".uno:SetOptimalColumnWidth", "closeButton": "cancel"},
         # tested in sc/qa/uitest/textToColumns/tdf89907.py
     # {"command": ".uno:PageFormatDialog", "closeButton": "cancel"},
-        # tested in sc/qa/uitest/pageFormat/tdf123508.py
+        # tested in sc/qa/uitest/pageFormat/tdf123508_format_page_scale.py
     {"command": ".uno:EditPrintArea", "closeButton": "cancel", "skipTestOK": True},
         # tested in sc/qa/uitest/calc_tests/printRange.py
     # {"command": ".uno:ConditionalFormatMenu", "closeButton": "cancel"},
@@ -93,7 +93,7 @@ dialogs = [
         # tested in sc/qa/uitest/calc_tests/sheetRename.py
     # {"command": ".uno:Move", "closeButton": "cancel"},
         # tested in sc/qa/uitest/calc_tests6/moveCopySheet.py
-    {"command": ".uno:SetTabBgColor", "closeButton": "cancel"},
+    {"command": ".uno:SetTabBgColor", "closeButton": "close", "skipTestOK": True},
     {"command": ".uno:TableEvents", "closeButton": "cancel"},
     # {"command": ".uno:DataSort", "closeButton": "cancel"},
         # cancel button tested in sc/qa/uitest/calc_tests/sorting.py

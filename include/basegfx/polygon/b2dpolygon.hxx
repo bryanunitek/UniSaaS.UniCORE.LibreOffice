@@ -123,7 +123,7 @@ namespace basegfx
             Index of the addressed edge's start point
 
             @param rTarget
-            The B2DCubicBezier to be filled. It's data WILL be changed.
+            The B2DCubicBezier to be filled. Its data WILL be changed.
         */
         void getBezierSegment(sal_uInt32 nIndex, B2DCubicBezier& rTarget) const;
 
@@ -234,7 +234,7 @@ namespace basegfx
         template<class T>
         std::shared_ptr<T> getSystemDependentData(basegfx::SDD_Type aType) const
         {
-            return std::static_pointer_cast<T>(getSystemDependantDataInternal(aType));
+            return std::static_pointer_cast<T>(getSystemDependentDataInternal(aType));
         }
 
         template<class T, class... Args>
@@ -254,7 +254,7 @@ namespace basegfx
 
     private:
         void addOrReplaceSystemDependentDataInternal(SystemDependentData_SharedPtr& rData) const;
-        SystemDependentData_SharedPtr getSystemDependantDataInternal(basegfx::SDD_Type aType) const;
+        SystemDependentData_SharedPtr getSystemDependentDataInternal(basegfx::SDD_Type aType) const;
         const basegfx::B2DVector& getPrevControlVector(sal_uInt32 nIndex) const;
         const basegfx::B2DVector& getNextControlVector(sal_uInt32 nIndex) const;
     };

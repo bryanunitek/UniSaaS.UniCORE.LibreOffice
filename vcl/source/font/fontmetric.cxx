@@ -441,8 +441,7 @@ void FontMetricData::ImplCalcLineSpacing(LogicalFontInstance* pFontInstance)
     pFontInstance->GetScale(nullptr, &fScale);
     double fAscent = 0, fDescent = 0, fExtLeading = 0;
 
-    auto aFvar(pFace->GetRawFontData(HB_TAG('f', 'v', 'a', 'r')));
-    if (!aFvar.empty())
+    if (hb_ot_var_has_data(pFace->GetHbFace()))
     {
         // This is a variable font, trust HarfBuzz to give us the right metrics
         // and apply variations to them.
@@ -513,20 +512,8 @@ void FontMetricData::ImplCalcLineSpacing(LogicalFontInstance* pFontInstance)
                 fExtLeading = 0;
             }
 
-            bool bUseTypoMetrics = false;
-            {
-                // TODO: Use HarfBuzz API instead of raw access
-                // https://github.com/harfbuzz/harfbuzz/issues/1920
-                sal_uInt16 fsSelection = 0;
-                auto aOS2(pFace->GetRawFontData(HB_TAG('O', 'S', '/', '2')));
-                SvMemoryStream aStream(const_cast<uint8_t*>(aOS2.data()), aOS2.size(),
-                                       StreamMode::READ);
-                // Font data are big endian.
-                aStream.SetEndian(SvStreamEndian::BIG);
-                if (aStream.Seek(vcl::OS2_fsSelection_offset) == vcl::OS2_fsSelection_offset)
-                    aStream.ReadUInt16(fsSelection);
-                bUseTypoMetrics = fsSelection & (1 << 7);
-            }
+            bool bUseTypoMetrics
+                = hb_ot_fetch_bits(pFace->GetHbFace(), HB_OT_BITS_TAG_FS_SELECTION) & (1 << 7);
             if (bUseTypoMetrics && nTypoAscent >= 0 && nTypoDescent <= 0)
             {
                 fAscent = nTypoAscent * fScale;

@@ -113,7 +113,7 @@ void SAL_CALL OInstanceLocker::initialize( const uno::Sequence< uno::Any >& aArg
         throw lang::DisposedException(); // TODO
 
     if ( !m_refCount )
-        throw uno::RuntimeException(); // the object must be refcounted already!
+        throw uno::RuntimeException(u"OInstanceLocker::initialize() called on an object without any UNO references"_ustr); // the object must be refcounted already!
 
     uno::Reference< uno::XInterface > xInstance;
     uno::Reference< embed::XActionsApproval > xApproval;
@@ -150,7 +150,7 @@ void SAL_CALL OInstanceLocker::initialize( const uno::Sequence< uno::Any >& aArg
 
         if ( nLen == 3 && !( aArguments[2] >>= xApproval ) )
             throw lang::IllegalArgumentException(
-                    u"If the third argument is provided, it must be XActionsApproval implementation!"_ustr,
+                    u"If the third argument is provided, it must be an XActionsApproval implementation!"_ustr,
                     uno::Reference< uno::XInterface >(),
                     0 );
 

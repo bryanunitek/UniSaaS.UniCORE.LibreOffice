@@ -78,8 +78,8 @@
 #include <vcl/dibtools.hxx>
 #include <vcl/graphicfilter.hxx>
 #include <unotools/filteroptions_settings.hxx>
-#include <unotools/viewoptions.hxx>
 #include <svtools/helpids.h>
+#include <svtools/viewoptions.hxx>
 #include <comphelper/docpasswordrequest.hxx>
 #include <comphelper/docpasswordhelper.hxx>
 #include <ucbhelper/content.hxx>
@@ -838,16 +838,17 @@ ErrCode FileDialogHelper_Impl::getGraphic( Graphic& rGraphic )
 
     // rhbz#1079672 do not return maGraphic, it needs not to be the selected file
 
-    OUString aPath;
     Sequence<OUString> aPathSeq = mxFileDlg->getSelectedFiles();
 
-    if (aPathSeq.getLength() == 1)
+    if (aPathSeq.getLength() > 0)
     {
-        aPath = aPathSeq[0];
+        for (const auto& fileName : aPathSeq)
+        {
+            nRet = getGraphic(fileName, rGraphic);
+            if (nRet != ERRCODE_NONE)
+                return nRet;
+        }
     }
-
-    if (!aPath.isEmpty())
-        nRet = getGraphic(aPath, rGraphic);
     else
         nRet = ERRCODE_IO_GENERAL;
 
@@ -1502,7 +1503,7 @@ ErrCode FileDialogHelper_Impl::execute( css::uno::Sequence<OUString>& rpURLList,
     // set the read-only flag. When inserting a file, this flag is always set
     if ( mbInsert )
         rpSet->Put( SfxBoolItem( SID_DOC_READONLY, true ) );
-    else if ( ( FILEOPEN_READONLY_VERSION == m_nDialogType ) && xCtrlAccess.is() )
+    else if ( ( FILEOPEN_READONLY_VERSION == m_nDialogType || FILEOPEN_READONLY_VERSION_FILTEROPTIONS == m_nDialogType ) && xCtrlAccess.is() )
     {
         try
         {

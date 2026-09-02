@@ -616,7 +616,7 @@ SwSectionFrame* SwSectionFrame::SplitSect( SwFrame* pFrameStartAfter, SwFrame* p
 }
 
 /**
-|*  MoveContent is called for destroying a SectionFrames, due to
+|*  MoveContent is called for destroying a SectionFrame, due to
 |*  the cancellation or hiding of a section, to handle the content.
 |*  If the SectionFrame hasn't broken up another one, then the content
 |*  is moved to the Upper. Otherwise the content is moved to another
@@ -869,7 +869,7 @@ void SwSectionFrame::MakeAll(vcl::RenderContext* pRenderContext)
 
     if (!GetPrev() && !IsFollow() && IsInDocBody() && IsHiddenNow())
     {
-        // This may be the first frame on a page, and it may had moved to that page because its
+        // This may be the first frame on a page, and it may have moved to that page because its
         // content required that (a page break in the first paragraph, or a tall first line, or
         // "do not break paragraph" setting, or the like). Try to move back, to allow following
         // frames to move back, if possible. Sections cannot move back; workaround by a call to
@@ -1076,7 +1076,7 @@ bool SwSectionFrame::CalcMinDiff( SwTwips& rMinDiff ) const
 }
 
 /**
- *  CollectEndnotes looks for endnotes in the sectionfrm and his follows,
+ *  CollectEndnotes looks for endnotes in the sectionfrm and its follows,
  *  the endnotes will cut off the layout and put into the array.
  *  If the first endnote is not a master-SwFootnoteFrame, the whole sectionfrm
  *  contains only endnotes and it is not necessary to collect them.
@@ -1168,7 +1168,7 @@ static void lcl_ColumnRefresh( SwSectionFrame* pSect, bool bFollow )
 void SwSectionFrame::CollectEndnotes( SwLayouter* pLayouter )
 {
     OSL_ENSURE( IsColLocked(), "CollectEndnotes: You love the risk?" );
-    // i73332: Section in footnode does not have columns!
+    // i73332: Section in footnote does not have columns!
     SwFrame* pLower = Lower();
     OSL_ENSURE( (pLower && pLower->IsColumnFrame()) || GetUpper()->IsFootnoteFrame(), "Where's my column?" );
 
@@ -1177,7 +1177,7 @@ void SwSectionFrame::CollectEndnotes( SwLayouter* pLayouter )
     bool bEmpty = false;
     // pSect is the last sectionfrm without endnotes or the this-pointer
     // the first sectionfrm with endnotes may be destroyed, when the endnotes
-    // is cutted
+    // is cut
     while( nullptr != (pFootnote = lcl_FindEndnote( pSect, bEmpty, pLayouter )) )
         pLayouter->CollectEndnote( pFootnote );
     if( pLayouter->HasEndnotes() )
@@ -2112,7 +2112,7 @@ SwLayoutFrame *SwFrame::GetPrevSctLeaf()
                 {
                     if( bJump )     // Did we skip a blank page?
                         SwFlowFrame::SetMoveBwdJump( true );
-                    return static_cast<SwLayoutFrame*>(pCol->Lower());  // The columnm body
+                    return static_cast<SwLayoutFrame*>(pCol->Lower());  // The column body
                 }
                 bJump = true;
             } while( pCol->GetPrev() );
@@ -2456,7 +2456,7 @@ SwTwips SwSectionFrame::Grow_(SwTwips nDist, SwResizeLimitReason& reason, bool b
         // #i28701# - Due to the new object positioning
         // the frame on the next page/column can flow backward (e.g. it
         // was moved forward due to the positioning of its objects ).
-        // Thus, invalivate this next frame, if document compatibility
+        // Thus, invalidate this next frame, if document compatibility
         // option 'Consider wrapping style influence on object positioning' is ON.
         else if ( GetFormat()->getIDocumentSettingAccess().get(DocumentSettingId::CONSIDER_WRAP_ON_OBJECT_POSITION) )
         {
@@ -2511,7 +2511,7 @@ SwTwips SwSectionFrame::Shrink_( SwTwips nDist, bool bTst )
                     aRectFnSet.SetHeight( aPrt, nPrtHeight );
                 }
 
-                // We do not allow a section frame to shrink the its upper
+                // We do not allow a section frame to shrink its upper
                 // footer frame. This is because in the calculation of a
                 // footer frame, the content of the section frame is _not_
                 // calculated. If there is a fly frame overlapping with the
@@ -2558,8 +2558,8 @@ SwTwips SwSectionFrame::Shrink_( SwTwips nDist, bool bTst )
 }
 
 /*
-|*  When are Frames within a SectionFrames moveable?
-|*  If they are not in the last column of a SectionFrames yet,
+|*  When are Frames within a SectionFrame moveable?
+|*  If they are not in the last column of a SectionFrame yet,
 |*  if there is no Follow,
 |*  if the SectionFrame cannot grow anymore, then it gets more complicated,
 |*  in that case it depends on whether the SectionFrame can find a next

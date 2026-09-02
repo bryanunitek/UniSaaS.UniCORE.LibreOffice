@@ -21,6 +21,9 @@
 #include "impedit.hxx"
 #include <comphelper/lok.hxx>
 #include <editeng/editeng.hxx>
+#include <editeng/fontitem.hxx>
+#include <editeng/wghtitem.hxx>
+#include <editeng/postitem.hxx>
 #include <editeng/txtrange.hxx>
 #include <rtl/strbuf.hxx>
 #include <svl/eitem.hxx>
@@ -564,7 +567,37 @@ void ImpEditEngine::SetAttribs( EditSelection aSel, const SfxItemSet& rSet, SetA
                 }
                 else
                 {
-                    maEditDoc.InsertAttrib( pNode, nStartPos, nEndPos, rItem );
+                    // tdf#172647: convert the font to its typographic names
+                    // here at the model write boundary.
+                    if ((nWhich == EE_CHAR_FONTINFO || nWhich == EE_CHAR_FONTINFO_CJK
+                         || nWhich == EE_CHAR_FONTINFO_CTL)
+                        && GetRefDevice())
+                    {
+                        TypedWhichId<SvxWeightItem> nWeightId = EE_CHAR_WEIGHT;
+                        TypedWhichId<SvxPostureItem> nPostureId = EE_CHAR_ITALIC;
+                        if (nWhich == EE_CHAR_FONTINFO_CJK)
+                        {
+                            nWeightId = EE_CHAR_WEIGHT_CJK;
+                            nPostureId = EE_CHAR_ITALIC_CJK;
+                        }
+                        else if (nWhich == EE_CHAR_FONTINFO_CTL)
+                        {
+                            nWeightId = EE_CHAR_WEIGHT_CTL;
+                            nPostureId = EE_CHAR_ITALIC_CTL;
+                        }
+                        FontWeight eWeight = WEIGHT_DONTKNOW;
+                        if (const SvxWeightItem* pWeight = rSet.GetItemIfSet(nWeightId, false))
+                            eWeight = pWeight->GetWeight();
+                        FontItalic eItalic = ITALIC_DONTKNOW;
+                        if (const SvxPostureItem* pPosture = rSet.GetItemIfSet(nPostureId, false))
+                            eItalic = pPosture->GetPosture();
+
+                        SvxFontItem aFont(static_cast<const SvxFontItem&>(rItem));
+                        aFont.makeTypographic(*GetRefDevice(), eWeight, WIDTH_DONTKNOW, eItalic);
+                        maEditDoc.InsertAttrib( pNode, nStartPos, nEndPos, aFont );
+                    }
+                    else
+                        maEditDoc.InsertAttrib( pNode, nStartPos, nEndPos, rItem );
                     bCharAttribFound = true;
                     if ( nSpecial == SetAttribsMode::Edge )
                     {
@@ -1154,38 +1187,42 @@ bool ImpEditEngine::PostKeyEvent( const KeyEvent& rKeyEvent, EditView* pEditView
             break;
             case KEY_RETURN:
             {
-                if ( !bReadOnly )
+                if (bReadOnly)
+                    break;
+
+                pEditView->getImpl().DrawSelectionXOR();
+                if (rKeyEvent.GetKeyCode().IsMod1() || rKeyEvent.GetKeyCode().IsMod2())
+                    break;
+
+                if (aAutoText.isEmpty() || rKeyEvent.GetKeyCode().IsShift())
                 {
-                    pEditView->getImpl().DrawSelectionXOR();
-                    if ( !rKeyEvent.GetKeyCode().IsMod1() && !rKeyEvent.GetKeyCode().IsMod2() )
+                    EditSelection aAutoCorrectSel(aCurSel);
+
+                    // for undo stack - start the next line first, so it is undone last
+                    if (rKeyEvent.GetKeyCode().IsShift())
+                        aCurSel = InsertLineBreak(aCurSel);
+                    else
+                        aCurSel = InsertParaBreak(aCurSel);
+
+                    // for the undo stack - do the autocorrect last, so it is undone 1st
+                    if (GetStatus().DoAutoCorrect())
                     {
-                        UndoActionStart( EDITUNDO_INSERT );
-                        if ( rKeyEvent.GetKeyCode().IsShift() )
-                        {
-                            aCurSel = AutoCorrect( aCurSel, 0, !pEditView->IsInsertMode(), pFrameWin );
-                            aCurSel = InsertLineBreak( aCurSel );
-                        }
-                        else
-                        {
-                            if (aAutoText.isEmpty())
-                            {
-                                if (GetStatus().DoAutoCorrect())
-                                    aCurSel = AutoCorrect( aCurSel, 0, !pEditView->IsInsertMode(), pFrameWin );
-                                aCurSel = InsertParaBreak( aCurSel );
-                            }
-                            else
-                            {
-                                DBG_ASSERT( !aCurSel.HasRange(), "Selection on complete?!" );
-                                EditPaM aStart = WordLeft(aCurSel.Max());
-                                EditSelection aSelection(aStart, aCurSel.Max());
-                                aCurSel = InsertText(aSelection, aAutoText);
-                                SetAutoCompleteText( OUString(), true );
-                            }
-                        }
+                        UndoActionStart(EDITUNDO_INSERT, CreateESel(aCurSel));
+                        AutoCorrect(aAutoCorrectSel, 0, !pEditView->IsInsertMode(), pFrameWin);
                         UndoActionEnd();
-                        bModified = true;
                     }
                 }
+                else
+                {
+                    UndoActionStart(EDITUNDO_INSERT);
+                    DBG_ASSERT(!aCurSel.HasRange(), "Selection on complete?!");
+                    EditPaM aStart = WordLeft(aCurSel.Max());
+                    EditSelection aSelection(aStart, aCurSel.Max());
+                    aCurSel = InsertText(aSelection, aAutoText);
+                    SetAutoCompleteText(OUString(), true);
+                    UndoActionEnd();
+                }
+                bModified = true;
             }
             break;
             case KEY_INSERT:

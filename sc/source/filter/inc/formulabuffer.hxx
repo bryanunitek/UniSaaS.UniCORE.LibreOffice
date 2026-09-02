@@ -10,11 +10,33 @@
 #pragma once
 
 #include "workbookhelper.hxx"
+#include <formula/opcode.hxx>
+#include <sal/types.h>
+#include <initializer_list>
 #include <mutex>
 #include <utility>
 #include <vector>
 
+class ScTokenArray;
+
 namespace oox::xls {
+
+// When one of the trigger opcodes is followed by ((...)) that
+// spans the whole argument, drop the inner parenthesis pair:
+//   OPCODE((expr)) -> OPCODE(expr)
+// An inner pair that does not span the whole argument, or
+// parentheses that belong to a function call inside the
+// argument, stay:
+//   OPCODE((A)+B)     -> OPCODE((A)+B)
+//   OPCODE(FUNC(arg)) -> OPCODE(FUNC(arg))
+SAL_DLLPUBLIC_EXPORT void stripRedundantParentheses(
+    ScTokenArray& rArray, std::initializer_list<OpCode> aTriggerOpCodes);
+
+// _xlfn.ANCHORARRAY(<ref>) is the OOXML spelling of the native
+// postfix <ref>#. Both give the same RPN, but the parse array
+// keeps the source order and would read back as #(<ref>), so
+// rewrite each such span to <ref>#.
+SAL_DLLPUBLIC_EXPORT void liftAnchorArrayToPostfix(ScTokenArray& rArray);
 
 class FormulaBuffer final : public WorkbookHelper
 {
@@ -42,17 +64,28 @@ public:
         OUString maCellValue;
         sal_Int32 mnSharedId;
         sal_Int32 mnValueType;
+        /// True when the XLSX cell carried cm="1", marking it as a dynamic-array
+        /// master.
+        bool mbDynamicArrayMaster = false;
 
         SharedFormulaDesc(
             const ScAddress& rAddr, sal_Int32 nSharedId,
-            OUString aCellValue, sal_Int32 nValueType );
+            OUString aCellValue, sal_Int32 nValueType,
+            bool bDynamicArrayMaster = false );
     };
 
     struct TokenAddressItem
     {
         OUString maTokenStr;
         ScAddress maAddress;
-        TokenAddressItem( OUString aTokenStr, const ScAddress& rAddress ) : maTokenStr(std::move( aTokenStr )), maAddress( rAddress ) {}
+        /// True when the XLSX cell carried cm="1", marking it as a dynamic-array
+        /// master.
+        bool mbDynamicArrayMaster = false;
+        TokenAddressItem( OUString aTokenStr, const ScAddress& rAddress,
+                          bool bDynamicArrayMaster = false )
+            : maTokenStr(std::move( aTokenStr ))
+            , maAddress( rAddress )
+            , mbDynamicArrayMaster(bDynamicArrayMaster) {}
     };
 
     struct TokenRangeAddressItem
@@ -64,12 +97,17 @@ public:
         /// blocker preservation so reference cells aren't materialised over
         /// real user data sitting in the matrix range.
         bool mbCachedSpill;
+        /// True when the XLSX cell carried cm="1", marking it as a dynamic-array
+        /// master.
+        bool mbDynamicArrayMaster = false;
 
         TokenRangeAddressItem(TokenAddressItem aTokenAndAddress, const ScRange& rRange,
-                              bool bCachedSpill = false)
+                              bool bCachedSpill = false,
+                              bool bDynamicArrayMaster = false)
             : maTokenAndAddress(std::move(aTokenAndAddress))
             , maRange(rRange)
-            , mbCachedSpill(bCachedSpill) 
+            , mbCachedSpill(bCachedSpill)
+            , mbDynamicArrayMaster(bDynamicArrayMaster)
         {}
     };
 
@@ -108,11 +146,13 @@ private:
 public:
     explicit            FormulaBuffer( const WorkbookHelper& rHelper );
     void                finalizeImport();
-    void                setCellFormula( const ScAddress& rAddress, const OUString&  );
+    void                setCellFormula( const ScAddress& rAddress, const OUString&,
+                                        bool bDynamicArrayMaster = false );
 
     void setCellFormula(
         const ScAddress& rAddress, sal_Int32 nSharedId,
-        const OUString& rCellValue, sal_Int32 nValueType );
+        const OUString& rCellValue, sal_Int32 nValueType,
+        bool bDynamicArrayMaster = false );
 
     void setCellFormulaValue(
         const ScAddress& rAddress, const OUString& rValueStr, sal_Int32 nCellType );
@@ -120,7 +160,8 @@ public:
     void setCellArrayFormula(const ScRange& rRangeAddress,
                              const ScAddress& rTokenAddress,
                              const OUString&,
-                             bool bCachedSpill = false);
+                             bool bCachedSpill = false,
+                             bool bDynamicArrayMaster = false);
 
     void                createSharedFormulaMapEntry( const ScAddress& rAddress,
                                                      sal_Int32 nSharedId, const OUString& rTokens );
@@ -131,6 +172,6 @@ public:
     void addDataTable(const ScRange& rRange) { maDataTables.push_back(rRange); }
 };
 
-}
+} // namespace oox::xls
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

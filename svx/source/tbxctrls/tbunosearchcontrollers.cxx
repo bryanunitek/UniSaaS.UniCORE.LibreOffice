@@ -309,6 +309,7 @@ void FindTextFieldControl::SetTextToSelected_Impl()
         // prepopulate with last search word (fdo#84256)
         m_xWidget->set_entry_text(m_sRememberedSearchString.isEmpty() ? m_xWidget->get_text(0)
                                                                       : m_sRememberedSearchString);
+        m_aChangeHdl.Call(*m_xWidget);
     }
 }
 
@@ -350,12 +351,25 @@ IMPL_LINK(FindTextFieldControl, KeyInputHdl, const KeyEvent&, rKeyEvent, bool)
         const OUString aCommand(m_pAcc->findCommand(awtKey));
 
         // Select text in the search box when Ctrl-F pressed
-        if ( bMod1 && nCode == KEY_F )
+        if (bMod1 && nCode == KEY_F && !bShift)
             m_xWidget->select_entry_region(0, -1);
         // Execute the search when Ctrl-G, F3 and Shift-RETURN pressed (in addition to ActivateHdl condition which handles bare RETURN)
         else if ( (bMod1 && KEY_G == nCode) || (bShift && KEY_RETURN == nCode) || (KEY_F3 == nCode) )
         {
             ActivateFind(bShift);
+            bRet = true;
+        }
+        // MS Word uses Shift-F4 and Ctrl-PgDown for 'Find Next'
+        else if ((bShift && KEY_F4 == nCode) || (bMod1 && KEY_PAGEDOWN == nCode)
+                 || aCommand == ".uno:RepeatSearch")
+        {
+            ActivateFind(/*FindPrevious=*/false);
+            bRet = true;
+        }
+        // MS Word uses Ctrl-PgUp for 'Find Previous'
+        else if (bMod1 && KEY_PAGEUP == nCode)
+        {
+            ActivateFind(/*FindPrevious=*/true);
             bRet = true;
         }
         else if (aCommand == ".uno:SearchDialog")

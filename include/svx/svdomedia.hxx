@@ -27,10 +27,12 @@
 namespace sdr::contact { class ViewContactOfSdrMediaObj; }
 namespace com::sun::star::graphic { class XGraphic; }
 
+class SdrMediaLink;
 
 class SVXCORE_DLLPUBLIC SdrMediaObj final : public SdrRectObj
 {
     friend class sdr::contact::ViewContactOfSdrMediaObj;
+    friend class SdrMediaLink;
 
 private:
     // protected destructor - due to final, make private
@@ -59,6 +61,12 @@ public:
         void                        setURL(const OUString& rURL, const OUString& rReferer);
         const OUString&      getURL() const;
 
+        // An external media reference the user picked in this session is allowed on its own, in
+        // the same way as a presentation sound the user picks. A reference that arrived with the
+        // document is allowed only by the document-wide link update permission.
+        void                        setLinkAllowed(bool bAllowed);
+        bool                        isLinkAllowed() const;
+
         /// Returns the URL to the temporary extracted media file.
         const OUString&      getTempURL() const;
 
@@ -76,6 +84,17 @@ public:
 private:
         SAL_DLLPRIVATE void                mediaPropertiesChanged( const ::avmedia::MediaItem& rNewState );
         SAL_DLLPRIVATE virtual std::unique_ptr<sdr::contact::ViewContact> CreateObjectSpecificViewContact() override;
+        SAL_DLLPRIVATE virtual void        handlePageChange(SdrPage* pOldPage, SdrPage* pNewPage) override;
+
+        // Register an external media reference as a document link, so it takes
+        // part in the normal link update permission just like a linked graphic.
+        // Media stored inside the document is not a link and is left alone.
+        SAL_DLLPRIVATE void                ImpRegisterLink();
+        SAL_DLLPRIVATE void                ImpDeregisterLink();
+
+        // Fetch a snapshot frame from the media URL. The caller decides
+        // whether a fetch is allowed.
+        SAL_DLLPRIVATE void                grabSnapshot(const OUString& rRealURL) const;
 
         struct Impl;
         std::unique_ptr<Impl> m_xImpl;

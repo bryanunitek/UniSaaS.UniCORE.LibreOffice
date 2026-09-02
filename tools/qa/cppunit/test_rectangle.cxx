@@ -19,7 +19,7 @@ class RectangleTest : public CppUnit::TestFixture
 public:
     void testConstruction();
     void testOpenClosedSize();
-    void testUnitConvesion();
+    void testUnitConversion();
     void testSetOperators();
     void test_rectnormalize_alreadynormal();
     void test_rectnormalize_zerorect();
@@ -32,7 +32,7 @@ public:
     CPPUNIT_TEST_SUITE(RectangleTest);
     CPPUNIT_TEST(testConstruction);
     CPPUNIT_TEST(testOpenClosedSize);
-    CPPUNIT_TEST(testUnitConvesion);
+    CPPUNIT_TEST(testUnitConversion);
     CPPUNIT_TEST(testSetOperators);
     CPPUNIT_TEST(test_rectnormalize_zerorect);
     CPPUNIT_TEST(test_rectnormalize_alreadynormal);
@@ -121,7 +121,7 @@ void RectangleTest::testOpenClosedSize()
     }
 }
 
-void RectangleTest::testUnitConvesion()
+void RectangleTest::testUnitConversion()
 {
     {
         static constexpr tools::Rectangle aRectTwip(100, 100, 100, 100);
@@ -130,7 +130,7 @@ void RectangleTest::testUnitConvesion()
         static_assert(!aRectMm100.IsEmpty());
         // Make sure that we use coordinates for conversion, not width/height:
         // the latter is ambiguous, and e.g. GetWidth(aRectTwip) gives 1, which
-        // would had been converted to 2, resulting in different LR coordinates
+        // would have been converted to 2, resulting in different LR coordinates
         static_assert(aRectMm100.Left() == aRectMm100.Right());
         static_assert(aRectMm100.Top() == aRectMm100.Bottom());
     }

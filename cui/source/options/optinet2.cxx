@@ -83,7 +83,7 @@ bool isValidPort(OUString const & value) {
 
 }
 
-IMPL_LINK(SvxProxyTabPage, PortChangedHdl, weld::Entry&, rEdit, void)
+IMPL_LINK(SvxProxyTabPage, PortChangedHdl, weld::TextWidget&, rEdit, void)
 {
     if (!isValidPort(rEdit.get_text()))
     {
@@ -517,7 +517,7 @@ IMPL_LINK_NOARG(SvxSecurityTabPage, CertMgrPBHdl, weld::Button&, void)
     try
     {
         FileDialogHelper aHelper(css::ui::dialogs::TemplateDescription::FILEOPEN_SIMPLE,
-                                 FileDialogFlags::NONE, nullptr);
+                                 FileDialogFlags::NONE, GetDialogController()->getDialog());
         OUString sPath = m_xParameterEdit->get_text();
         if (sPath.isEmpty())
             sPath = "/usr/bin";

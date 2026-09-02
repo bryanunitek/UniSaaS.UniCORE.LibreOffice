@@ -226,17 +226,16 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf129054)
     CPPUNIT_ASSERT(pXmlDoc);
 
     // Test the size of diameter of Pie chart.
-    sal_Int32 nYTop
-        = getXPath(pXmlDoc,
-                   "/metafile/push[1]/push[1]/push[1]/push[6]/push[1]/push[4]/polyline[1]/point[1]",
-                   "y")
-              .toInt32();
-    sal_Int32 nYBottom
-        = getXPath(
-              pXmlDoc,
-              "/metafile/push[1]/push[1]/push[1]/push[6]/push[1]/push[4]/polyline[1]/point[31]",
-              "y")
-              .toInt32();
+    sal_Int32 nYTop = getXPath(pXmlDoc,
+                               "/metafile/push[1]/push[1]/push[1]/push[6]/push[1]/push[1]/push[4]/"
+                               "polyline[1]/point[1]",
+                               "y")
+                          .toInt32();
+    sal_Int32 nYBottom = getXPath(pXmlDoc,
+                                  "/metafile/push[1]/push[1]/push[1]/push[6]/push[1]/push[1]/"
+                                  "push[4]/polyline[1]/point[31]",
+                                  "y")
+                             .toInt32();
     CPPUNIT_ASSERT_DOUBLES_EQUAL(4615, nYTop - nYBottom, 5);
 }
 
@@ -416,11 +415,12 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf130380)
     MetafileXmlDump dumper;
     xmlDocUniquePtr pXmlDoc = dumpAndParse(dumper, *xMetaFile);
     CPPUNIT_ASSERT(pXmlDoc);
-    sal_Int32 nY = getXPath(pXmlDoc,
-                            "/metafile/push[1]/push[1]/push[1]/push[6]/push[1]/push[1]/polypolygon/"
-                            "polygon/point[1]",
-                            "y")
-                       .toInt32();
+    sal_Int32 nY
+        = getXPath(pXmlDoc,
+                   "/metafile/push[1]/push[1]/push[1]/push[6]/push[1]/push[1]/push[1]/polypolygon/"
+                   "polygon/point[1]",
+                   "y")
+              .toInt32();
     // Without the accompanying fix in place, this test would have failed with:
     // - Expected: 6727
     // - Actual  : 4411
@@ -2095,6 +2095,25 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf129808CompatFlagUnset)
     CPPUNIT_ASSERT_LESS(sal_Int32(1150), nHeight2);
 }
 
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf171275GridNoExtraLeading)
+{
+    // tdf#171275: This document contains an embedded font that advertises CP950 coverage. When
+    // Word-compatible CJK metrics are enabled, the line height should be scaled higher. However,
+    // this document also uses the document grid, which should disable the extra height.
+    createSwDoc("tdf171275-grid-no-extra-leading.fodt");
+    auto pXmlDoc = parseLayoutDump();
+
+    auto nHeight1 = getXPath(pXmlDoc, "//txt[1]/SwParaPortion/SwLineLayout", "height").toInt32();
+    // Without the fix, this would be ~2362
+    CPPUNIT_ASSERT_GREATER(sal_Int32(1180), nHeight1);
+    CPPUNIT_ASSERT_LESS(sal_Int32(1182), nHeight1);
+
+    auto nHeight2 = getXPath(pXmlDoc, "//txt[2]/SwParaPortion/SwLineLayout", "height").toInt32();
+    // Without the fix, this would be ~2362
+    CPPUNIT_ASSERT_GREATER(sal_Int32(1180), nHeight2);
+    CPPUNIT_ASSERT_LESS(sal_Int32(1182), nHeight2);
+}
+
 CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf168116)
 {
     // Given a paragraph with a line break immediately followed by a hidden paragraph mark:
@@ -2135,6 +2154,27 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf72341GrowAllScripts)
         = getXPath(pXmlDoc, "//SwLineLayout/SwMultiPortion[2]", "width").toInt32();
 
     CPPUNIT_ASSERT_GREATER(nWidthAlephInitial, nWidthAlephResized);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf172932GrowAllScripts)
+{
+    createSwDoc("tdf172932-grow-all-scripts.fodt");
+
+    auto* pWrtShell = getSwDocShell()->GetWrtShell();
+
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect*/ false, 10, /*bBasicCall*/ false);
+    pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect*/ true, 10, /*bBasicCall*/ false);
+
+    for (size_t i = 0; i < 20; ++i)
+    {
+        dispatchCommand(mxComponent, u".uno:Grow"_ustr, {});
+    }
+
+    // Without the fix, the first line contents will be:
+    // "Since the first pair of Eurasian beavers (Castor fiber) was released into the "
+    auto pXmlDoc = parseLayoutDump();
+    assertXPath(pXmlDoc, "//body/txt/SwParaPortion/SwLineLayout[1]", "portion",
+                u"Since the first pair of Eurasian ");
 }
 
 CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf168858_singleHiddenSection)
@@ -2285,6 +2325,65 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf169158)
     // - Expected: 2698
     // - Actual  : 2043
     assertXPath(pXmlDoc, "//page/anchored/fly/tab/row/cell/txt/infos/bounds", "top", u"2698");
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testCool16036)
+{
+    // A nearly frame-wide rectangle, centered on its (empty) paragraph, inside a fixed-size
+    // text frame anchored at the page. The rectangle cannot fit centered, so formatting the
+    // paragraph did not converge and SwLayAction::InternalAction looped forever: opening the
+    // document hung.
+    createSwDoc("vert-centered-object-in-fly-at-page.fodt");
+    // Without the fix, laying out the document (below) never returns.
+    auto pXmlDoc = parseLayoutDump();
+
+    // The at-page text frame is laid out at its fixed size, with the rectangle nested in it.
+    assertXPath(pXmlDoc, "//page", 1);
+    assertXPath(pXmlDoc, "//page/anchored/fly", 1);
+    assertXPath(pXmlDoc, "//page/anchored/fly/infos/bounds", "height", u"2835");
+    assertXPath(pXmlDoc, "//page/anchored/fly/section/txt/anchored/SwAnchoredDrawObject", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf104020)
+{
+    // A nearly frame-wide rectangle set to centre on its anchor paragraph, which has no text
+    // of its own, in a fixed-height text frame anchored at the page. The rectangle is centred
+    // on the frame's content area, as centering it on the paragraph would be circular: the
+    // paragraph's height comes from the rectangle's own wrap.
+    createSwDoc("object-centred-in-fixed-height-fly.fodt");
+    auto pXmlDoc = parseLayoutDump();
+
+    // The paragraph keeps the whole frame; without the fix it collapsed to a single line (276).
+    assertXPath(pXmlDoc, "//page/anchored/fly/infos/bounds", "top", u"567");
+    assertXPath(pXmlDoc, "//page/anchored/fly/infos/bounds", "height", u"2835");
+    assertXPath(pXmlDoc, "//page/anchored/fly/section/txt/infos/bounds", "height", u"2835");
+
+    // The rectangle sits centred in the frame, (2835 - 2384) / 2 below its top; without the
+    // fix it was centred on the single line instead, which put it above the frame.
+    assertXPath(pXmlDoc, "//page/anchored/fly/section/txt/anchored/SwAnchoredDrawObject/bounds",
+                "height", u"2384");
+    assertXPath(pXmlDoc, "//page/anchored/fly/section/txt/anchored/SwAnchoredDrawObject/bounds",
+                "top", u"792");
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf104020FittingObject)
+{
+    // The same fixed-height text frame, but with a rectangle that fits in its anchor
+    // paragraph: it is placed in the paragraph as asked, next to the paragraph's own line,
+    // and the paragraph stays a single line. Nothing is circular here, so this must keep
+    // using the paragraph as the alignment area.
+    createSwDoc("object-fitting-empty-paragraph-in-fly.fodt");
+    auto pXmlDoc = parseLayoutDump();
+
+    assertXPath(pXmlDoc, "//page/anchored/fly/infos/bounds", "top", u"567");
+    assertXPath(pXmlDoc, "//page/anchored/fly/section/txt/infos/bounds", "height", u"276");
+
+    // Centred on the single line, (276 - 173) / 2 below the paragraph's top - not on the
+    // whole frame, which would put it near the frame's middle instead.
+    assertXPath(pXmlDoc, "//page/anchored/fly/section/txt/anchored/SwAnchoredDrawObject/bounds",
+                "height", u"173");
+    assertXPath(pXmlDoc, "//page/anchored/fly/section/txt/anchored/SwAnchoredDrawObject/bounds",
+                "top", u"619");
 }
 
 CPPUNIT_TEST_FIXTURE(SwLayoutWriter5, testTdf169320)

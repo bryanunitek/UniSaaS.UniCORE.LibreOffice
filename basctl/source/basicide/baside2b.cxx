@@ -36,6 +36,7 @@
 #include <basctl/basctldllpublic.hxx>
 #include <basic/sbmeth.hxx>
 #include <basic/sbuno.hxx>
+#include <basic/sbutil.hxx>
 #include <com/sun/star/beans/XMultiPropertySet.hpp>
 #include <com/sun/star/beans/XPropertiesChangeListener.hpp>
 #include <com/sun/star/container/XHierarchicalNameAccess.hpp>
@@ -121,7 +122,7 @@ std::u16string_view const cSuffixes = u"%&!#@$";
  * Helper functions to get/set text in TextEngine using
  * the stream interface.
  *
- * get/setText() only supports tools Strings limited to 64K).
+ * get/setText() only supports tools Strings limited to 64K.
  */
 OUString getTextEngineText (ExtTextEngine& rEngine)
 {
@@ -783,7 +784,7 @@ void EditorWindow::HandleAutoCloseParen()
     if( aLine.getLength() > 0 && aLine[aSel.GetEnd().GetIndex()-1] != '(' )
     {
         GetEditView()->InsertText(u")"_ustr);
-        //leave the cursor on its place: inside the parenthesis
+        //leave the cursor in its place: inside the parenthesis
         TextPaM aEnd(nLine, aSel.GetEnd().GetIndex());
         GetEditView()->SetSelection( TextSelection( aEnd, aEnd ) );
     }
@@ -804,7 +805,7 @@ void EditorWindow::HandleAutoCloseDoubleQuotes()
     if( aLine.getLength() > 0 && !aLine.endsWith("\"") && (aPortions.back().tokenType != TokenType::String) )
     {
         GetEditView()->InsertText(u"\""_ustr);
-        //leave the cursor on its place: inside the two double quotes
+        //leave the cursor in its place: inside the two double quotes
         TextPaM aEnd(nLine, aSel.GetEnd().GetIndex());
         GetEditView()->SetSelection( TextSelection( aEnd, aEnd ) );
     }
@@ -1047,18 +1048,6 @@ void EditorWindow::SetSourceInBasic()
     }
 }
 
-// Returns the position of the last character of any of the following
-// EOL char combinations: CR, CR/LF, LF, return -1 if no EOL is found
-sal_Int32 searchEOL( std::u16string_view rStr, sal_Int32 fromIndex )
-{
-    size_t iLF = rStr.find( LINE_SEP, fromIndex );
-    if( iLF != std::u16string_view::npos )
-        return iLF;
-
-    size_t iCR = rStr.find( LINE_SEP_CR, fromIndex );
-    return iCR == std::u16string_view::npos ? -1 : iCR;
-}
-
 void EditorWindow::CreateEditEngine()
 {
     if (pEditEngine)
@@ -1082,7 +1071,7 @@ void EditorWindow::CreateEditEngine()
     do
     {
         nLines++;
-        nIndex = searchEOL( aOUSource, nIndex+1 );
+        nIndex = sb::searchEOL( aOUSource, nIndex+1 );
     }
     while (nIndex >= 0);
 
@@ -1208,7 +1197,7 @@ void EditorWindow::Notify( SfxBroadcaster& /*rBC*/, const SfxHint& rHint )
     }
     else if( rHint.GetId() == SfxHintId::TextViewCaretChanged )
     {
-        // Check whether the line number where the caret is has changed and the
+        // Check whether the line number where the caret is, has changed and the
         // highlight needs to be redrawn
         sal_uInt32 nStartPara = pEditView->GetSelection().GetStart().GetPara();
         sal_uInt32 nEndPara = pEditView->GetSelection().GetEnd().GetPara();
@@ -2982,7 +2971,7 @@ std::vector< OUString > UnoTypeCodeCompletetor::GetXIdlClassMethods() const
             aRetVect.push_back( rMethod->getName() );
         }
     }
-    return aRetVect;//this is empty when cannot code complete
+    return aRetVect;//this is empty when it cannot code complete
 }
 
 std::vector< OUString > UnoTypeCodeCompletetor::GetXIdlClassFields() const
@@ -2996,7 +2985,7 @@ std::vector< OUString > UnoTypeCodeCompletetor::GetXIdlClassFields() const
             aRetVect.push_back( rxField->getName() );
         }
     }
-    return aRetVect;//this is empty when cannot code complete
+    return aRetVect;//this is empty when it cannot code complete
 }
 
 

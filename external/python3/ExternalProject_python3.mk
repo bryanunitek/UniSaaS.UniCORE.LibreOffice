@@ -39,11 +39,13 @@ ifeq ($(OS),WNT)
 $(call gb_ExternalProject_get_state_target,python3,build) :
 	$(call gb_Trace_StartRange,python3,EXTERNAL)
 	$(call gb_ExternalProject_run,build,\
-		MAKEFLAGS= MSBuild.exe pcbuild.sln /t:Build $(gb_MSBUILD_CONFIG_AND_PLATFORM) \
+		MAKEFLAGS= CL=-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS \
+			MSBuild.exe pcbuild.sln /t:Build $(gb_MSBUILD_CONFIG_AND_PLATFORM) \
 			/p:bz2Dir=$(gb_UnpackedTarball_workdir)/bzip2 \
 			/p:opensslIncludeDir=$(gb_UnpackedTarball_workdir)/openssl/include \
 			/p:opensslOutDir=$(gb_UnpackedTarball_workdir)/openssl \
 			/p:zlibDir=$(gb_UnpackedTarball_workdir)/zlib \
+			/p:KillPython=false \
 			/p:sqlite3Dir=$(gb_UnpackedTarball_workdir)/sqlite3 \
 			/p:lzmaDir=$(gb_UnpackedTarball_workdir)/lzma/ \
 			/p:mpdecimalDir=$(gb_UnpackedTarball_workdir)/python3/Modules/_decimal/ \
@@ -88,6 +90,7 @@ endif
 $(call gb_ExternalProject_get_state_target,python3,build) :
 	$(call gb_Trace_StartRange,python3,EXTERNAL)
 	$(call gb_ExternalProject_run,build,\
+		$(if $(SOURCE_DATE_EPOCH),export SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) &&) \
 		$(if $(filter MACOSX,$(OS)), \
 			$(if $(filter 10.8 10.9 10.10 10.11,$(MACOSX_DEPLOYMENT_TARGET)), \
 				ac_cv_func_getentropy=no \

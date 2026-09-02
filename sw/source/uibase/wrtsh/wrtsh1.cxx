@@ -249,6 +249,14 @@ void SwWrtShell::Insert( const OUString &rStr )
          bCallIns = m_bIns /*|| bHasSel*/;
     bool bDeleted = false;
 
+    // tdf#169913 - insert at cursor position without overwriting the selection
+    if (bHasSel && !SwViewOption::IsTypingReplacesSelection())
+    {
+        NormalizePam(false);
+        ClearMark();
+        bHasSel = false;
+    }
+
     if( bHasSel || ( !m_bIns && IsInHiddenRange(/*bSelect=*/true) ) )
     {
             // Only here parenthesizing, because the normal
@@ -2277,6 +2285,10 @@ void SwWrtShell::ChangeHeaderOrFooter(
         pSdrView->SdrEndTextEdit(true);
     }
     addCurrentPosition();
+    // tdf#137107 - prevent scrolling to cursor when deleting header/footer
+    const bool bLockedView = IsViewLocked();
+    if (!bOn)
+        LockView(true);
     StartAllAction();
     StartUndo( SwUndoId::HEADER_FOOTER ); // #i7983#
     bool bExecute = true;
@@ -2315,10 +2327,24 @@ void SwWrtShell::ChangeHeaderOrFooter(
             {
                 bChgd = true;
                 SwFrameFormat &rMaster = aDesc.GetMaster();
-                if(bHeader)
-                    rMaster.SetFormatAttr( SwFormatHeader( bOn ));
+                if (bOn && (bHeader ? aDesc.IsWithoutFirstHeader() : aDesc.IsWithoutFirstFooter()))
+                {
+                    if (bHeader)
+                    {
+                        aDesc.ChgWithoutFirstHeader(false);
+                    }
+                    else
+                    {
+                        aDesc.ChgWithoutFirstFooter(false);
+                    }
+                }
                 else
-                    rMaster.SetFormatAttr( SwFormatFooter( bOn ));
+                {
+                    if (bHeader)
+                        rMaster.SetFormatAttr( SwFormatHeader( bOn ));
+                    else
+                        rMaster.SetFormatAttr( SwFormatFooter( bOn ));
+                }
                 if( bOn )
                 {
                     // keep in sync with FN_PGNUMBER_WIZARD
@@ -2349,6 +2375,9 @@ void SwWrtShell::ChangeHeaderOrFooter(
     }
     EndUndo( SwUndoId::HEADER_FOOTER ); // #i7983#
     EndAllAction();
+    // tdf#137107 - prevent scrolling to cursor when deleting header/footer
+    if (!bOn)
+        LockView(bLockedView);
 }
 
 void SwWrtShell::SetShowHeaderFooterSeparator( FrameControlType eControl, bool bShow )

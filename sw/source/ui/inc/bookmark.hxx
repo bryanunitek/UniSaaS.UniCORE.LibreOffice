@@ -67,9 +67,9 @@ public:
     {
         m_xControl->connect_item_activated(rLink);
     }
-    void connect_column_clicked(const Link<int, void>& rLink)
+    void connect_column_header_clicked(const Link<int, void>& rLink)
     {
-        m_xControl->connect_column_clicked(rLink);
+        m_xControl->connect_column_header_clicked(rLink);
     }
     void connect_editing(const Link<const weld::TreeIter&, bool>& rStartLink,
                          const Link<const weld::TreeView::IterColText&, bool>& rEndLink)
@@ -112,7 +112,7 @@ class SwInsertBookmarkDlg final : public SfxDialogController
     std::unique_ptr<BookmarkTable> m_xBookmarksBox;
     std::unique_ptr<weld::Label> m_xForbiddenChars;
 
-    DECL_LINK(ModifyHdl, weld::Entry&, void);
+    DECL_LINK(ModifyHdl, weld::TextWidget&, void);
     DECL_LINK(InsertHdl, weld::Button&, void);
     DECL_LINK(DeleteHdl, weld::Button&, void);
     DECL_LINK(EditTextHdl, weld::Button&, void);

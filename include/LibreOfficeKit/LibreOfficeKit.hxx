@@ -314,17 +314,6 @@ public:
     }
 
     /**
-     * Posts a dialog event for the window with given id
-     *
-     * @param nWindowId id of the window to notify
-     * @param pArguments arguments of the event.
-     */
-    void sendDialogEvent(unsigned long long int nWindowId, const char* pArguments = NULL)
-    {
-        mpDoc->pClass->sendDialogEvent(mpDoc, nWindowId, pArguments);
-    }
-
-    /**
      * Posts a UNO command to the document.
      *
      * Example argument string:
@@ -872,26 +861,6 @@ public:
         mpDoc->pClass->setViewReadOnly(mpDoc, nId, readOnly);
     }
 
-    /** Set if the view can edit comments on readonly mode or not.
-     *
-     * @param nId view ID
-     * @param allow
-    */
-    void setAllowChangeComments(int nId, const bool allow)
-    {
-        mpDoc->pClass->setAllowChangeComments(mpDoc, nId, allow);
-    }
-
-    /** Set if the view can manage redlines in readonly mode or not.
-     *
-     * @param nId view ID
-     * @param allow
-    */
-    void setAllowManageRedlines(int nId, bool allow)
-    {
-        mpDoc->pClass->setAllowManageRedlines(mpDoc, nId, allow);
-    }
-
     /**
      * Enable/Disable accessibility support for the window with the specified nId.
      *
@@ -1165,17 +1134,6 @@ public:
     }
 
     /**
-     * Posts a dialog event for the window with given id
-     *
-     * @param nWindowId id of the window to notify
-     * @param pArguments arguments of the event.
-     */
-    void sendDialogEvent(unsigned long long int nWindowId, const char* pArguments = NULL)
-    {
-        mpThis->pClass->sendDialogEvent(mpThis, nWindowId, pArguments);
-    }
-
-    /**
      * Generic function to toggle and tweak various things in the core LO
      *
      * The currently available option names and their allowed values are:
@@ -1250,12 +1208,12 @@ public:
     }
 
     /**
-     * Start a UNO acceptor using the function pointers provides to read and write data to/from the acceptor.
+     * Start a UNO acceptor using the function pointers provided to read and write data to/from the acceptor.
      *
-     * @param pReceiveURPFromLOContext A pointer that will be passed to your fnRecieveURPFromLO function
+     * @param pReceiveURPFromLOContext A pointer that will be passed to your fnReceiveURPFromLO function
      * @param pSendURPToLOContext A pointer that will be passed to your fnSendURPToLO function
      * @param fnReceiveURPFromLO A function pointer that LO should use to pass URP back to the caller
-     * @param fnSendURPToLO A function pointer pointer that the caller should use to pass URP to LO
+     * @param fnSendURPToLO A function pointer that the caller should use to pass URP to LO
      */
     void* startURP(void* pReceiveURPFromLOContext, void* pSendURPToLOContext,
                    int (*fnReceiveURPFromLO)(void* pContext, const signed char* pBuffer, int nLen),

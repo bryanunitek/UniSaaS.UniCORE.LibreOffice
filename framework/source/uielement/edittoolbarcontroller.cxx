@@ -41,7 +41,7 @@ namespace framework
 {
 
 // Wrapper class to notify controller about events from edit.
-// Unfortunaltly the events are notified through virtual methods instead
+// Unfortunately the events are notified through virtual methods instead
 // of Listeners.
 
 class EditControl final : public InterimItemWindow
@@ -60,7 +60,7 @@ private:
 
     DECL_LINK(FocusInHdl, weld::Widget&, void);
     DECL_LINK(FocusOutHdl, weld::Widget&, void);
-    DECL_LINK(ModifyHdl, weld::Entry&, void);
+    DECL_LINK(ModifyHdl, weld::TextWidget&, void);
     DECL_LINK(ActivateHdl, weld::Entry&, bool);
     DECL_LINK(KeyInputHdl, const ::KeyEvent&, bool);
 };
@@ -102,7 +102,7 @@ void EditControl::dispose()
     InterimItemWindow::dispose();
 }
 
-IMPL_LINK_NOARG(EditControl, ModifyHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(EditControl, ModifyHdl, weld::TextWidget&, void)
 {
     if (m_pEditToolbarController)
         m_pEditToolbarController->Modify();

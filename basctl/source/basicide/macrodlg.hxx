@@ -31,13 +31,6 @@
 namespace basctl
 {
 
-enum class MacroExitCode {
-    Macro_Close = 110,
-    Macro_OkRun = 111,
-    Macro_New   = 112,
-    Macro_Edit  = 114,
-};
-
 class MacroChooser : public SfxDialogController
 {
 public:
@@ -60,7 +53,7 @@ private:
     DECL_LINK(MacroSelectHdl, weld::ItemView&, void);
     DECL_LINK(MacroDoubleClickHdl, const weld::TreeIter&, bool);
     DECL_LINK(BasicSelectHdl, weld::ItemView&, void);
-    DECL_LINK(EditModifyHdl, weld::Entry&, void);
+    DECL_LINK(EditModifyHdl, weld::TextWidget&, void);
     DECL_LINK(ContextMenuHdl, const CommandEvent&, bool);
     DECL_LINK(ButtonHdl, weld::Button&, void);
 

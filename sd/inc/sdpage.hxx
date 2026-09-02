@@ -30,9 +30,11 @@
 #include <editeng/flditem.hxx>
 #include <svx/svdobj.hxx>
 #include <svx/fmpage.hxx>
+#include <vcl/checksum.hxx>
 #include <xmloff/autolayout.hxx>
 #include "diadef.h"
 #include "pres.hxx"
+#include "SdSoundLink.hxx"
 #include "shapelist.hxx"
 #include "misc/scopelock.hxx"
 #include "sddllapi.h"
@@ -112,7 +114,7 @@ friend class sd::UndoAttrObject;
     bool    mbSoundOn;                ///< with / without sound.
     bool    mbExcluded;               ///< will (not) be displayed during show.
     OUString    maLayoutName;             ///< Name of the layout
-    OUString    maSoundFile;              ///< Path to sound file (MS-DOS notation).
+    SdSoundLink maSoundLink;              ///< transition sound source
     bool        mbLoopSound;
     bool        mbStopSound;
     OUString    maCreatedPageName;        ///< generated page name by GetPageName.
@@ -180,6 +182,7 @@ public:
     void            GetPageInfo(::tools::JsonWriter& jsonWriter);
     void            NotifyPagePropertyChanges();
     bool            RestoreDefaultText( SdrObject* pObj, const OUString& rStr ) override;
+    void            onEmptyPresObjFilled(SdrObject& rObj) override;
 
     /** @return true if the given SdrObject is inside the presentation object list */
     bool            IsPresObj(const SdrObject* pObj);
@@ -189,6 +192,25 @@ public:
 
     /** inserts the given SdrObject into the presentation object list */
     void            InsertPresObj(SdrObject* pObj, PresObjKind eKind );
+
+    /** The checksum of the art a picture placeholder is created holding. Loading and decoding it
+        is what answers for the theme in force, so a walk over many objects asks once. */
+    static BitmapChecksum GetPlaceholderStandInChecksum();
+
+    /** Whether the object shows nothing but the art that stands in for what a placeholder waits
+        for. A picture placeholder is created holding that art, so holding a graphic does not mean
+        the author put a picture there. */
+    static bool HoldsPlaceholderStandIn(const SdrObject& rObj, BitmapChecksum nStandIn);
+
+    /** What represents a placeholder that holds text: an outliner object, the way a graphic object
+        represents one holding a picture. It carries the placeholder's identity but belongs to no
+        page yet, so the caller decides how it takes the old object's place. */
+    rtl::Reference<SdrObject> MakePresObjText(SdrObject& rObj);
+
+    /** The reverse: what represents the given placeholder once its text is gone - for a picture one
+        the icon standing in for the image it waits for. It carries the placeholder's identity but
+        belongs to no page yet, so the caller decides how it takes the old object's place. */
+    rtl::Reference<SdrObject> MakePresObjPlaceholder(SdrObject& rObj);
 
     SD_DLLPUBLIC void SetAutoLayout(AutoLayout eLayout, bool bInit=false, bool bCreate=false);
     AutoLayout      GetAutoLayout() const { return meAutoLayout; }
@@ -228,8 +250,10 @@ public:
 
     bool        IsScaleObjects() const              { return mbScaleObjects; }
 
-    void        SetSoundFile(const OUString& rStr)    { maSoundFile = rStr; }
-    const OUString& GetSoundFile() const                { return maSoundFile; }
+    void        SetSoundFile(const OUString& rStr, bool bAllowed = false);
+    const OUString& GetSoundFile() const                { return maSoundLink.getURL(); }
+    const SdSoundLink& GetSoundLink() const             { return maSoundLink; }
+    void        SetSoundAllowed(bool bAllowed)          { maSoundLink.setAllowed(bAllowed); }
 
     void        SetLoopSound( bool bLoopSound ) { mbLoopSound = bLoopSound; }
     bool        IsLoopSound() const                 { return mbLoopSound; }
@@ -301,7 +325,7 @@ public:
     void setAnimationNode( css::uno::Reference< css::animations::XAnimationNode > const & xNode );
 
     /// @return a helper class to manipulate effects inside the main sequence
-    std::shared_ptr< sd::MainSequence > const & getMainSequence();
+    SD_DLLPUBLIC std::shared_ptr< sd::MainSequence > const & getMainSequence();
 
     /** quick check if this slide has an animation node.
         This can be used to have a cost free check if there are no animations ad this slide.

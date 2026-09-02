@@ -53,9 +53,9 @@
 #include <vcl/weld/MenuButton.hxx>
 #include <memory>
 
-#define TEXT_PADDING 5
-#define BOX_DISTANCE 10
-#define BUTTON_WIDTH 18
+constexpr tools::Long TEXT_PADDING = 5;
+constexpr tools::Long BOX_DISTANCE = 10;
+constexpr tools::Long BUTTON_WIDTH = 18;
 
 using namespace basegfx;
 using namespace basegfx::utils;
@@ -281,6 +281,7 @@ void SwHeaderFooterWin::SetOffset(Point aOffset)
     // Compute the text to show
     const SwPageFrame* pPageFrame = SwFrameMenuButtonBase::GetPageFrame(m_pFrame);
     const SwPageDesc* pDesc = pPageFrame->GetPageDesc();
+    //TODO: handle on/off state first vs. follow pages
     bool bIsFirst = !pDesc->IsFirstShared() && pPageFrame->OnFirstPage();
     bool bIsLeft  = !pDesc->IsHeaderShared() && !pPageFrame->OnRightPage();
     bool bIsRight = !pDesc->IsHeaderShared() && pPageFrame->OnRightPage();

@@ -37,6 +37,7 @@
 #include <vcl/outdev.hxx>
 #include <vcl/BitmapWriteAccess.hxx>
 #include <vcl/ColorMask.hxx>
+#include <vcl/BitmapTools.hxx>
 #include <memory>
 
 #define DIBCOREHEADERSIZE       ( 12UL )
@@ -330,16 +331,7 @@ bool ImplReadDIBPalette(SvStream& rIStm, BitmapPalette& rPal, bool bQuad)
 
 BitmapColor SanitizePaletteIndex(sal_uInt8 nIndex, const BitmapPalette& rPalette)
 {
-    const sal_uInt16 nPaletteEntryCount = rPalette.GetEntryCount();
-    if (nPaletteEntryCount && nIndex >= nPaletteEntryCount)
-    {
-        auto nSanitizedIndex = nIndex % nPaletteEntryCount;
-        SAL_WARN_IF(nIndex != nSanitizedIndex, "vcl", "invalid colormap index: "
-                    << static_cast<unsigned int>(nIndex) << ", colormap len is: "
-                    << nPaletteEntryCount);
-        nIndex = nSanitizedIndex;
-    }
-    return BitmapColor(nIndex);
+    return BitmapColor(vcl::bitmap::sanitizePaletteIndex(nIndex, rPalette.GetEntryCount()));
 }
 
 bool ImplDecodeRLE(sal_uInt8* pBuffer, DIBV5Header const & rHeader, BitmapWriteAccess& rAcc, const BitmapPalette& rPalette, bool bRLE4)
@@ -976,7 +968,7 @@ bool ImplReadDIBBody(SvStream& rIStm, Bitmap& rBmp, AlphaMask* pBmpAlpha, sal_uI
         // some clipboard entries have alpha mask on zero to say that there is
         // no alpha; do only use this when the other masks are set. The MS docu
         // says that masks are only to be set when bV5Compression is set to
-        // BI_BITFIELDS, but there seem to exist a wild variety of usages...
+        // BI_BITFIELDS, but there seems to exist a wild variety of usages...
         if((bRedSet || bGreenSet || bBlueSet) && (0 == aHeader.nV5AlphaMask))
         {
             bAlphaPossible = false;
@@ -1700,9 +1692,8 @@ bool ReadRawDIB(
 {
     if (rTarget.HasAlpha())
     {
-        // Need to preserve the targets alpha information
-        Bitmap aTmp(rTarget.CreateColorBitmap());
-        AlphaMask aTmpMask(rTarget.CreateAlphaMask());
+        // Need to preserve the target's alpha information
+        auto [ aTmp, aTmpMask ] = rTarget.SplitIntoColorAndAlpha();
         {
             BitmapScopedWriteAccess pWriteAccess(aTmp);
             for (int nRow = 0; nRow < nHeight; ++nRow)
@@ -1744,16 +1735,20 @@ bool WriteDIBBitmapEx(
     const Bitmap& rSource,
     SvStream& rOStm)
 {
-    if(ImplWriteDIB(rSource.CreateColorBitmap(), rOStm, true, true))
+    Bitmap tmpColor(rSource);
+    AlphaMask tmpAlpha;
+    if (rSource.HasAlpha())
+        std::tie(tmpColor, tmpAlpha) = rSource.SplitIntoColorAndAlpha();
+
+    if (ImplWriteDIB(tmpColor, rOStm, true, true))
     {
         rOStm.WriteUInt32( 0x25091962 );
         rOStm.WriteUInt32( 0xACB20201 );
-        rOStm.WriteUChar( rSource.HasAlpha() ? 2 : 0 ); // Used to be TransparentType enum
+        rOStm.WriteUChar(tmpAlpha.IsEmpty() ? 0 : 2); // Used to be TransparentType enum
 
-        if(rSource.HasAlpha())
+        if (!tmpAlpha.IsEmpty())
         {
             // invert the alpha because the other routines actually want transparency
-            AlphaMask tmpAlpha = rSource.CreateAlphaMask();
             tmpAlpha.Invert();
             return ImplWriteDIB(tmpAlpha.GetBitmap(), rOStm, true, true);
         }

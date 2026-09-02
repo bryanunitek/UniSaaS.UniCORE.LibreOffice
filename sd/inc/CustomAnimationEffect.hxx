@@ -152,6 +152,7 @@ public:
     bool getStopAudio() const;
     void setStopAudio();
     void createAudio( const css::uno::Any& rSource );
+    void setAudioSource( const css::uno::Any& rSource );
     void removeAudio();
     const css::uno::Reference< css::animations::XAudio >& getAudio() const { return mxAudio; }
 
@@ -290,7 +291,7 @@ public:
 
     SAL_DLLPRIVATE virtual bool disposeShape( const css::uno::Reference< css::drawing::XShape >& xShape );
     SAL_DLLPRIVATE virtual void insertTextRange( const css::uno::Any& aTarget );
-    SAL_DLLPRIVATE virtual void disposeTextRange( const css::uno::Any& aTarget );
+    SAL_DLLPRIVATE virtual void disposeTextRange( const css::uno::Any& aTarget, bool bPreviousParagraphEmpty );
     SAL_DLLPRIVATE virtual bool hasEffect( const css::uno::Reference< css::drawing::XShape >& xShape );
     SAL_DLLPRIVATE virtual void onTextChanged( const css::uno::Reference< css::drawing::XShape >& xShape );
 
@@ -379,7 +380,7 @@ public:
     MainSequence( const css::uno::Reference< css::animations::XAnimationNode >& xTimingRootNode );
     virtual ~MainSequence() override;
 
-    virtual css::uno::Reference< css::animations::XAnimationNode > getRootNode() override;
+    SD_DLLPUBLIC virtual css::uno::Reference< css::animations::XAnimationNode > getRootNode() override;
     void reset( const css::uno::Reference< css::animations::XAnimationNode >& xTimingRootNode );
 
     /** this method rebuilds the animation nodes */
@@ -389,7 +390,7 @@ public:
 
     virtual bool disposeShape( const css::uno::Reference< css::drawing::XShape >& xShape ) override;
     virtual void insertTextRange( const css::uno::Any& aTarget ) override;
-    virtual void disposeTextRange( const css::uno::Any& aTarget ) override;
+    virtual void disposeTextRange( const css::uno::Any& aTarget, bool bPreviousParagraphEmpty ) override;
     virtual bool hasEffect( const css::uno::Reference< css::drawing::XShape >& xShape ) override;
     virtual void onTextChanged( const css::uno::Reference< css::drawing::XShape >& xShape ) override;
 

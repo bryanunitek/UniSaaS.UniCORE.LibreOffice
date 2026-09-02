@@ -39,7 +39,7 @@ ScImportOptions::ScImportOptions( std::u16string_view rStr )
     bFixedWidth = false;
     nFieldSepCode = 0;
     nTextSepCode = 0;
-    eCharSet = RTL_TEXTENCODING_DONTKNOW;
+    eEncoding = RTL_TEXTENCODING_DONTKNOW;
     bSaveAsShown = true;    // "true" if not in string (after CSV import)
     bQuoteAllText = false;
     bSaveNumberAsSuch = true;
@@ -48,6 +48,7 @@ ScImportOptions::ScImportOptions( std::u16string_view rStr )
     nSheetToExport = 0;
     bEvaluateFormulas = true;   // true if not present at all, for compatibility
     bIncludeBOM = false;
+    nEndianness = SvStreamEndian::LITTLE;
     sal_Int32 nTokenCount = comphelper::string::getTokenCount(rStr, ',');
     if ( nTokenCount < 3 )
         return;
@@ -61,7 +62,7 @@ ScImportOptions::ScImportOptions( std::u16string_view rStr )
         nFieldSepCode = ScAsciiOptions::GetWeightedFieldSep( aToken, true);
     nTextSepCode  = static_cast<sal_Unicode>(o3tl::toInt32(o3tl::getToken(rStr, 0, ',', nIdx)));
     aStrFont      = o3tl::getToken(rStr, 0, ',', nIdx);
-    eCharSet      = ScGlobal::GetCharsetValue(aStrFont);
+    eEncoding     = ScGlobal::GetEncodingValue(aStrFont);
 
     if ( nTokenCount == 4 )
     {
@@ -97,6 +98,8 @@ ScImportOptions::ScImportOptions( std::u16string_view rStr )
             bEvaluateFormulas = o3tl::getToken(rStr, 0, ',', nIdx) == u"true";
         if (nTokenCount >= 14)
             bIncludeBOM = o3tl::getToken(rStr, 0, ',', nIdx) == u"true";
+        if (nTokenCount >= 15)
+            nEndianness = static_cast<SvStreamEndian>(o3tl::toInt32(o3tl::getToken(rStr, 0, ',', nIdx)));
     }
 }
 
@@ -125,16 +128,18 @@ OUString ScImportOptions::BuildString() const
             "," +
             OUString::boolean( bEvaluateFormulas ) +  // same as "Evaluate formulas" in ScAsciiOptions
             "," +
-            OUString::boolean(bIncludeBOM) ;  // same as "Include BOM" in ScAsciiOptions
+            OUString::boolean(bIncludeBOM) +  // same as "Include BOM" in ScAsciiOptions
+            "," +
+            OUString::number( static_cast<sal_uInt16>(nEndianness) );  // same as "Endianness" in ScAsciiOptions
 
     return aResult;
 }
 
 void ScImportOptions::SetTextEncoding( rtl_TextEncoding nEnc )
 {
-    eCharSet = (nEnc == RTL_TEXTENCODING_DONTKNOW ?
+    eEncoding = (nEnc == RTL_TEXTENCODING_DONTKNOW ?
         osl_getThreadTextEncoding() : nEnc);
-    aStrFont = ScGlobal::GetCharsetString( nEnc );
+    aStrFont = ScGlobal::GetEncodingString( nEnc );
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

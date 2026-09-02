@@ -97,8 +97,21 @@ Point QtInstanceWindow::get_position() const
 bool QtInstanceWindow::has_toplevel_focus() const
 {
     SolarMutexGuard g;
+
     bool bFocus = false;
-    GetQtInstance().RunInMainThread([&] { bFocus = QApplication::activeWindow() == getQWidget(); });
+    GetQtInstance().RunInMainThread([&] {
+        // workaround for QTBUG-148561 ("Wayland: QApplication::activeWindow returns
+        // previously active window in QApplication::focusChanged callback"):
+        // if there's a focus widget, manually check whether that one is in the
+        // window instead of calling QApplication::activeWindow
+        if (QWidget* pFocusWidget = QApplication::focusWidget())
+        {
+            bFocus = pFocusWidget->window() == getQWidget();
+            return;
+        }
+
+        bFocus = QApplication::activeWindow() == getQWidget();
+    });
     return bFocus;
 }
 
@@ -111,45 +124,51 @@ void QtInstanceWindow::present()
     });
 }
 
-void QtInstanceWindow::set_window_state(const OUString& rStr)
+void QtInstanceWindow::set_window_state(const vcl::WindowData& rState)
 {
     SolarMutexGuard g;
 
-    const vcl::WindowData aData(rStr);
-    const vcl::WindowDataMask eMask = aData.mask();
+    const vcl::WindowDataMask eMask = rState.mask();
 
     GetQtInstance().RunInMainThread([&] {
         QRect aGeometry = getQWidget()->geometry();
         if (eMask & vcl::WindowDataMask::X)
-            aGeometry.setX(aData.x());
+            aGeometry.setX(rState.x());
         if (eMask & vcl::WindowDataMask::Y)
-            aGeometry.setY(aData.y());
+            aGeometry.setY(rState.y());
         if (eMask & vcl::WindowDataMask::Width)
-            aGeometry.setWidth(aData.width());
+            aGeometry.setWidth(rState.width());
         if (eMask & vcl::WindowDataMask::Height)
-            aGeometry.setHeight(aData.height());
+            aGeometry.setHeight(rState.height());
 
         getQWidget()->setGeometry(aGeometry);
 
         if (eMask & vcl::WindowDataMask::State)
         {
-            const vcl::WindowState eState = aData.state();
-            if (eState & vcl::WindowState::Normal)
-                getQWidget()->showNormal();
+            Qt::WindowStates eWindowStates = getQWidget()->windowState();
+            eWindowStates &= ~(Qt::WindowState::WindowFullScreen | Qt::WindowState::WindowMaximized
+                               | Qt::WindowState::WindowMinimized);
+
+            const vcl::WindowState eState = rState.state();
+            if (eState & vcl::WindowState::FullScreen)
+                eWindowStates |= Qt::WindowState::WindowFullScreen;
             else if (eState & vcl::WindowState::Maximized)
-                getQWidget()->showMaximized();
+                eWindowStates |= Qt::WindowState::WindowMaximized;
             else if (eState & vcl::WindowState::Minimized)
-                getQWidget()->showMinimized();
+                eWindowStates |= Qt::WindowState::WindowMinimized;
+
+            getQWidget()->setWindowState(eWindowStates);
         }
     });
 }
 
-OUString QtInstanceWindow::get_window_state(vcl::WindowDataMask eMask) const
+vcl::WindowData QtInstanceWindow::get_window_state(vcl::WindowDataMask eMask) const
 {
     SolarMutexGuard g;
 
     vcl::WindowData aData;
     GetQtInstance().RunInMainThread([&] {
+        aData.setMask(eMask);
         QRect aGeometry = getQWidget()->geometry();
         if (eMask & vcl::WindowDataMask::X)
             aData.setX(aGeometry.x());
@@ -172,7 +191,7 @@ OUString QtInstanceWindow::get_window_state(vcl::WindowDataMask eMask) const
         }
     });
 
-    return aData.toStr();
+    return aData;
 }
 
 css::uno::Reference<css::awt::XWindow> QtInstanceWindow::GetXWindow()

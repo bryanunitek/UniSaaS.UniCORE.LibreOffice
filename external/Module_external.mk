@@ -17,6 +17,7 @@ $(eval $(call gb_Module_add_moduledirs,external,\
 	$(call gb_Helper_optional,BOOST,boost) \
 	$(call gb_Helper_optional,BOX2D,box2d) \
 	$(call gb_Helper_optional,BREAKPAD,breakpad) \
+	$(call gb_Helper_optional,BROTLI,brotli) \
 	$(call gb_Helper_optional,BSH,beanshell) \
 	$(call gb_Helper_optional,BZIP2,bzip2) \
 	$(call gb_Helper_optional,CAIRO,cairo) \
@@ -44,6 +45,7 @@ $(eval $(call gb_Module_add_moduledirs,external,\
 	$(call gb_Helper_optional,GPGMEPP,gpgmepp) \
 	$(call gb_Helper_optional,GRAPHITE,graphite) \
 	$(call gb_Helper_optional,HARFBUZZ,harfbuzz) \
+	$(call gb_Helper_optional,HIGHWAY,highway) \
 	$(call gb_Helper_optional,HSQLDB,hsqldb) \
 	$(call gb_Helper_optional,HUNSPELL,hunspell) \
 	$(call gb_Helper_optional,HYPHEN,hyphen) \
@@ -59,6 +61,7 @@ $(eval $(call gb_Module_add_moduledirs,external,\
 	$(call gb_Helper_optional,LIBEXTTEXTCAT,libexttextcat) \
 	$(call gb_Helper_optional,LIBFFI,libffi) \
 	$(call gb_Helper_optional,LIBGPGERROR,libgpg-error) \
+	$(call gb_Helper_optional,LIBJXL,libjxl) \
 	$(call gb_Helper_optional,LIBLANGTAG,liblangtag) \
 	$(call gb_Helper_optional,LIBNUMBERTEXT,libnumbertext) \
 	$(call gb_Helper_optional,LIBPNG,libpng) \
@@ -66,7 +69,6 @@ $(eval $(call gb_Module_add_moduledirs,external,\
 	$(call gb_Helper_optional,LIBWEBP,libwebp) \
 	$(call gb_Helper_optional,LIBXML2,libxml2) \
 	$(call gb_Helper_optional,LIBXSLT,libxslt) \
-	$(call gb_Helper_optional,LPSOLVE,lpsolve) \
 	$(call gb_Helper_optional,LIBTOMMATH,libtommath) \
 	$(call gb_Helper_optional,LXML,lxml) \
 	$(call gb_Helper_optional,LZMA,lzma) \

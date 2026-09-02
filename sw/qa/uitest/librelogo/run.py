@@ -8,24 +8,25 @@
 #
 
 from uitest.framework import UITestCase
+from uitest.uihelper.common import get_state_as_dict
+from uitest.uihelper.common import select_by_text
 from uitest.uihelper.common import type_text
 from com.sun.star.awt.FontSlant import ITALIC as __Slant_ITALIC__
 from com.sun.star.awt.FontUnderline import NONE as __Underline_NONE__
 from com.sun.star.awt.FontUnderline import SINGLE as __Underline_SINGLE__
 from com.sun.star.awt.FontStrikeout import NONE as __Strikeout_NONE__
 from com.sun.star.awt.FontStrikeout import SINGLE as __Strikeout_SINGLE__
+from com.sun.star.script.provider import theMasterScriptProviderFactory
+import time
 
 class LibreLogoTest(UITestCase):
     LIBRELOGO_PATH = "vnd.sun.star.script:LibreLogo|LibreLogo.py$%s?language=Python&location=share"
-
-    def createMasterScriptProviderFactory(self):
-        xServiceManager = self.xContext.ServiceManager
-        return xServiceManager.createInstanceWithContext(
-            "com.sun.star.script.provider.MasterScriptProviderFactory",
-            self.xContext)
+    PROGRAM_FOR = "FOR N IN [1, 2, 3, 4] [ FORWARD 100 RIGHT 45 ]"
+    PROGRAM_REPEAT = "REPEAT 4 [ FORWARD 100 RIGHT 45 ]"
+    PROGRAM_WHILE = "N = 0 WHILE N < 4 [ N = N + 1 FORWARD 100 RIGHT 45 ]"
 
     def getScript(self, command):
-        xMasterScriptProviderFactory = self.createMasterScriptProviderFactory()
+        xMasterScriptProviderFactory = theMasterScriptProviderFactory.get(self.xContext)
         document = self.ui_test.get_component()
         xScriptProvider = xMasterScriptProviderFactory.createScriptProvider(document)
         xScript = xScriptProvider.getScript(self.LIBRELOGO_PATH %command)
@@ -54,7 +55,7 @@ class LibreLogoTest(UITestCase):
             # - turtle shape: result of program start
             # - line shape: result of turtle drawing
             # b) continuous line drawing (the regression
-            # related to the fix of tdf#106792 resulted shorter line
+            # related to the fix of tdf#106792 resulted in shorter line
             # segments than the turtle path and non-continuous line
             # drawing, ie. in this example, three line shapes
             # instead of a single one. See its fix in
@@ -318,5 +319,130 @@ x 3 ; draw only a few levels
 
     def test_custom_lock(self):
         self.check_label(True)
+
+    def run_and_get_message(self, program):
+        with self.ui_test.create_doc_in_start_center("writer") as document:
+            xWriterDoc = self.xUITest.getTopFocusWindow()
+            xWriterEdit = xWriterDoc.getChild("writer_edit")
+
+            # to check the state of LibreLogo program execution
+            xIsAlive = self.getScript("__is_alive__")
+
+            # to check the last dialog message presented by LibreLogo
+            xLastDialogMessage = self.getScript("__last_dialog_message__")
+
+            # write the given program in the document
+            type_text(xWriterEdit, program)
+
+            # run the written program
+            self.logo("run")
+
+            # wait for LibreLogo program termination closing every opened dialog
+            while xIsAlive.invoke((), (), ())[0]:
+                xCurrentTopWindow = self.xUITest.getTopFocusWindow()
+                if get_state_as_dict(xCurrentTopWindow)['WindowType'] == '130':
+                    xDialogOk = xCurrentTopWindow.getChild('ok')
+                    xDialogOk.executeAction("CLICK", tuple())
+                time.sleep(self.ui_test.get_default_sleep())
+
+            return xLastDialogMessage.invoke((), (), ())[0]
+
+    def test_print_log10(self):
+        self.assertEqual(self.run_and_get_message("print log10 1000"), "3.0")
+
+    def test_print_sqrt(self):
+        self.assertEqual(self.run_and_get_message("print sqrt 16"), "4.0")
+
+
+    def set_document_default_language(self, language):
+        with self.ui_test.execute_dialog_through_command(".uno:OptionsTreeDialog") as xDialog:
+            xPages = xDialog.getChild("pages")
+            xLanguageEntry = xPages.getChild('2')
+            xLanguageEntry.executeAction("EXPAND", tuple())
+            xxLanguageEntryGeneralEntry = xLanguageEntry.getChild('0')
+            xxLanguageEntryGeneralEntry.executeAction("SELECT", tuple())
+            # mark "For the current document only" to prevent the persistence of the selection
+            xCurrentDoc = xDialog.getChild("currentdoc")
+            if get_state_as_dict(xCurrentDoc)['Selected'] != "true":
+                xCurrentDoc.executeAction("CLICK", tuple())
+            # try to select the given language sequentially in the three lists
+            xWesternLanguage = xDialog.getChild("westernlanguage")
+            previousWesternLanguage = get_state_as_dict(xWesternLanguage)['SelectEntryText']
+            select_by_text(xWesternLanguage, language)
+            if get_state_as_dict(xWesternLanguage)['SelectEntryText'] != language:
+                select_by_text(xWesternLanguage, "[None]")
+                xAsianLanguage = xDialog.getChild("asianlanguage")
+                previousAsianLanguage = get_state_as_dict(xAsianLanguage)['SelectEntryText']
+                select_by_text(xAsianLanguage, language)
+                if get_state_as_dict(xAsianLanguage)['SelectEntryText'] != language:
+                    select_by_text(xAsianLanguage, "[None]")
+                    xComplexLanguage = xDialog.getChild("complexlanguage")
+                    select_by_text(xComplexLanguage, language)
+                    if get_state_as_dict(xComplexLanguage)['SelectEntryText'] != language:
+                        # if not found, then restore the previous languages
+                        select_by_text(xAsianLanguage, previousAsianLanguage)
+                        select_by_text(xWesternLanguage, previousWesternLanguage)
+            # apply the change
+            xApply = xDialog.getChild("apply")
+            xApply.executeAction("CLICK", tuple())
+
+    def check_localization(self, language, program):
+        with self.ui_test.create_doc_in_start_center("writer") as document:
+            xWriterDoc = self.xUITest.getTopFocusWindow()
+            xWriterEdit = xWriterDoc.getChild("writer_edit")
+            self.set_document_default_language(language)
+            # to check the state of LibreLogo program execution
+            xIsAlive = self.getScript("__is_alive__")
+            # write the given program in the document
+            type_text(xWriterEdit, program)
+            # translate the program to the current document language by "magic wand"
+            self.logo("__translate__")
+            # check that the program was changed
+            self.assertNotEqual(document.Text.String.replace('\r\n', '\n'), "\n" + program)
+            # run the translated program
+            self.logo("run")
+            # wait for LibreLogo program termination or the opening of an error dialog
+            while xIsAlive.invoke((), (), ())[0]:
+                xCurrentTopWindow = self.xUITest.getTopFocusWindow()
+                if get_state_as_dict(xCurrentTopWindow)['WindowType'] == '130':
+                    xDialogOk = xCurrentTopWindow.getChild('ok')
+                    xDialogOk.executeAction("CLICK", tuple())
+                    break
+                time.sleep(self.ui_test.get_default_sleep())
+            # turtle + line shape (if program is not executed then no lines are found)
+            self.assertGreater(len(document.DrawPage), 1)
+
+    # Tests for languages having a REPCOUNT translation with special characters
+    # or with the REPEAT or COUNT translation as a substring of REPCOUNT:
+    def test_localization_afrikaans_for(self): # af REPCOUNT: space + REPEAT substring
+        self.check_localization("Afrikaans (South Africa)", self.PROGRAM_FOR)
+    def test_localization_afrikaans_repeat(self): # af REPCOUNT: space + REPEAT substring
+        self.check_localization("Afrikaans (South Africa)", self.PROGRAM_REPEAT)
+    def test_localization_afrikaans_while(self): # af REPCOUNT: space + REPEAT substring
+        self.check_localization("Afrikaans (South Africa)", self.PROGRAM_WHILE)
+    def test_localization_catalan_for(self): # ca REPCOUNT: dot + REPEAT substring
+        self.check_localization("Catalan", self.PROGRAM_FOR)
+    def test_localization_catalan_repeat(self): # ca REPCOUNT: dot + REPEAT substring
+        self.check_localization("Catalan", self.PROGRAM_REPEAT)
+    def test_localization_catalan_while(self): # ca REPCOUNT: dot + REPEAT substring
+        self.check_localization("Catalan", self.PROGRAM_WHILE)
+    def test_localization_french_for(self): # fr REPCOUNT: no special condition
+        self.check_localization("French (France)", self.PROGRAM_FOR)
+    def test_localization_french_repeat(self): # fr REPCOUNT: no special condition
+        self.check_localization("French (France)", self.PROGRAM_REPEAT)
+    def test_localization_french_while(self): # fr REPCOUNT: no special condition
+        self.check_localization("French (France)", self.PROGRAM_WHILE)
+    def test_localization_guarani_for(self): # gug REPCOUNT: apostrophe + dot + REPEAT substring
+        self.check_localization("Guarani (Paraguay)", self.PROGRAM_FOR)
+    def test_localization_guarani_repeat(self): # gug REPCOUNT: apostrophe + dot + REPEAT substring
+        self.check_localization("Guarani (Paraguay)", self.PROGRAM_REPEAT)
+    def test_localization_guarani_while(self): # gug REPCOUNT: apostrophe + dot + REPEAT substring
+        self.check_localization("Guarani (Paraguay)", self.PROGRAM_WHILE)
+    def test_localization_spanish_for(self): # es REPCOUNT: dot + COUNT substring
+        self.check_localization("Spanish (Spain)", self.PROGRAM_FOR)
+    def test_localization_spanish_repeat(self): # es REPCOUNT: dot + COUNT substring
+        self.check_localization("Spanish (Spain)", self.PROGRAM_REPEAT)
+    def test_localization_spanish_while(self): # es REPCOUNT: dot + COUNT substring
+        self.check_localization("Spanish (Spain)", self.PROGRAM_WHILE)
 
 # vim: set shiftwidth=4 softtabstop=4 expandtab:

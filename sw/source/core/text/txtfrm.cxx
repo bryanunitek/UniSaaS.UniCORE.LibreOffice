@@ -562,7 +562,7 @@ void SwTextFrame::SwitchHorizontalToVertical( Point& rPoint ) const
 }
 
 /**
- * Calculates the a limit value when switching from
+ * Calculates the limit value when switching from
  * horizontal to vertical layout.
  */
 tools::Long SwTextFrame::SwitchHorizontalToVertical( tools::Long nLimit ) const
@@ -653,7 +653,7 @@ void SwTextFrame::SwitchVerticalToHorizontal( Point& rPoint ) const
 }
 
 /**
- * Calculates the a limit value when switching from
+ * Calculates the limit value when switching from
  * vertical to horizontal layout.
  */
 tools::Long SwTextFrame::SwitchVerticalToHorizontal( tools::Long nLimit ) const
@@ -1686,7 +1686,7 @@ void SwTextFrame::HideFootnotes(TextFrameIndex const nStart, TextFrameIndex cons
 
 /**
  * as-character anchored graphics, which are used for a graphic bullet list.
- * As long as these graphic bullet list aren't imported, do not hide a
+ * As long as these graphic bullet lists aren't imported, do not hide a
  * at-character anchored object, if
  * (a) the document is an imported WW8 document -
  *     checked by checking certain compatibility options -
@@ -1934,7 +1934,7 @@ void SwTextFrame::InvalidateRange_( const SwCharRange &aRange, const tools::Long
     {
         // In nDelta the differences between old and new
         // linelengths are being added, that's why it's negative
-        // if chars have been added and positive, if chars have
+        // if chars have been added and positive, if chars have been
         // deleted
         pPara->SetDelta(pPara->GetDelta() + nD);
         bInv = true;
@@ -2615,7 +2615,7 @@ void SwTextFrame::SwClientNotify(SwModify const& rModify, SfxHint const& rHint)
                             pFly->GetAttrSet()->GetBackground();
                         //     #GetTransChg#
                         //     following condition determines, if the fly frame
-                        //     "inherites" the background color of text frame.
+                        //     "inherits" from the background color of text frame.
                         //     This is the case, if fly frame background
                         //     color is "no fill"/"auto fill" and if the fly frame
                         //     has no background graphic.
@@ -3198,7 +3198,7 @@ bool SwTextFrame::Prepare( const PrepareHint ePrep, const void* pVoid,
             }
 
             // If we don't overlap with anybody:
-            // did any free-flying frame overlapped _before_ the position change?
+            // did any free-flying frame overlap _before_ the position change?
             bool bFormat = pPara->HasFly();
             if( !bFormat )
             {
@@ -3270,7 +3270,7 @@ bool SwTextFrame::Prepare( const PrepareHint ePrep, const void* pVoid,
             {
                 if (GetTextNodeForParaProps()->GetSwAttrSet().GetRegister().GetValue())
                     bParaPossiblyInvalid = Prepare( PrepareHint::Register, nullptr, bNotify );
-                // The Frames need to be readjusted, which caused by changes
+                // The Frames need to be readjusted, which is caused by changes
                 // in position
                 else if( HasFootnote() )
                 {
@@ -3397,7 +3397,7 @@ bool SwTextFrame::Prepare( const PrepareHint ePrep, const void* pVoid,
 class SwTestFormat
 {
     SwTextFrame *pFrame;
-    std::shared_ptr<SwParaPortion> xOldPara;
+    std::unique_ptr<SwParaPortion> xOldPara;
     SwRect aOldFrame, aOldPrt;
 public:
     SwTestFormat( SwTextFrame* pTextFrame, const SwFrame* pPrv, SwTwips nMaxHeight );
@@ -3449,7 +3449,7 @@ SwTestFormat::SwTestFormat( SwTextFrame* pTextFrame, const SwFrame* pPre, SwTwip
         aRectFnSet.SetWidth( aPrt, aRectFnSet.GetWidth(pFrame->getFrameArea()) - ( rAttrs.CalcLeft( pFrame ) + rAttrs.CalcRight( pFrame ) ) );
     }
 
-    xOldPara = pFrame->SetPara(std::make_shared<SwParaPortion>());
+    xOldPara = pFrame->SetPara(std::make_unique<SwParaPortion>());
     OSL_ENSURE( ! pFrame->IsSwapped(), "A frame is swapped before Format_" );
 
     if ( pFrame->IsVertical() )
@@ -3676,7 +3676,7 @@ SwTwips SwTextFrame::CalcFitToContent()
         return getFramePrintArea().Width();
 
     //Swap old para for a dummy
-    std::shared_ptr<SwParaPortion> xOldPara = SetPara(std::make_unique<SwParaPortion>());
+    std::unique_ptr<SwParaPortion> xOldPara = SetPara(std::make_unique<SwParaPortion>());
     const SwPageFrame* pPage = FindPageFrame();
 
     const Point   aOldFramePos   = getFrameArea().Pos();
@@ -3781,7 +3781,7 @@ void SwTextFrame::CalcAdditionalFirstLineOffset()
         return;
 
     // keep current paragraph portion and apply dummy paragraph portion
-    std::shared_ptr<SwParaPortion> xOldPara = SetPara(std::make_shared<SwParaPortion>());
+    std::unique_ptr<SwParaPortion> xOldPara = SetPara(std::make_unique<SwParaPortion>());
 
     // lock paragraph
     TextFrameLockGuard aLock( this );
@@ -3940,7 +3940,15 @@ void SwTextFrame::CalcHeightOfLastLine( const bool _bUseFont )
                     // iteration to last line
                     pLineLayout = pLineLayout->GetNext();
                 }
-                if ( pLineLayout )
+                if (!pLineLayout)
+                    return; // mnHeightOfLastLine is unchanged
+
+                if (pIDSA->get(DocumentSettingId::LINE_SPACING_AS_GAP_BELOW))
+                {
+                    // last line's line-spacing gap calculated the same as all other lines...
+                    mnHeightOfLastLine = pLineLayout->GetLineSpacingBaseHeight();
+                }
+                else
                 {
                     SwTwips nAscent, nDescent, nDummy1, nDummy2;
                     // i#47162 - suppress consideration of
@@ -3950,7 +3958,7 @@ void SwTextFrame::CalcHeightOfLastLine( const bool _bUseFont )
                                                    nullptr, true );
                     // i#71281
                     // Suppress wrong invalidation of printing area, if method is
-                    // called recursive.
+                    // called recursively.
                     // Thus, member <mnHeightOfLastLine> is only set directly, if
                     // no recursive call is needed.
                     const SwTwips nNewHeightOfLastLine = nAscent + nDescent;
@@ -4001,8 +4009,6 @@ tools::Long SwTextFrame::GetLineSpace( const bool _bNoPropLineSpace ) const
                 break;
             }
 
-            // i#11860 - adjust spacing implementation for object positioning
-            // - compatibility to MS Word
             nRet = GetHeightOfLastLine();
 
             tools::Long nTmp = nRet;

@@ -35,7 +35,8 @@ libraryIds = {
     "libwebp": 1,
     "libffi": 1,
     "xz": 1,
-    "zstd": 1
+    "zstd": 1,
+    "brotli": 1
 }
 
 libraryNames = {
@@ -53,7 +54,6 @@ libraryNames = {
     "liborcus": "orcus",
     "ltm": "libtommath",
     "clucene-core": "clucene-core",
-    "lp_solve": "lp_solve",
     "hsqldb": "hsqldb",
     "y-crdt": "y-crdt",
     "sqlite": "sqlite",
@@ -65,7 +65,7 @@ libraryNames = {
 def get_current_version(libName):
     if "sqlite" in libName:
         # 3XXYYZZ -> 3.X.Y.Z
-        s = re.search(r"(\d{7})", libName )
+        s = re.search(r"(\d{7})", libName)
         if s:
             num = str(s.group(1))
             return parse("{}.{}.{}.{}".format(num[0], num[1:3], num[3:5], num[6:7]))
@@ -106,6 +106,17 @@ def get_library_list(fileName):
                 break
         libraryList.append(libraryName.lower())
     return libraryList
+
+def get_language_subtag_registry(libName):
+    url = "https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry"
+    pattern = r"\d{4}-\d{2}-\d{2}"
+    currentVersion = re.search(pattern, libName).group(0).replace("-", ".")
+    res = requests.get(url)
+    if res.status_code != 200:
+        return Version("0.0.0"), "", Version("0.0.0")
+    latestVersion = re.search(pattern, next(res.iter_lines()).decode("utf-8")).group(0).replace("-", ".")
+
+    return Version(latestVersion), url, Version(currentVersion)
 
 def get_latest_version(libNameOrig):
     libName = libNameOrig
@@ -171,10 +182,10 @@ if __name__ == '__main__':
 
     for lib in libraryList:
         if lib.startswith("language-subtag-registry"):
-            print("CHECK https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry")
-            continue
-        latestVersion, website = get_latest_version(lib)
-        currentVersion = get_current_version(lib)
+            latestVersion, website, currentVersion = get_language_subtag_registry(lib)
+        else:
+            latestVersion, website = get_latest_version(lib)
+            currentVersion = get_current_version(lib)
         if latestVersion == Version("0.0.0"):
             print("FAIL: " + lib + " not found in https://release-monitoring.org")
         elif currentVersion == Version("0.0.0"):

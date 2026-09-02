@@ -17,6 +17,8 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <Python.h>
+
 #include <sal/log.hxx>
 #include <config_folders.h>
 
@@ -39,7 +41,7 @@
 #include <com/sun/star/container/XHierarchicalNameAccess.hpp>
 #include <com/sun/star/script/Converter.hpp>
 #include <com/sun/star/script/InvocationAdapterFactory.hpp>
-#include <com/sun/star/script/XInvocation2.hpp>
+#include <com/sun/star/script/XInvocation.hpp>
 #include <com/sun/star/reflection/theCoreReflection.hpp>
 #include <com/sun/star/lang/XSingleServiceFactory.hpp>
 #include <comphelper/sequence.hxx>
@@ -581,6 +583,11 @@ PyRef Runtime::any2PyObject (const Any &a ) const
         a >>= tmp_interface;
         if (!tmp_interface.is ())
             return Py_None;
+
+        // If the interface is actually wrapping a Python object then reuse the underlying object
+        // instead
+        if (Adapter *pAdapter = comphelper::getFromUnoTunnel<Adapter>(tmp_interface))
+            return pAdapter->getWrappedObject();
 
         return PyUNO_new( a, getImpl()->cargo->xInvocation );
     }

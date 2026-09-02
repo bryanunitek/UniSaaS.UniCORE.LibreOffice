@@ -54,10 +54,9 @@ TokenStringContext::TokenStringContext( const ScDocument& rDoc, formula::Formula
     }
 
     // Fetch all named range names.
-    const ScRangeName* pNames = rDoc.GetRangeName();
-    if (pNames)
-        // global names
-        insertAllNames(maGlobalRangeNames, *pNames);
+    const ScRangeName& rNames = rDoc.GetRangeName();
+    // global names
+    insertAllNames(maGlobalRangeNames, rNames);
 
     {
         ScRangeName::TabNameCopyMap aTabRangeNames;
@@ -73,7 +72,7 @@ TokenStringContext::TokenStringContext( const ScDocument& rDoc, formula::Formula
         }
     }
 
-    // Fetch all named database ranges names.
+    // Fetch all named database range names.
     const ScDBCollection* pDBs = rDoc.GetDBCollection();
     if (pDBs)
     {

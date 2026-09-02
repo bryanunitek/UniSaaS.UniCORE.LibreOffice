@@ -38,8 +38,8 @@ void sc::TableContentCopier::performCopy(const ScMarkData* pOnlyMarked, ScCloneF
     if (pNames)
         pNames->CopyUsedNames(mnSourceTabNo, nPreviousSourceTabNo, mnTargetTabNo, mrDoc, mrDoc,
                               bGlobalNamesToLocal);
-    mrDoc.GetRangeName()->CopyUsedNames(-1, nPreviousSourceTabNo, mnTargetTabNo, mrDoc, mrDoc,
-                                        bGlobalNamesToLocal);
+    mrDoc.GetRangeName().CopyUsedNames(-1, nPreviousSourceTabNo, mnTargetTabNo, mrDoc, mrDoc,
+                                       bGlobalNamesToLocal);
 
     sc::CopyToDocContext aCopyDocCxt(mrDoc);
     if (mrDoc.pDBCollection)
@@ -96,12 +96,10 @@ void sc::TableContentCopier::updateReferencesAfterTabInsertion(
     mpSourceTab->UpdateCompile();
 }
 
-void sc::TableContentCopier::recompileTargetFormulas()
+sc::TableContentCopier::~TableContentCopier()
 {
     //  maybe already compiled in Clone, but used names need recompilation
     mpTargetTab->UpdateCompile(true);
 }
-
-sc::TableContentCopier::~TableContentCopier() { recompileTargetFormulas(); }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

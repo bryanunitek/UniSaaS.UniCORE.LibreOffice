@@ -437,7 +437,7 @@ CPPUNIT_TEST_FIXTURE(Test, testMathVerticalstacks)
 CPPUNIT_TEST_FIXTURE(Test, testTdf49073)
 {
     auto verify = [this]() {
-        // test case for Asian phontic guide (ruby text.)
+        // test case for Asian phonetic guide (ruby text.)
         sal_Unicode aRuby[3] = { 0x304D, 0x3082, 0x3093 };
         OUString sRuby(aRuby, std::size(aRuby));
         CPPUNIT_ASSERT_EQUAL(sRuby,
@@ -943,7 +943,7 @@ CPPUNIT_TEST_FIXTURE(Test, testCharacterBorder)
     // Padding (brsp)
     {
         const sal_Int32 nTopPadding = getProperty<sal_Int32>(xRun, u"CharTopBorderDistance"_ustr);
-        // In the original ODT file the padding is 150, but the unit conversion round it down.
+        // In the original ODT file the padding is 150, but the unit conversion rounds it down.
         CPPUNIT_ASSERT_EQUAL(sal_Int32(141), nTopPadding);
         CPPUNIT_ASSERT_EQUAL(nTopPadding,
                              getProperty<sal_Int32>(xRun, u"CharLeftBorderDistance"_ustr));

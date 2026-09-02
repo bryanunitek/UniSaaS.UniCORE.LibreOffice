@@ -1642,24 +1642,6 @@ SfxBoolItem NavigationBar SID_FM_NAVIGATIONBAR
     GroupId = SfxGroupId::Controls;
 ]
 
-SfxBoolItem Translate SID_FM_TRANSLATE
-(SfxStringItem TargetLang SID_ATTR_TARGETLANG_STR)
-[
-    AutoUpdate = FALSE,
-    FastCall = TRUE,
-    ReadOnlyDoc = FALSE,
-    Toggle = FALSE,
-    Container = FALSE,
-    RecordAbsolute = FALSE,
-    RecordPerSet;
-
-    AccelConfig = FALSE,
-    MenuConfig = FALSE,
-    ToolBoxConfig = FALSE,
-    GroupId = SfxGroupId::Format;
-]
-
-
 SfxBoolItem Combobox SID_INSERT_COMBOBOX
 
 [
@@ -13353,9 +13335,9 @@ SfxVoidItem ApplyTheme SID_APPLY_THEME
     RecordAbsolute = FALSE,
     RecordPerSet;
 
-    AccelConfig = TRUE,
-    MenuConfig = TRUE,
-    ToolBoxConfig = TRUE,
+    AccelConfig = FALSE,
+    MenuConfig = FALSE,
+    ToolBoxConfig = FALSE,
     GroupId = SfxGroupId::Format;
 ]
 

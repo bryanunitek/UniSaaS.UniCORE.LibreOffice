@@ -403,6 +403,7 @@ bool GalleryTheme::InsertGraphic(const Graphic& rGraphic, sal_uInt32 nInsertPos)
                 case GfxLinkType::NativeBmp: nExportFormat = ConvertDataFormat::BMP; break;
 
                 case GfxLinkType::NativeJpg: nExportFormat = ConvertDataFormat::JPG; break;
+                case GfxLinkType::NativeJxl: nExportFormat = ConvertDataFormat::JXL; break;
                 case GfxLinkType::NativePng: nExportFormat = ConvertDataFormat::PNG; break;
                 case GfxLinkType::NativeTif: nExportFormat = ConvertDataFormat::TIF; break;
                 case GfxLinkType::NativeWmf: nExportFormat = ConvertDataFormat::WMF; break;
@@ -736,7 +737,7 @@ SvStream& GalleryTheme::ReadData( SvStream& rIStm )
         rIStm.ReadUInt32( nId1 ).ReadUInt32( nId2 );
 
         // In newer versions a 512 byte reserve buffer is located at the end,
-        // the data is located at the beginning of this buffer and are clamped
+        // the data is located at the beginning of this buffer and is clamped
         // by a VersionCompatRead.
         if( !rIStm.eof() &&
             nId1 == COMPAT_FORMAT( 'G', 'A', 'L', 'R' ) &&

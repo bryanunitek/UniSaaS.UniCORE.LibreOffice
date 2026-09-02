@@ -596,15 +596,18 @@ void SvxTableStylesExport::ExportStyles()
         for (size_t i = 0; i < mpAutoFormat.size(); i++)
         {
             const SvxAutoFormatData* pData = mpAutoFormat.GetData(i);
-            const OUString& sTemplateName = pData->GetName();
+            const OUString sTemplateName = SvxAutoFormat::MapUIToProgName(pData->GetName());
+            const OUString sParentProgName
+                = !pData->GetParent().isEmpty() ? SvxAutoFormat::MapUIToProgName(pData->GetParent())
+                                                : OUString();
 
             auto it = CellFieldToIndex.begin();
             while (it != CellFieldToIndex.end())
             {
                 OUString sStyleName = sTemplateName.replaceAll(" ", "-") + "." + it->first;
                 OUString sParentName;
-                if (pData->GetParent().getLength())
-                    sParentName = pData->GetParent().replaceAll(" ", "-") + "." + it->first;
+                if (!sParentProgName.isEmpty())
+                    sParentName = sParentProgName.replaceAll(" ", "-") + "." + it->first;
 
                 exportCellStyle(*pData->GetField(it->second), sStyleName, sParentName);
                 it++;
@@ -623,7 +626,9 @@ void SvxTableStylesExport::ExportStyles()
 
 void SvxTableStylesExport::exportTableTemplate(const SvxAutoFormatData& rData)
 {
-    AddAttribute(XML_NAMESPACE_TABLE, XML_NAME, rData.GetName());
+    const OUString sProgName = SvxAutoFormat::MapUIToProgName(rData.GetName());
+
+    AddAttribute(XML_NAMESPACE_TABLE, XML_NAME, sProgName);
     if (rData.UseFirstRowStyles())
         AddAttribute(XML_NAMESPACE_TABLE, XML_USE_FIRST_ROW_STYLES, "true");
     if (rData.UseLastRowStyles())
@@ -641,8 +646,7 @@ void SvxTableStylesExport::exportTableTemplate(const SvxAutoFormatData& rData)
 
     for (sal_uInt16 i = 0; i < 16; i++)
     {
-        OUString sCellStyleName
-            = rData.GetName().replaceAll(" ", "-") + "." + IndexToCellField.at(i);
+        OUString sCellStyleName = sProgName.replaceAll(" ", "-") + "." + IndexToCellField.at(i);
         AddAttribute(XML_NAMESPACE_TABLE, XML_STYLE_NAME, sCellStyleName);
 
         if (i < 10)
@@ -850,19 +854,15 @@ void SvxTableStylesExport::exportTextProperties(const SvxAutoFormatDataField& rF
     // <style:font-name, style:font-family>
     if (rField.IsPropertySet(PROP_FONT) && rField.GetFont() != rParent.GetFont())
     {
-        AddAttribute(XML_NAMESPACE_STYLE, XML_FONT_NAME, rField.GetFont().GetFamilyName());
         AddAttribute(XML_NAMESPACE_FO, XML_FONT_FAMILY, rField.GetFont().GetFamilyName());
     }
     if (rField.IsPropertySet(PROP_CJK_FONT) && rField.GetCJKFont() != rParent.GetCJKFont())
     {
-        AddAttribute(XML_NAMESPACE_STYLE, XML_FONT_NAME_ASIAN, rField.GetCJKFont().GetFamilyName());
         AddAttribute(XML_NAMESPACE_STYLE, XML_FONT_FAMILY_ASIAN,
                      rField.GetCJKFont().GetFamilyName());
     }
     if (rField.IsPropertySet(PROP_CTL_FONT) && rField.GetCTLFont() != rParent.GetCTLFont())
     {
-        AddAttribute(XML_NAMESPACE_STYLE, XML_FONT_NAME_COMPLEX,
-                     rField.GetCTLFont().GetFamilyName());
         AddAttribute(XML_NAMESPACE_STYLE, XML_FONT_FAMILY_COMPLEX,
                      rField.GetCTLFont().GetFamilyName());
     }

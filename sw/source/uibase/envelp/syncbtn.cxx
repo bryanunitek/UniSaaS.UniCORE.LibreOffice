@@ -32,16 +32,14 @@
 
 SFX_IMPL_MODELESSDIALOGCONTOLLER(SwSyncChildWin, FN_SYNC_LABELS)
 
-SwSyncChildWin::SwSyncChildWin(vcl::Window* _pParent,
-                               sal_uInt16 nId,
-                               SfxBindings* pBindings,
-                               SfxChildWinInfo* pInfo)
+SwSyncChildWin::SwSyncChildWin(vcl::Window* _pParent, sal_uInt16 nId, SfxBindings& rBindings,
+                               SfxChildWinInfo& rInfo)
     : SfxChildWindow(_pParent, nId)
 {
-    SetController(std::make_shared<SwSyncBtnDlg>(pBindings, this, _pParent->GetFrameWeld()));
+    SetController(std::make_shared<SwSyncBtnDlg>(&rBindings, this, _pParent->GetFrameWeld()));
     SwSyncBtnDlg* pBtnDlg = static_cast<SwSyncBtnDlg*>(GetController().get());
 
-    if (!pInfo->aSize.Width() || !pInfo->aSize.Height())
+    if (!rInfo.aSize.Width() || !rInfo.aSize.Height())
     {
         weld::Dialog* pDlg = pBtnDlg->getDialog();
         Point aPos;
@@ -57,13 +55,13 @@ SwSyncChildWin::SwSyncChildWin(vcl::Window* _pParent,
         vcl::WindowData aState;
         aState.setMask(vcl::WindowDataMask::Pos);
         aState.setPos(aPos);
-        pDlg->set_window_state(aState.toStr());
+        pDlg->set_window_state(aState);
 
-        pInfo->aPos = pDlg->get_position();
-        pInfo->aSize = pDlg->get_size();
+        rInfo.aPos = pDlg->get_position();
+        rInfo.aSize = pDlg->get_size();
     }
 
-    pBtnDlg->Initialize(pInfo);
+    pBtnDlg->Initialize(rInfo);
 }
 
 SwSyncBtnDlg::SwSyncBtnDlg(SfxBindings* pBindings,

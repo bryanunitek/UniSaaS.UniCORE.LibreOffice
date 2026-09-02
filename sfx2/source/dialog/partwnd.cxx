@@ -41,26 +41,21 @@
 
 SFX_IMPL_DOCKINGWINDOW( SfxPartChildWnd_Impl, SID_BROWSER );
 
-SfxPartChildWnd_Impl::SfxPartChildWnd_Impl
-(
-    vcl::Window* pParentWnd,
-    sal_uInt16 nId,
-    SfxBindings* pBindings,
-    SfxChildWinInfo* pInfo
-)
-    : SfxChildWindow( pParentWnd, nId )
+SfxPartChildWnd_Impl::SfxPartChildWnd_Impl(vcl::Window* pParentWnd, sal_uInt16 nId,
+                                           SfxBindings& rBindings, SfxChildWinInfo& rInfo)
+    : SfxChildWindow(pParentWnd, nId)
 {
     // Create Window
-    SetWindow(VclPtr<SfxPartDockWnd_Impl>::Create( pBindings, this, pParentWnd, WB_STDDOCKWIN | WB_CLIPCHILDREN | WB_SIZEABLE | WB_3DLOOK ));
+    SetWindow(VclPtr<SfxPartDockWnd_Impl>::Create(
+        rBindings, this, pParentWnd, WB_STDDOCKWIN | WB_CLIPCHILDREN | WB_SIZEABLE | WB_3DLOOK));
     SetAlignment(SfxChildAlignment::TOP);
 
-    assert(pInfo);
-    pInfo->nFlags |= SfxChildWindowFlags::FORCEDOCK;
+    rInfo.nFlags |= SfxChildWindowFlags::FORCEDOCK;
 
     static_cast<SfxDockingWindow*>(GetWindow())->SetFloatingSize( Size( 175, 175 ) );
     GetWindow()->SetSizePixel( Size( 175, 175 ) );
 
-    static_cast<SfxDockingWindow*>(GetWindow())->Initialize( pInfo );
+    static_cast<SfxDockingWindow*>(GetWindow())->Initialize(rInfo);
     SetHideNotDelete( true );
 }
 
@@ -88,15 +83,9 @@ bool SfxPartChildWnd_Impl::QueryClose()
 
 // SfxPartDockWnd_Impl
 
-
-SfxPartDockWnd_Impl::SfxPartDockWnd_Impl
-(
-    SfxBindings* pBind,
-    SfxChildWindow* pChildWin,
-    vcl::Window* pParent,
-    WinBits nBits
-)
-    : SfxDockingWindow( pBind, pChildWin, pParent, nBits )
+SfxPartDockWnd_Impl::SfxPartDockWnd_Impl(SfxBindings& rBindings, SfxChildWindow* pChildWin,
+                                         vcl::Window* pParent, WinBits nBits)
+    : SfxDockingWindow(rBindings, pChildWin, pParent, nBits)
 {
     css::uno::Reference < css::frame::XFrame2 > xFrame = css::frame::Frame::create(
             ::comphelper::getProcessComponentContext() );
@@ -117,10 +106,11 @@ SfxPartDockWnd_Impl::SfxPartDockWnd_Impl
     }
 
     pChildWin->SetFrame( css::uno::Reference<css::frame::XFrame>(xFrame,css::uno::UNO_QUERY_THROW) );
-    if ( pBind->GetDispatcher() )
+    if (rBindings.GetDispatcher())
     {
-        css::uno::Reference < css::frame::XFramesSupplier >
-                xSupp ( pBind->GetDispatcher()->GetFrame()->GetFrame().GetFrameInterface(), css::uno::UNO_QUERY );
+        css::uno::Reference<css::frame::XFramesSupplier> xSupp(
+            rBindings.GetDispatcher()->GetFrame()->GetFrame().GetFrameInterface(),
+            css::uno::UNO_QUERY);
         if ( xSupp.is() )
             xSupp->getFrames()->append( css::uno::Reference<css::frame::XFrame>(xFrame, css::uno::UNO_QUERY_THROW) );
     }

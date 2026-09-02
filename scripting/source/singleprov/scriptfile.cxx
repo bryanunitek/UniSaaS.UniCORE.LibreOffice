@@ -12,6 +12,7 @@
 #include <com/sun/star/script/browse/BrowseNodeTypes.hpp>
 #include <com/sun/star/ucb/SimpleFileAccess.hpp>
 
+#include <singleprov/directorynode.hxx>
 #include <singleprov/singlescriptfactory.hxx>
 
 #include "externaledit.hxx"
@@ -22,9 +23,13 @@ namespace singleprovider
 {
 ScriptFile::ScriptFile(const std::shared_ptr<ProviderContext>& pProviderContext,
                        const OUString& sName, const OUString& sBaseUri)
-    : ScriptBrowser(pProviderContext, sName, sBaseUri)
+    : m_pProviderContext(pProviderContext)
+    , m_sName(sName)
+    , m_sBaseUri(sBaseUri)
 {
 }
+
+OUString SAL_CALL ScriptFile::getName() { return m_sName; }
 
 css::uno::Sequence<css::uno::Reference<css::script::browse::XBrowseNode>>
     SAL_CALL ScriptFile::getChildNodes()
@@ -41,38 +46,76 @@ sal_Bool SAL_CALL ScriptFile::hasChildNodes() { return true; }
 
 sal_Int16 SAL_CALL ScriptFile::getType() { return css::script::browse::BrowseNodeTypes::CONTAINER; }
 
-css::uno::Any SAL_CALL ScriptFile::getPropertyValue(const OUString& sPropertyName)
+sal_Bool SAL_CALL ScriptFile::isCopyableNode() { return true; }
+
+std::optional<OUString> ScriptFile::getCopyDestinationUri(
+    const css::uno::Reference<css::script::browse::XBrowseNode>& xDest) const
 {
-    css::uno::Any xRet;
+    const DirectoryNode* pDirectoryNode = dynamic_cast<const DirectoryNode*>(xDest.get());
 
-    if (sPropertyName == "Editable")
-        xRet <<= isEditable(m_pProviderContext, m_sBaseUri);
-    else
-        xRet = ScriptBrowser::getPropertyValue(sPropertyName);
+    if (!pDirectoryNode)
+        return std::nullopt;
 
-    return xRet;
-}
-
-css::uno::Any SAL_CALL ScriptFile::invoke(const OUString& sFunctionName,
-                                          const css::uno::Sequence<css::uno::Any>& aParams,
-                                          css::uno::Sequence<sal_Int16>& aOutParamIndex,
-                                          css::uno::Sequence<css::uno::Any>& aOutParam)
-{
-    if (sFunctionName == "Editable")
+    // Don’t allow copying into providers for other languages
+    if (pDirectoryNode->getScriptFactory()->getLanguageName()
+        != m_pProviderContext->m_pSingleScriptFactory->getLanguageName())
     {
-        externalEdit(m_pProviderContext, m_sBaseUri);
-        return css::uno::Any();
+        return std::nullopt;
     }
-    else
-        return ScriptBrowser::invoke(sFunctionName, aParams, aOutParamIndex, aOutParam);
+
+    std::optional<OUString> sDirectoryUri = pDirectoryNode->getDirectoryUri();
+
+    // Don’t allow copying into the same directory
+    if (sDirectoryUri)
+    {
+        sal_Int32 nDirEnd = m_sBaseUri.lastIndexOf(u'/');
+
+        if (sDirectoryUri.value() == (nDirEnd == -1 ? m_sBaseUri : m_sBaseUri.copy(0, nDirEnd)))
+            return std::nullopt;
+    }
+
+    return sDirectoryUri;
 }
 
-sal_Bool SAL_CALL ScriptFile::hasMethod(const OUString& sFunctionName)
+sal_Bool SAL_CALL ScriptFile::nodeCanBeCopiedTo(
+    const css::uno::Reference<css::script::browse::XBrowseNode>& xParentNode)
 {
-    if (sFunctionName == "Editable")
-        return true;
-    else
-        return ScriptBrowser::hasMethod(sFunctionName);
+    return getCopyDestinationUri(xParentNode).has_value();
+}
+
+css::uno::Reference<css::script::browse::XBrowseNode> SAL_CALL
+ScriptFile::copyNode(const css::uno::Reference<css::script::browse::XBrowseNode>& xParentNode)
+{
+    std::optional<OUString> sDirectoryUri = getCopyDestinationUri(xParentNode);
+
+    if (!sDirectoryUri)
+    {
+        throw css::lang::IllegalArgumentException(u"Invalid parent node passed to copyNode"_ustr,
+                                                  getXWeak(), 0);
+    }
+
+    const css::uno::Reference<css::ucb::XSimpleFileAccess3>& xFileAccess
+        = m_pProviderContext->m_xFileAccess;
+
+    xFileAccess->createFolder(sDirectoryUri.value());
+
+    std::u16string_view sBaseName = m_sBaseUri.subView(m_sBaseUri.lastIndexOf(u'/') + 1);
+    OUString sTargetUri = sDirectoryUri.value() + OUStringChar('/') + sBaseName;
+
+    xFileAccess->copy(m_sBaseUri, sTargetUri);
+
+    return new ScriptFile(m_pProviderContext, m_sName, sTargetUri);
+}
+
+sal_Bool SAL_CALL ScriptFile::isEditableNode()
+{
+    return isEditable(m_pProviderContext, m_sBaseUri);
+}
+
+sal_Bool SAL_CALL ScriptFile::editNode()
+{
+    externalEdit(m_pProviderContext, m_sBaseUri);
+    return true;
 }
 }
 

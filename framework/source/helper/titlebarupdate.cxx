@@ -70,7 +70,7 @@ void SAL_CALL TitleBarUpdate::initialize(const css::uno::Sequence< css::uno::Any
 
     {
         SolarMutexGuard g;
-        // hold the frame as weak reference(!) so it can die everytimes :-)
+        // hold the frame as weak reference(!) so it can die every time :-)
         m_xFrame = xFrame;
     }
 
@@ -84,7 +84,7 @@ void SAL_CALL TitleBarUpdate::initialize(const css::uno::Sequence< css::uno::Any
 
 void SAL_CALL TitleBarUpdate::frameAction(const css::frame::FrameActionEvent& aEvent)
 {
-    // we are interested on events only, which must trigger a title bar update
+    // we are interested in events only, which must trigger a title bar update
     // because component was changed.
     if (
         (aEvent.Action == css::frame::FrameAction_COMPONENT_ATTACHED  ) ||
@@ -107,7 +107,7 @@ void SAL_CALL TitleBarUpdate::disposing(const css::lang::EventObject&)
     if (xFrame.is())
         xFrame->removeFrameActionListener(this);
 
-    // nothing todo here - because we hold the frame as weak reference only
+    // nothing to do here - because we hold the frame as weak reference only
 }
 
 //http://live.gnome.org/GnomeShell/ApplicationBased
@@ -234,7 +234,7 @@ void TitleBarUpdate::impl_updateIcon(const css::uno::Reference< css::frame::XFra
     sal_Int32 nIcon = INVALID_ICON_ID;
 
     // b) try to find information on controller property set directly
-    //    Don't forget to catch possible exceptions - because these property is an optional one!
+    //    Don't forget to catch possible exceptions - because this property is an optional one!
     css::uno::Reference< css::beans::XPropertySet > xSet( xController, css::uno::UNO_QUERY );
     if ( xSet.is() )
     {
@@ -251,7 +251,7 @@ void TitleBarUpdate::impl_updateIcon(const css::uno::Reference< css::frame::XFra
     }
 
     // c) if b) failed ... identify the used module and retrieve set icon from module config.
-    //    Tirck :-) Module was already specified outside and aInfo contains all needed information.
+    //    Trick :-) Module was already specified outside and aInfo contains all needed information.
     if ( nIcon == INVALID_ICON_ID )
     {
         TModuleInfo aInfo;

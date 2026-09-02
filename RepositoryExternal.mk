@@ -513,6 +513,42 @@ else
   endef
 endif
 
+ifneq ($(filter HIGHWAY,$(BUILD_TYPE)),)
+
+define gb_LinkTarget__use_highway
+$(call gb_LinkTarget_set_include,$(1),\
+	-I$(gb_UnpackedTarball_workdir)/highway \
+	$$(INCLUDE) \
+)
+$(call gb_LinkTarget_use_static_libraries,$(1),highway)
+
+endef
+
+define gb_ExternalProject__use_highway
+$(call gb_ExternalProject_use_static_libraries,$(1),highway)
+
+endef
+
+endif # HIGHWAY
+
+ifneq ($(filter BROTLI,$(BUILD_TYPE)),)
+
+define gb_LinkTarget__use_brotli
+$(call gb_LinkTarget_set_include,$(1),\
+	-I$(gb_UnpackedTarball_workdir)/brotli/c \
+	-I$(gb_UnpackedTarball_workdir)/brotli/c/include \
+	$$(INCLUDE) \
+)
+$(call gb_LinkTarget_use_static_libraries,$(1),brotli)
+
+endef
+
+define gb_ExternalProject__use_brotli
+$(call gb_ExternalProject_use_static_libraries,$(1),brotli)
+
+endef
+
+endif # BROTLI
 
 ifneq ($(SYSTEM_LIBJPEG),)
 
@@ -547,6 +583,48 @@ $(call gb_ExternalProject_use_static_libraries,$(1),libjpeg-turbo)
 endef
 
 endif # SYSTEM_LIBJPEG
+
+ifneq ($(SYSTEM_LIBJXL),)
+
+define gb_LinkTarget__use_libjxl
+$(call gb_LinkTarget_set_include,$(1),\
+	$$(INCLUDE) \
+	$(LIBJXL_CFLAGS) \
+)
+$(call gb_LinkTarget_add_libs,$(1),$(LIBJXL_LIBS))
+
+endef
+
+gb_ExternalProject__use_libjxl :=
+
+else # !SYSTEM_LIBJXL
+
+define gb_LinkTarget__use_libjxl
+$(call gb_LinkTarget_add_defs,$(1),\
+	-DJXL_INTERNAL_LIBRARY_BUILD \
+	-DJXL_THREADS_INTERNAL_LIBRARY_BUILD \
+	-Djxl_cms_EXPORTS \
+)
+
+$(call gb_LinkTarget_set_include,$(1),\
+	-I$(gb_UnpackedTarball_workdir)/libjxl/lib/include \
+	$$(INCLUDE) \
+)
+$(call gb_LinkTarget_use_static_libraries,$(1),libjxl)
+$(call gb_LinkTarget_use_externals,$(1),\
+	highway \
+	brotli \
+	lcms2 \
+)
+
+endef
+
+define gb_ExternalProject__use_libjxl
+$(call gb_ExternalProject_use_static_libraries,$(1),libjxl)
+
+endef
+
+endif # SYSTEM_LIBJXL
 
 ifneq ($(SYSTEM_MYTHES),)
 
@@ -2534,50 +2612,6 @@ endef
 endif # ANDROID
 endif # SYSTEM_LCMS2
 
-ifneq ($(ENABLE_LPSOLVE),)
-
-ifneq ($(SYSTEM_LPSOLVE),)
-
-define gb_LinkTarget__use_lpsolve
-$(call gb_LinkTarget_add_libs,$(1),-llpsolve55)
-$(call gb_LinkTarget_add_defs,$(1),\
-	-DSYSTEM_LPSOLVE \
-)
-
-endef
-
-else # !SYSTEM_LPSOLVE
-
-define gb_LinkTarget__use_lpsolve
-$(call gb_LinkTarget_use_package,$(1),lpsolve)
-ifeq ($(COM),MSC)
-$(call gb_LinkTarget_add_libs,$(1),\
-	$(gb_UnpackedTarball_workdir)/lpsolve/lpsolve55/lpsolve55.lib \
-)
-else
-$(call gb_LinkTarget_add_libs,$(1),\
-	-L$(gb_UnpackedTarball_workdir)/lpsolve/lpsolve55 -llpsolve55 \
-)
-endif
-$(call gb_LinkTarget_set_include,$(1),\
-	-I$(gb_UnpackedTarball_workdir)/lpsolve \
-	$$(INCLUDE) \
-)
-
-endef
-
-$(eval $(call gb_Helper_register_packages_for_install,ooo,\
-	lpsolve \
-))
-
-endif # SYSTEM_LPSOLVE
-
-else
-
-gb_LinkTarget__use_lpsolve :=
-
-endif # ENABLE_LPSOLVE
-
 ifneq ($(ENABLE_COINMP),)
 
 ifneq ($(SYSTEM_COINMP),TRUE)
@@ -3437,15 +3471,8 @@ $(call gb_LinkTarget_use_package,$(1),python3)
 endif
 
 ifeq ($(OS),WNT)
-ifeq ($(CPUNAME),X86_64)
-python_arch_subdir=amd64/
-else ifeq ($(CPUNAME),AARCH64)
-python_arch_subdir=arm64/
-else
-python_arch_subdir=win32/
-endif
 $(call gb_LinkTarget_add_libs,$(1),\
-	$(gb_UnpackedTarball_workdir)/python3/PCbuild/$(python_arch_subdir)python$(PYTHON_VERSION_MAJOR)$(PYTHON_VERSION_MINOR)$(if $(MSVC_USE_DEBUG_RUNTIME),_d).lib \
+	$(gb_UnpackedTarball_workdir)/python3/PCbuild/$(if $(filter AARCH64,$(CPUNAME)),arm64,$(if $(filter X86_64,$(CPUNAME)),amd64,win32))/python$(PYTHON_VERSION_MAJOR)$(PYTHON_VERSION_MINOR)$(if $(MSVC_USE_DEBUG_RUNTIME),_d).lib \
 )
 else ifeq ($(OS),MACOSX)
 $(call gb_LinkTarget_add_libs,$(1),\
@@ -4417,8 +4444,8 @@ $(call gb_LinkTarget_use_unpacked,$(1),afdko)
 $(call gb_LinkTarget_set_include,$(1),\
        -I$(gb_UnpackedTarball_workdir)/afdko/c/shared/include \
        -I$(gb_UnpackedTarball_workdir)/afdko/c/shared/resource \
-       -I$(gb_UnpackedTarball_workdir)/afdko/c/makeotf/include \
-       -I$(gb_UnpackedTarball_workdir)/afdko/c/makeotf/source \
+       -I$(gb_UnpackedTarball_workdir)/afdko/c/addfeatures/include \
+       -I$(gb_UnpackedTarball_workdir)/afdko/c/addfeatures \
        $$(INCLUDE) \
 )
 $(call gb_LinkTarget_use_static_libraries,$(1),afdko)

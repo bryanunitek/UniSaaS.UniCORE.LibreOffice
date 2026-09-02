@@ -262,7 +262,7 @@ class XFillGradientItem;
 #define SID_ATTR_TRANSFORM_ROT_X                        TypedWhichId<SfxInt32Item>( SID_SVX_START + 93 )
 #define SID_ATTR_TRANSFORM_ROT_Y                        TypedWhichId<SfxInt32Item>( SID_SVX_START + 94 )
 #define SID_ATTR_TRANSFORM_ANGLE                        TypedWhichId<SdrAngleItem>( SID_SVX_START + 95 )
-#define SID_ATTR_TRANSFORM_DELTA_ANGLE                  TypedWhichId<SdrAngleItem>( SID_SVX_START + 96 )
+#define SID_ATTR_TRANSFORM_DELTA_ANGLE                  TypedWhichId<SdrAngleItem>( SID_SVX_START + 251 )
 // CAUTION! Range <96..100> used by SFX2 (!)
 #define SID_SIZE_ALL                                    ( SID_SVX_START + 101 )
 #define SID_DRAW_LINE                                   ( SID_SVX_START + 102 )
@@ -604,7 +604,7 @@ class XFillGradientItem;
 #define SID_FM_FILECONTROL                              ( SID_SVX_START + 605 )
 //( SID_SVX_START + 606 ) is used by SID_DRAWTBX_REDACTED_EXPORT
 #define SID_FM_NAVIGATIONBAR                            ( SID_SVX_START + 607 )
-#define SID_FM_TRANSLATE                                ( SID_SVX_START + 608 )
+// was SID_FM_TRANSLATE introduced with e20d2de7836da52dbf9e528d1043b1e188097bfd
 //FREE
 #define SID_FM_DELETEROWS                               ( SID_SVX_START + 610 )
 //FREE
@@ -910,7 +910,8 @@ class XFillGradientItem;
 #define SID_OPTIONS_DATABASES                           ( SID_SVX_START + 1060 )
 #define SID_OPEN_SMARTTAGMENU                           TypedWhichId<SvxSmartTagItem>( SID_SVX_START + 1061 )
 
-// CAUTION! Range <1062 .. 1069> used by include/sfx2/sfxsids.hrc
+// CAUTION! Range <1062 .. 1068> used by include/sfx2/sfxsids.hrc
+// CAUTION! 1069 used by include/editeng/editids.hrc
 
 #define SID_TABLE_MERGE_CELLS                           ( SID_SVX_START + 1070 )
 #define SID_TABLE_SPLIT_CELLS                           ( SID_SVX_START + 1071 )
@@ -1126,8 +1127,10 @@ class XFillGradientItem;
 
 #define SID_RESET_AUTOFORMATS                           ( SID_SVX_START + 1258 )
 
+#define SID_ATTR_PAGE_NO_FIRST                          ( SID_SVX_START + 1259 )
+
 // IMPORTANT NOTE: adjust SID_SVX_FIRSTFREE, when adding new slot id
-#define SID_SVX_FIRSTFREE                               ( SID_SVX_START + 1257 + 1 )
+#define SID_SVX_FIRSTFREE                               ( SID_SVX_START + 1259 + 1 )
 
 // Overflow check for slot IDs
 #if SID_SVX_FIRSTFREE > SID_SVX_END

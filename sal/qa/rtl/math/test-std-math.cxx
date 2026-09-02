@@ -24,9 +24,9 @@
 #include <cmath>
 
 /*
-In tdf#148430, we try to replace rtl math functions to std functions,
-this unit test is to demonstrate this replacement will not change
-the behavior of code and no other unexpected results.
+In tdf#148430, we try to replace rtl math functions with std functions,
+this unit test is to demonstrate that this replacement will not change
+the behavior of the code and produce no unexpected results.
 
 You can see more discussions in https://gerrit.libreoffice.org/c/core/+/138294.
 */

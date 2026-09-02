@@ -863,7 +863,7 @@ void SwSelPaintRects::Invalidate( const SwRect& rRect )
 }
 
 // check current MapMode of the shell and set possibly the static members.
-// Optional set the parameters pX, pY
+// Optionally set the parameters pX, pY
 void SwSelPaintRects::Get1PixelInLogic( const SwViewShell& rSh,
                                         tools::Long* pX, tools::Long* pY )
 {
@@ -979,14 +979,12 @@ void SwShellCursor::Show(SfxViewShell const * pViewShell)
     if (!comphelper::LibreOfficeKit::isActive())
         return;
 
-    std::vector<OString> aRect;
-    for (const OString & rSelectionRectangle : aSelectionRectangles)
+    std::erase_if(aSelectionRectangles, [](const OString& rSelectionRectangle)
     {
-        if (rSelectionRectangle.isEmpty())
-            continue;
-        aRect.push_back(rSelectionRectangle);
-    }
-    OString sRect = comphelper::string::join("; ", aRect);
+        return rSelectionRectangle.isEmpty();
+    });
+
+    OString sRect = comphelper::string::join("; ", aSelectionRectangles);
     if (pViewShell)
     {
         // Just notify pViewShell about our existing selection.
@@ -1093,7 +1091,7 @@ bool SwShellCursor::UpDown( bool bUp, sal_uInt16 nCnt )
                             *GetShell()->GetLayout());
 }
 
-// if <true> than the cursor can be set to the position.
+// if <true> then the cursor can be set to the position.
 bool SwShellCursor::IsAtValidPos( bool bPoint ) const
 {
     if( GetShell() && ( GetShell()->IsAllProtect() ||

@@ -88,7 +88,7 @@ SwTwips SwTableFUNC::GetMaxColWidth( sal_uInt16 nNum ) const
     if ( GetColCount() > 0 )
     {
         // The maximum width arises from the own width and
-        // the width each of the neighbor cells reduced by MINLAY.
+        // the width of each of the neighbor cells reduced by MINLAY.
         SwTwips nMax;
         if(nNum == 0)
             nMax = GetColWidth(1) - MINLAY;
@@ -222,7 +222,7 @@ uno::Reference< frame::XModel > SwTableFUNC::InsertChart(
             if (xChartDoc.is())
                 xChartDoc->createDefaultChart();
 
-            xChartModel->lockControllers(); //#i79578# don't request a new replacement image for charts to often - block change notifications
+            xChartModel->lockControllers(); //#i79578# don't request a new replacement image for charts too often - block change notifications
         }
 
         // set the table name at the OLE-node
@@ -304,7 +304,7 @@ uno::Reference< frame::XModel > SwTableFUNC::InsertChart(
     m_pSh->EndUndo( SwUndoId::UI_INSERT_CHART );
 
     if( xChartModel.is() )
-        xChartModel->unlockControllers(); //#i79578# don't request a new replacement image for charts to often
+        xChartModel->unlockControllers(); //#i79578# don't request a new replacement image for charts too often
     return xChartModel;
 }
 

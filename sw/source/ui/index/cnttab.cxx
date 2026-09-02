@@ -527,9 +527,9 @@ SwAddStylesDlg_Impl::SwAddStylesDlg_Impl(weld::Window* pParent,
     m_xRightPB->connect_clicked(LINK(this, SwAddStylesDlg_Impl, LeftRightHdl));
 
     m_xHeaderTree->connect_size_allocate(LINK(this, SwAddStylesDlg_Impl, TreeSizeAllocHdl));
-    m_xHeaderTree->enable_toggle_buttons(weld::ColumnToggleType::Radio);
+    m_xHeaderTree->set_toggle_button_type(weld::ColumnToggleType::Radio);
     m_xHeaderTree->connect_toggled(LINK(this, SwAddStylesDlg_Impl, RadioToggleOnHdl));
-    m_xHeaderTree->connect_column_clicked(LINK(this, SwAddStylesDlg_Impl, HeaderBarClick));
+    m_xHeaderTree->connect_column_header_clicked(LINK(this, SwAddStylesDlg_Impl, HeaderBarClick));
 
     std::vector<int> aWidths
     {
@@ -806,13 +806,14 @@ SwTOXSelectTabPage::SwTOXSelectTabPage(weld::Container* pPage, weld::DialogContr
     , m_xFromFileCB(m_xBuilder->weld_check_button(u"fromfile"_ustr))
     , m_xAutoMarkPB(m_xBuilder->weld_menu_button(u"file"_ustr))
     , m_xFromObjCLB(m_xBuilder->weld_tree_view(u"objects"_ustr))
-    , m_xFromObjFrame(m_xBuilder->weld_widget(u"objectframe"_ustr))
+    , m_xFromObjBox(m_xBuilder->weld_box(u"objectbox"_ustr))
     , m_xSequenceCB(m_xBuilder->weld_check_button(u"numberentries"_ustr))
     , m_xBracketLB(m_xBuilder->weld_combo_box(u"brackets"_ustr))
     , m_xAuthorityFrame(m_xBuilder->weld_widget(u"authframe"_ustr))
     , m_xSortFrame(m_xBuilder->weld_widget(u"sortframe"_ustr))
     , m_xLanguageLB(new SvxLanguageBox(m_xBuilder->weld_combo_box(u"lang"_ustr)))
     , m_xSortAlgorithmLB(m_xBuilder->weld_combo_box(u"keytype"_ustr))
+    , m_xCreateFromLB(m_xBuilder->weld_label(u"createfrom"_ustr))
 {
     m_sAddStyleUser = m_xStylesCB->get_label();
     m_pIndexEntryWrapper.reset(new IndexEntrySupplierWrapper());
@@ -828,7 +829,7 @@ SwTOXSelectTabPage::SwTOXSelectTabPage(weld::Container* pPage, weld::DialogContr
 
     m_sAddStyleContent = m_xAddStylesCB->get_label();
 
-    m_xFromObjCLB->enable_toggle_buttons(weld::ColumnToggleType::Check);
+    m_xFromObjCLB->enable_toggle_buttons();
 
     for (size_t i = 0; i < std::size(RES_SRCTYPES); ++i)
     {
@@ -863,6 +864,7 @@ SwTOXSelectTabPage::SwTOXSelectTabPage(weld::Container* pPage, weld::DialogContr
     m_xTitleToggleCB->connect_toggled(aLk);
 
     m_xTitleED->connect_changed(LINK(this, SwTOXSelectTabPage, ModifyEntryHdl));
+    m_xTitleED->connect_focus_out(LINK(this, SwTOXSelectTabPage, TitleFocusOutHdl));
     m_xLevelNF->connect_value_changed(LINK(this, SwTOXSelectTabPage, ModifySpinHdl));
     m_xSortAlgorithmLB->connect_changed(LINK(this, SwTOXSelectTabPage, ModifyListBoxHdl));
     m_xParaStyleLB->connect_changed(LINK(this, SwTOXSelectTabPage, ModifyListBoxHdl));
@@ -963,6 +965,29 @@ static CurTOXType lcl_UserData2TOXTypes(sal_uInt16 nData)
         default: OSL_FAIL("what a type?");
     }
     return eRet;
+}
+
+static OUString lcl_GetCreateForLabel(CurTOXType eCurType)
+{
+    static const std::array<std::pair<TOXTypes, TranslateId>, 5> aTypeMap = { {
+        { TOX_CONTENT, STR_TOC_CREATEFROM_CONTENT },
+        { TOX_ILLUSTRATIONS, STR_TOC_CREATEFROM_ILLUSTRATIONS },
+        { TOX_USER, STR_TOC_CREATEFROM_USER },
+        { TOX_TABLES, STR_TOC_CREATEFROM_TABLES },
+        { TOX_OBJECTS, STR_TOC_CREATEFROM_OBJECTS },
+    } };
+
+    const auto it = std::find_if(aTypeMap.begin(), aTypeMap.end(), [eCurType](const auto& rPair) {
+        return rPair.first == eCurType.eType;
+    });
+
+    if (it == aTypeMap.end())
+    {
+        OSL_FAIL("Unexpected table of contents type");
+        return SwResId(aTypeMap[0].second);
+    }
+
+    return SwResId(it->second);
 }
 
 void SwTOXSelectTabPage::ApplyTOXDescription()
@@ -1319,6 +1344,11 @@ IMPL_LINK(SwTOXSelectTabPage, TOXTypeHdl, weld::ComboBox&, rBox, void)
     CurTOXType eCurType = lcl_UserData2TOXTypes(nType);
     pTOXDlg->SetCurrentTOXType(eCurType);
 
+    bool bCreateFrameVisible = nType & (TO_CONTENT|TO_ILLUSTRATION|TO_USER|TO_TABLE|TO_OBJECT);
+
+    if (bCreateFrameVisible)
+        m_xCreateFromLB->set_label(lcl_GetCreateForLabel(eCurType));
+
     m_xAreaLB->set_visible( 0 != (nType & (TO_CONTENT|TO_ILLUSTRATION|TO_USER|TO_INDEX|TO_TABLE|TO_OBJECT)) );
     m_xLevelFT->set_visible( 0 != (nType & (TO_CONTENT)) );
     m_xLevelNF->set_visible( 0 != (nType & (TO_CONTENT)) );
@@ -1339,7 +1369,7 @@ IMPL_LINK(SwTOXSelectTabPage, TOXTypeHdl, weld::ComboBox&, rBox, void)
 
     m_xTOXMarksCB->set_visible( 0 != (nType & (TO_CONTENT|TO_USER)) );
 
-    m_xCreateFrame->set_visible( 0 != (nType & (TO_CONTENT|TO_ILLUSTRATION|TO_USER|TO_TABLE)) );
+    m_xCreateFrame->set_visible( bCreateFrameVisible );
     m_xCaptionSequenceFT->set_visible( 0 != (nType & (TO_ILLUSTRATION|TO_TABLE)) );
     m_xCaptionSequenceLB->set_visible( 0 != (nType & (TO_ILLUSTRATION|TO_TABLE)) );
     m_xDisplayTypeFT->set_visible( 0 != (nType & (TO_ILLUSTRATION|TO_TABLE)) );
@@ -1370,7 +1400,7 @@ IMPL_LINK(SwTOXSelectTabPage, TOXTypeHdl, weld::ComboBox&, rBox, void)
     m_xIdxOptionsFrame->set_visible( 0 != (nType & TO_INDEX) );
 
     //object index
-    m_xFromObjFrame->set_visible( 0 != (nType & TO_OBJECT) );
+    m_xFromObjBox->set_visible(0 != (nType & TO_OBJECT ));
 
     //set control values from the proper TOXDescription
     {
@@ -1394,18 +1424,33 @@ IMPL_LINK_NOARG(SwTOXSelectTabPage, ModifyListBoxHdl, weld::ComboBox&, void)
     ModifyHdl();
 }
 
-IMPL_LINK_NOARG(SwTOXSelectTabPage, ModifyEntryHdl, weld::Entry&, void)
-{
-    ModifyHdl();
-}
+IMPL_LINK_NOARG(SwTOXSelectTabPage, ModifyEntryHdl, weld::TextWidget&, void) { ModifyHdl(); }
 
 IMPL_LINK_NOARG(SwTOXSelectTabPage, ModifySpinHdl, weld::SpinButton&, void)
 {
     ModifyHdl();
 }
 
+IMPL_LINK_NOARG(SwTOXSelectTabPage, TitleFocusOutHdl, weld::Widget&, void)
+{
+    if (m_xTitleED->get_text().isEmpty())
+    {
+        m_xTitleToggleCB->set_active(false);
+        m_xTitleED->set_sensitive(false);
+        ModifyHdl();
+    }
+}
+
 IMPL_LINK(SwTOXSelectTabPage, CheckBoxHdl, weld::Toggleable&, rButton, void)
 {
+    if (&rButton == m_xTitleToggleCB.get())
+    {
+        bool bActive = m_xTitleToggleCB->get_active();
+        m_xTitleED->set_sensitive(bActive);
+        if (bActive)
+            m_xTitleED->grab_focus();
+    }
+
     SwMultiTOXTabDialog* pTOXDlg = static_cast<SwMultiTOXTabDialog*>(GetDialogController());
     const CurTOXType aCurType = pTOXDlg->GetCurrentTOXType();
     if(TOX_CONTENT == aCurType.eType)
@@ -1549,7 +1594,8 @@ class SwTOXEdit : public SwTOXWidget
     SwTokenWindow*        m_pParent;
     std::unique_ptr<weld::Entry> m_xEntry;
 
-    DECL_LINK(ModifyHdl, weld::Entry&, void);
+    DECL_LINK(ModifyHdl, weld::TextWidget&, void);
+
 public:
     SwTOXEdit(SwTokenWindow* pTokenWin, const SwFormToken& rToken)
         : m_xBuilder(Application::CreateBuilder(&pTokenWin->get_child_container(),
@@ -1652,10 +1698,7 @@ public:
     void AdjustSize();
 };
 
-IMPL_LINK_NOARG(SwTOXEdit, ModifyHdl, weld::Entry&, void)
-{
-    m_aModifiedLink.Call(*this);
-}
+IMPL_LINK_NOARG(SwTOXEdit, ModifyHdl, weld::TextWidget&, void) { m_aModifiedLink.Call(*this); }
 
 IMPL_LINK(SwTOXEdit, KeyInputHdl, const KeyEvent&, rKEvt, bool)
 {

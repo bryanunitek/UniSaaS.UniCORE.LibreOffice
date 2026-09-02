@@ -17,6 +17,7 @@ ColorIconView::ColorIconView(std::unique_ptr<weld::IconView> pIconView)
     : m_pIconView(std::move(pIconView))
 {
     m_pIconView->connect_item_activated(LINK(this, ColorIconView, ItemActivatedHdl));
+    m_pIconView->connect_selection_changed(LINK(this, ColorIconView, SelectionChangedHdl));
 }
 
 void ColorIconView::insert(int nIndex, const Color& rColor, const OUString& rColorName)
@@ -59,11 +60,22 @@ void ColorIconView::remove(int nIndex) { m_pIconView->remove(nIndex); }
 
 void ColorIconView::clear() { m_pIconView->clear(); }
 
+void ColorIconView::grab_focus() { m_pIconView->grab_focus(); }
+
+void ColorIconView::set_sensitive(bool bSensitive) { m_pIconView->set_sensitive(bSensitive); }
+
+void ColorIconView::set_help_id(const OUString& rName) { m_pIconView->set_help_id(rName); }
+
 IMPL_LINK(ColorIconView, ItemActivatedHdl, const weld::TreeIter&, rIter, bool)
 {
     Color aColor = getColor(m_pIconView->get_iter_index_in_parent(rIter));
     m_aColorActivatedHdl.Call(aColor);
     return true;
+}
+
+IMPL_LINK_NOARG(ColorIconView, SelectionChangedHdl, weld::ItemView&, void)
+{
+    m_aSelectionChangedHdl.Call(*this);
 }
 
 ScopedVclPtr<VirtualDevice> ColorIconView::createIcon(const Color& rColor)

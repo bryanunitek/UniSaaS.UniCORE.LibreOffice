@@ -34,7 +34,7 @@
 #include "com/sun/star/uno/TypeClass.hdl"
 #include "rtl/alloc.h"
 
-#if defined LIBO_INTERNAL_ONLY && !(defined _MSC_VER && _MSC_VER <= 1929 && defined _MANAGED)
+#if defined LIBO_INTERNAL_ONLY
 #include <type_traits>
 #endif
 
@@ -82,7 +82,7 @@ public:
         @param value value of the Any
     */
     template <typename T>
-#if defined LIBO_INTERNAL_ONLY && !(defined _MSC_VER && _MSC_VER <= 1929 && defined _MANAGED)
+#if defined LIBO_INTERNAL_ONLY
         // Disallow things like
         // Reference<XInterface> x(...);
         // Any a(*x);
@@ -289,14 +289,14 @@ public:
         The values need not be of equal type, e.g. a short integer is compared to a long integer.
 
         @param rAny another any (right side)
-        @return true if both any contains equal values
+        @return true if both anys contain equal values
     */
     inline bool SAL_CALL operator == ( const Any & rAny ) const;
     /** Inequality operator: compares two anys.
         The values need not be of equal type, e.g. a short integer is compared to a long integer.
 
         @param rAny another any (right side)
-        @return true if both any contains unequal values
+        @return true if both anys contain unequal values
     */
     inline bool SAL_CALL operator != ( const Any & rAny ) const;
 

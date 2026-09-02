@@ -29,7 +29,7 @@ import com.sun.star.lang.XTypeProvider;
 import com.sun.star.lang.XServiceInfo;
 import com.sun.star.uno.Type;
 
-/** This class capsulates the class, that implements the minimal component, a
+/** This class encapsulates the class, that implements the minimal component, a
  * factory for creating the service (<CODE>__getComponentFactory</CODE>) and a
  * method, that writes the information into the given registry key
  * (<CODE>__writeRegistryServiceInfo</CODE>).
@@ -45,7 +45,7 @@ public class TestExtension {
         private static final String __serviceName =
         "com.sun.star.comp.smoketest.TestExtension";
 
-        /** The initial component contextr, that gives access to
+        /** The initial component context, that gives access to
          * the service manager, supported singletons, ...
          * It's often later used
          */

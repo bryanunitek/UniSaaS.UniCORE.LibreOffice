@@ -6494,15 +6494,14 @@ public:
         gtk_window_present(m_pWindow);
     }
 
-    virtual void set_window_state(const OUString& rStr) override
+    virtual void set_window_state(const vcl::WindowData& rState) override
     {
-        const vcl::WindowData aData(rStr);
-        const auto nMask = aData.mask();
-        const auto nState = aData.state() & vcl::WindowState::SystemMask;
+        const auto nMask = rState.mask();
+        const auto nState = rState.state() & vcl::WindowState::SystemMask;
 
         if ((nMask & vcl::WindowDataMask::Size) == vcl::WindowDataMask::Size)
         {
-            gtk_window_set_default_size(m_pWindow, aData.width(), aData.height());
+            gtk_window_set_default_size(m_pWindow, rState.width(), rState.height());
         }
         if (nMask & vcl::WindowDataMask::State)
         {
@@ -6515,12 +6514,12 @@ public:
 #if !GTK_CHECK_VERSION(4, 0, 0)
         if (isPositioningAllowed() && ((nMask & vcl::WindowDataMask::Pos) == vcl::WindowDataMask::Pos))
         {
-            gtk_window_move(m_pWindow, aData.x(), aData.y());
+            gtk_window_move(m_pWindow, rState.x(), rState.y());
         }
 #endif
     }
 
-    virtual OUString get_window_state(vcl::WindowDataMask nMask) const override
+    virtual vcl::WindowData get_window_state(vcl::WindowDataMask nMask) const override
     {
         bool bPositioningAllowed = isPositioningAllowed();
 
@@ -6544,7 +6543,7 @@ public:
         if (nMask & vcl::WindowDataMask::Size)
             aData.setSize(get_size());
 
-        return aData.toStr();
+        return aData;
     }
 
     virtual void connect_container_focus_changed(const Link<Container&, void>& rLink) override
@@ -13607,13 +13606,6 @@ int get_height_row_separator(GtkTreeView* pTreeView)
     return nVerticalSeparator;
 }
 
-int get_height_rows(GtkTreeView* pTreeView, GList* pColumns, int nRows)
-{
-    gint nMaxRowHeight = get_height_row(pTreeView, pColumns);
-    gint nVerticalSeparator = get_height_row_separator(pTreeView);
-    return (nMaxRowHeight * nRows) + (nVerticalSeparator * nRows) / 2;
-}
-
 #if !GTK_CHECK_VERSION(4, 0, 0)
 int get_height_rows(int nRowHeight, int nSeparatorHeight, int nRows)
 {
@@ -13972,10 +13964,15 @@ private:
                            m_nTextCol, !pText ? nullptr : OUStringToOString(*pText, RTL_TEXTENCODING_UTF8).getStr(),
                            m_nIdCol, !pId ? nullptr : OUStringToOString(*pId, RTL_TEXTENCODING_UTF8).getStr());
 
+        if (!pIconName && !pDevice)
+            return;
+
+        const int nImageCol = m_nExpanderImageCol != -1 ? m_nExpanderImageCol : m_nImageCol;
+
         if (pIconName)
         {
             GdkPixbuf* pixbuf = getPixbuf(*pIconName);
-            m_Setter(m_pTreeModel, &iter, m_nImageCol, pixbuf, -1);
+            m_Setter(m_pTreeModel, &iter, nImageCol, pixbuf, -1);
             if (pixbuf)
                 g_object_unref(pixbuf);
         }
@@ -13994,7 +13991,7 @@ private:
             cairo_paint(cr);
             cairo_destroy(cr);
 
-            m_Setter(m_pTreeModel, &iter, m_nImageCol, target, -1);
+            m_Setter(m_pTreeModel, &iter, nImageCol, target, -1);
             cairo_surface_destroy(target);
         }
     }
@@ -14258,7 +14255,7 @@ private:
             GtkTreeViewColumn* pColumn = GTK_TREE_VIEW_COLUMN(pEntry->data);
             if (pColumn == pClickedColumn)
             {
-                TreeView::signal_column_clicked(nIndex);
+                signal_column_header_clicked(nIndex);
                 break;
             }
             ++nIndex;
@@ -14645,7 +14642,7 @@ public:
                 }
                 else if (GTK_IS_CELL_RENDERER_TOGGLE(pCellRenderer))
                 {
-                    const bool bExpander = nIndex == 0 || (nIndex == 1 && m_nExpanderImageCol == 0);
+                    const bool bExpander = nIndex == 0 && g_list_next(pRenderer) != nullptr;
                     if (bExpander)
                         m_nExpanderToggleCol = nIndex;
                     g_signal_connect(G_OBJECT(pCellRenderer), "toggled", G_CALLBACK(signalCellToggled), this);
@@ -14813,21 +14810,15 @@ public:
                 pEditCellData = pData;
                 break;
             }
-            else if (GTK_IS_CELL_RENDERER_TOGGLE(pCellRenderer))
+            else if (GTK_IS_CELL_RENDERER_TOGGLE(pCellRenderer) && nCellIndex == m_nExpanderToggleCol)
             {
-                if (nCellIndex == m_nExpanderToggleCol)
-                {
-                    pToggle = pCellRenderer;
-                    g_object_ref(pToggle);
-                }
+                pToggle = pCellRenderer;
+                g_object_ref(pToggle);
             }
-            else if (GTK_IS_CELL_RENDERER_PIXBUF(pCellRenderer))
+            else if (GTK_IS_CELL_RENDERER_PIXBUF(pCellRenderer) && nCellIndex == m_nExpanderImageCol)
             {
-                if (nCellIndex == m_nExpanderImageCol)
-                {
-                    pExpander = pCellRenderer;
-                    g_object_ref(pExpander);
-                }
+                pExpander = pCellRenderer;
+                g_object_ref(pExpander);
             }
 
         }
@@ -14845,7 +14836,6 @@ public:
         if (pToggle)
         {
             gtk_tree_view_column_pack_start(pColumn, pToggle, false);
-            gtk_tree_view_column_add_attribute(pColumn, pToggle, "active", m_nExpanderToggleCol);
             gtk_tree_view_column_add_attribute(pColumn, pToggle, "active", m_nExpanderToggleCol);
             gtk_tree_view_column_add_attribute(pColumn, pToggle, "visible", m_aToggleTriStateMap[m_nExpanderToggleCol]);
             g_object_unref(pToggle);
@@ -15126,7 +15116,7 @@ public:
         enable_notify_events();
     }
 
-    virtual int iter_n_children(const weld::TreeIter& rIter) const override
+    virtual int do_iter_n_children(const weld::TreeIter& rIter) const override
     {
         const GtkInstanceTreeIter& rGtkIter = static_cast<const GtkInstanceTreeIter&>(rIter);
         return gtk_tree_model_iter_n_children(m_pTreeModel, const_cast<GtkTreeIter*>(&rGtkIter.iter));
@@ -15271,13 +15261,19 @@ public:
         return get_bool(rGtkIter.iter, col) ? TRISTATE_TRUE : TRISTATE_FALSE;
     }
 
-    virtual void set_toggle(const weld::TreeIter& rIter, TriState eState, int col) override
+    virtual void do_set_toggle(const weld::TreeIter& rIter, TriState eState, int col) override
     {
         const GtkInstanceTreeIter& rGtkIter = static_cast<const GtkInstanceTreeIter&>(rIter);
         set_toggle(rGtkIter.iter, eState, col);
     }
 
-    virtual void enable_toggle_buttons(weld::ColumnToggleType eType) override
+    virtual void enable_toggle_buttons() override
+    {
+        // ctor already enables expander toggle column based on columns/renderers defined in the .ui file
+    }
+
+    virtual void set_toggle_button_type(weld::ColumnToggleType eType
+                                        = weld::ColumnToggleType::Check) override
     {
         for (GList* pEntry = g_list_first(m_pColumns); pEntry; pEntry = g_list_next(pEntry))
         {
@@ -15754,7 +15750,9 @@ public:
 
     virtual int get_height_rows(int nRows) const override
     {
-        return ::get_height_rows(m_pTreeView, m_pColumns, nRows);
+        gint nMaxRowHeight = get_height_row(m_pTreeView, m_pColumns);
+        gint nVerticalSeparator = get_height_row_separator(m_pTreeView);
+        return (nMaxRowHeight * nRows) + (nVerticalSeparator * nRows) / 2;
     }
 
     virtual Size get_size_request() const override
@@ -17180,7 +17178,7 @@ public:
             m_dValueWhenEmpty = gtk_spin_button_get_value(m_pButton);
     }
 
-    virtual void connect_changed(const Link<weld::Entry&, void>& rLink) override
+    virtual void connect_changed(const Link<weld::TextWidget&, void>& rLink) override
     {
         if (!m_pFormatter) // once a formatter is set, it takes over "changed"
         {
@@ -17216,7 +17214,7 @@ public:
             auto aFocusOutHdl = m_aFocusOutHdl;
             m_aFocusOutHdl = Link<weld::Widget&, void>();
             auto aChangeHdl = m_aChangeHdl;
-            m_aChangeHdl = Link<weld::Entry&, void>();
+            m_aChangeHdl = Link<weld::TextWidget&, void>();
 
             double fValue = gtk_spin_button_get_value(m_pButton);
             double fMin, fMax;
@@ -20086,7 +20084,7 @@ public:
         ::set_entry_message_type(GTK_ENTRY(m_pEntry), eType);
     }
 
-    virtual void set_entry_text(const OUString& rText) override
+    virtual void do_set_entry_text(const OUString& rText) override
     {
         assert(m_pEditable);
         disable_notify_events();
@@ -22038,7 +22036,7 @@ public:
         ::set_entry_message_type(GTK_ENTRY(m_pEntry), eType);
     }
 
-    virtual void set_entry_text(const OUString& rText) override
+    virtual void do_set_entry_text(const OUString& rText) override
     {
         assert(m_pEntry);
         disable_notify_events();

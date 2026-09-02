@@ -49,6 +49,8 @@
 #include <editeng/boxitem.hxx>
 #include <test/commontesttools.hxx>
 #include <sfx2/docfile.hxx>
+#include <vcl/bitmap.hxx>
+#include <vcl/graph.hxx>
 #include <vcl/scheduler.hxx>
 
 #include <IDocumentSettingAccess.hxx>
@@ -1777,6 +1779,89 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf165156)
     // This used to hang after loading
     createSwDoc("tdf165156.odt");
     // This must succeed
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testFillImageNameMissingDefinition)
+{
+    // Load a document where draw:fill-image-name references "TestBitmap" but
+    // no <draw:fill-image> element defines it. The page layout does have a
+    // style:background-image with actual image data. The import should recover
+    // the missing bitmap table entry from the old background image so that the
+    // fill-image-name resolves and the bitmap is accessible via UNO (which is
+    // the code path Collabora Online uses for the page setup dialog).
+    createSwDoc("fill-image-name-missing-definition.odt");
+
+    // The BitmapTable must contain the recovered entry
+    uno::Reference<lang::XMultiServiceFactory> xFact(mxComponent, uno::UNO_QUERY);
+    uno::Reference<container::XNameAccess> xBitmapTable(
+        xFact->createInstance(u"com.sun.star.drawing.BitmapTable"_ustr), uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xBitmapTable.is());
+    CPPUNIT_ASSERT(xBitmapTable->hasByName(u"TestBitmap"_ustr));
+
+    // The page style must report FillStyle_BITMAP with a resolvable name
+    uno::Reference<beans::XPropertySet> xPageStyle(
+        getStyles(u"PageStyles"_ustr)->getByName(u"Standard"_ustr), uno::UNO_QUERY);
+    CPPUNIT_ASSERT_EQUAL(drawing::FillStyle_BITMAP,
+        getProperty<drawing::FillStyle>(xPageStyle, u"FillStyle"_ustr));
+    CPPUNIT_ASSERT_EQUAL(u"TestBitmap"_ustr,
+        getProperty<OUString>(xPageStyle, u"FillBitmapName"_ustr));
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testHorizontalRule)
+{
+    // tdf#167714 the marker has to survive ODF. It is what tells a horizontal rule apart from any
+    // other rectangle, so losing it on save would lose the layout that goes with it.
+    createSwDoc();
+    {
+        auto xFactory = mxComponent.queryThrow<lang::XMultiServiceFactory>();
+        auto xPage = mxComponent.queryThrow<drawing::XDrawPageSupplier>()->getDrawPage();
+        auto xShape = xFactory->createInstance(u"com.sun.star.drawing.RectangleShape"_ustr)
+                          .queryThrow<drawing::XShape>();
+        xPage->add(xShape);
+        xShape.queryThrow<beans::XPropertySet>()->setPropertyValue(u"HorizontalRule"_ustr,
+                                                                   uno::Any(true));
+
+        // a picture rule is a picture, not a rectangle, and is laid out the same way, so the
+        // marker has to be honoured there too
+        auto xGraphic = xFactory->createInstance(u"com.sun.star.drawing.GraphicObjectShape"_ustr)
+                            .queryThrow<drawing::XShape>();
+        xPage->add(xGraphic);
+        auto xGraphicProps = xGraphic.queryThrow<beans::XPropertySet>();
+        xGraphicProps->setPropertyValue(u"HorizontalRule"_ustr, uno::Any(true));
+        // The picture needs data: ODF has no representation for an empty one, and export writes a
+        // <text:p/> inside <draw:image> that the schema does not allow there.
+        const Graphic aGraphic(Bitmap(Size(8, 8), vcl::PixelFormat::N24_BPP));
+        xGraphicProps->setPropertyValue(u"Graphic"_ustr, uno::Any(aGraphic.GetXGraphic()));
+
+        // but the marker lives in a graphic style, which can be shared or applied to any shape,
+        // so on anything that cannot be a rule it has to stay inert
+        auto xEllipse = xFactory->createInstance(u"com.sun.star.drawing.EllipseShape"_ustr)
+                            .queryThrow<drawing::XShape>();
+        xPage->add(xEllipse);
+        xEllipse.queryThrow<beans::XPropertySet>()->setPropertyValue(u"HorizontalRule"_ustr,
+                                                                     uno::Any(true));
+    }
+    CPPUNIT_ASSERT(getProperty<bool>(getShape(1), u"HorizontalRule"_ustr));
+    CPPUNIT_ASSERT(getProperty<bool>(getShape(2), u"HorizontalRule"_ustr));
+    CPPUNIT_ASSERT(!getProperty<bool>(getShape(3), u"HorizontalRule"_ustr));
+
+    saveAndReload(TestFilter::ODT);
+    CPPUNIT_ASSERT(getProperty<bool>(getShape(1), u"HorizontalRule"_ustr));
+    CPPUNIT_ASSERT(getProperty<bool>(getShape(2), u"HorizontalRule"_ustr));
+    CPPUNIT_ASSERT(!getProperty<bool>(getShape(3), u"HorizontalRule"_ustr));
+
+    // and the picture went out as a picture - the export validator rejects the <text:p/> that an
+    // empty one produces
+    CPPUNIT_ASSERT_EQUAL(u"image/png"_ustr,
+                         getXPath(parseExport(u"content.xml"_ustr), "//draw:image", "mime-type"));
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testHorizontalRuleOldOdf)
+{
+    // tdf#167714 an ordinary rectangle must not be taken for a horizontal rule, which is what
+    // keeps a document saved before the marker existed rendering the way it was written
+    createSwDoc("fdo75872_aoo40.odt");
+    CPPUNIT_ASSERT(!getProperty<bool>(getShape(1), u"HorizontalRule"_ustr));
 }
 
 } // end of anonymous namespace

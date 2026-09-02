@@ -947,6 +947,17 @@ IMPL_LINK(FontStyleBox, ChangeHdl, weld::ComboBox&, rComboBox, void)
     m_aChangedLink.Call(rComboBox);
 }
 
+void FontStyleBox::set_active_or_entry_text(const OUString& rText)
+{
+    const int nFound = m_xComboBox->find_text(rText);
+    if (nFound != -1)
+    {
+        m_aLastStyle = rText;
+        m_xComboBox->set_active(nFound);
+    }
+    m_xComboBox->set_entry_text(rText);
+}
+
 void FontStyleBox::Fill( std::u16string_view rName, const FontList* pList )
 {
     OUString aOldText = m_xComboBox->get_active_text();
@@ -962,6 +973,7 @@ void FontStyleBox::Fill( std::u16string_view rName, const FontList* pList )
         FontWeight  eLastWeight = WEIGHT_DONTKNOW;
         FontItalic  eLastItalic = ITALIC_NONE;
         FontWidth   eLastWidth = WIDTH_DONTKNOW;
+        OUString    aLastStyleName;
         bool        bNormal = false;
         bool        bItalic = false;
         bool        bBold = false;
@@ -975,10 +987,14 @@ void FontStyleBox::Fill( std::u16string_view rName, const FontList* pList )
             FontWeight  eWeight = aFontMetric.GetWeightMaybeAskConfig();
             FontItalic  eItalic = aFontMetric.GetItalicMaybeAskConfig();
             FontWidth   eWidth = aFontMetric.GetWidthTypeMaybeAskConfig();
+            const OUString& rStyleName = aFontMetric.GetStyleName();
             // Only if the attributes are different, we insert the
             // Font to avoid double Entries in different languages
+            // tdf#87288 also insert if attributes are the same but style name
+            // is different (e.g. “Small Caps” that have the same attributes as
+            // “Regular”).
             if ( (eWeight != eLastWeight) || (eItalic != eLastItalic) ||
-                 (eWidth != eLastWidth) )
+                 (eWidth != eLastWidth) || (rStyleName != aLastStyleName) )
             {
                 if ( bInsert )
                     m_xComboBox->append_text(aStyleText);
@@ -1010,6 +1026,7 @@ void FontStyleBox::Fill( std::u16string_view rName, const FontList* pList )
                 eLastWeight = eWeight;
                 eLastItalic = eItalic;
                 eLastWidth = eWidth;
+                aLastStyleName = rStyleName;
             }
             else
             {

@@ -353,7 +353,7 @@ public:
 
     bool B2DPolyPolygon::isClosed() const
     {
-        // PolyPOlygon is closed when all contained Polygons are closed or
+        // PolyPolygon is closed when all contained Polygons are closed or
         // no Polygon exists.
         for(sal_uInt32 a(0); a < count(); a++)
         {
@@ -436,7 +436,7 @@ public:
         mpPolyPolygon->addOrReplaceSystemDependentData(rData);
     }
 
-    SystemDependentData_SharedPtr B2DPolyPolygon::getSystemDependantDataInternal(SDD_Type aType) const
+    SystemDependentData_SharedPtr B2DPolyPolygon::getSystemDependentDataInternal(SDD_Type aType) const
     {
         return mpPolyPolygon->getSystemDependentData(aType);
     }

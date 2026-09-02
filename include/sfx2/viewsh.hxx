@@ -111,20 +111,21 @@ namespace o3tl
 class SfxViewFactory;
 #define SFX_DECL_VIEWFACTORY(Class) \
 private: \
-    static SfxViewFactory *s_pFactory; \
+    static std::unique_ptr<SfxViewFactory> s_pFactory; \
 public: \
     static SfxViewShell  *CreateInstance(SfxViewFrame& rFrame, SfxViewShell *pOldView); \
     static void           RegisterFactory( SfxInterfaceId nPrio ); \
-    static SfxViewFactory*Factory() { return s_pFactory; } \
+    static SfxViewFactory*Factory() { return s_pFactory.get(); } \
     static void           InitFactory()
 
 #define SFX_IMPL_NAMED_VIEWFACTORY(Class, AsciiViewName) \
-    SfxViewFactory* Class::s_pFactory; \
+    std::unique_ptr<SfxViewFactory> Class::s_pFactory; \
     SfxViewShell* Class::CreateInstance(SfxViewFrame& rFrame, SfxViewShell *pOldView) \
     { return new Class(rFrame, pOldView); } \
     void Class::RegisterFactory( SfxInterfaceId nPrio ) \
     { \
-        s_pFactory = new SfxViewFactory(&CreateInstance,nPrio,AsciiViewName);\
+        assert(!s_pFactory && "initialising this twice will leak memory"); \
+        s_pFactory = std::make_unique<SfxViewFactory>(&CreateInstance,nPrio,AsciiViewName); \
         InitFactory(); \
     } \
     void Class::InitFactory()
@@ -203,8 +204,6 @@ private:
     LOKDocumentFocusListener& GetLOKDocumentFocusListener();
     const LOKDocumentFocusListener& GetLOKDocumentFocusListener() const;
     bool lokReadOnlyView : 1 = false; // When true, this is a LOK readonly view
-    bool allowChangeComments : 1 = false; // Allow editing comments in readonly view mode
-    bool allowManageRedlines : 1 = false; // Allow accepting/rejecting changes in readonly view mode
 
 public:
 
@@ -230,10 +229,6 @@ public:
 
     void                        SetLokReadOnlyView(bool readOnlyView) { lokReadOnlyView = readOnlyView; };
     bool                        IsLokReadOnlyView() const { return lokReadOnlyView; };
-    void                        SetAllowChangeComments(bool allow) { allowChangeComments = allow; }
-    bool                        IsAllowChangeComments() const { return allowChangeComments; }
-    void                        SetAllowManageRedlines(bool allow) { allowManageRedlines = allow; }
-    bool                        IsAllowManageRedlines() const { return allowManageRedlines; }
 
     // Misc
 
@@ -245,7 +240,7 @@ public:
      */
     virtual bool                PrepareClose( bool bUI = true );
     virtual OUString            GetSelectionText( bool bCompleteWords = false, bool bOnlyASample = false );
-    virtual bool                HasSelection( bool bText = true ) const;
+    virtual bool HasSelection(bool bMustHaveText) const;
     virtual SdrView*            GetDrawView() const;
 
     void                        AddSubShell( SfxShell& rShell );

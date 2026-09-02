@@ -132,9 +132,9 @@ public:
         return static_cast< RC >( osl_getCanonicalName( ustrRequestedURL.pData, &ustrValidURL.pData ) );
     }
 
-    /** Convert a path relative to a given directory into an full qualified file URL.
+    /** Convert a path relative to a given directory into a fully qualified file URL.
 
-        Convert a path relative to a given directory into an full qualified file URL.
+        Convert a path relative to a given directory into a fully qualified file URL.
         The function resolves symbolic links if possible and path ellipses, so on success
         the resulting absolute path is fully resolved.
 
@@ -147,7 +147,7 @@ public:
         If ustrRelativeFileURL denotes an absolute path ustrBaseDirectoryURL will be ignored.
 
         @param[out] ustrAbsoluteFileURL
-        On success it receives the full qualified absolute file URL.
+        On success it receives the fully qualified absolute file URL.
 
         @retval E_None on success
         @retval E_INVAL the format of the parameters was not valid
@@ -1072,7 +1072,7 @@ public:
     /** Set the file size of an open file.
 
         Sets the file size of an open file. The file can be truncated or enlarged by the function.
-        The position of the file pointer is not affeced by this function.
+        The position of the file pointer is not affected by this function.
 
         @param[in] uSize
         New size in bytes.
@@ -1094,7 +1094,7 @@ public:
     /** Get the file size of an open file.
 
         Gets the file size of an open file.
-        The position of the file pointer is not affeced by this function.
+        The position of the file pointer is not affected by this function.
 
         @param[out] rSize
         Current size in bytes.

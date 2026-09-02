@@ -23,6 +23,7 @@
 #include <com/sun/star/presentation/AnimationSpeed.hpp>
 #include <com/sun/star/presentation/ClickAction.hpp>
 #include "pres.hxx"
+#include "SdSoundLink.hxx"
 #include <svx/svdobj.hxx>
 #include <tools/color.hxx>
 #include "sddllapi.h"
@@ -42,13 +43,18 @@ public:
     bool                        mbDimHide;      ///< hide rather than dim
     Color                       maBlueScreen;   ///< identifies "background pixels"
     Color                       maDimColor;     ///< for fading the object
-    OUString                    maSoundFile;    ///< Path to the sound file in MS DOS notation
+    SdSoundLink                 maSoundLink;    ///< animation effect sound source
     bool                        mbSoundOn;      ///< Sound on / off
     bool                        mbPlayFull;     ///< play sound completely.
     css::presentation::ClickAction     meClickAction;  ///< Action at mouse click
+    // Runtime allowed state: the user has allowed this click-action sound this
+    // session. In-memory only, never written to the document.
+    bool                        mbClickSoundAllowed;
     css::presentation::AnimationEffect meSecondEffect; ///< for object fading.
     css::presentation::AnimationSpeed  meSecondSpeed;  ///< for object fading.
-    OUString                    maSecondSoundFile; ///< for object fading.
+    // The second (object-fade) effect has no sound-file field of its own.
+    // When mbSecondSoundOn is set, its sound URL is the shape's bookmark
+    // string, set and read through SetBookmark and GetBookmark.
     bool                        mbSecondSoundOn;   ///< for object fading.
     bool                        mbSecondPlayFull;  ///< for object fading.
     sal_uInt16                  mnVerb;            ///< for OLE object

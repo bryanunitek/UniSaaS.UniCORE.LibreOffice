@@ -497,13 +497,13 @@ certain functionality.
 @li @c vcl.control
 @li @c vcl.ct - CoreText-using code for macOS and iOS
 @li @c vcl.debugevent
-@li @c vcl.driver Graphics driver handling
+@li @c vcl.driver - Graphics driver handling
 @li @c vcl.emf - EMF/EMF+ processing
 @li @c vcl.filter
 @li @c vcl.filter.webp
+@li @c vcl.filter.jxl
 @li @c vcl.fonts - font-specific code
 @li @c vcl.fonts.detail
-@li @c vcl.fonts.cff - CFF font subsetting-specific code
 @li @c vcl.gdi - the GDI part of VCL, devices, bitmaps, etc.
 @li @c vcl.gdi.wndproc - Windows Procedure part of VCL
 @li @c vcl.gdi.fontmetric

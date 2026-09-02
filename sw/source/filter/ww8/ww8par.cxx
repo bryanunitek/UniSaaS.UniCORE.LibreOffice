@@ -95,7 +95,7 @@
 #include <IDocumentMarkAccess.hxx>
 #include <IDocumentStylePoolAccess.hxx>
 #include <IDocumentExternalData.hxx>
-#include <../../core/inc/DocumentRedlineManager.hxx>
+#include <DocumentRedlineManager.hxx>
 #include <docufld.hxx>
 #include <utility>
 #include <viewsh.hxx>
@@ -1467,16 +1467,43 @@ void SwWW8FltControlStack::SetAttrInDoc(const SwPosition& rTmpPos,
                         if ( pNum )
                         {
                             // #i103711#
-                            const bool bFirstLineIndentSet =
+                            bool bFirstLineIndentSet =
                                 ( m_rReader.m_aTextNodesHavingFirstLineOfstSet.end() !=
                                     m_rReader.m_aTextNodesHavingFirstLineOfstSet.find( pNode ) );
                             // #i105414#
-                            const bool bLeftIndentSet =
+                            bool bLeftIndentSet =
                                 (  m_rReader.m_aTextNodesHavingLeftIndentSet.end() !=
                                     m_rReader.m_aTextNodesHavingLeftIndentSet.find( pNode ) );
                             SyncIndentWithList(firstLineNew, leftMarginNew, *pNum,
                                                 bFirstLineIndentSet,
                                                 bLeftIndentSet );
+
+                            // Outline-numbered / list paragraphs can carry
+                            // paragraph indent SPRMs that are only legacy compatibility
+                            // copies of the list level indent. When the paragraph's style
+                            // hierarchy controls the indent for an axis - apply
+                            // neither the compatibility copy nor
+                            // the list level value: the paragraph inherits the style indent.
+                            // Drop the override for such an axis (restore the inherited
+                            // value) so nothing is hard-set and the style value shows through.
+                            if (pNum->GetPositionAndSpaceMode() == SvxNumberFormat::LABEL_ALIGNMENT)
+                            {
+                                ::sw::ListLevelIndents const indents(
+                                    pTextNode->AreListLevelIndentsApplicable());
+                                if (!(indents & ::sw::ListLevelIndents::FirstLine))
+                                {
+                                    firstLineNew.SetTextFirstLineOffset(
+                                        firstLineOld.GetTextFirstLineOffset(),
+                                        firstLineOld.GetPropTextFirstLineOffset());
+                                    firstLineNew.SetAutoFirst(firstLineOld.IsAutoFirst());
+                                }
+                                if (!(indents & ::sw::ListLevelIndents::LeftMargin))
+                                {
+                                    leftMarginNew.SetTextLeft(
+                                        leftMarginOld.GetTextLeft(),
+                                        leftMarginOld.GetPropLeft());
+                                }
+                            }
                         }
 
                         if (firstLineNew != firstLineOld)
@@ -1945,9 +1972,7 @@ void SwWW8ImplReader::ImportDop()
         !m_xWDop->fDontAdjustLineHeightInTable);
 
     // Import Default Tabs
-    tools::Long nDefTabSiz = m_xWDop->dxaTab;
-    if( nDefTabSiz < 56 )
-        nDefTabSiz = 709;
+    tools::Long nDefTabSiz = std::max<tools::Long>(1, m_xWDop->dxaTab);
 
     // We want exactly one DefaultTab
     SvxTabStopItem aNewTab( 1, sal_uInt16(nDefTabSiz), SvxTabAdjust::Default, RES_PARATR_TABSTOP );
@@ -2025,6 +2050,7 @@ void SwWW8ImplReader::ImportDop()
     m_rDoc.getIDocumentSettingAccess().set(DocumentSettingId::APPLY_PARAGRAPH_MARK_FORMAT_TO_EMPTY_LINE_AT_END_OF_PARAGRAPH, true);
     m_rDoc.getIDocumentSettingAccess().set(DocumentSettingId::HIDDEN_PARAGRAPH_MARK_PER_LINE_PROPERTIES, true);
     // rely on default for IGNORE_HIDDEN_CHARS_FOR_LINE_CALCULATION=true
+    // rely on default for LINE_SPACING_AS_GAP_BELOW=true
 
     IDocumentSettingAccess& rIDSA = m_rDoc.getIDocumentSettingAccess();
     if (m_xWDop->fDontBreakWrappedTables)
@@ -2220,15 +2246,11 @@ void WW8ReaderSave::Restore( SwWW8ImplReader* pRdr )
 
     pRdr->m_xRedlineStack->closeall(*pRdr->m_pPaM->GetPoint());
 
-    // ofz#37322 drop m_oLastAnchorPos during RedlineStack dtor and restore it afterwards to the same
-    // place, or somewhere close if that place got destroyed
-    std::shared_ptr<SwUnoCursor> xLastAnchorCursor(pRdr->m_oLastAnchorPos ? pRdr->m_rDoc.CreateUnoCursor(*pRdr->m_oLastAnchorPos) : nullptr);
-    pRdr->m_oLastAnchorPos.reset();
-
-    pRdr->m_xRedlineStack = std::move(mxOldRedlines);
-
-    if (xLastAnchorCursor)
-        pRdr->m_oLastAnchorPos.emplace(*xLastAnchorCursor->GetPoint());
+    {
+        // ofz#37322 the RedlineStack destructor can delete the anchored nodes
+        WW8LastAnchorPosSaver aSaveLastAnchorPos(*pRdr);
+        pRdr->m_xRedlineStack = std::move(mxOldRedlines);
+    }
 
     pRdr->DeleteAnchorStack();
     pRdr->m_xAnchorStck = std::move(mxOldAnchorStck);
@@ -2241,6 +2263,21 @@ void WW8ReaderSave::Restore( SwWW8ImplReader* pRdr )
         pRdr->m_xPlcxMan->RestoreAllPLCFx(maPLCFxSave);
     pRdr->m_aApos.swap(maOldApos);
     pRdr->m_aFieldStack.swap(maOldFieldStack);
+}
+
+WW8LastAnchorPosSaver::WW8LastAnchorPosSaver(SwWW8ImplReader& rReader)
+    : m_rReader(rReader)
+    , m_xLastAnchorCursor(rReader.m_oLastAnchorPos
+          ? rReader.m_rDoc.CreateUnoCursor(*rReader.m_oLastAnchorPos)
+          : nullptr)
+{
+    m_rReader.m_oLastAnchorPos.reset();
+}
+
+WW8LastAnchorPosSaver::~WW8LastAnchorPosSaver()
+{
+    if (m_xLastAnchorCursor)
+        m_rReader.m_oLastAnchorPos.emplace(*m_xLastAnchorCursor->GetPoint());
 }
 
 void SwWW8ImplReader::Read_HdFtFootnoteText( const SwNodeIndex* pSttIdx,
@@ -2564,14 +2601,12 @@ void SwWW8ImplReader::FinalizeTextNode(SwPosition& rPos, bool bAddNew)
 
     const SwNumRule* pRule = nullptr;
 
-    if (pText != nullptr)
+    if (pText)
+    {
         pRule = sw::util::GetNumRuleFromTextNode(*pText);
 
-    // tdf#64222 / tdf#150613 filter out the "paragraph marker" formatting and
-    // set it as a separate paragraph property, just like we do for DOCX.
-    // This is only being used for numbering currently, so limiting to that context.
-    if (pRule)
-    {
+        // tdf#64222 / tdf#150613 filter out the "paragraph marker" formatting and
+        // set it as a separate paragraph property, just like we do for DOCX.
         SfxItemSet items(SfxItemSet::makeFixedSfxItemSet<RES_CHRATR_BEGIN, RES_CHRATR_END - 1, RES_TXTATR_CHARFMT,
                         RES_TXTATR_CHARFMT, RES_UNKNOWNATR_BEGIN, RES_UNKNOWNATR_END - 1>(m_pPaM->GetDoc().GetAttrPool()));
 

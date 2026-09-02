@@ -63,7 +63,6 @@ SvxFontSubstTabPage::SvxFontSubstTabPage(weld::Container* pPage, weld::DialogCon
 
     m_xCheckLB->set_size_request(m_xCheckLB->get_approximate_digit_width() * 60,
                                  m_xCheckLB->get_height_rows(8));
-    m_xCheckLB->enable_toggle_buttons(weld::ColumnToggleType::Check);
     m_xCheckLB->set_help_id(HID_OFA_FONT_SUBST_CLB);
     m_xCheckLB->set_selection_mode(SelectionMode::Multiple);
 
@@ -77,7 +76,7 @@ SvxFontSubstTabPage::SvxFontSubstTabPage(weld::Container* pPage, weld::DialogCon
     Link<weld::Button&,void> aClickLink(LINK(this, SvxFontSubstTabPage, ClickHdl));
 
     m_xCheckLB->connect_selection_changed(LINK(this, SvxFontSubstTabPage, TreeListBoxSelectHdl));
-    m_xCheckLB->connect_column_clicked(LINK(this, SvxFontSubstTabPage, HeaderBarClick));
+    m_xCheckLB->connect_column_header_clicked(LINK(this, SvxFontSubstTabPage, HeaderBarClick));
     m_xUseTableCB->connect_toggled(LINK(this, SvxFontSubstTabPage, ToggleHdl));
     m_xFont1CB->connect_changed(aLink2);
     m_xFont2CB->connect_changed(aLink2);

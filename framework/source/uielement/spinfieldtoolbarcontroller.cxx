@@ -46,7 +46,7 @@ namespace framework
 {
 
 // Wrapper class to notify controller about events from combobox.
-// Unfortunaltly the events are notified through virtual methods instead
+// Unfortunately the events are notified through virtual methods instead
 // of Listeners.
 
 class SpinfieldControl final : public InterimItemWindow
@@ -66,7 +66,7 @@ public:
     DECL_LINK(ValueChangedHdl, weld::FormattedSpinButton&, void);
     DECL_LINK(FormatOutputHdl, double, std::optional<OUString>);
     DECL_STATIC_LINK(SpinfieldControl, ParseInputHdl, const OUString&, Formatter::ParseResult);
-    DECL_LINK(ModifyHdl, weld::Entry&, void);
+    DECL_LINK(ModifyHdl, weld::TextWidget&, void);
     DECL_LINK(ActivateHdl, weld::Entry&, bool);
     DECL_LINK(FocusInHdl, weld::Widget&, void);
     DECL_LINK(FocusOutHdl, weld::Widget&, void);
@@ -130,7 +130,7 @@ IMPL_LINK_NOARG(SpinfieldControl, ValueChangedHdl, weld::FormattedSpinButton&, v
         m_pSpinfieldToolbarController->execute(0);
 }
 
-IMPL_LINK_NOARG(SpinfieldControl, ModifyHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(SpinfieldControl, ModifyHdl, weld::TextWidget&, void)
 {
     if (m_pSpinfieldToolbarController)
         m_pSpinfieldToolbarController->Modify();

@@ -36,7 +36,9 @@
 #include <svl/numformat.hxx>
 #include <svl/zforlist.hxx>
 #include <svl/zformat.hxx>
+#include <svx/dialmgr.hxx>
 #include <svx/pageitem.hxx>
+#include <svx/strings.hrc>
 #include <editeng/colritem.hxx>
 #include <editeng/contouritem.hxx>
 #include <editeng/crossedoutitem.hxx>
@@ -1083,7 +1085,7 @@ void SwXStyleFamily::insertByName(const OUString& rProgName, const uno::Any& rEl
 
         pNewStyle->setName(rProgName); // insertByName sets the element name
         if (pNewStyle->getParentStyle().isEmpty())
-            pNewStyle->setParentStyle(SwResId(STR_TABSTYLE_DEFAULT));
+            pNewStyle->setParentStyle(SvxResId(RID_SVXSTR_TBLAFMT_DEFAULT_STYLE));
 
         m_pDocShell->GetDoc()->GetTableStyles().AddAutoFormat(*pNewStyle->GetTableFormat());
         pNewStyle->SetPhysical();
@@ -1658,7 +1660,8 @@ void SwXStyle::SetPropertyValue<sal_uInt16(RES_BACKGROUND)>(const SfxItemPropert
     if(*aChangedBrushItem == *aOriginalBrushItem && (MID_GRAPHIC_TRANSPARENT != nMemberId || !aValue.has<bool>() || !aValue.get<bool>()))
         return;
 
-    setSvxBrushItemAsFillAttributesToTargetSet(*aChangedBrushItem, rStyleSet);
+    setSvxBrushItemAsFillAttributesToTargetSet(*aChangedBrushItem, rStyleSet,
+                                               m_pDoc->GetLinkReferer());
 }
 template<>
 void SwXStyle::SetPropertyValue<OWN_ATTR_FILLBMP_MODE>(const SfxItemPropertyMapEntry&, const SfxItemPropertySet&, const uno::Any& rValue, SwStyleBase_Impl& o_rStyleBase)
@@ -2604,7 +2607,8 @@ static const SfxItemSet* lcl_GetItemsetForProperty(const SfxItemSet& rSet, SfxSt
     if(eFamily != SfxStyleFamily::Page)
         return &rSet;
     const bool isFooter = o3tl::starts_with(rPropertyName, u"Footer");
-    if(!isFooter && !o3tl::starts_with(rPropertyName, u"Header") && rPropertyName != UNO_NAME_FIRST_IS_SHARED)
+    if(!isFooter && !o3tl::starts_with(rPropertyName, u"Header") &&
+        rPropertyName != UNO_NAME_FIRST_IS_SHARED)
         return &rSet;
     const SvxSetItem* pSetItem;
     if(!lcl_GetHeaderFooterItem(rSet, rPropertyName, isFooter, pSetItem))
@@ -3011,6 +3015,7 @@ void SwXPageStyle::SetPropertyValues_Impl(const uno::Sequence<OUString>& rProper
         const bool bHeader(rPropName.startsWith("Header"));
         const bool bFooter(rPropName.startsWith("Footer"));
         const bool bFirstIsShared(rPropName == UNO_NAME_FIRST_IS_SHARED);
+
         if(bHeader || bFooter || bFirstIsShared)
         {
             switch(pEntry->nWID)
@@ -3024,6 +3029,7 @@ void SwXPageStyle::SetPropertyValues_Impl(const uno::Sequence<OUString>& rProper
                 case SID_ATTR_PAGE_DYNAMIC:
                 case SID_ATTR_PAGE_SHARED:
                 case SID_ATTR_PAGE_SHARED_FIRST:
+                case SID_ATTR_PAGE_NO_FIRST:
                 case SID_ATTR_PAGE_SIZE:
                 case RES_HEADER_FOOTER_EAT_SPACING:
                 {
@@ -3057,7 +3063,8 @@ void SwXPageStyle::SetPropertyValues_Impl(const uno::Sequence<OUString>& rProper
                             SID_ATTR_BORDER_INNER,SID_ATTR_BORDER_INNER,    // [10023
                             SID_ATTR_PAGE_SIZE,SID_ATTR_PAGE_SIZE,          // [10051
                             SID_ATTR_PAGE_ON,SID_ATTR_PAGE_SHARED,          // [10060
-                            SID_ATTR_PAGE_SHARED_FIRST,SID_ATTR_PAGE_SHARED_FIRST>
+                            SID_ATTR_PAGE_SHARED_FIRST,SID_ATTR_PAGE_SHARED_FIRST,
+                            SID_ATTR_PAGE_NO_FIRST,SID_ATTR_PAGE_NO_FIRST>
                                 (*aBaseImpl.GetItemSet().GetPool()));
 
                         // set correct parent to get the XFILL_NONE FillStyle as needed
@@ -3070,6 +3077,7 @@ void SwXPageStyle::SetPropertyValues_Impl(const uno::Sequence<OUString>& rProper
                         aTempSet.Put(SvxULSpaceItem(RES_UL_SPACE));
                         aTempSet.Put(SfxBoolItem(SID_ATTR_PAGE_SHARED, true));
                         aTempSet.Put(SfxBoolItem(SID_ATTR_PAGE_SHARED_FIRST, true));
+                        aTempSet.Put(SfxBoolItem(SID_ATTR_PAGE_NO_FIRST, false));
                         aTempSet.Put(SfxBoolItem(SID_ATTR_PAGE_DYNAMIC, true));
 
                         SvxSetItem aNewSetItem(bFooter ? SID_ATTR_PAGE_FOOTERSET : SID_ATTR_PAGE_HEADERSET, aTempSet);
@@ -3136,6 +3144,7 @@ void SwXPageStyle::SetPropertyValues_Impl(const uno::Sequence<OUString>& rProper
             case SID_ATTR_PAGE_DYNAMIC:
             case SID_ATTR_PAGE_SHARED:
             case SID_ATTR_PAGE_SHARED_FIRST:
+            case SID_ATTR_PAGE_NO_FIRST:
             case SID_ATTR_PAGE_ON:
             case RES_HEADER_FOOTER_EAT_SPACING:
                 // these slots are exclusive to Header/Footer, thus this is an error
@@ -3269,6 +3278,7 @@ uno::Sequence<uno::Any> SwXPageStyle::GetPropertyValues_Impl(const uno::Sequence
                 case SID_ATTR_PAGE_DYNAMIC:
                 case SID_ATTR_PAGE_SHARED:
                 case SID_ATTR_PAGE_SHARED_FIRST:
+                case SID_ATTR_PAGE_NO_FIRST:
                 case SID_ATTR_PAGE_SIZE:
                 case RES_HEADER_FOOTER_EAT_SPACING:
                 {
@@ -3341,6 +3351,7 @@ uno::Sequence<uno::Any> SwXPageStyle::GetPropertyValues_Impl(const uno::Sequence
             case SID_ATTR_PAGE_DYNAMIC:
             case SID_ATTR_PAGE_SHARED:
             case SID_ATTR_PAGE_SHARED_FIRST:
+            case SID_ATTR_PAGE_NO_FIRST:
             case SID_ATTR_PAGE_ON:
             case RES_HEADER_FOOTER_EAT_SPACING:
                 throw beans::UnknownPropertyException( "Unknown property: " + rPropName, getXWeak() );
@@ -3800,7 +3811,8 @@ PropValuesToAutoStyleItemSet(SwDoc& rDoc, IStyleAccess::SwAutoStyleFamily eFamil
 
                     if(*aChangedBrushItem != *aOriginalBrushItem)
                     {
-                        setSvxBrushItemAsFillAttributesToTargetSet(*aChangedBrushItem, aSet);
+                        setSvxBrushItemAsFillAttributesToTargetSet(*aChangedBrushItem, aSet,
+                                                                   rDoc.GetLinkReferer());
                     }
 
                     bDone = true;

@@ -110,6 +110,7 @@
 #include <operation/DeleteSparklineOperation.hxx>
 #include <operation/DeleteCellOperation.hxx>
 #include <operation/DeleteCellsOperation.hxx>
+#include <operation/InsertThreadedCommentOperation.hxx>
 #include <operation/SetNormalStringOperation.hxx>
 #include <operation/SetValueOperation.hxx>
 #include <operation/SetStringOperation.hxx>
@@ -998,6 +999,12 @@ void ScDocFunc::ReplaceNote( const ScAddress& rPos, const OUString& rNoteText, c
     aOperation.run();
 }
 
+void ScDocFunc::InsertThreadedComment( const ScAddress& rPos, const OUString& rText, const OUString* pAuthor, bool bApi )
+{
+    sc::InsertThreadedCommentOperation aOperation(rDocShell, rPos, rText, pAuthor, bApi);
+    aOperation.run();
+}
+
 void ScDocFunc::ImportNote( const ScAddress& rPos,
                             std::unique_ptr<GenerateNoteCaption> xGenerator,
                             const tools::Rectangle& rCaptionRect, bool bShown )
@@ -1291,6 +1298,18 @@ bool ScDocFunc::DeleteTable( SCTAB nTab, bool bRecord )
 
         pUndoDoc->InitUndo( rDoc, nTab, nTab, true, true );     // only nTab with Flags
         pUndoDoc->AddUndoTab( 0, nCount-1 );                    // all sheets for references
+
+        // Deleting nTab rewrites any formula on another sheet that refers to
+        // it into a #REF! error. Snapshot those sheets' formulas too, so
+        // ScMoveUndo::UndoRef() has the original formula to put back on undo
+        // instead of leaving the error in place.
+        for (SCTAB nOtherTab = 0; nOtherTab < nCount; ++nOtherTab)
+        {
+            if (nOtherTab == nTab)
+                continue;
+            rDoc.CopyToDocument(0,0,nOtherTab, rDoc.MaxCol(),rDoc.MaxRow(),nOtherTab,
+                                 InsertDeleteFlags::FORMULA, false, *pUndoDoc );
+        }
 
         rDoc.CopyToDocument(0,0,nTab, rDoc.MaxCol(),rDoc.MaxRow(),nTab, InsertDeleteFlags::ALL,false, *pUndoDoc );
         OUString aOldName;
@@ -2061,10 +2080,11 @@ bool ScDocFunc::AutoFormat( const ScRange& rRange, const ScMarkData* pTabMark,
 bool ScDocFunc::EnterMatrix( const ScRange& rRange, const ScMarkData* pTabMark,
         const ScTokenArray* pTokenArray, const OUString& rString, bool bApi, bool bEnglish,
         const OUString& rFormulaNmsp, const formula::FormulaGrammar::Grammar eGrammar,
-        bool bCheckForSpill)
+        bool bDynamicArrayMaster)
 {
     sc::EnterMatrixOperation aOperation(rDocShell, rRange, pTabMark, pTokenArray,
-                                        rString, bApi, bEnglish, rFormulaNmsp, eGrammar, bCheckForSpill);
+                                        rString, bApi, bEnglish, rFormulaNmsp, eGrammar,
+                                        bDynamicArrayMaster);
     return aOperation.run();
 }
 
@@ -2218,7 +2238,7 @@ void ScDocFunc::SetNewRangeNames( std::unique_ptr<ScRangeName> pNewRanges, bool 
         }
         else
         {
-            pOld = rDoc.GetRangeName();
+            pOld = &rDoc.GetRangeName();
         }
         std::unique_ptr<ScRangeName> pUndoRanges(new ScRangeName(*pOld));
         std::unique_ptr<ScRangeName> pRedoRanges(new ScRangeName(*pNewRanges));
@@ -2324,9 +2344,9 @@ void ScDocFunc::CreateOneName( ScRangeName& rList,
 
     if (bInsert)
     {
-        ScRangeData* pData = new ScRangeData( rDoc, aName, aContent,
-                ScAddress( nPosX, nPosY, nTab));
-        if (!rList.insert(pData))
+        std::unique_ptr<ScRangeData> pData(new ScRangeData( rDoc, aName, aContent,
+                ScAddress( nPosX, nPosY, nTab)));
+        if (!rList.insert(std::move(pData)))
         {
             OSL_FAIL("nanu?");
         }
@@ -2363,7 +2383,7 @@ bool ScDocFunc::CreateNames( const ScRange& rRange, CreateNameFlags nFlags, bool
         if (aTab >=0)
             pNames = rDoc.GetRangeName(nTab);
         else
-            pNames = rDoc.GetRangeName();
+            pNames = &rDoc.GetRangeName();
 
         if (!pNames)
             return false;   // shouldn't happen

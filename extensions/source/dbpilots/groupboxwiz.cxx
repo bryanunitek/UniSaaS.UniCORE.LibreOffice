@@ -263,7 +263,7 @@ namespace dbp
         implCheckMoveButtons();
     }
 
-    IMPL_LINK_NOARG( ORadioSelectionPage, OnNameModified, weld::Entry&, void )
+    IMPL_LINK_NOARG(ORadioSelectionPage, OnNameModified, weld::TextWidget&, void)
     {
         implCheckMoveButtons();
     }
@@ -391,7 +391,7 @@ namespace dbp
             m_xOptions->append_text(label);
 
         // remember the values ... can't set them directly in the settings without the explicit commit call
-        // so we need have a copy of the values
+        // so we need to have a copy of the values
         m_aUncommittedValues = rSettings.aValues;
 
         // select the first entry

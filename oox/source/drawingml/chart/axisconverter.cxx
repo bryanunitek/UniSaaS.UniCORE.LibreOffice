@@ -35,6 +35,10 @@
 #include <com/sun/star/chart2/XChartTypeContainer.hpp>
 #include <com/sun/star/chart2/XCoordinateSystem.hpp>
 #include <com/sun/star/chart2/XTitled.hpp>
+#include <com/sun/star/chart2/data/XLabeledDataSequence.hpp>
+#include <com/sun/star/chart2/XDataSeriesContainer.hpp>
+#include <com/sun/star/chart2/data/XDataSource.hpp>
+#include <com/sun/star/beans/XPropertySet.hpp>
 #include <drawingml/chart/axismodel.hxx>
 #include <drawingml/chart/titleconverter.hxx>
 #include <drawingml/chart/typegroupconverter.hxx>
@@ -110,7 +114,7 @@ sal_Int32 lclGetTickMark( sal_Int32 nToken )
 }
 
 /**
- * The groups is of percent type only when all of its members are of percent
+ * The group is of percent type only when all of its members are of percent
  * type.
  */
 bool isPercent( const RefVector<TypeGroupConverter>& rTypeGroups )
@@ -142,7 +146,8 @@ AxisConverter::~AxisConverter()
 void AxisConverter::convertFromModel(const Reference<XCoordinateSystem>& rxCoordSystem,
                                      RefVector<TypeGroupConverter>& rTypeGroups,
                                      const AxisModel* pCrossingAxis, sal_Int32 nAxesSetIdx,
-                                     sal_Int32 nAxisIdx, bool bUseFixedInnerSize)
+                                     sal_Int32 nAxisIdx, bool bUseFixedInnerSize,
+                                     ChartType eCT)
 {
     if (rTypeGroups.empty())
         return;
@@ -156,6 +161,55 @@ void AxisConverter::convertFromModel(const Reference<XCoordinateSystem>& rxCoord
         const TypeGroupInfo& rTypeInfo = rTypeGroups.front()->getTypeInfo();
         ObjectFormatter& rFormatter = getFormatter();
 
+        Reference< ::com::sun::star::chart2::data::XLabeledDataSequence > xHistogramCategories;
+        if( nAxisIdx == API_X_AXIS && rTypeInfo.meTypeId == TYPEID_HISTO && rxCoordSystem.is() )
+        {
+            try
+            {
+                Reference< XChartTypeContainer > xChartTypeContainer(rxCoordSystem, UNO_QUERY_THROW);
+                const Sequence< Reference< XChartType > > aChartTypes = xChartTypeContainer->getChartTypes();
+
+                if( aChartTypes.getLength() == 1 )
+                {
+                    Reference< XDataSeriesContainer > xSeriesContainer(aChartTypes[0], UNO_QUERY);
+                    if( xSeriesContainer.is() )
+                    {
+                        const Sequence< Reference< XDataSeries > > aSeries = xSeriesContainer->getDataSeries();
+                        if( aSeries.getLength() == 1 )
+                        {
+                            Reference< data::XDataSource > xDataSource(aSeries[0], UNO_QUERY);
+                            if( xDataSource.is() )
+                            {
+                                const Sequence< Reference< data::XLabeledDataSequence > > aDataSeqs
+                                    = xDataSource->getDataSequences();
+
+                                for( const auto& xSeq : aDataSeqs )
+                                {
+                                    if( !xSeq.is() || !xSeq->getValues().is() )
+                                        continue;
+
+                                    Reference< XPropertySet > xSeqProps(xSeq->getValues(), UNO_QUERY);
+                                    if( !xSeqProps.is() )
+                                        continue;
+
+                                    OUString aRole;
+                                    xSeqProps->getPropertyValue(u"Role"_ustr) >>= aRole;
+                                    if( aRole == "categories" )
+                                    {
+                                        xHistogramCategories = xSeq;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch( const Exception& )
+            {
+            }
+        }
+
         // create the axis object (always)
         xAxis.set( createInstance( u"com.sun.star.chart2.Axis"_ustr ), UNO_QUERY_THROW );
         PropertySet aAxisProp( xAxis );
@@ -167,6 +221,43 @@ void AxisConverter::convertFromModel(const Reference<XCoordinateSystem>& rxCoord
         // show axis labels
         aAxisProp.setProperty( PROP_DisplayLabels, mrModel.mnTickLabelPos != XML_none );
         aAxisProp.setProperty( PROP_LabelPosition, lclGetLabelPosition( mrModel.mnTickLabelPos ) );
+        // Track whether the axis had explicit spPr/txPr (before radar override creates one)
+        if (mrModel.mxShapeProp.is())
+            aAxisProp.setProperty(PROP_HasExplicitSpPr, true);
+        if (mrModel.mxTextProp.is())
+            aAxisProp.setProperty(PROP_HasExplicitTxPr, true);
+
+        // Chartex only: preserve the cx:axis id so export can re-emit it and
+        // so series-to-axis links can be reconstructed from the chart2 model.
+        if (eCT == ChartType::CX && mrModel.mnAxisId >= 0) {
+            aAxisProp.setProperty(PROP_AxisId, mrModel.mnAxisId);
+            if (mrModel.mobCatNotVal) {
+                aAxisProp.setProperty(PROP_CatNotVal, mrModel.mobCatNotVal.value());
+            }
+            // Chartex only: preserve cx:valScaling attributes verbatim. The
+            // chart2 ScaleData round-trip loses these when the axis is the
+            // secondary value axis of a combined chart (e.g. paretoLine),
+            // because Auto* flags get re-derived from explicit increments.
+            if (mrModel.mofMin.has_value())
+                aAxisProp.setProperty(PROP_ChartexValMin, mrModel.mofMin.value());
+            if (mrModel.mofMax.has_value())
+                aAxisProp.setProperty(PROP_ChartexValMax, mrModel.mofMax.value());
+            if (mrModel.mofMajorUnit.has_value())
+                aAxisProp.setProperty(PROP_ChartexMajorUnit, mrModel.mofMajorUnit.value());
+            if (mrModel.mofMinorUnit.has_value())
+                aAxisProp.setProperty(PROP_ChartexMinorUnit, mrModel.mofMinorUnit.value());
+
+            // Chartex only: preserve cx:units/@unit. AxisDispUnitsConverter
+            // still feeds BuiltInUnit/DisplayUnits, but those don't survive
+            // the trip to the secondary axis on some chart layouts.
+            if (mrModel.mxDispUnits.is()
+                && !mrModel.mxDispUnits->mnBuiltInUnit.isEmpty())
+            {
+                aAxisProp.setProperty(PROP_ChartexUnit,
+                    mrModel.mxDispUnits->mnBuiltInUnit);
+            }
+        }
+
         // no X axis line in radar charts
         if( (nAxisIdx == API_X_AXIS) && (rTypeInfo.meTypeCategory == TYPECATEGORY_RADAR) )
             mrModel.mxShapeProp.getOrCreate().getLineProperties().maLineFill.moFillType = XML_noFill;
@@ -176,15 +267,28 @@ void AxisConverter::convertFromModel(const Reference<XCoordinateSystem>& rxCoord
         ObjectFormatter::convertTextRotation( aAxisProp, mrModel.mxTextProp, true );
 
         // tick mark style
-        aAxisProp.setProperty( PROP_MajorTickmarks, lclGetTickMark( mrModel.mnMajorTickMark ) );
-        aAxisProp.setProperty( PROP_MinorTickmarks, lclGetTickMark( mrModel.mnMinorTickMark ) );
+        sal_Int32 nTickStyle = lclGetTickMark( mrModel.mnMajorTickMark );
+        if (nTickStyle != XML_none) {
+            aAxisProp.setProperty( PROP_MajorTickmarks, nTickStyle );
+        };
+        nTickStyle = lclGetTickMark( mrModel.mnMinorTickMark );
+        if (nTickStyle != XML_none) {
+            aAxisProp.setProperty( PROP_MinorTickmarks, nTickStyle );
+        };
+
         aAxisProp.setProperty( PROP_MarkPosition, cssc::ChartAxisMarkPosition_AT_AXIS );
 
         // main grid
         PropertySet aGridProp( xAxis->getGridProperties() );
         aGridProp.setProperty( PROP_Show, mrModel.mxMajorGridLines.is() );
         if( mrModel.mxMajorGridLines.is() )
+        {
             rFormatter.convertFrameFormatting( aGridProp, mrModel.mxMajorGridLines, OBJECTTYPE_MAJORGRIDLINE );
+            // Chartex round-trip: remember whether the imported gridlines
+            // element carried an explicit cx:spPr child.
+            if (eCT == ChartType::CX && mrModel.mbMajorGridLinesHasSpPr)
+                aGridProp.setProperty(PROP_HasExplicitSpPr, true);
+        }
 
         // sub grid
         Sequence< Reference< XPropertySet > > aSubGridPropSeq = xAxis->getSubGridProperties();
@@ -193,7 +297,11 @@ void AxisConverter::convertFromModel(const Reference<XCoordinateSystem>& rxCoord
             PropertySet aSubGridProp( aSubGridPropSeq[ 0 ] );
             aSubGridProp.setProperty( PROP_Show, mrModel.mxMinorGridLines.is() );
             if( mrModel.mxMinorGridLines.is() )
+            {
                 rFormatter.convertFrameFormatting( aSubGridProp, mrModel.mxMinorGridLines, OBJECTTYPE_MINORGRIDLINE );
+                if (eCT == ChartType::CX && mrModel.mbMinorGridLinesHasSpPr)
+                    aSubGridProp.setProperty(PROP_HasExplicitSpPr, true);
+            }
         }
 
         // axis type and X axis categories ------------------------------------
@@ -214,17 +322,25 @@ void AxisConverter::convertFromModel(const Reference<XCoordinateSystem>& rxCoord
                     /* TODO: create main category axis labels once, while InternalDataProvider
                     can not handle different category names on the primary and secondary category axis. */
                     if( nAxesSetIdx == 0 )
-                        aScaleData.Categories = rTypeGroups.front()->createCategorySequence();
+                    {
+                        // Histogram labels are generated bin ranges on the data series. Use those
+                        // regenerated labels for the X axis instead of keeping stale axis categories
+                        // or synthesizing generic "1", "2", ... labels.
+                        if( rTypeInfo.meTypeId == TYPEID_HISTO && xHistogramCategories.is() )
+                            aScaleData.Categories = xHistogramCategories;
+                        else
+                            aScaleData.Categories = rTypeGroups.front()->createCategorySequence();
+                    }
                     /* set default ShiftedCategoryPosition values for some charttype,
                        because the XML can contain wrong CrossBetween value, if came from MSO */
-                    if( rTypeGroups.front()->is3dChart() && (rTypeInfo.meTypeId == TYPEID_BAR || rTypeInfo.meTypeId == TYPEID_HORBAR || rTypeInfo.meTypeId == TYPEID_STOCK) )
-                        aScaleData.ShiftedCategoryPosition = true;
-                    else if( rTypeInfo.meTypeId == TYPEID_RADARLINE || rTypeInfo.meTypeId == TYPEID_RADARAREA )
+                    if( rTypeGroups.front()->is3dChart()) {
+                        aScaleData.ShiftedCategoryPosition = rTypeInfo.mb3dShiftedCatPos;
+                    } else if( rTypeInfo.meTypeId == TYPEID_RADARLINE || rTypeInfo.meTypeId == TYPEID_RADARAREA )
                         aScaleData.ShiftedCategoryPosition = false;
                     else if( pCrossingAxis->mnCrossBetween != -1 ) /*because of backwards compatibility*/
                         aScaleData.ShiftedCategoryPosition = pCrossingAxis->mnCrossBetween == XML_between;
-                    else if( rTypeInfo.meTypeCategory == TYPECATEGORY_BAR || rTypeInfo.meTypeId == TYPEID_LINE || rTypeInfo.meTypeId == TYPEID_STOCK )
-                        aScaleData.ShiftedCategoryPosition = true;
+                    else
+                        aScaleData.ShiftedCategoryPosition = rTypeInfo.mbShiftedCatPos;
                 }
                 else
                 {
@@ -331,7 +447,7 @@ void AxisConverter::convertFromModel(const Reference<XCoordinateSystem>& rxCoord
                 }
                 else if( !mrModel.mofMinorUnit.has_value() )
                 {
-                    // tdf#114168 If minor unit is not set then set interval to 5, as MS Excel do.
+                    // tdf#114168 If minor unit is not set then set interval to 5, as MS Excel does.
                     rIntervalCount <<= static_cast< sal_Int32 >( 5 );
                 }
             }
@@ -360,7 +476,9 @@ void AxisConverter::convertFromModel(const Reference<XCoordinateSystem>& rxCoord
         // number format ------------------------------------------------------
         if( !mrModel.mbDeleted && aScaleData.AxisType != cssc2::AxisType::SERIES )
         {
-            getFormatter().convertNumberFormat(aAxisProp, mrModel.maNumberFormat, true);
+            if (mrModel.maNumberFormat) {
+                getFormatter().convertNumberFormat(aAxisProp, mrModel.maNumberFormat.value(), true);
+            }
         }
 
         // position of crossing axis ------------------------------------------
@@ -392,7 +510,7 @@ void AxisConverter::convertFromModel(const Reference<XCoordinateSystem>& rxCoord
                 && (mrModel.mnAxisPos == XML_l || mrModel.mnAxisPos == XML_r))
                 mrModel.mxTitle->mnDefaultRotation = 0;
             TitleConverter aTitleConv( *this, *mrModel.mxTitle );
-            aTitleConv.convertFromModel( xTitled, OoxResId(STR_DIAGRAM_AXISTITLE), OBJECTTYPE_AXISTITLE, nAxesSetIdx, nAxisIdx );
+            aTitleConv.convertFromModel( xTitled, OoxResId(STR_DIAGRAM_AXISTITLE), OBJECTTYPE_AXISTITLE, eCT, nAxesSetIdx, nAxisIdx );
         }
 
         // axis data unit label -----------------------------------------------

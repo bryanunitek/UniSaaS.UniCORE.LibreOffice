@@ -35,6 +35,7 @@
 #include <vcl/toolbox.hxx>
 #include <vcl/vclptr.hxx>
 #include <vcl/weld/Builder.hxx>
+#include <vcl/weld/IconView.hxx>
 #include <vcl/weld/Menu.hxx>
 #include <vcl/weld/ScrolledWindow.hxx>
 #include <vcl/weld/TransportAsXWindow.hxx>
@@ -221,6 +222,7 @@ private:
     DECL_LINK(SelectHdl, weld::ComboBox&, void);
     DECL_LINK(KeyInputHdl, const KeyEvent&, bool);
     DECL_LINK(ActivateHdl, weld::ComboBox&, bool);
+    DECL_LINK(FocusInHdl, weld::Widget&, void);
     DECL_LINK(FocusOutHdl, weld::Widget&, void);
     DECL_LINK(CustomRenderHdl, weld::ComboBox::render_args, void);
     DECL_LINK(CustomGetSizeHdl, OutputDevice&, Size);
@@ -508,9 +510,6 @@ private:
     void CalcSizeValueSet();
     DECL_LINK( SelectHdl, ValueSet*, void );
 
-    void SetDiagonalDownBorder(const SvxLineItem& dDownLineItem);
-    void SetDiagonalUpBorder(const SvxLineItem& dUpLineItem);
-
 public:
     SvxFrameWindow_Impl(SvxFrameToolBoxControl* pControl, weld::Widget* pParent);
     virtual void GrabFocus() override
@@ -534,9 +533,16 @@ public:
     virtual css::uno::Sequence< OUString > SAL_CALL getSupportedServiceNames() override;
 
     virtual void SAL_CALL execute(sal_Int16 nKeyModifier) override;
+
+    void SetLastUsedBorderItem(sal_uInt16 nItemId, bool bIsCalc, const Image& rImage);
+
 private:
     virtual std::unique_ptr<WeldToolbarPopup> weldPopupWindow() override;
     virtual VclPtr<vcl::Window> createVclPopupWindow( vcl::Window* pParent ) override;
+
+    sal_uInt16 m_nLastItemId;
+    bool       m_bLastIsCalc;
+    Image      m_aLastImage;
 };
 
     class LineListBox final : public ValueSet
@@ -904,6 +910,7 @@ SvxStyleBox_Base::SvxStyleBox_Base(std::unique_ptr<weld::ComboBox> xWidget,
     m_xWidget->connect_changed(LINK(this, SvxStyleBox_Base, SelectHdl));
     m_xWidget->connect_key_press(LINK(this, SvxStyleBox_Base, KeyInputHdl));
     m_xWidget->connect_entry_activate(LINK(this, SvxStyleBox_Base, ActivateHdl));
+    m_xWidget->connect_focus_in(LINK(this, SvxStyleBox_Base, FocusInHdl));
     m_xWidget->connect_focus_out(LINK(this, SvxStyleBox_Base, FocusOutHdl));
     m_xWidget->set_help_id(HID_STYLE_LISTBOX);
     m_xWidget->set_entry_completion(true);
@@ -1081,6 +1088,11 @@ void SvxStyleBox_Base::Select(bool bNonTravelSelect)
 void SvxStyleBox_Base::SetFamily( SfxStyleFamily eNewFamily )
 {
     eStyleFamily = eNewFamily;
+}
+
+IMPL_LINK_NOARG(SvxStyleBox_Base, FocusInHdl, weld::Widget&, void)
+{
+    m_xWidget->select_entry_region(0, -1);
 }
 
 IMPL_LINK_NOARG(SvxStyleBox_Base, FocusOutHdl, weld::Widget&, void)
@@ -1751,7 +1763,7 @@ bool SvxFontNameBox_Base::CheckFontIsAvailable(std::u16string_view fontname)
 
 void SvxFontNameBox_Base::CheckAndMarkUnknownFont()
 {
-    if (mbCheckingUnknownFont) //tdf#117537 block rentry
+    if (mbCheckingUnknownFont) //tdf#117537 block reentry
         return;
     mbCheckingUnknownFont = true;
     OUString fontname = m_xWidget->get_active_text();
@@ -2011,19 +2023,15 @@ ColorWindow::ColorWindow(OUString  rCommand,
     , mrColorStatus(rColorStatus)
     , maTopLevelParentFunction(std::move(aTopLevelParentFunction))
     , maColorSelectFunction(std::move(aColorSelectFunction))
-    , mxColorSet(new SvxColorValueSet(m_xBuilder->weld_scrolled_window(u"colorsetwin"_ustr, true)))
-    , mxRecentColorSet(new SvxColorValueSet(nullptr))
+    , maColorIconView(m_xBuilder->weld_icon_view(u"coloriconview"_ustr))
+    , maRecentColorIconView(m_xBuilder->weld_icon_view(u"recent_coloriconview"_ustr))
     , mxPaletteListBox(m_xBuilder->weld_combo_box(u"palette_listbox"_ustr))
     , mxButtonAutoColor(m_xBuilder->weld_button(u"auto_color_button"_ustr))
     , mxButtonNoneColor(m_xBuilder->weld_button(u"none_color_button"_ustr))
     , mxButtonPicker(m_xBuilder->weld_button(u"color_picker_button"_ustr))
     , mxAutomaticSeparator(m_xBuilder->weld_widget(u"separator4"_ustr))
-    , mxColorSetWin(new weld::CustomWeld(*m_xBuilder, u"colorset"_ustr, *mxColorSet))
-    , mxRecentColorSetWin(new weld::CustomWeld(*m_xBuilder, u"recent_colorset"_ustr, *mxRecentColorSet))
     , mpDefaultButton(nullptr)
 {
-    mxColorSet->SetStyle( WinBits(WB_FLATVALUESET | WB_ITEMBORDER | WB_3DLOOK | WB_NO_DIRECTSELECT | WB_TABSTOP) );
-    mxRecentColorSet->SetStyle( WinBits(WB_FLATVALUESET | WB_ITEMBORDER | WB_3DLOOK | WB_NO_DIRECTSELECT | WB_TABSTOP) );
 
     switch ( mnSlotId )
     {
@@ -2089,19 +2097,13 @@ ColorWindow::ColorWindow(OUString  rCommand,
     mxButtonNoneColor->connect_clicked(LINK(this, ColorWindow, AutoColorClickHdl));
     mxButtonPicker->connect_clicked(LINK(this, ColorWindow, OpenPickerClickHdl));
 
-    mxColorSet->SetSelectHdl(LINK( this, ColorWindow, ColorSelectHdl));
-    mxRecentColorSet->SetSelectHdl(LINK( this, ColorWindow, RecentColorSelectHdl));
+    maColorIconView.setColorActivatedHdl(LINK(this, ColorWindow, ColorSelectHdl));
+    maRecentColorIconView.setColorActivatedHdl(LINK(this, ColorWindow, RecentColorSelectHdl));
     m_xTopLevel->set_help_id(HID_POPUP_COLOR);
-    mxColorSet->SetHelpId(HID_POPUP_COLOR_CTRL);
+    maColorIconView.set_help_id(HID_POPUP_COLOR_CTRL);
 
-    mxPaletteManager->ReloadColorSet(*mxColorSet);
-    const sal_uInt32 nMaxItems(SvxColorValueSet::getMaxRowCount() * SvxColorValueSet::getColumnCount());
-    Size aSize = mxColorSet->layoutAllVisible(nMaxItems);
-    mxColorSet->set_size_request(aSize.Width(), aSize.Height());
-
-    mxPaletteManager->ReloadRecentColorSet(*mxRecentColorSet);
-    aSize = mxRecentColorSet->layoutAllVisible(mxPaletteManager->GetRecentColorCount());
-    mxRecentColorSet->set_size_request(aSize.Width(), aSize.Height());
+    mxPaletteManager->ReloadColorSet(maColorIconView);
+    mxPaletteManager->ReloadRecentColorSet(maRecentColorIconView);
 
     AddStatusListener( u".uno:ColorTableState"_ustr );
     AddStatusListener( maCommand );
@@ -2114,10 +2116,10 @@ ColorWindow::ColorWindow(OUString  rCommand,
 
 void ColorWindow::GrabFocus()
 {
-    if (mxColorSet->IsNoSelection() && mpDefaultButton)
+    if (maColorIconView.get_selected_index() == -1 && mpDefaultButton)
         mpDefaultButton->grab_focus();
     else
-        mxColorSet->GrabFocus();
+        maColorIconView.grab_focus();
 }
 
 void ColorWindow::ShowNoneButton()
@@ -2129,10 +2131,10 @@ ColorWindow::~ColorWindow()
 {
 }
 
-NamedColor ColorWindow::GetSelectEntryColor(const ValueSet& rColorSet)
+NamedColor ColorWindow::GetSelectEntryColor(const ColorIconView& rColorIconView)
 {
-    Color aColor = rColorSet.GetItemColor(rColorSet.GetSelectedItemId());
-    const OUString& sColorName = rColorSet.GetItemText(rColorSet.GetSelectedItemId());
+    Color aColor = rColorIconView.getColor(rColorIconView.get_selected_index());
+    const OUString sColorName = rColorIconView.getColorName(rColorIconView.get_selected_index());
     return { aColor, sColorName };
 }
 
@@ -2186,34 +2188,34 @@ namespace
 
 NamedColor ColorWindow::GetSelectEntryColor() const
 {
-    if (!mxColorSet->IsNoSelection())
-        return GetSelectEntryColor(*mxColorSet);
-    if (!mxRecentColorSet->IsNoSelection())
-        return GetSelectEntryColor(*mxRecentColorSet);
+    if (maColorIconView.get_selected_index() != -1)
+        return GetSelectEntryColor(maColorIconView);
+    if (maRecentColorIconView.get_selected_index() != -1)
+        return GetSelectEntryColor(maRecentColorIconView);
     if (mxButtonNoneColor.get() == mpDefaultButton)
         return GetNoneColor();
     return GetAutoColor();
 }
 
-IMPL_LINK_NOARG(ColorWindow, ColorSelectHdl, ValueSet*, void)
+IMPL_LINK_NOARG(ColorWindow, ColorSelectHdl, const Color&, void)
 {
-    ApplySelectedColor(*mxColorSet);
+    ApplySelectedColor(maColorIconView);
 }
 
-IMPL_LINK_NOARG(ColorWindow, RecentColorSelectHdl, ValueSet*, void)
+IMPL_LINK_NOARG(ColorWindow, RecentColorSelectHdl, const Color&, void)
 {
-    ApplySelectedColor(*mxRecentColorSet);
+    ApplySelectedColor(maRecentColorIconView);
 }
 
-void ColorWindow::ApplySelectedColor(ValueSet& rColorSet)
+void ColorWindow::ApplySelectedColor(ColorIconView& rColorIconView)
 {
-    NamedColor aNamedColor = GetSelectEntryColor(rColorSet);
+    NamedColor aNamedColor = GetSelectEntryColor(rColorIconView);
 
-    if (&rColorSet != mxRecentColorSet.get())
+    if (&rColorIconView != &maRecentColorIconView)
     {
          mxPaletteManager->AddRecentColor(aNamedColor.m_aColor, aNamedColor.m_aName);
          if (!maMenuButton.get_active())
-            mxPaletteManager->ReloadRecentColorSet(*mxRecentColorSet);
+            mxPaletteManager->ReloadRecentColorSet(maRecentColorIconView);
     }
 
     mxPaletteManager->SetSplitButtonColor(aNamedColor);
@@ -2227,7 +2229,7 @@ void ColorWindow::ApplySelectedColor(ValueSet& rColorSet)
 
     if (bThemePaletteSelected)
     {
-        const sal_uInt16 nSelectedItemPos = rColorSet.GetItemPos(rColorSet.GetSelectedItemId());
+        const sal_uInt16 nSelectedItemPos = rColorIconView.get_selected_index();
         sal_uInt16 nThemeIndex;
         sal_uInt16 nEffectIndex;
         if (PaletteManager::GetThemeAndEffectIndex(nSelectedItemPos, nThemeIndex, nEffectIndex))
@@ -2245,8 +2247,7 @@ IMPL_LINK_NOARG(ColorWindow, SelectPaletteHdl, weld::ComboBox&, void)
 {
     int nPos = mxPaletteListBox->get_active();
     mxPaletteManager->SetPalette( nPos );
-    mxPaletteManager->ReloadColorSet(*mxColorSet);
-    mxColorSet->layoutToGivenHeight(mxColorSet->GetOutputSizePixel().Height(), mxPaletteManager->GetColorCount());
+    mxPaletteManager->ReloadColorSet(maColorIconView);
 }
 
 NamedColor ColorWindow::GetAutoColor() const
@@ -2258,8 +2259,8 @@ IMPL_LINK(ColorWindow, AutoColorClickHdl, weld::Button&, rButton, void)
 {
     NamedColor aNamedColor = &rButton == mxButtonAutoColor.get() ? GetAutoColor() : GetNoneColor();
 
-    mxColorSet->SetNoSelection();
-    mxRecentColorSet->SetNoSelection();
+    maColorIconView.unselect_all();
+    maRecentColorIconView.unselect_all();
     mpDefaultButton = &rButton;
 
     mxPaletteManager->SetSplitButtonColor(aNamedColor);
@@ -2289,16 +2290,16 @@ IMPL_LINK_NOARG(ColorWindow, OpenPickerClickHdl, weld::Button&, void)
 
 void ColorWindow::SetNoSelection()
 {
-    mxColorSet->SetNoSelection();
-    mxRecentColorSet->SetNoSelection();
+    maColorIconView.unselect_all();
+    maRecentColorIconView.unselect_all();
     mpDefaultButton = nullptr;
 }
 
 bool ColorWindow::IsNoSelection() const
 {
-    if (!mxColorSet->IsNoSelection())
+    if (maColorIconView.get_selected_index() != -1)
         return false;
-    if (!mxRecentColorSet->IsNoSelection())
+    if (maRecentColorIconView.get_selected_index() != -1)
         return false;
     return !mxButtonAutoColor->get_visible() && !mxButtonNoneColor->get_visible();
 }
@@ -2308,10 +2309,7 @@ void ColorWindow::statusChanged( const css::frame::FeatureStateEvent& rEvent )
     if (rEvent.FeatureURL.Complete == ".uno:ColorTableState")
     {
         if (rEvent.IsEnabled && mxPaletteManager->GetPalette() == 0)
-        {
-            mxPaletteManager->ReloadColorSet(*mxColorSet);
-            mxColorSet->layoutToGivenHeight(mxColorSet->GetOutputSizePixel().Height(), mxPaletteManager->GetColorCount());
-        }
+            mxPaletteManager->ReloadColorSet(maColorIconView);
     }
     else
     {
@@ -2320,13 +2318,13 @@ void ColorWindow::statusChanged( const css::frame::FeatureStateEvent& rEvent )
     }
 }
 
-bool ColorWindow::SelectValueSetEntry(SvxColorValueSet& rColorSet, const Color& rColor)
+bool ColorWindow::SelectIconViewEntry(ColorIconView& rColorIconView, const Color& rColor)
 {
-    for (size_t i = 1; i <= rColorSet.GetItemCount(); ++i)
+    for (int i = 0; i < rColorIconView.getItemCount(); ++i)
     {
-        if (rColor == rColorSet.GetItemColor(i))
+        if (rColor == rColorIconView.getColor(i))
         {
-            rColorSet.SelectItem(i);
+            rColorIconView.select(i);
             return true;
         }
     }
@@ -2352,10 +2350,10 @@ void ColorWindow::SelectEntry(const NamedColor& rNamedColor)
     }
 
     // try current palette
-    bool bFoundColor = SelectValueSetEntry(*mxColorSet, rColor);
+    bool bFoundColor = SelectIconViewEntry(maColorIconView, rColor);
     // try recently used
     if (!bFoundColor)
-        bFoundColor = SelectValueSetEntry(*mxRecentColorSet, rColor);
+        bFoundColor = SelectIconViewEntry(maRecentColorIconView, rColor);
     // if it's not there, add it there now to the end of the recently used
     // so its available somewhere handy, but not without trashing the
     // whole recently used
@@ -2363,8 +2361,8 @@ void ColorWindow::SelectEntry(const NamedColor& rNamedColor)
     {
         const OUString& rColorName = rNamedColor.m_aName;
         mxPaletteManager->AddRecentColor(rColor, rColorName, false);
-        mxPaletteManager->ReloadRecentColorSet(*mxRecentColorSet);
-        SelectValueSetEntry(*mxRecentColorSet, rColor);
+        mxPaletteManager->ReloadRecentColorSet(maRecentColorIconView);
+        SelectIconViewEntry(maRecentColorIconView, rColor);
     }
 }
 
@@ -2490,11 +2488,24 @@ namespace o3tl {
     template<> struct typed_flags<FrmValidFlags> : is_typed_flags<FrmValidFlags, 0x3f> {};
 }
 
-// By default unset lines remain unchanged.
-// Via Shift unset lines are reset
-
-IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
+static void DispatchBorderItem(svt::PopupWindowController& rControl, sal_uInt16 nSel, bool bIsCalc, sal_uInt16 nModifier)
 {
+    auto dispatchDiagonalDownBorder = [&](const SvxLineItem& dDownLineItem)
+    {
+        Any a;
+        dDownLineItem.QueryValue(a);
+        Sequence<PropertyValue> aArgs{ comphelper::makePropertyValue(u"BorderTLBR"_ustr, a) };
+        rControl.dispatchCommand(u".uno:BorderTLBR"_ustr, aArgs);
+    };
+
+    auto dispatchDiagonalUpBorder = [&](const SvxLineItem& dUpLineItem)
+    {
+        Any a;
+        dUpLineItem.QueryValue(a);
+        Sequence<PropertyValue> aArgs{ comphelper::makePropertyValue(u"BorderBLTR"_ustr, a) };
+        rControl.dispatchCommand(u".uno:BorderBLTR"_ustr, aArgs);
+    };
+
     SvxBoxItem          aBorderOuter( SID_ATTR_BORDER_OUTER );
     SvxBoxInfoItem      aBorderInner( SID_ATTR_BORDER_INNER );
     SvxBorderLine       theDefLine;
@@ -2513,8 +2524,6 @@ IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
                         *pRight = nullptr,
                         *pTop = nullptr,
                         *pBottom = nullptr;
-    sal_uInt16           nSel = mxFrameSet->GetSelectedItemId();
-    sal_uInt16           nModifier = mxFrameSet->GetModifier();
     FrmValidFlags        nValidFlags = FrmValidFlags::NONE;
 
     // tdf#48622, tdf#145828 use correct default to create intended 0.75pt
@@ -2524,7 +2533,7 @@ IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
     // nSel has 15 cases which means 12 (9 common with writer + 3 unique) unique border
     // types for Calc. But Writer uses 12 (9 common with calc + 3 unique)
     // of them - when diagonal borders excluded.
-    if (m_bIsCalc)
+    if (bIsCalc)
     {
         // This is a lookup table to map the new 1-12 order
         // to the 'case' values of the switch statement.
@@ -2575,8 +2584,8 @@ IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
                 // set nullptr to remove diagonal lines
                 dDownLineItem.SetLine(nullptr);
                 dUpLineItem.SetLine(nullptr);
-                SetDiagonalDownBorder(dDownLineItem);
-                SetDiagonalUpBorder(dUpLineItem);
+                dispatchDiagonalDownBorder(dDownLineItem);
+                dispatchDiagonalUpBorder(dUpLineItem);
         break;  // NONE
         case 2: pLeft = &theDefLine;
                 nValidFlags |= FrmValidFlags::Left;
@@ -2588,7 +2597,7 @@ IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
                 nValidFlags |=  FrmValidFlags::Right|FrmValidFlags::Left;
         break;  // LEFTRIGHT
         case 13: dDownLineItem.SetLine(&dDownBorderLine);
-                SetDiagonalDownBorder(dDownLineItem);
+                dispatchDiagonalDownBorder(dDownLineItem);
                 bIsDiagonalBorder = true;
         break;  // DIAGONAL DOWN
         case 5: pTop = &theDefLine;
@@ -2605,7 +2614,7 @@ IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
         break;  // OUTER
         case 14:
                 dUpLineItem.SetLine(&dUpBorderLine);
-                SetDiagonalUpBorder(dUpLineItem);
+                dispatchDiagonalUpBorder(dUpLineItem);
                 bIsDiagonalBorder = true;
         break;  // DIAGONAL UP
 
@@ -2643,8 +2652,8 @@ IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
             dDownLineItem.SetLine(&dDownBorderLine);
             dUpLineItem.SetLine(&dUpBorderLine);
 
-            SetDiagonalDownBorder(dDownLineItem);
-            SetDiagonalUpBorder(dUpLineItem);
+            dispatchDiagonalDownBorder(dDownLineItem);
+            dispatchDiagonalUpBorder(dUpLineItem);
             bIsDiagonalBorder = true;
             break; // CRISS-CROSS
 
@@ -2678,9 +2687,19 @@ IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
         Sequence< PropertyValue > aArgs{ comphelper::makePropertyValue(u"OuterBorder"_ustr, a1),
                                          comphelper::makePropertyValue(u"InnerBorder"_ustr, a2) };
 
-        mxControl->dispatchCommand( u".uno:SetBorderStyle"_ustr, aArgs );
+        rControl.dispatchCommand(u".uno:SetBorderStyle"_ustr, aArgs);
     }
+}
 
+// By default unset lines remain unchanged.
+// Via Shift unset lines are reset
+
+IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
+{
+    const sal_uInt16 nSel = mxFrameSet->GetSelectedItemId();
+    const sal_uInt16 nModifier = mxFrameSet->GetModifier();
+    DispatchBorderItem(*mxControl, nSel, m_bIsCalc, nModifier);
+    mxControl->SetLastUsedBorderItem(nSel, m_bIsCalc, Image(aImgVec[nSel - 1].first));
     // coverity[ check_after_deref : FALSE]
     if (mxFrameSet)
     {
@@ -2693,25 +2712,6 @@ IMPL_LINK_NOARG(SvxFrameWindow_Impl, SelectHdl, ValueSet*, void)
     mxControl->EndPopupMode();
 }
 
-void SvxFrameWindow_Impl::SetDiagonalDownBorder(const SvxLineItem& dDownLineItem)
-{
-    // apply diagonal down border
-    Any a;
-    dDownLineItem.QueryValue(a);
-    Sequence<PropertyValue> aArgs{ comphelper::makePropertyValue(u"BorderTLBR"_ustr, a) };
-
-    mxControl->dispatchCommand(u".uno:BorderTLBR"_ustr, aArgs);
-}
-
-void SvxFrameWindow_Impl::SetDiagonalUpBorder(const SvxLineItem& dUpLineItem)
-{
-    // apply diagonal up border
-    Any a;
-    dUpLineItem.QueryValue(a);
-    Sequence<PropertyValue> aArgs{ comphelper::makePropertyValue(u"BorderBLTR"_ustr, a) };
-
-    mxControl->dispatchCommand(u".uno:BorderBLTR"_ustr, aArgs);
-}
 
 void SvxFrameWindow_Impl::statusChanged( const css::frame::FeatureStateEvent& rEvent )
 {
@@ -3791,20 +3791,46 @@ com_sun_star_comp_svx_ColorToolBoxControl_get_implementation(
 
 SvxFrameToolBoxControl::SvxFrameToolBoxControl( const css::uno::Reference< css::uno::XComponentContext >& rContext )
     : svt::PopupWindowController( rContext, nullptr, OUString() )
+    , m_nLastItemId(0)
+    , m_bLastIsCalc(false)
 {
 }
 
 void SAL_CALL SvxFrameToolBoxControl::execute(sal_Int16 /*KeyModifier*/)
 {
+    if (m_nLastItemId == 0)
+    {
+        if (m_pToolbar)
+        {
+            // Toggle the popup also when toolbutton is activated
+            m_pToolbar->set_menu_item_active(m_aCommandURL, !m_pToolbar->get_menu_item_active(m_aCommandURL));
+        }
+        else
+        {
+            // Open the popup also when Enter key is pressed.
+            createPopupWindow();
+        }
+        return;
+    }
+    DispatchBorderItem(*this, m_nLastItemId, m_bLastIsCalc, 0);
+}
+
+void SvxFrameToolBoxControl::SetLastUsedBorderItem(sal_uInt16 nItemId, bool bIsCalc,
+                                                   const Image& rImage)
+{
+    m_nLastItemId = nItemId;
+    m_bLastIsCalc = bIsCalc;
+    m_aLastImage = rImage;
     if (m_pToolbar)
     {
-        // Toggle the popup also when toolbutton is activated
-        m_pToolbar->set_menu_item_active(m_aCommandURL, !m_pToolbar->get_menu_item_active(m_aCommandURL));
+        m_pToolbar->set_item_image(m_aCommandURL, Graphic(m_aLastImage).GetXGraphic());
     }
     else
     {
-        // Open the popup also when Enter key is pressed.
-        createPopupWindow();
+        ToolBox* pToolBox = nullptr;
+        ToolBoxItemId nId;
+        if (getToolboxId(nId, &pToolBox))
+            pToolBox->SetItemImage(nId, m_aLastImage);
     }
 }
 
@@ -3821,7 +3847,7 @@ void SvxFrameToolBoxControl::initialize( const css::uno::Sequence< css::uno::Any
     ToolBox* pToolBox = nullptr;
     ToolBoxItemId nId;
     if (getToolboxId(nId, &pToolBox))
-        pToolBox->SetItemBits( nId, pToolBox->GetItemBits( nId ) | ToolBoxItemBits::DROPDOWNONLY );
+        pToolBox->SetItemBits(nId, pToolBox->GetItemBits(nId) | ToolBoxItemBits::DROPDOWN);
 }
 
 std::unique_ptr<WeldToolbarPopup> SvxFrameToolBoxControl::weldPopupWindow()
@@ -4256,22 +4282,24 @@ ColorListBox::ColorListBox(std::unique_ptr<weld::MenuButton> pControl,
 IMPL_LINK(ColorListBox, ToggleHdl, weld::Toggleable&, rButton, void)
 {
     if (rButton.get_active())
-    {
-        ColorWindow* pColorWindow = getColorWindow();
-        if (pColorWindow && !comphelper::LibreOfficeKit::isActive())
-            pColorWindow->GrabFocus();
-    }
+        getColorWindow().GrabFocus();
 }
 
 ColorListBox::~ColorListBox()
 {
 }
 
-ColorWindow* ColorListBox::getColorWindow() const
+void ColorListBox::EmbedColorWindowContent(weld::Container* pTarget)
+{
+    ColorWindow& rColorWindow = getColorWindow();
+    rColorWindow.getTopLevel()->move(rColorWindow.getContainer(), pTarget);
+}
+
+ColorWindow& ColorListBox::getColorWindow() const
 {
     if (!m_xColorWindow)
         const_cast<ColorListBox*>(this)->createColorWindow();
-    return m_xColorWindow.get();
+    return *m_xColorWindow;
 }
 
 void ColorListBox::createColorWindow()
@@ -4306,17 +4334,17 @@ void ColorListBox::SelectEntry(const NamedColor& rColor)
         SelectEntry(rColor.m_aColor);
         return;
     }
-    ColorWindow* pColorWindow = getColorWindow();
-    pColorWindow->SelectEntry(rColor);
-    m_aSelectedColor = pColorWindow->GetSelectEntryColor();
+    ColorWindow& rColorWindow = getColorWindow();
+    rColorWindow.SelectEntry(rColor);
+    m_aSelectedColor = rColorWindow.GetSelectEntryColor();
     ShowPreview(m_aSelectedColor);
 }
 
 void ColorListBox::SelectEntry(const Color& rColor)
 {
-    ColorWindow* pColorWindow = getColorWindow();
-    pColorWindow->SelectEntry(rColor);
-    m_aSelectedColor = pColorWindow->GetSelectEntryColor();
+    ColorWindow& rColorWindow = getColorWindow();
+    rColorWindow.SelectEntry(rColor);
+    m_aSelectedColor = rColorWindow.GetSelectEntryColor();
     ShowPreview(m_aSelectedColor);
 }
 

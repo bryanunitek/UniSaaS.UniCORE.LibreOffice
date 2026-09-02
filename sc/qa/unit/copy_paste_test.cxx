@@ -48,6 +48,7 @@ public:
     void tdf137624_autofillMergedMixed();
     void tdf122716_rtf_portion_encoding();
     void testRTFFontHeight();
+    void testHtmlImportDataUrlIncompleteBase64();
 
     CPPUNIT_TEST_SUITE(ScCopyPasteTest);
     CPPUNIT_TEST(testCopyPasteXLS);
@@ -67,6 +68,7 @@ public:
     CPPUNIT_TEST(tdf137624_autofillMergedMixed);
     CPPUNIT_TEST(tdf122716_rtf_portion_encoding);
     CPPUNIT_TEST(testRTFFontHeight);
+    CPPUNIT_TEST(testHtmlImportDataUrlIncompleteBase64);
     CPPUNIT_TEST_SUITE_END();
 
 private:
@@ -146,11 +148,11 @@ void ScCopyPasteTest::testTdf84411()
     // 2. Setup data and formulas
     for (unsigned int r = 0; r <= 4991; ++r)
         for (unsigned int c = 0; c <= 14; ++c)
-            pDoc->SetValue( ScAddress(c,r,0), (r+1)*(c+1) );
+            pDoc->SetValue( c,r,0, (r+1)*(c+1) );
 
-    pDoc->SetString(ScAddress(15,10000,0), u"=AVERAGE(A10001:O10001)"_ustr);
-    pDoc->SetString(ScAddress(16,10000,0), u"=MIN(A10001:O10001)"_ustr);
-    pDoc->SetString(ScAddress(17,10000,0), u"=MAX(A10001:O10001)"_ustr);
+    pDoc->SetString(15,10000,0, u"=AVERAGE(A10001:O10001)"_ustr);
+    pDoc->SetString(16,10000,0, u"=MIN(A10001:O10001)"_ustr);
+    pDoc->SetString(17,10000,0, u"=MAX(A10001:O10001)"_ustr);
 
     lcl_copy(u"P10001:R10001"_ustr, u"P10002:R12500"_ustr, *pDoc, pViewShell);
 
@@ -183,7 +185,7 @@ void ScCopyPasteTest::testTdf124565()
     ScTabViewShell* pViewShell = getViewShell();
 
     // Set content and height of first row
-    pDoc->SetString(ScAddress(0, 0, 0), u"Test"_ustr);
+    pDoc->SetString(0, 0, 0, u"Test"_ustr);
     pDoc->SetRowHeight(0, 0, 500);
     pDoc->SetManualHeight(0, 0, 0, true);
 
@@ -252,8 +254,8 @@ void ScCopyPasteTest::testTdf107394()
     aStream.Seek(0);
     CPPUNIT_ASSERT(aObj.ImportStream(aStream, OUString(), SotClipboardFormatId::HTML));
 
-    CPPUNIT_ASSERT_EQUAL(u"First"_ustr, pDoc->GetString(ScAddress(0,0,0)));
-    CPPUNIT_ASSERT_EQUAL(u"Very long sentence."_ustr, pDoc->GetString(ScAddress(0,1,0)));
+    CPPUNIT_ASSERT_EQUAL(u"First"_ustr, pDoc->GetString(0,0,0));
+    CPPUNIT_ASSERT_EQUAL(u"Very long sentence."_ustr, pDoc->GetString(0,1,0));
 
     nFirstRowHeight = pDoc->GetRowHeight(0, 0);
     nSecondRowHeight = pDoc->GetRowHeight(1, 0);
@@ -264,8 +266,8 @@ void ScCopyPasteTest::testTdf107394()
     CPPUNIT_ASSERT_MESSAGE("Failed to get the undo manager.", pUndoMgr);
     pUndoMgr->Undo();
 
-    CPPUNIT_ASSERT(pDoc->GetString(ScAddress(0,0,0)).isEmpty());
-    CPPUNIT_ASSERT(pDoc->GetString(ScAddress(0,1,0)).isEmpty());
+    CPPUNIT_ASSERT(pDoc->GetString(0,0,0).isEmpty());
+    CPPUNIT_ASSERT(pDoc->GetString(0,1,0).isEmpty());
 
     nFirstRowHeight = pDoc->GetRowHeight(0, 0);
     nSecondRowHeight = pDoc->GetRowHeight(1, 0);
@@ -352,7 +354,7 @@ void ScCopyPasteTest::testTdf40993_fillMergedCells()
     ScTabViewShell* pViewShell = getViewShell();
 
     // check content of the merged cell H11:I11
-    CPPUNIT_ASSERT_EQUAL(u"1.5"_ustr, pDoc->GetString(ScAddress(7, 10, 0)));
+    CPPUNIT_ASSERT_EQUAL(u"1.5"_ustr, pDoc->GetString(7, 10, 0));
 
     // fill operation on the merged cell should clone ATTR_MERGE and ATTR_MERGE_FLAG
     // (as long as ATTR_MERGE_FLAG has only ScMF::Hor or ScMF::Ver)
@@ -477,8 +479,8 @@ void ScCopyPasteTest::testTdf88782_autofillLinearNumbersInMergedCells()
     {
         for (int nRow = 8; nRow <= 27; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol + 22, nRow, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol + 22, nRow, 0);
             double* pValue1 = pDoc->GetValueCell(ScAddress(nCol, nRow, 0));
             double* pValue2 = pDoc->GetValueCell(ScAddress(nCol + 22, nRow, 0));
 
@@ -495,8 +497,8 @@ void ScCopyPasteTest::testTdf88782_autofillLinearNumbersInMergedCells()
     {
         for (int nRow = 30; nRow <= 35; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol, nRow + 16, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol, nRow + 16, 0);
             double* pValue1 = pDoc->GetValueCell(ScAddress(nCol, nRow, 0));
             double* pValue2 = pDoc->GetValueCell(ScAddress(nCol, nRow + 16, 0));
 
@@ -524,8 +526,8 @@ void ScCopyPasteTest::tdf137621_autofillMergedBool()
     {
         for (int nRow = 4; nRow <= 5; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol, nRow + 3, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol, nRow + 3, 0);
             double* pValue1 = pDoc->GetValueCell(ScAddress(nCol, nRow, 0));
             double* pValue2 = pDoc->GetValueCell(ScAddress(nCol, nRow + 3, 0));
 
@@ -553,8 +555,8 @@ void ScCopyPasteTest::tdf137205_autofillDatesInMergedCells()
     {
         for (int nRow = 5; nRow <= 7; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol, nRow + 5, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol, nRow + 5, 0);
             double* pValue1 = pDoc->GetValueCell(ScAddress(nCol, nRow, 0));
             double* pValue2 = pDoc->GetValueCell(ScAddress(nCol, nRow + 5, 0));
 
@@ -598,8 +600,8 @@ void ScCopyPasteTest::tdf137653_137654_autofillUserlist()
     {
         for (int nRow = 5; nRow <= 7; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol, nRow + 4, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol, nRow + 4, 0);
             bHasIdx1 = pListData->GetSubIndex(pDoc->GetString(nCol, nRow, 0), nIdx1, bMatchCase);
             bHasIdx2 = pListData->GetSubIndex(pDoc->GetString(nCol, nRow + 4, 0), nIdx2, bMatchCase);
 
@@ -615,8 +617,8 @@ void ScCopyPasteTest::tdf137653_137654_autofillUserlist()
     {
         for (int nRow = 16; nRow <= 21; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol + 4, nRow, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol + 4, nRow, 0);
             bHasIdx1 = pListData->GetSubIndex(pDoc->GetString(nCol, nRow, 0), nIdx1, bMatchCase);
             bHasIdx2 = pListData->GetSubIndex(pDoc->GetString(nCol + 4, nRow, 0), nIdx2, bMatchCase);
 
@@ -647,8 +649,8 @@ void ScCopyPasteTest::tdf113500_autofillMixed()
     {
         for (int nRow = 5; nRow <= 6; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol, nRow + 4, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol, nRow + 4, 0);
             OUString aStr1 = pDoc->GetString(nCol, nRow, 0);
             OUString aStr2 = pDoc->GetString(nCol, nRow + 4, 0);
 
@@ -663,8 +665,8 @@ void ScCopyPasteTest::tdf113500_autofillMixed()
     {
         for (int nRow = 16; nRow <= 21; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol + 4, nRow, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol + 4, nRow, 0);
             OUString aStr1 = pDoc->GetString(nCol, nRow, 0);
             OUString aStr2 = pDoc->GetString(nCol + 4, nRow, 0);
 
@@ -700,8 +702,8 @@ void ScCopyPasteTest::tdf137625_autofillMergedUserlist()
     {
         for (int nRow = 5; nRow <= 7; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol, nRow + 4, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol, nRow + 4, 0);
             bHasIdx1 = pListData->GetSubIndex(pDoc->GetString(nCol, nRow, 0), nIdx1, bMatchCase);
             bHasIdx2 = pListData->GetSubIndex(pDoc->GetString(nCol, nRow + 4, 0), nIdx2, bMatchCase);
 
@@ -717,8 +719,8 @@ void ScCopyPasteTest::tdf137625_autofillMergedUserlist()
     {
         for (int nRow = 16; nRow <= 27; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol + 4, nRow, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol + 4, nRow, 0);
             bHasIdx1 = pListData->GetSubIndex(pDoc->GetString(nCol, nRow, 0), nIdx1, bMatchCase);
             bHasIdx2 = pListData->GetSubIndex(pDoc->GetString(nCol + 4, nRow, 0), nIdx2, bMatchCase);
 
@@ -753,8 +755,8 @@ void ScCopyPasteTest::tdf137624_autofillMergedMixed()
     {
         for (int nRow = 5; nRow <= 7; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol, nRow + 4, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol, nRow + 4, 0);
             OUString aStr1 = pDoc->GetString(nCol, nRow, 0);
             OUString aStr2 = pDoc->GetString(nCol, nRow + 4, 0);
 
@@ -768,8 +770,8 @@ void ScCopyPasteTest::tdf137624_autofillMergedMixed()
     {
         for (int nRow = 16; nRow <= 27; nRow++)
         {
-            CellType nType1 = pDoc->GetCellType(ScAddress(nCol, nRow, 0));
-            CellType nType2 = pDoc->GetCellType(ScAddress(nCol + 4, nRow, 0));
+            CellType nType1 = pDoc->GetCellType(nCol, nRow, 0);
+            CellType nType2 = pDoc->GetCellType(nCol + 4, nRow, 0);
             OUString aStr1 = pDoc->GetString(nCol, nRow, 0);
             OUString aStr2 = pDoc->GetString(nCol + 4, nRow, 0);
 
@@ -810,7 +812,7 @@ void ScCopyPasteTest::testRTFFontHeight()
     createScDoc();
     ScDocument* pDoc = getScDoc();
     ScTabViewShell* pViewShell = getViewShell();
-    pDoc->SetString(ScAddress(0, 0, 0), u"Text"_ustr);
+    pDoc->SetString(0, 0, 0, u"Text"_ustr);
     sal_uInt32 nHeightPt = 8;
     pDoc->ApplyAttr(0, 0, 0, SvxFontHeightItem(nHeightPt * 20, 100, ATTR_FONT_HEIGHT));
 
@@ -830,6 +832,24 @@ void ScCopyPasteTest::testRTFFontHeight()
     // Check that the font height was exported (in Half-point units)
     OUString sText = "\\fs" + OUString::number(nHeightPt * 2);
     CPPUNIT_ASSERT(sRTF.indexOf(sText) >= 0);
+}
+
+void ScCopyPasteTest::testHtmlImportDataUrlIncompleteBase64()
+{
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+
+    // The image carries a "data:" URL whose base64 payload ends with an
+    // incomplete group: "AAAAA" is one full quartet plus a dangling fifth
+    // character. Decoding consumes only the first four, so getData() treats
+    // the payload as malformed and hands back a null pointer.
+    ScImportExport aObj(*pDoc, ScAddress(0, 0, 0));
+    char buf[] = "<img src=\"data:image/png;base64,AAAAA\">";
+    SvMemoryStream aStream(buf, strlen(buf), StreamMode::READ);
+
+    // Without the accompanying fix, ScHTMLLayoutParser::Image() dereferenced
+    // that null pointer and the import crashed.
+    CPPUNIT_ASSERT(aObj.ImportStream(aStream, OUString(), SotClipboardFormatId::HTML));
 }
 
 ScCopyPasteTest::ScCopyPasteTest()

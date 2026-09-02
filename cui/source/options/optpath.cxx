@@ -19,11 +19,11 @@
 
 #include <svx/svxdlg.hxx>
 #include <sfx2/filedlghelper.hxx>
+#include <svtools/viewoptions.hxx>
 #include <tools/urlobj.hxx>
 #include <unotools/defaultoptions.hxx>
 #include <unotools/pathoptions.hxx>
 #include <unotools/moduleoptions.hxx>
-#include <unotools/viewoptions.hxx>
 #include <vcl/vclenum.hxx>
 #include <vcl/weld/Builder.hxx>
 #include <vcl/weld/Label.hxx>
@@ -195,7 +195,7 @@ SvxPathTabPage::SvxPathTabPage(weld::Container* pPage, weld::DialogController* p
                                  m_xPathBox->get_height_rows(20));
 
     m_xPathBox->connect_item_activated(LINK(this, SvxPathTabPage, DoubleClickPathHdl_Impl));
-    m_xPathBox->connect_column_clicked(LINK(this, SvxPathTabPage, HeaderBarClick));
+    m_xPathBox->connect_column_header_clicked(LINK(this, SvxPathTabPage, HeaderBarClick));
     m_xPathBox->connect_selection_changed(LINK(this, SvxPathTabPage, PathSelect_Impl));
     m_xPathBox->set_selection_mode(SelectionMode::Multiple);
 

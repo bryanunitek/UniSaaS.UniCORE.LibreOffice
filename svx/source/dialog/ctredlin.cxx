@@ -71,7 +71,8 @@ SvxRedlineTable::SvxRedlineTable(std::unique_ptr<weld::TreeView> xWriterControl,
     if (m_xWriterTreeView)
     {
         m_xWriterTreeView->set_size_request(-1, m_xWriterTreeView->get_height_rows(8));
-        m_xWriterTreeView->connect_column_clicked(LINK(this, SvxRedlineTable, HeaderBarClick));
+        m_xWriterTreeView->connect_column_header_clicked(
+            LINK(this, SvxRedlineTable, HeaderBarClick));
         m_xWriterTreeView->set_sort_func([this](const weld::TreeIter& rLeft, const weld::TreeIter& rRight){
             return ColCompare(rLeft, rRight);
         });
@@ -80,7 +81,7 @@ SvxRedlineTable::SvxRedlineTable(std::unique_ptr<weld::TreeView> xWriterControl,
     if (m_xCalcTreeView)
     {
         m_xCalcTreeView->set_size_request(-1, m_xCalcTreeView->get_height_rows(8));
-        m_xCalcTreeView->connect_column_clicked(LINK(this, SvxRedlineTable, HeaderBarClick));
+        m_xCalcTreeView->connect_column_header_clicked(LINK(this, SvxRedlineTable, HeaderBarClick));
         m_xCalcTreeView->set_sort_func([this](const weld::TreeIter& rLeft, const weld::TreeIter& rRight){
             return ColCompare(rLeft, rRight);
         });
@@ -524,7 +525,7 @@ SvxTPFilter::SvxTPFilter(weld::Container* pParent)
     m_xTfDate->connect_value_changed(a3Link);
     m_xTfDate2->connect_value_changed(a3Link);
 
-    Link<weld::Entry&,void> a4Link=LINK( this, SvxTPFilter, ModifyHdl);
+    Link<weld::TextWidget&, void> a4Link = LINK(this, SvxTPFilter, ModifyHdl);
     m_xEdRange->connect_changed(a4Link);
     m_xEdComment->connect_changed(a4Link);
     m_xLbAction->connect_changed(LINK( this, SvxTPFilter, ModifyListBoxHdl));
@@ -859,10 +860,7 @@ IMPL_LINK(SvxTPFilter, TimeHdl, weld::Button&, rIB, void)
     m_bModified=true;
 }
 
-IMPL_LINK_NOARG(SvxTPFilter, ModifyHdl, weld::Entry&, void)
-{
-    m_bModified=true;
-}
+IMPL_LINK_NOARG(SvxTPFilter, ModifyHdl, weld::TextWidget&, void) { m_bModified = true; }
 
 IMPL_LINK_NOARG(SvxTPFilter, ModifyListBoxHdl, weld::ComboBox&, void)
 {

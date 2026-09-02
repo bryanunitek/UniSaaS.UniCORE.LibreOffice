@@ -329,11 +329,11 @@ namespace vclcanvas
             aOuterPoly.transform( rTextureTransform );
 
             // determine overall transformation for inner polygon (might
-            // have to be prefixed by anisotrophic scaling)
+            // have to be prefixed by anisotropic scaling)
             ::basegfx::B2DHomMatrix aInnerPolygonTransformMatrix;
 
 
-            // apply scaling (possibly anisotrophic) to inner polygon
+            // apply scaling (possibly anisotropic) to inner polygon
 
 
             // scale inner polygon according to aspect ratio: for
@@ -356,7 +356,7 @@ namespace vclcanvas
             }
             else
             {
-                // isotrophic case
+                // isotropic case
                 aInnerPolygonTransformMatrix.scale( 0.0, 0.0 );
             }
 
@@ -863,7 +863,7 @@ namespace vclcanvas
                     // (extended, because shrinking might leave some
                     // inner polygon areas unfilled).
                     // Finally, the bound rect is transformed back to
-                    // device coordinate space, were we determine the
+                    // device coordinate space, where we determine the
                     // start point from it.
                     ::basegfx::B2DRectangle aTextureSpacePolygonRect = ::canvastools::calcTransformedRectBounds(
                                                                 vcl::unotools::b2DRectangleFromRectangle(aPolygonDeviceRect),

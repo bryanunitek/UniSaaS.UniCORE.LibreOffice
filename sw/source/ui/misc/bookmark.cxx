@@ -21,7 +21,7 @@
 #include <rtl/ustrbuf.hxx>
 #include <sfx2/request.hxx>
 #include <svl/stritem.hxx>
-#include <unotools/viewoptions.hxx>
+#include <svtools/viewoptions.hxx>
 #include <vcl/weld/Builder.hxx>
 #include <vcl/weld/Dialog.hxx>
 #include <vcl/weld/weldutils.hxx>
@@ -48,7 +48,7 @@ using namespace ::com::sun::star;
 const char BookmarkTable::s_cSeparator(';');
 
 // callback to modify EditBox
-IMPL_LINK_NOARG(SwInsertBookmarkDlg, ModifyHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(SwInsertBookmarkDlg, ModifyHdl, weld::TextWidget&, void)
 {
     ValidateBookmarks();
     m_xBookmarksBox->unselect_all();
@@ -391,7 +391,7 @@ SwInsertBookmarkDlg::SwInsertBookmarkDlg(weld::Window* pParent, SwWrtShell& rS,
 {
     m_xBookmarksBox->connect_changed(LINK(this, SwInsertBookmarkDlg, SelectionChangedHdl));
     m_xBookmarksBox->connect_item_activated(LINK(this, SwInsertBookmarkDlg, DoubleClickHdl));
-    m_xBookmarksBox->connect_column_clicked(LINK(this, SwInsertBookmarkDlg, HeaderBarClick));
+    m_xBookmarksBox->connect_column_header_clicked(LINK(this, SwInsertBookmarkDlg, HeaderBarClick));
     m_xBookmarksBox->connect_editing(LINK(this, SwInsertBookmarkDlg, EditingHdl),
                                      LINK(this, SwInsertBookmarkDlg, EditedHdl));
     m_xEditBox->connect_changed(LINK(this, SwInsertBookmarkDlg, ModifyHdl));
@@ -454,8 +454,7 @@ SwInsertBookmarkDlg::~SwInsertBookmarkDlg()
 {
     // tdf#146261 - Remember size of bookmark dialog
     SvtViewOptions aDlgOpt(EViewType::Dialog, u"BookmarkDialog"_ustr);
-    OUString sWindowState = m_xDialog->get_window_state(vcl::WindowDataMask::PosSize);
-    aDlgOpt.SetWindowState(sWindowState);
+    aDlgOpt.SetWindowState(m_xDialog->get_window_state(vcl::WindowDataMask::PosSize));
 }
 
 IMPL_LINK(SwInsertBookmarkDlg, HeaderBarClick, int, nColumn, void)

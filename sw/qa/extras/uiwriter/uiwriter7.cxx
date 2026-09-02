@@ -414,9 +414,9 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf131431)
 
     // setup search for any underline text
     uno::Sequence<beans::PropertyValue> aSearchAttribute(comphelper::InitPropertySequence(
-        { { "CharUnderline", uno::Any(sal_Int32(css::awt::FontUnderline::NONE)) } }));
+        { { "CharUnderline", uno::Any(sal_Int32(css::awt::FontUnderline::SINGLE)) } }));
 
-    // setup replace with green highlight color
+    // setup replace to also apply green highlight color
     uno::Sequence<beans::PropertyValue> aReplaceAttribute(
         comphelper::InitPropertySequence({ { "CharBackColor", uno::Any(sal_Int32(0x00FF00)) } }));
 
@@ -446,10 +446,10 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf131431)
     completed = true;
     TimeoutThread.join();
 
-    // ideally should be 9, but due to some bugs it reports more
-    // CPPUNIT_ASSERT_EQUAL(sal_Int32(9), nReplaceCount);
-    CPPUNIT_ASSERT_GREATEREQUAL(sal_Int32(8), nReplaceCount);
-    CPPUNIT_ASSERT_LESSEQUAL(sal_Int32(14), nReplaceCount);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(9), nReplaceCount);
+
+    // a simple 'search' should also report the same number
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(9), xReplace->findAll(xReplaceDes)->getCount());
 }
 
 CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf147583_backwardSearch)
@@ -486,6 +486,11 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf147583_backwardSearch)
     xIndex.set(xSearch->findAll(xSearchDes), uno::UNO_SET_THROW);
     // should be one for every non-empty paragraph
     CPPUNIT_ASSERT_EQUAL(sal_Int32(14), xIndex->getCount());
+
+    // tdf#135538
+    // Search for the beginning of the paragraph
+    xSearchDes->setSearchString(u"^"_ustr); // the start of the paragraph
+    CPPUNIT_ASSERT_EQUAL(nParas, xSearch->findAll(xSearchDes)->getCount());
 }
 
 CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf69282)
@@ -2780,13 +2785,21 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf77014)
         {
             auto const& rPortionItem = aHandler.get(0);
             CPPUNIT_ASSERT_EQUAL(u"text"_ustr, rPortionItem.msItemType);
-            CPPUNIT_ASSERT_EQUAL(sal_Int32(91), rPortionItem.mnLength);
+            CPPUNIT_ASSERT_EQUAL(sal_Int32(90), rPortionItem.mnLength);
             CPPUNIT_ASSERT_EQUAL(PortionType::Text, rPortionItem.mnTextType);
+        }
+
+        // Trailing whitespace portion
+        {
+            auto const& rPortionItem = aHandler.get(1);
+            CPPUNIT_ASSERT_EQUAL(u"text"_ustr, rPortionItem.msItemType);
+            CPPUNIT_ASSERT_EQUAL(sal_Int32(1), rPortionItem.mnLength);
+            CPPUNIT_ASSERT_EQUAL(PortionType::Hole, rPortionItem.mnTextType);
         }
 
         // NEW LINE
         {
-            auto const& rPortionItem = aHandler.get(1);
+            auto const& rPortionItem = aHandler.get(2);
             CPPUNIT_ASSERT_EQUAL(u"line_break"_ustr, rPortionItem.msItemType);
         }
 
@@ -2794,7 +2807,7 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf77014)
         // which is 16 chars + 2 hidden chars (start & end input field) = 18 chars
         // If this is correct then the input field is in one piece
         {
-            auto const& rPortionItem = aHandler.get(2);
+            auto const& rPortionItem = aHandler.get(3);
             CPPUNIT_ASSERT_EQUAL(u"text"_ustr, rPortionItem.msItemType);
             CPPUNIT_ASSERT_EQUAL(sal_Int32(18), rPortionItem.mnLength);
             CPPUNIT_ASSERT_EQUAL(PortionType::InputField, rPortionItem.mnTextType);
@@ -2802,7 +2815,7 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf77014)
 
         // Text "."
         {
-            auto const& rPortionItem = aHandler.get(3);
+            auto const& rPortionItem = aHandler.get(4);
             CPPUNIT_ASSERT_EQUAL(u"text"_ustr, rPortionItem.msItemType);
             CPPUNIT_ASSERT_EQUAL(sal_Int32(1), rPortionItem.mnLength);
             CPPUNIT_ASSERT_EQUAL(PortionType::Text, rPortionItem.mnTextType);
@@ -2810,12 +2823,12 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf77014)
 
         // NEW LINE
         {
-            auto const& rPortionItem = aHandler.get(4);
+            auto const& rPortionItem = aHandler.get(5);
             CPPUNIT_ASSERT_EQUAL(u"line_break"_ustr, rPortionItem.msItemType);
         }
 
         {
-            auto const& rPortionItem = aHandler.get(5);
+            auto const& rPortionItem = aHandler.get(6);
             CPPUNIT_ASSERT_EQUAL(u"finish"_ustr, rPortionItem.msItemType);
         }
     }
@@ -3004,7 +3017,7 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf149089)
 
 CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf106137_UnicodeEscapeInReplacement)
 {
-    // unicode values in replacement strings should expand to Unicode character when regular expressions is selected as a option
+    // unicode values in replacement strings should expand to a Unicode character when regular expressions is selected as an option
     createSwDoc();
     SwDoc* pDoc = getSwDoc();
     SwCursorShell* pShell(pDoc->GetEditShell());
@@ -3036,7 +3049,7 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf106137_UnicodeEscapeInReplacement_B
     SwPaM* pCursor = pShell->GetCursor();
     IDocumentContentOperations& rIDCO(pDoc->getIDocumentContentOperations());
 
-    // Insert text that contains a actual escaped unicode string
+    // Insert text that contains an actual escaped unicode string
     rIDCO.InsertString(*pCursor, u"find \\u0042"_ustr);
 
     uno::Reference<util::XReplaceable> xReplace(mxComponent, uno::UNO_QUERY);

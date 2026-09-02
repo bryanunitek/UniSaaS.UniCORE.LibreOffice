@@ -765,6 +765,14 @@ SwMoveFnCollection const & SwCursor::MakeFindRange( SwDocPositions nStart,
                 ? fnMoveForward : fnMoveBackward;
 }
 
+static bool lcl_IsNotTextSearch(const SvxSearchItem* pSearchItem)
+{
+    if (!pSearchItem || pSearchItem->GetSearchString().isEmpty())
+        return true;
+
+    return pSearchItem->GetPattern(); // paragraph style search
+}
+
 static sal_Int32 lcl_FindSelection( SwFindParas& rParas, SwCursor* pCurrentCursor,
                         SwMoveFnCollection const & fnMove, SwCursor*& pFndRing,
                         SwPaM& aRegion, FindRanges eFndRngs,
@@ -856,14 +864,39 @@ static sal_Int32 lcl_FindSelection( SwFindParas& rParas, SwCursor* pCurrentCurso
                 }
             }
 
-            // tdf#131431 move pCurrentCursor if it hasn't moved to avoid an infinite loop
-            if( bSrchBkwrd && *pEndPos == *pCurrentCursor->Start() )
+            // tdf#131431 force move pCurrentCursor if it hasn't moved to avoid an infinite loop
+            bool bToNextPara = false;
+            if (!bSrchBkwrd)
             {
-                (*fnMove.fnPos)( pCurrentCursor->GetMark(), false );
+                bToNextPara = *pSttPos == *pCurrentCursor->End(); // force move
+                if (!bToNextPara && lcl_IsNotTextSearch(xSearchItem.get()))
+                {
+                    // move to next paragraph when last find was at the very end of a paragraph
+                    const SwContentNode* pPointNd = pCurrentCursor->GetPointContentNode();
+                    bToNextPara = pCurrentCursor->End()->GetContentIndex() == pPointNd->Len();
+                }
             }
-            else if ( !bSrchBkwrd && *pSttPos == *pCurrentCursor->End() )
+            else
             {
-                (*fnMove.fnPos)( pCurrentCursor->GetPoint(), false );
+                bToNextPara = *pEndPos == *pCurrentCursor->Start(); // force move
+                if (!bToNextPara && lcl_IsNotTextSearch(xSearchItem.get()))
+                {
+                    // move to previous paragraph when last find was at the start of a paragraph
+                    bToNextPara = !pCurrentCursor->Start()->GetContentIndex();
+                }
+            }
+            if (bToNextPara)
+            {
+                if (!(*fnMove.fnPos)(pCurrentCursor->GetPoint(), false))
+                {
+                    if (lcl_IsNotTextSearch(xSearchItem.get()))
+                    {
+                        // At end of the document with a style/format/attr search: done this ring
+                        break;
+                    }
+                }
+                else
+                    rParas.SetMustStartWithCurrentNode(true); // currently only for FindTextImpl
             }
 
             if( *pSttPos == *pEndPos )
@@ -2467,7 +2500,7 @@ SwCursor* SwTableCursor::MakeBoxSels( SwCursor* pCurrentCursor )
         m_bChanged = false;
 
         // create temporary copies so that all boxes that
-        // have already cursors can be removed
+        // already have cursors can be removed
         SwSelBoxes aTmp(m_SelectedBoxes);
 
         // compare old and new ones

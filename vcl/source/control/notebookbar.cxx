@@ -23,7 +23,6 @@
 #include <vcl/NotebookbarContextControl.hxx>
 #include <cppuhelper/implbase.hxx>
 #include <comphelper/processfactory.hxx>
-#include <rtl/bootstrap.hxx>
 #include <officecfg/Office/Common.hxx>
 #include <osl/file.hxx>
 #include <config_folders.h>
@@ -31,21 +30,6 @@
 #include <com/sun/star/frame/FrameAction.hpp>
 #include <com/sun/star/ui/ContextChangeEventMultiplexer.hpp>
 #include <comphelper/lok.hxx>
-
-static OUString getCustomizedUIRootDir()
-{
-    OUString sShareLayer(u"${$BRAND_BASE_DIR/" LIBO_ETC_FOLDER "/" SAL_CONFIGFILE(
-        "bootstrap") ":UserInstallation}/user/config/soffice.cfg/"_ustr);
-    rtl::Bootstrap::expandMacros(sShareLayer);
-    return sShareLayer;
-}
-
-static bool doesFileExist(std::u16string_view sUIDir, std::u16string_view sUIFile)
-{
-    OUString sUri = OUString::Concat(sUIDir) + sUIFile;
-    osl::File file(sUri);
-    return( file.open(0) == osl::FileBase::E_None );
-}
 
 /**
  * split from the main class since it needs different ref-counting mana
@@ -79,51 +63,33 @@ NotebookBar::NotebookBar(Window* pParent, const OUString& rID, const OUString& r
                          std::unique_ptr<NotebookBarAddonsItem> pNotebookBarAddonsItem)
     : Control(pParent)
     , m_pEventListener(new NotebookBarContextChangeEventListener(this, rFrame))
-    , m_pViewShell(nullptr)
-    , m_bIsWelded(false)
     , m_sUIXMLDescription(rUIXMLDescription)
     , m_sModule(vcl::CommandInfoProvider::GetModuleIdentifier(rFrame))
 {
     m_pEventListener->setupFrameListener(true);
 
     SetStyle(GetStyle() | WB_DIALOGCONTROL);
-    OUString sUIDir = AllSettings::GetUIRootDir();
-    bool doesCustomizedUIExist = doesFileExist(getCustomizedUIRootDir(), rUIXMLDescription);
-    if ( doesCustomizedUIExist )
-        sUIDir = getCustomizedUIRootDir();
 
-    bool bIsWelded = comphelper::LibreOfficeKit::isActive();
-    if (bIsWelded)
+    m_pUIBuilder.reset(new VclBuilder(this, AllSettings::GetUIRootDir(), rUIXMLDescription, rID,
+                                      rFrame, true, std::move(pNotebookBarAddonsItem)));
+
+    // In the Notebookbar's .ui file must exist control handling context
+    // - implementing NotebookbarContextControl interface with id "ContextContainer"
+    // or "ContextContainerX" where X is a number >= 1
+    NotebookbarContextControl* pContextContainer = nullptr;
+    int i = 0;
+    do
     {
-        m_bIsWelded = true;
-        m_xVclContentArea = VclPtr<VclVBox>::Create(this);
-        m_xVclContentArea->Show();
-        // now access it using GetMainContainer and set dispose callback with SetDisposeCallback
-    }
-    else
-    {
-        m_pUIBuilder.reset(
-            new VclBuilder(this, sUIDir, rUIXMLDescription, rID, rFrame, true,
-                           std::move(pNotebookBarAddonsItem)));
+        OUString aName = u"ContextContainer"_ustr;
+        if (i)
+            aName += OUString::number(i);
 
-        // In the Notebookbar's .ui file must exist control handling context
-        // - implementing NotebookbarContextControl interface with id "ContextContainer"
-        // or "ContextContainerX" where X is a number >= 1
-        NotebookbarContextControl* pContextContainer = nullptr;
-        int i = 0;
-        do
-        {
-            OUString aName = u"ContextContainer"_ustr;
-            if (i)
-                aName += OUString::number(i);
-
-            pContextContainer = dynamic_cast<NotebookbarContextControl*>(m_pUIBuilder->get<Window>(aName));
-            if (pContextContainer)
-                m_pContextContainers.push_back(pContextContainer);
-            i++;
-        }
-        while( pContextContainer != nullptr );
+        pContextContainer = dynamic_cast<NotebookbarContextControl*>(m_pUIBuilder->get<Window>(aName));
+        if (pContextContainer)
+            m_pContextContainers.push_back(pContextContainer);
+        i++;
     }
+    while( pContextContainer != nullptr );
 
     UpdateBackground();
 }
@@ -139,14 +105,7 @@ void NotebookBar::dispose()
     if (m_pSystemWindow && m_pSystemWindow->ImplIsInTaskPaneList(this))
         m_pSystemWindow->GetTaskPaneList()->RemoveWindow(this);
     m_pSystemWindow.reset();
-
-    if (m_rDisposeLink.IsSet())
-        m_rDisposeLink.Call(m_pViewShell);
-
-    if (m_bIsWelded)
-        m_xVclContentArea.disposeAndClear();
-    else
-        disposeBuilder();
+    disposeBuilder();
 
     m_pEventListener->setupFrameListener(false);
     m_pEventListener->setupListener(false);
@@ -214,13 +173,6 @@ void NotebookBar::Resize()
             aSize.setWidth( GetSizePixel().Width() );
             pWindow->SetSizePixel(aSize);
         }
-    }
-    if(m_bIsWelded)
-    {
-        vcl::Window* pChild = GetWindow(GetWindowType::FirstChild);
-        assert(pChild);
-        VclContainer::setLayoutAllocation(*pChild, Point(0, 0), GetSizePixel());
-        Control::Resize();
     }
     Control::Resize();
 }
@@ -315,25 +267,21 @@ void NotebookBar::StateChanged(const  StateChangedType nStateChange )
 
 void NotebookBar::UpdateBackground()
 {
-    const StyleSettings& rStyleSettings = GetSettings().GetStyleSettings();
-    Color aColor = rStyleSettings.GetDialogColor();
+    Color aColor = GetSettings().GetStyleSettings().GetDialogColor();
     // macOS excluded since AquaGraphicsBackendBase::performDrawNativeControl() case ControlType::TabPane
     // draws the whole Notebookbar and does not allow to just color the background
-#ifndef MACOSX
+
     const sal_uInt8 cTrans = officecfg::Office::Common::Misc::NotebookbarColorTransparency::get();
-    if (ThemeColors::VclPluginCanUseThemeColors())
-    {
-        const ThemeColors& rThemeColors = ThemeColors::GetThemeColors();
-        if (m_sModule == "com.sun.star.text.TextDocument")
-            aColor.Merge(rThemeColors.GetWriterNotebookbarColor(), cTrans);
-        else if (m_sModule == "com.sun.star.sheet.SpreadsheetDocument")
-            aColor.Merge(rThemeColors.GetCalcNotebookbarColor(), cTrans);
-        else if (m_sModule == "com.sun.star.presentation.PresentationDocument")
-            aColor.Merge(rThemeColors.GetImpressNotebookbarColor(), cTrans);
-        else if (m_sModule == "com.sun.star.drawing.DrawingDocument")
-            aColor.Merge(rThemeColors.GetDrawNotebookbarColor(), cTrans);
-    }
-#endif
+
+    if (m_sModule == "com.sun.star.text.TextDocument")
+        aColor.Merge(Color(0x1a, 0x85, 0xd1), cTrans); // #1a85d1
+    else if (m_sModule == "com.sun.star.sheet.SpreadsheetDocument")
+        aColor.Merge(Color(0x3c, 0xbc, 0x45), cTrans); // #3cbc45
+    else if (m_sModule == "com.sun.star.presentation.PresentationDocument")
+        aColor.Merge(Color(0xe7, 0x57, 0x29), cTrans); // #e75729
+    else if (m_sModule == "com.sun.star.drawing.DrawingDocument")
+        aColor.Merge(Color(0xe5, 0xb4, 0x43), cTrans); // #e5b443
+
     SetBackground(Wallpaper(aColor));
     UpdateDefaultSettings();
     GetOutDev()->SetSettings( DefaultSettings );

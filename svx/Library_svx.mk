@@ -29,6 +29,7 @@ $(eval $(call gb_Library_add_componentimpls,svx, \
 $(eval $(call gb_Library_set_include,svx,\
     -I$(SRCDIR)/svx/inc \
     -I$(SRCDIR)/svx/source/inc \
+    -I$(SRCDIR)/sc/inc \
     $$(INCLUDE) \
 ))
 
@@ -272,6 +273,7 @@ $(eval $(call gb_Library_add_exception_objects,svx,\
     svx/source/tbxctrls/bulletsnumbering \
     svx/source/tbxctrls/colrctrl \
     svx/source/tbxctrls/SvxColorChildWindow \
+    svx/source/tbxctrls/SvxColorValueSet \
     svx/source/tbxctrls/fillctrl \
     svx/source/tbxctrls/formatpaintbrushctrl \
     svx/source/tbxctrls/grafctrl \

@@ -2892,7 +2892,7 @@ EditPaM ImpEditEngine::ImpInsertText(const EditSelection& aCurSel, const OUStrin
                 // in the to be appended data, otherwise already existing
                 // characters would have to be moved and PaM to be updated.
                 // Restrict to 2*42, if not found by then assume other data or
-                // language-script uses only letters or idiographs.
+                // language-script uses only letters or ideographs.
                 sal_Int32 nPos = nMaxNewChars;
                 while (nPos-- > 0 && (nMaxNewChars - nPos) <= 84)
                 {
@@ -4423,8 +4423,8 @@ sal_Int32 ImpEditEngine::GetChar(ParaPortion const& rParaPortion, EditLine const
 
                         if (bSmart && nDiffRight < nDiffLeft)
                         {
-                            // I18N: If there are character position with the length of 0,
-                            // they belong to the same character, we can not use this position as an index.
+                            // I18N: If there are character positions with the length of 0,
+                            // they belong to the same character, we cannot use this position as an index.
                             // Skip all 0-positions, cheaper than using XBreakIterator:
                             tools::Long nX = rLine.GetCharPosArray()[nTmpCurIndex + x];
                             while(x < nMax && static_cast<tools::Long>(rLine.GetCharPosArray()[nTmpCurIndex + x]) == nX)
@@ -4616,7 +4616,7 @@ tools::Long ImpEditEngine::GetXPos(ParaPortion const& rParaPortion, EditLine con
     tools::Long nX = GetPortionXOffset(rParaPortion, rLine, nTextPortion);
 
     // calc text width, portion size may include CJK/CTL spacing...
-    // But the array might not be init yet, if using text ranger this method is called within CreateLines()...
+    // But the array might not be initialized yet, if using text ranger this method is called within CreateLines()...
     tools::Long nPortionTextWidth = rPortion.GetSize().Width();
     if ( ( rPortion.GetKind() == PortionKind::TEXT ) && rPortion.GetLen() && !GetTextRanger() )
     {

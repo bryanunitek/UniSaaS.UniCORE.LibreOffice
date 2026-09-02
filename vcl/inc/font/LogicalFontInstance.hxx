@@ -34,6 +34,8 @@
 #include <font/FontMetricData.hxx>
 #include <glyphid.hxx>
 
+#include <vcl/outdev/OpenTypeMathConstant.hxx>
+
 #include <optional>
 #include <unordered_map>
 
@@ -97,8 +99,6 @@ public: // TODO: make data members private
 
     inline hb_font_t* GetHbFont();
     SAL_DLLPRIVATE bool IsGraphiteFont();
-    void SetAverageWidthFactor(double nFactor) { m_nAveWidthFactor = std::abs(nFactor); }
-    double GetAverageWidthFactor() const { return m_nAveWidthFactor; }
     const vcl::font::FontSelectPattern& GetFontSelectPattern() const { return m_aFontSelData; }
 
     const std::vector<vcl::font::Variation>& GetVariations() const;
@@ -114,9 +114,9 @@ public: // TODO: make data members private
     vcl::font::PhysicalFontFace* GetFontFace() { return m_pFontFace.get(); }
     const ImplFontCache* GetFontCache() const { return mpFontCache; }
 
+    void GetFontMetric(FontMetricDataRef const&);
     bool GetGlyphBoundRect(sal_GlyphId, basegfx::B2DRectangle&, bool) const;
-    virtual bool GetGlyphOutline(sal_GlyphId, basegfx::B2DPolyPolygon&, bool) const = 0;
-    SAL_DLLPRIVATE basegfx::B2DPolyPolygon GetGlyphOutlineUntransformed(sal_GlyphId) const;
+    bool GetGlyphOutline(sal_GlyphId, basegfx::B2DPolyPolygon&, bool) const;
 
     sal_GlyphId GetGlyphIndex(uint32_t, uint32_t = 0) const;
 
@@ -129,6 +129,8 @@ public: // TODO: make data members private
     bool NeedsArtificialItalic() const;
     bool NeedsArtificialBold() const;
 
+    double GetOpenTypeMathConstant(vcl::OpenTypeMathConstant aConstant) const;
+
 protected:
     explicit LogicalFontInstance(const vcl::font::PhysicalFontFace&,
                                  const vcl::font::FontSelectPattern&);
@@ -137,7 +139,7 @@ protected:
     virtual void ImplInitHbFont(hb_font_t*) {}
 
 private:
-    SAL_DLLPRIVATE hb_font_t* GetHbFontUntransformed() const;
+    SAL_DLLPRIVATE bool DrawGlyph(hb_font_t*, sal_GlyphId, basegfx::B2DPolyPolygon&) const;
 
     struct MapEntry
     {
@@ -153,8 +155,6 @@ private:
     mutable ImplFontCache* mpFontCache;
     const vcl::font::FontSelectPattern m_aFontSelData;
     hb_font_t* m_pHbFont;
-    mutable hb_font_t* m_pHbFontUntransformed = nullptr;
-    double m_nAveWidthFactor;
     rtl::Reference<vcl::font::PhysicalFontFace> m_pFontFace;
     std::optional<bool> m_xbIsGraphiteFont;
     std::vector<vcl::font::Variation> m_aVariations;

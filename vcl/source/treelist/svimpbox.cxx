@@ -33,6 +33,7 @@
 #include <vcl/toolkit/treelistbox.hxx>
 #include <vcl/toolkit/svlbitm.hxx>
 #include <vcl/wintypes.hxx>
+#include <SvLBoxButton.hxx>
 #include <bitmaps.hlst>
 #include <svimpbox.hxx>
 #include <comphelper/processfactory.hxx>
@@ -581,7 +582,7 @@ void SvImpLBox::SetCursor( SvTreeListEntry* pEntry, bool bForceNoSelect )
 {
     SvViewDataEntry* pViewDataNewCur = nullptr;
     if( pEntry )
-        pViewDataNewCur = m_rView.GetViewDataEntry(pEntry);
+        pViewDataNewCur = &m_rView.GetViewDataEntry(*pEntry);
     if( pEntry &&
         pEntry == m_pCursor &&
         pViewDataNewCur &&
@@ -595,7 +596,7 @@ void SvImpLBox::SetCursor( SvTreeListEntry* pEntry, bool bForceNoSelect )
     while( pEntry && pViewDataNewCur && !pViewDataNewCur->IsSelectable() )
     {
         pEntry = m_rView.NextVisible(pEntry);
-        pViewDataNewCur = pEntry ? m_rView.GetViewDataEntry(pEntry) : nullptr;
+        pViewDataNewCur = pEntry ? &m_rView.GetViewDataEntry(*pEntry) : nullptr;
     }
 
     SvTreeListEntry* pOldCursor = m_pCursor;
@@ -760,7 +761,7 @@ bool SvImpLBox::EntryReallyHit(SvTreeListEntry& rEntry, const Point& rPosPixel, 
 
     SvLBoxContextBmp* pBmp
         = static_cast<SvLBoxContextBmp*>(rEntry.GetFirstItem(SvLBoxItemType::ContextBmp));
-    aRect.AdjustLeft(-pBmp->GetWidth(m_rView, &rEntry));
+    aRect.AdjustLeft(-pBmp->GetWidth(m_rView, rEntry));
     aRect.AdjustLeft( -4 ); // a little tolerance
 
     Point aPos( rPosPixel );
@@ -932,7 +933,7 @@ void SvImpLBox::MakeVisible( SvTreeListEntry* pEntry, bool bMoveToTop )
             {
                 if (!m_rView.IsExpanded(pParent))
                 {
-                    bool bRet = m_rView.Expand(pParent);
+                    bool bRet = m_rView.Expand(*pParent);
                     DBG_ASSERT(bRet,"Not expanded!");
                 }
                 pParent = m_rView.GetParent(pParent);
@@ -1738,7 +1739,7 @@ void SvImpLBox::EntryInserted( SvTreeListEntry* pEntry )
     SvTreeListEntry* pParent = m_rTree.GetParent(pEntry);
     if (pParent && m_rTree.GetChildList(pParent).size() == 1)
         // draw plus sign
-        m_rTree.InvalidateEntry(pParent);
+        m_rTree.InvalidateEntry(*pParent);
 
     if (!m_rView.IsEntryVisible(pEntry))
         return;
@@ -1865,9 +1866,9 @@ bool SvImpLBox::ButtonUpCheckCtrl( const MouseEvent& rMEvt )
 // ******* Control plus/minus button for expanding/collapsing
 
 // false == no expand/collapse button hit
-bool SvImpLBox::IsNodeButton( const Point& rPosPixel, const SvTreeListEntry* pEntry ) const
+bool SvImpLBox::IsNodeButton(const Point& rPosPixel, const SvTreeListEntry& rEntry) const
 {
-    if( !pEntry->HasChildren() && !pEntry->HasChildrenOnDemand() )
+    if (!rEntry.HasChildren() && !rEntry.HasChildrenOnDemand())
         return false;
 
     SvLBoxTab* pFirstDynamicTab = m_rView.GetFirstDynamicTab();
@@ -1879,7 +1880,7 @@ bool SvImpLBox::IsNodeButton( const Point& rPosPixel, const SvTreeListEntry* pEn
     Point aOrigin(m_rView.GetMapMode().GetOrigin());
     nMouseX -= aOrigin.X();
 
-    tools::Long nX = m_rView.GetTabPos(pEntry, pFirstDynamicTab);
+    tools::Long nX = m_rView.GetTabPos(&rEntry, pFirstDynamicTab);
     nX += m_nNodeBmpTabDistance;
     if( nMouseX < nX )
         return false;
@@ -1888,24 +1889,24 @@ bool SvImpLBox::IsNodeButton( const Point& rPosPixel, const SvTreeListEntry* pEn
 }
 
 // false == hit no node button
-bool SvImpLBox::ButtonDownCheckExpand( const MouseEvent& rMEvt, SvTreeListEntry* pEntry )
+bool SvImpLBox::ButtonDownCheckExpand(const MouseEvent& rMEvt, SvTreeListEntry& rEntry)
 {
     bool bRet = false;
 
-    if (m_rView.IsEditingActive() && pEntry == m_rView.m_pEdEntry)
+    if (m_rView.IsEditingActive() && &rEntry == m_rView.m_pEdEntry)
         // inplace editing -> nothing to do
         bRet = true;
-    else if ( IsNodeButton( rMEvt.GetPosPixel(), pEntry ) )
+    else if (IsNodeButton(rMEvt.GetPosPixel(), rEntry))
     {
-        if (m_rView.IsExpanded(pEntry))
+        if (m_rView.IsExpanded(&rEntry))
         {
             m_rView.EndEditing(true);
-            m_rView.Collapse(pEntry);
+            m_rView.Collapse(&rEntry);
         }
         else
         {
             // you can expand an entry, which is in editing
-            m_rView.Expand(pEntry);
+            m_rView.Expand(rEntry);
         }
         bRet = true;
     }
@@ -1931,7 +1932,7 @@ void SvImpLBox::MouseButtonDown( const MouseEvent& rMEvt )
     //fdo#82270 Grabbing focus can invalidate the entries, re-fetch
     SvTreeListEntry* pEntry = GetEntry(aPos);
     // the entry can still be invalid!
-    if (!pEntry || !m_rView.GetViewData(pEntry))
+    if (!pEntry)
     {
         if (!rMEvt.GetModifier() && rMEvt.IsLeft())
             SelAllDestrAnch(false); // deselect all
@@ -1940,7 +1941,7 @@ void SvImpLBox::MouseButtonDown( const MouseEvent& rMEvt )
 
     tools::Long nY = GetEntryLine( pEntry );
     // Node-Button?
-    if( ButtonDownCheckExpand( rMEvt, pEntry ) )
+    if (ButtonDownCheckExpand(rMEvt, *pEntry))
         return;
 
     if (!EntryReallyHit(*pEntry, aPos, nY))
@@ -1989,7 +1990,7 @@ void SvImpLBox::MouseButtonDown( const MouseEvent& rMEvt )
                 if (m_rView.IsExpanded(pEntry))
                     m_rView.Collapse(pEntry);
                 else
-                    m_rView.Expand(pEntry);
+                    m_rView.Expand(*pEntry);
                 if( pEntry == m_pCursor )  // only if Entryitem was clicked
                                           // (Nodebutton is not an Entryitem!)
                     m_rView.Select(m_pCursor);
@@ -2065,7 +2066,7 @@ void SvImpLBox::ExpandAll()
     while (pCur && m_rTree.GetDepth(pCur) > nRefDepth)
     {
         if (pCur->HasChildren() && !m_rView.IsExpanded(pCur))
-            m_rView.Expand(pCur);
+            m_rView.Expand(*pCur);
         pCur = m_rTree.Next(pCur);
     }
 }
@@ -2194,7 +2195,7 @@ bool SvImpLBox::KeyInput( const KeyEvent& rKEvt)
                 // only try to expand if sublist is expandable,
                 // otherwise ignore the key press
                 if (IsExpandable() && !m_rView.IsExpanded(m_pCursor))
-                    m_rView.Expand(m_pCursor);
+                    m_rView.Expand(*m_pCursor);
             }
             else if (m_aHorSBar->IsVisible())
             {
@@ -2389,7 +2390,7 @@ bool SvImpLBox::KeyInput( const KeyEvent& rKEvt)
 
         case KEY_ADD:
             if (!m_rView.IsExpanded(m_pCursor))
-                m_rView.Expand(m_pCursor);
+                m_rView.Expand(*m_pCursor);
             if (bMod1)
                 ExpandAll();
             break;
@@ -2421,7 +2422,7 @@ bool SvImpLBox::KeyInput( const KeyEvent& rKEvt)
                 {
                     if (!m_rView.IsAllExpanded(m_pCursor))
                     {
-                        m_rView.Expand(m_pCursor);
+                        m_rView.Expand(*m_pCursor);
                         ExpandAll();
                     }
                     else
@@ -2816,16 +2817,14 @@ void SvImpLBox::PaintDDCursor(SvTreeListEntry* pEntry, bool bShow)
 {
     if (pEntry)
     {
-        if (SvViewDataEntry* pViewData = m_rView.GetViewData(pEntry))
-        {
-            pViewData->SetDragTarget(bShow);
+        SvViewDataEntry& rViewData = m_rView.GetViewData(pEntry);
+        rViewData.SetDragTarget(bShow);
 #ifdef MACOSX
-            // in MacOS we need to draw directly (as we are synchronous) or no invalidation happens
-            m_rView.PaintEntry1(*pEntry, GetEntryLine(pEntry), *m_rView.GetOutDev());
+        // in MacOS we need to draw directly (as we are synchronous) or no invalidation happens
+        m_rView.PaintEntry1(*pEntry, GetEntryLine(pEntry), *m_rView.GetOutDev());
 #else
-            InvalidateEntry(pEntry);
+        InvalidateEntry(pEntry);
 #endif
-        }
     }
 }
 
@@ -2919,7 +2918,7 @@ bool SvImpLBox::RequestHelp( const HelpEvent& rHEvt )
 
             aPos = GetEntryPosition( pEntry );
             aPos.setX(m_rView.GetTabPos(pEntry, pTab)); //pTab->GetPos();
-            Size aSize(pItem->GetWidth(m_rView, pEntry), pItem->GetHeight(m_rView, pEntry));
+            Size aSize(pItem->GetWidth(m_rView, *pEntry), pItem->GetHeight(m_rView, *pEntry));
             SvLBoxTab* pNextTab = NextTab( pTab );
             bool bItemClipped = false;
             // is the item cut off by its right neighbor?
@@ -3007,7 +3006,7 @@ void SvImpLBox::SetMostRight( SvTreeListEntry* pEntry )
 
     tools::Long nNextTab = nTabPos < nMaxRight ? nMaxRight : nMaxRight + 50;
     tools::Long nTabWidth = nNextTab - nTabPos + 1;
-    auto nItemSize = rItem.GetWidth(m_rView, pEntry);
+    auto nItemSize = rItem.GetWidth(m_rView, *pEntry);
     tools::Long nOffset = pTab->CalcOffset( nItemSize, nTabWidth );
 
     tools::Long nRight = nTabPos + nOffset + nItemSize;
@@ -3043,7 +3042,7 @@ void SvImpLBox::FindMostRight( SvTreeListEntry* pParent )
 
 void SvImpLBox::FindMostRight_Impl( SvTreeListEntry* pParent )
 {
-    SvTreeListEntries& rList = m_rTree.GetChildList(pParent);
+    const SvTreeListEntries& rList = m_rTree.GetChildList(pParent);
 
     size_t nCount = rList.size();
     for( size_t nCur = 0; nCur < nCount; nCur++ )
@@ -3127,8 +3126,8 @@ void SvImpLBox::CallEventListeners( VclEventId nEvent, void* pData )
 
 bool SvImpLBox::IsSelectable(const SvTreeListEntry& rEntry) const
 {
-    SvViewDataEntry* pViewDataNewCur = m_rView.GetViewDataEntry(&rEntry);
-    return (pViewDataNewCur == nullptr) || pViewDataNewCur->IsSelectable();
+    SvViewDataEntry& rViewDataNewCur = m_rView.GetViewDataEntry(rEntry);
+    return rViewDataNewCur.IsSelectable();
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

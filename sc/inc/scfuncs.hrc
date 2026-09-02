@@ -1584,6 +1584,74 @@ const TranslateId ocMATRIX_UNIT_ARY[] =
     NC_("ocMATRIX_UNIT", "The size of the unitary array.")
 };
 
+// -=*# Resources for function BYCOL #*=-
+const TranslateId ocBYCOL_ARY[] =
+{
+    NC_("ocBYCOL", "Applies a function to each column of an array. Returns a single-row array of the same width."),
+    NC_("ocBYCOL", "Array"),
+    NC_("ocBYCOL", "An array to calculate."),
+    NC_("ocBYCOL", "Function"),
+    NC_("ocBYCOL", "A function (LAMBDA or otherwise) that will be called on each column of the array.")
+};
+
+// -=*# Resources for function BYROW #*=-
+const TranslateId ocBYROW_ARY[] =
+{
+    NC_("ocBYROW", "Applies a function to each row of an array. Returns a single-column array of the same height."),
+    NC_("ocBYROW", "Array"),
+    NC_("ocBYROW", "An array to calculate."),
+    NC_("ocBYROW", "Function"),
+    NC_("ocBYROW", "A function (LAMBDA or otherwise) that will be called on each row of the array.")
+};
+
+// -=*# Resource for function MAKEARRAY #*=-
+const TranslateId ocMAKEARRAY_ARY[] =
+{
+    NC_("ocMAKEARRAY", "Array generation. Creates an array of certain dimensions, with generated contents."),
+    NC_("ocMAKEARRAY", "Rows"),
+    NC_("ocMAKEARRAY", "The number of rows the new array should have."),
+    NC_("ocMAKEARRAY", "Columns"),
+    NC_("ocMAKEARRAY", "The number of columns the new array should have."),
+    NC_("ocMAKEARRAY", "Generator"),
+    NC_("ocMAKEARRAY", "A LAMBDA function that is called with (row, column) values to generate each element of the array.")
+};
+
+// -=*# Resources for function MAP #*=-
+const TranslateId ocMAP_ARY[] =
+{
+    NC_("ocMAP", "Results in an array where each cell is computed by applying a formula to the corresponding cells of one or more input arrays."),
+    NC_("ocMAP", "Array 1"),
+    NC_("ocMAP", "The array that provides the arguments to the formula."),
+    NC_("ocMAP", "Formula or Array 2"),
+    NC_("ocMAP", "Additional arrays or a formula expression defined by a LAMBDA function or similar. The formula or function must be the final argument of the MAP function."),
+    NC_("ocMAP", "Formula or Array "),
+    NC_("ocMAP", "Additional arrays or a formula expression defined by a LAMBDA function or similar. The formula or function must be the final argument of the MAP function.")
+};
+
+// -=*# Resources for function REDUCE #*=-
+const TranslateId ocREDUCE_ARY[] =
+{
+    NC_("ocREDUCE", "Applies a custom LAMBDA function to each element in a given array and accumulates results to a single value."),
+    NC_("ocREDUCE", "Initial Value"),
+    NC_("ocREDUCE", "Optional initial value of the accumulator."),
+    NC_("ocREDUCE", "Array"),
+    NC_("ocREDUCE", "The array to be reduced."),
+    NC_("ocREDUCE", "Formula"),
+    NC_("ocREDUCE", "A formula expression or LAMBDA function that will be called on each cell of the array.")
+};
+
+// -=*# Resources for function SCAN #*=-
+const TranslateId ocSCAN_ARY[] =
+{
+    NC_("ocSCAN", "Progressively applies a LAMBDA function to each element in an array and returns an array of all intermediate values."),
+    NC_("ocSCAN", "Initial value"),
+    NC_("ocSCAN", "Optional initial value of the accumulator."),
+    NC_("ocSCAN", "Array"),
+    NC_("ocSCAN", "The array to be scanned."),
+    NC_("ocSCAN", "Formula"),
+    NC_("ocSCAN", "A LAMBDA function that will be called on each cell of the array.")
+};
+
 // -=*# Resource for function SUMPRODUCT #*=-
 const TranslateId ocSUM_PRODUCT_ARY[] =
 {
@@ -4453,6 +4521,34 @@ const TranslateId ocWRAPROWS_ARY[] =
     NC_("ocWRAPROWS", "The maximum number of values for each row."),
     NC_("ocWRAPROWS", "Pad with"),
     NC_("ocWRAPROWS", "The value with which to pad. The default is #N/A.")
+};
+
+// -=*# Resource for function ARRAYTOTEXT #*=-
+const TranslateId ocARRAYTOTEXT_ARY[] =
+{
+    NC_("ocARRAYTOTEXT", "Returns the values of a range or array as one text string."),
+    NC_("ocARRAYTOTEXT", "Array"),
+    NC_("ocARRAYTOTEXT", "The range or array to return as text."),
+    NC_("ocARRAYTOTEXT", "Format"),
+    NC_("ocARRAYTOTEXT", "The format of the returned text. 0 or omitted - concise format, the values separated by commas (default). 1 - strict format, an array constant in braces with quoted text, comma column separators and semicolon row separators.")
+};
+
+// -=*# Resource for function LAMBDA #*=-
+const TranslateId ocLAMBDA_ARY[] =
+{
+    NC_("ocLAMBDA", "Creates a custom, reusable %PRODUCTNAME function. The function accepts a set of parameters and one formula expression."),
+    NC_("ocLAMBDA", "Parameter 1"),
+    NC_("ocLAMBDA", "The name of the first parameter to the function. The name must follow the range naming rules and cannot be the output of a text formula."),
+    NC_("ocLAMBDA", "Formula or Parameter "),
+    NC_("ocLAMBDA", "An additional parameter or a formula expression. If entered as a formula, it must be the last argument of the function.")
+};
+
+// -=*# Resource for function ISOMITTED #*=-
+const TranslateId ocIS_OMITTED_ARY[] =
+{
+    NC_("ocIS_OMITTED", "Reports whether a LAMBDA parameter was provided (FALSE) or omitted (TRUE). Only valid within a LAMBDA."),
+    NC_("ocIS_OMITTED", "Name"),
+    NC_("ocIS_OMITTED", "The name of the parameter to check.")
 };
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

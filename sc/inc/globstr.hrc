@@ -64,7 +64,9 @@
 #define STR_UNDO_OUTLINELEVEL                   NC_("STR_UNDO_OUTLINELEVEL", "Select outline level")
 #define STR_UNDO_DOOUTLINEBLK                   NC_("STR_UNDO_DOOUTLINEBLK", "View Details")
 #define STR_UNDO_REDOOUTLINEBLK                 NC_("STR_UNDO_REDOOUTLINEBLK", "Hide details")
+// To translators: Outline refers to a group of cells
 #define STR_UNDO_REMOVEALLOTLNS                 NC_("STR_UNDO_REMOVEALLOTLNS", "Clear Outline")
+// To translators: Outline refers to a group of cells
 #define STR_UNDO_AUTOOUTLINE                    NC_("STR_UNDO_AUTOOUTLINE", "AutoOutline")
 #define STR_UNDO_SUBTOTALS                      NC_("STR_UNDO_SUBTOTALS", "Subtotals")
 #define STR_UNDO_TABLETOTALS                    NC_("STR_UNDO_TABLETOTALS", "Table Total Row")
@@ -234,6 +236,8 @@
 #define STR_MATRIXFRAGMENTERR                   NC_("STR_MATRIXFRAGMENTERR", "You cannot change only part of an array.")
 #define STR_PAGEHEADER                          NC_("STR_PAGEHEADER", "Header")
 #define STR_PAGEFOOTER                          NC_("STR_PAGEFOOTER", "Footer")
+#define STR_HF_ENABLE_HEADER                    NC_("STR_HF_ENABLE_HEADER", "Enable Header")
+#define STR_HF_ENABLE_FOOTER                    NC_("STR_HF_ENABLE_FOOTER", "Enable Footer")
 #define STR_TOO_MANY_COLUMNS_DATA_FORM          NC_("STR_TOO_MANY_COLUMNS_DATA_FORM", "Too many columns in the data form.")
 
 /* BEGIN error constants and error strings. */
@@ -270,6 +274,7 @@
 #define STR_LONG_ERR_MATRIX_SIZE                NC_("STR_LONG_ERR_MATRIX_SIZE", "Error: Array or matrix size")
 #define STR_LONG_ERR_CIRC_REF                   NC_("STR_LONG_ERR_CIRC_REF", "Error: Circular reference")
 #define STR_LONG_ERR_NO_CONV                    NC_("STR_LONG_ERR_NO_CONV", "Error: Calculation does not converge")
+#define STR_LONG_ERR_NOT_FUNC                   NC_("STR_LONG_ERR_NOT_FUNC", "Error: Attempted to call non-function")
 /* END error constants and error strings. */
 
 #define STR_CELL_FILTER                         NC_("STR_CELL_FILTER", "Filter")
@@ -395,6 +400,7 @@
 #define STR_QUICKHELP_REF                       NC_("STR_QUICKHELP_REF", "%1 R  × %2 C")
 #define STR_FUNCTIONLIST_MORE                   NC_("STR_FUNCTIONLIST_MORE", "More...")
 #define STR_ERR_INVALID_AREA                    NC_("STR_ERR_INVALID_AREA", "Invalid range")
+#define STR_ERR_HIDDEN_SHEET                    NC_("STR_ERR_HIDDEN_SHEET", "Target sheet is hidden")
 #define STR_CHARTTITLE                          NC_("STR_CHARTTITLE", "Chart Title")
 #define STR_AXISTITLE                           NC_("STR_AXISTITLE", "Axis Title")
 // Templates for data pilot tables.
@@ -606,6 +612,11 @@
 #define STR_DATAPROVIDER_NODATABASERANGE        NC_("STR_DATAPROVIDER_NODATABASERANGE", "A Database Range is missing.")
 #define STR_SHEET_VIEW_DEFAULT_VIEW_NAME        NC_("STR_SHEET_VIEW_DEFAULT_VIEW_NAME", "Default View")
 #define STR_SHEET_VIEW_TEMPORARY_NAME_TEMPLATE  NC_("STR_SHEET_VIEW_TEMPORARY_NAME_TEMPLATE", "Temporary View %1")
+
+#define STR_WARN_ONLYACTIVESHEET_TITLE          NC_("STR_WARN_ONLYACTIVESHEET_TITLE", "Warning")
+#define STR_WARN_ONLYACTIVESHEET_TEXT           NC_("STR_WARN_ONLYACTIVESHEET_TEXT", "Only the active sheet was saved.")
+#define STR_WARN_ONLYACTIVESHEET_QUEST          NC_("STR_WARN_ONLYACTIVESHEET_QUEST", "You are saving in the CSV text format, which means multiple sheets cannot be handled.")
+#define STR_WARN_ONLYACTIVESHEET_BUTTON         NC_("STR_WARN_ONLYACTIVESHEET_BUTTON", "Okay")
 
 #endif
 

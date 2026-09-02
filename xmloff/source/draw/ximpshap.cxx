@@ -355,6 +355,14 @@ void SdXMLShapeContext::endFastElement(sal_Int32 )
         GetImport().GetTextImport()->PopListContext();
     }
 
+    // Applied once the text is in, because setting it is what makes an empty placeholder show it.
+    if (!maPlaceholderPrompt.isEmpty())
+    {
+        auto xProp = mxShape.query<beans::XPropertySet>();
+        if (xProp && xProp->getPropertySetInfo()->hasPropertyByName(u"CustomPromptText"_ustr))
+            xProp->setPropertyValue(u"CustomPromptText"_ustr, uno::Any(maPlaceholderPrompt));
+    }
+
     if( !msHyperlink.isEmpty() ) try
     {
         uno::Reference< beans::XPropertySet > xProp( mxShape, uno::UNO_QUERY );
@@ -852,6 +860,12 @@ bool SdXMLShapeContext::processAttribute( const sax_fastparser::FastAttributeLis
             break;
         case XML_ELEMENT(PRESENTATION, XML_CLASS):
             maPresentationClass = aIter.toString();
+            break;
+        case XML_ELEMENT(LO_EXT, XML_PLACEHOLDER_CLASS):
+            maPlaceholderClass = aIter.toString();
+            break;
+        case XML_ELEMENT(LO_EXT, XML_PLACEHOLDER_PROMPT):
+            maPlaceholderPrompt = aIter.toString();
             break;
         case XML_ELEMENT(PRESENTATION, XML_STYLE_NAME):
             maDrawStyleName = aIter.toString();
@@ -1537,7 +1551,14 @@ void SdXMLTextBoxShapeContext::startFastElement (sal_Int32 nElement,
         // check if the current document supports presentation shapes
         if( GetImport().GetShapeImport()->IsPresentationShapesSupported() )
         {
-            if( IsXMLToken( maPresentationClass, XML_SUBTITLE ))
+            // A placeholder that holds text is written as an outline one, the only class ODF
+            // has for a frame of text, and says what it really is as an extension.
+            if( IsXMLToken( maPlaceholderClass, XML_GRAPHIC ) )
+            {
+                // XmlShapeType::PresGraphicObjectShape
+                service = u"com.sun.star.presentation.GraphicObjectShape"_ustr;
+            }
+            else if( IsXMLToken( maPresentationClass, XML_SUBTITLE ))
             {
                 // XmlShapeType::PresSubtitleShape
                 service = "com.sun.star.presentation.SubtitleShape";
@@ -3491,6 +3512,21 @@ css::uno::Reference< css::xml::sax::XFastContextHandler > SdXMLFrameShapeContext
     const uno::Reference< xml::sax::XFastAttributeList>& xAttrList )
 {
     SvXMLImportContextRef xContext;
+
+    if (nElement == XML_ELEMENT(LO_EXT, XML_GRAPHIC_CLIP_POLY))
+    {
+        // Not a shape of its own, so it is taken before the frame looks for one: it may well come
+        // first, as an empty presentation object has no draw:image for it to follow. Keep it until
+        // the frame ends, where such an object gets the shape this belongs on.
+        for (auto& aIter : sax_fastparser::castToFastAttributeList(xAttrList))
+        {
+            if (aIter.getToken() == XML_ELEMENT(SVG, XML_D)
+                || aIter.getToken() == XML_ELEMENT(SVG_COMPAT, XML_D))
+                maGraphicClipPath = aIter.toString();
+        }
+        return new SvXMLImportContext(GetImport());
+    }
+
     if( !mxImplContext.is() )
     {
         SvXMLShapeContext* pShapeContext = XMLShapeImportHelper::CreateFrameChildContext(
@@ -3694,6 +3730,35 @@ void SdXMLFrameShapeContext::endFastElement(sal_Int32 nElement)
                 mxImplContext->startFastElement( x, mxAttrList );
                 mxImplContext->endFastElement(x);
             }
+        }
+    }
+
+    if (!maGraphicClipPath.isEmpty())
+    {
+        // The image that survived, not the last one seen: a frame that carries a fallback image
+        // holds the discarded one there, already taken off the page and disposed. A placeholder
+        // frame states no image at all, and the context standing in for it is made above, after
+        // the surviving one was picked - so that one answers when there is no image to pick.
+        SvXMLImportContext* pShapeChild
+            = pSelectedContext.is() ? pSelectedContext.get() : mxImplContext.get();
+        SdXMLShapeContext* pSContext = dynamic_cast<SdXMLShapeContext*>(pShapeChild);
+        uno::Reference<beans::XPropertySet> xPropSet;
+        if (pSContext)
+            xPropSet = pSContext->getShape().query<beans::XPropertySet>();
+        // Only a graphic object has somewhere to keep it, and the attribute belongs to a frame,
+        // which may hold something else.
+        const bool bTakesTheClip
+            = xPropSet
+              && xPropSet->getPropertySetInfo()->hasPropertyByName(u"GraphicClipPolyPolygon"_ustr);
+        SAL_WARN_IF(!bTakesTheClip, "xmloff",
+                    "loext:graphic-clip-poly on a shape that takes none, clip polygon dropped");
+        basegfx::B2DPolyPolygon aPolyPolygon;
+        if (bTakesTheClip
+            && basegfx::utils::importFromSvgD(aPolyPolygon, maGraphicClipPath, false, nullptr))
+        {
+            drawing::PolyPolygonBezierCoords aCoords;
+            basegfx::utils::B2DPolyPolygonToUnoPolyPolygonBezierCoords(aPolyPolygon, aCoords);
+            xPropSet->setPropertyValue(u"GraphicClipPolyPolygon"_ustr, uno::Any(aCoords));
         }
     }
 

@@ -15,6 +15,7 @@
 
 #include <autonamecache.hxx>
 #include <tokenarray.hxx>
+#include <formula/token.hxx>
 #include <sharedformulagroups.hxx>
 #include <externalrefmgr.hxx>
 #include <tokenstringcontext.hxx>
@@ -24,6 +25,8 @@
 #include <svl/sharedstringpool.hxx>
 #include <svl/numformat.hxx>
 #include <sal/log.hxx>
+#include <algorithm>
+#include <initializer_list>
 #include <memory>
 #include <utility>
 #include <comphelper/string.hxx>
@@ -32,6 +35,90 @@ using namespace ::com::sun::star::uno;
 using namespace ::com::sun::star::sheet;
 
 namespace oox::xls {
+
+void stripRedundantParentheses(ScTokenArray& rArray,
+                               std::initializer_list<OpCode> aTriggerOpCodes)
+{
+    sal_uInt16 nPosition = 0;
+    while (nPosition + 4 < rArray.GetLen())
+    {
+        const OpCode eTrigger = rArray.TokenAt(nPosition)->GetOpCode();
+        const bool bIsTrigger = std::find(aTriggerOpCodes.begin(),
+                                          aTriggerOpCodes.end(),
+                                          eTrigger)
+                                != aTriggerOpCodes.end();
+        if (!bIsTrigger
+            || rArray.TokenAt(nPosition + 1)->GetOpCode() != ocOpen
+            || rArray.TokenAt(nPosition + 2)->GetOpCode() != ocOpen)
+        {
+            ++nPosition;
+            continue;
+        }
+        // Strip only when the inner pair fully spans the wrapper's
+        // argument.
+        sal_uInt16 nDepth = 2;
+        for (sal_uInt16 nScan = nPosition + 3; nScan < rArray.GetLen(); ++nScan)
+        {
+            OpCode eOp = rArray.TokenAt(nScan)->GetOpCode();
+            if (nDepth == 1)
+            {
+                if (eOp == ocClose)
+                {
+                    rArray.RemoveToken(nScan - 1, 1);
+                    rArray.RemoveToken(nPosition + 2, 1);
+                }
+                break;
+            }
+            if (eOp == ocOpen)
+                ++nDepth;
+            else if (eOp == ocClose)
+                --nDepth;
+        }
+        ++nPosition;
+    }
+}
+
+// Rewrite each four-token span
+//   ocAnchorArray ocOpen <push> ocClose
+// to
+//   <push> ocSpill
+// so the parse array matches the native postfix form. Inverse of what the export does.
+void liftAnchorArrayToPostfix(ScTokenArray& rArray)
+{
+    sal_uInt16 nPosition = 0;
+    while (nPosition + 1 < rArray.GetLen())
+    {
+        if (rArray.TokenAt(nPosition)->GetOpCode() == ocAnchorArray
+            && rArray.TokenAt(nPosition + 1)->GetOpCode() == ocOpen)
+        {
+            // Find the parenthesis that closes the one right after the
+            // spill opcode, tracking nesting so a parenthesised operand
+            // such as ((A1)) is taken whole.
+            sal_uInt16 nClose = nPosition + 2;
+            sal_uInt16 nDepth = 1;
+            while (nClose < rArray.GetLen())
+            {
+                const OpCode eInner = rArray.TokenAt(nClose)->GetOpCode();
+                if (eInner == ocOpen)
+                    ++nDepth;
+                else if (eInner == ocClose && --nDepth == 0)
+                    break;
+                ++nClose;
+            }
+            if (nClose < rArray.GetLen())
+            {
+                // Put the postfix operator behind the operand and drop the
+                // wrapper parentheses, keeping any inner ones.
+                rArray.ReplaceToken(nClose, new formula::FormulaByteToken(ocSpill),
+                                    formula::FormulaTokenArray::CODE_ONLY);
+                rArray.RemoveToken(nPosition + 1, 1);
+                rArray.RemoveToken(nPosition, 1);
+                continue;
+            }
+        }
+        ++nPosition;
+    }
+}
 
 namespace {
 
@@ -120,6 +207,8 @@ void applySharedFormulas(
             std::unique_ptr<ScTokenArray> pArray = aComp.CompileString(rTokenStr);
             if (pArray)
             {
+                stripRedundantParentheses(*pArray, {ocSingleValue});
+                liftAnchorArrayToPostfix(*pArray);
                 aComp.CompileTokenArray(); // Generate RPN tokens.
                 aGroups.set(nId, std::move(pArray), aPos);
             }
@@ -153,6 +242,9 @@ void applySharedFormulas(
                 pCell = new ScFormulaCell(rDoc.getDoc(), aPos, pArray->Clone());
             else
                 pCell = new ScFormulaCell(rDoc.getDoc(), aPos, *pArray);
+
+            if (rDesc.mbDynamicArrayMaster)
+                pCell->SetDynamicArrayMaster(true);
 
             rDoc.setFormulaCell(aPos, pCell);
             const bool bNeedNumberFormat = ((rDoc.getDoc().GetNumberFormat(
@@ -263,6 +355,9 @@ void applyCellFormulas(
             else
                 pCell = new ScFormulaCell(rDoc.getDoc(), aPos, p->mpCell->GetCode()->Clone());
 
+            if (rItem.mbDynamicArrayMaster)
+                pCell->SetDynamicArrayMaster(true);
+
             rDoc.setFormulaCell(aPos, pCell);
             if (rDoc.getDoc().GetNumberFormat(aPos.Col(), aPos.Row(), aPos.Tab()) % SV_COUNTRY_LANGUAGE_OFFSET == 0)
                 pCell->SetNeedNumberFormat(true);
@@ -279,9 +374,23 @@ void applyCellFormulas(
         if (!pCode)
             continue;
 
+        stripRedundantParentheses(*pCode, {ocSingleValue});
+        liftAnchorArrayToPostfix(*pCode);
         aCompiler.CompileTokenArray(); // Generate RPN tokens.
+        // OOXML leaves the @ of a plain =@ref# cell out of the text, expressing it by
+        // keeping the cell a non-array formula, so put it back. Anything wider keeps its
+        // _xlfn.SINGLE, so only the bare shape qualifies: one reference and the operator,
+        // not even parentheses. A dynamic-array master spills instead, so it gets no @.
+        if (!rItem.mbDynamicArrayMaster && pCode->GetLen() == 2
+            && pCode->TokenAt(0)->GetType() == formula::svSingleRef
+            && pCode->TokenAt(1)->GetOpCode() == ocSpill)
+        {
+            ScFormulaCell::ResolveImplicitIntersection(*pCode, rDoc.getDoc(), aPos);
+        }
 
         ScFormulaCell* pCell = new ScFormulaCell(rDoc.getDoc(), aPos, std::move(pCode));
+        if (rItem.mbDynamicArrayMaster)
+            pCell->SetDynamicArrayMaster(true);
         rDoc.setFormulaCell(aPos, pCell);
         if (rDoc.getDoc().GetNumberFormat(aPos.Col(), aPos.Row(), aPos.Tab()) % SV_COUNTRY_LANGUAGE_OFFSET == 0)
             pCell->SetNeedNumberFormat(true);
@@ -303,9 +412,36 @@ void applyArrayFormulas(
         std::unique_ptr<ScTokenArray> pArray(aComp.CompileString(rAddressItem.maTokenAndAddress.maTokenStr));
         if (pArray)
         {
+            stripRedundantParentheses(*pArray, {ocSingleValue});
+            liftAnchorArrayToPostfix(*pArray);
+
+            // A single-cell t="array" that starts with @ imports as
+            // a plain ScFormulaCell, not a CSE array. The @ collapses
+            // the operand to a scalar, so the cell reads back as
+            // =@(expr) instead of {=@(expr)}.
+            const sal_uInt16 nParseLength = pArray->GetLen();
+            const formula::FormulaToken* pFirst = nParseLength ? pArray->GetArray()[0] : nullptr;
+            const bool bSingleCellRange
+                = rAddressItem.maRange.aStart == rAddressItem.maRange.aEnd;
+            if (bSingleCellRange && pFirst
+                && pFirst->GetOpCode() == ocSingleValue)
+            {
+                aComp.CompileTokenArray();
+                ScFormulaCell* pCell = new ScFormulaCell(rDoc.getDoc(), aPos,
+                                                        std::move(pArray));
+                rDoc.setFormulaCell(aPos, pCell);
+                continue;
+            }
+
             rDoc.setMatrixCells(rAddressItem.maRange, *pArray,
                                 formula::FormulaGrammar::GRAM_OOXML,
                                 rAddressItem.mbCachedSpill);
+            if (rAddressItem.mbDynamicArrayMaster)
+            {
+                ScFormulaCell* pMaster = rDoc.getDoc().GetFormulaCell(aPos);
+                if (pMaster)
+                    pMaster->SetDynamicArrayMaster(true);
+            }
         }
     }
 }
@@ -422,9 +558,14 @@ FormulaBuffer::SharedFormulaEntry::SharedFormulaEntry(
     maAddress(rAddr), maTokenStr(std::move(aTokenStr)), mnSharedId(nSharedId) {}
 
 FormulaBuffer::SharedFormulaDesc::SharedFormulaDesc(
-    const ScAddress& rAddr, sal_Int32 nSharedId,
-    OUString aCellValue, sal_Int32 nValueType ) :
-    maAddress(rAddr), maCellValue(std::move(aCellValue)), mnSharedId(nSharedId), mnValueType(nValueType) {}
+        const ScAddress& rAddr, sal_Int32 nSharedId,
+        OUString aCellValue, sal_Int32 nValueType, bool bDynamicArrayMaster)
+    : maAddress(rAddr)
+    , maCellValue(std::move(aCellValue))
+    , mnSharedId(nSharedId)
+    , mnValueType(nValueType)
+    , mbDynamicArrayMaster(bDynamicArrayMaster)
+{}
 
 FormulaBuffer::SheetItem::SheetItem() :
     mpCellFormulas(nullptr),
@@ -513,25 +654,30 @@ void FormulaBuffer::createSharedFormulaMapEntry(
     rSharedFormulas.push_back( aEntry );
 }
 
-void FormulaBuffer::setCellFormula( const ScAddress& rAddress, const OUString& rTokenStr )
+void FormulaBuffer::setCellFormula(const ScAddress& rAddress, const OUString& rTokenStr,
+                                   bool bDynamicArrayMaster)
 {
     assert( rAddress.Tab() >= 0 && o3tl::make_unsigned(rAddress.Tab()) < maCellFormulas.size() );
-    maCellFormulas[ rAddress.Tab() ].emplace_back( rTokenStr, rAddress );
+    maCellFormulas[rAddress.Tab()].emplace_back(rTokenStr, rAddress, bDynamicArrayMaster);
 }
 
 void FormulaBuffer::setCellFormula(
-    const ScAddress& rAddress, sal_Int32 nSharedId, const OUString& rCellValue, sal_Int32 nValueType )
+    const ScAddress& rAddress, sal_Int32 nSharedId, const OUString& rCellValue, sal_Int32 nValueType,
+    bool bDynamicArrayMaster)
 {
     assert( rAddress.Tab() >= 0 && o3tl::make_unsigned(rAddress.Tab()) < maSharedFormulaIds.size() );
-    maSharedFormulaIds[rAddress.Tab()].emplace_back(rAddress, nSharedId, rCellValue, nValueType);
+    maSharedFormulaIds[rAddress.Tab()].emplace_back(rAddress, nSharedId, rCellValue, nValueType,
+                                                    bDynamicArrayMaster);
 }
 
-void FormulaBuffer::setCellArrayFormula( const ScRange& rRangeAddress, const ScAddress& rTokenAddress, const OUString& rTokenStr, bool bCachedSpill)
+void FormulaBuffer::setCellArrayFormula(const ScRange& rRangeAddress, const ScAddress& rTokenAddress,
+                                        const OUString& rTokenStr, bool bCachedSpill,
+                                        bool bDynamicArrayMaster)
 {
 
     TokenAddressItem tokenPair( rTokenStr, rTokenAddress );
     assert( rRangeAddress.aStart.Tab() >= 0 && o3tl::make_unsigned(rRangeAddress.aStart.Tab()) < maCellArrayFormulas.size() );
-    maCellArrayFormulas[rRangeAddress.aStart.Tab()].emplace_back(tokenPair, rRangeAddress, bCachedSpill);
+    maCellArrayFormulas[rRangeAddress.aStart.Tab()].emplace_back(tokenPair, rRangeAddress, bCachedSpill, bDynamicArrayMaster);
 }
 
 void FormulaBuffer::setCellFormulaValue(

@@ -109,7 +109,6 @@ public:
     virtual void SetComment(const OUString& rStr) override;
     virtual void SetObjDescription(const OUString& rStr) override;
     virtual OUString GetComment() const override;
-    virtual OUString GetObjDescription() const override;
 
     virtual OUString GetSdrRepeatComment() const override;
 

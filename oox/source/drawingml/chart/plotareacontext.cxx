@@ -22,6 +22,7 @@
 #include <drawingml/shapepropertiescontext.hxx>
 #include <drawingml/chart/axiscontext.hxx>
 #include <drawingml/chart/plotareamodel.hxx>
+#include <drawingml/chart/axismodel.hxx>
 #include <drawingml/chart/seriescontext.hxx>
 #include <drawingml/chart/typegroupcontext.hxx>
 #include <drawingml/chart/datatablecontext.hxx>
@@ -122,6 +123,9 @@ ContextHandlerRef PlotAreaContext::onCreateContext( sal_Int32 nElement, [[maybe_
     switch( getCurrentElement() )
     {
         case C_TOKEN( plotArea ):
+
+            mrModel.meCT = bMSO2007Doc ? ChartType::C_2007 : ChartType::C_OTHER;
+
             switch( nElement )
             {
                 case C_TOKEN( area3DChart ):
@@ -151,13 +155,13 @@ ContextHandlerRef PlotAreaContext::onCreateContext( sal_Int32 nElement, [[maybe_
                     return new SurfaceTypeGroupContext( *this, mrModel.maTypeGroups.create( nElement, bMSO2007Doc ) );
 
                 case C_TOKEN( catAx ):
-                    return new CatAxisContext( *this, mrModel.maAxes.create( nElement, bMSO2007Doc ) );
+                    return new CatAxisContext( *this, mrModel.maAxes.create( nElement, mrModel.meCT ) );
                 case C_TOKEN( dateAx ):
-                    return new DateAxisContext( *this, mrModel.maAxes.create( nElement, bMSO2007Doc ) );
+                    return new DateAxisContext( *this, mrModel.maAxes.create( nElement, mrModel.meCT ) );
                 case C_TOKEN( serAx ):
-                    return new SerAxisContext( *this, mrModel.maAxes.create( nElement, bMSO2007Doc ) );
+                    return new SerAxisContext( *this, mrModel.maAxes.create( nElement, mrModel.meCT ) );
                 case C_TOKEN( valAx ):
-                    return new ValAxisContext( *this, mrModel.maAxes.create( nElement, bMSO2007Doc ) );
+                    return new ValAxisContext( *this, mrModel.maAxes.create( nElement, mrModel.meCT ) );
 
                 case C_TOKEN( layout ):
                     return new LayoutContext( *this, mrModel.mxLayout.create() );
@@ -168,6 +172,9 @@ ContextHandlerRef PlotAreaContext::onCreateContext( sal_Int32 nElement, [[maybe_
             }
             break;
         case CX_TOKEN(plotArea) :
+
+            mrModel.meCT = ChartType::CX;
+
             switch (nElement) {
                 case CX_TOKEN(plotAreaRegion) :
                     return this;
@@ -175,14 +182,7 @@ ContextHandlerRef PlotAreaContext::onCreateContext( sal_Int32 nElement, [[maybe_
                     if (rAttribs.hasAttribute(XML_id)) {
                         sal_Int32 nId = rAttribs.getInteger(XML_id, -1);
                         // TODO: also handle attribute "hidden"
-
-                        // Add the id to the axis id list in the (fictitious)
-                        // type group
-                        std::shared_ptr<TypeGroupModel> aTGM =
-                            mrModel.maTypeGroups.get(mrModel.maTypeGroups.size() - 1);
-                        aTGM->maAxisIds.push_back(nId);
-
-                        return new CxAxisContext(*this, mrModel.maAxes.create(nElement, false), nId);
+                        return new CxAxisContext(*this, mrModel.maAxes.create(nElement, mrModel.meCT), nId);
                     } else {
                         return nullptr;
                     }
@@ -233,7 +233,13 @@ ContextHandlerRef PlotAreaContext::onCreateContext( sal_Int32 nElement, [[maybe_
                         mrModel.maTypeGroups.create(nTypeId, false);
                         std::shared_ptr<TypeGroupModel> aTGM =
                             mrModel.maTypeGroups.get(mrModel.maTypeGroups.size() - 1);
-                        return new ChartexSeriesContext(*this, aTGM->maSeries.create(false), mrModel.mnCurSeriesIdx++);
+                        SeriesModel& rSeries =
+                            aTGM->maSeries.create(false, nTypeId);
+                        if (rAttribs.hasAttribute(XML_ownerIdx))
+                            rSeries.monOwnerIdx
+                                = rAttribs.getInteger(XML_ownerIdx, 0);
+                        return new ChartexSeriesContext(*this,
+                                rSeries, mrModel.mnCurSeriesIdx++);
                     }
                     return nullptr;
                 case CX_TOKEN(plotSurface) :

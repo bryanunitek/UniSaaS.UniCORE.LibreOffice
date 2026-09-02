@@ -60,6 +60,7 @@
 #include <istyleaccess.hxx>
 #include <IDocumentListItems.hxx>
 #include <DocumentSettingManager.hxx>
+#include <FillBitmapNotify.hxx>
 #include <IDocumentLinksAdministration.hxx>
 #include <IDocumentRedlineAccess.hxx>
 #include <IDocumentLayoutAccess.hxx>
@@ -1093,6 +1094,15 @@ SwContentNode::SwContentNode( const SwNode& rWhere, const SwNodeType nNdType,
 
 void SwContentNode::ImplDestroy()
 {
+    // release any fill-bitmap link that has this node as its target,
+    // disconnected working copies have no SwDoc and no links
+    if (!IsDisconnected())
+    {
+        SwDoc& rDoc = GetDoc();
+        if (rDoc.HasFillBitmapLinks() && !rDoc.IsInDtor())
+            rDoc.getIDocumentLinksAdministration().onFillBitmapURLChanged(*this, u"");
+    }
+
     // The base class SwClient of SwFrame excludes itself from the dependency list!
     // Thus, we need to delete all Frames in the dependency list.
     if (!IsTextNode()) // see ~SwTextNode
@@ -1153,6 +1163,9 @@ void SwContentNode::SwClientNotify( const SwModify&, const SfxHint& rHint)
                 && pChangeHint->m_pOld
                 && SfxItemState::SET == pChangeHint->m_pOld->GetChgSet()->GetItemState(RES_CHRATR_HIDDEN, false))
             static_cast<SwTextNode*>(this)->SetCalcHiddenCharFlags();
+        sw::notifyFillBitmapIfChanged(*this, GetpSwAttrSet(), pChangeHint->m_pOld,
+                                      pChangeHint->m_pNew);
+
         CallSwClientNotify(rHint);
     }
     else if (rHint.GetId() == SfxHintId::SwObjectDying)
@@ -1630,6 +1643,12 @@ bool SwContentNode::SetAttr( const SfxItemSet& rSet )
             std::shared_ptr<SfxItemSet> pItemSet = pFnd->GetStyleHandle();
             mpAttrSet = std::dynamic_pointer_cast<SwAttrSet>(pItemSet);
             assert(bool(pItemSet) == bool(mpAttrSet) && "types do not match");
+
+            // Wholesale mpAttrSet replacement bypasses SwClientNotify, so
+            // the link tracker would miss a deferred XFillBitmapItem
+            // carried in by the autostyle (typical ODF load path for
+            // paragraph fills). Notify it directly.
+            sw::notifyFillBitmapForPutSet(*this, *mpAttrSet, mpAttrSet.get());
         }
 
         if ( bSetParent )

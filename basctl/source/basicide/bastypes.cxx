@@ -33,6 +33,7 @@
 
 #include <com/sun/star/script/XLibraryContainer.hpp>
 #include <com/sun/star/script/XLibraryContainerPassword.hpp>
+#include <basic/sbutil.hxx>
 #include <basctl/basctldllpublic.hxx>
 #include <sal/log.hxx>
 #include <sfx2/dispatch.hxx>
@@ -613,53 +614,6 @@ void TabBar::Sort()
     }
 }
 
-void CutLines( OUString& rStr, sal_Int32 nStartLine, sal_Int32 nLines )
-{
-    sal_Int32 nStartPos = 0;
-    sal_Int32 nLine = 0;
-    while ( nLine < nStartLine )
-    {
-        nStartPos = searchEOL( rStr, nStartPos );
-        if( nStartPos == -1 )
-            break;
-        nStartPos++;    // not the \n.
-        nLine++;
-    }
-
-    SAL_WARN_IF( nStartPos == -1, "basctl.basicide", "CutLines: Start line not found!" );
-
-    if ( nStartPos == -1 )
-        return;
-
-    sal_Int32 nEndPos = nStartPos;
-
-    for ( sal_Int32 i = 0; i < nLines; i++ )
-        nEndPos = searchEOL( rStr, nEndPos+1 );
-
-    if ( nEndPos == -1 ) // might happen at the last line
-        nEndPos = rStr.getLength();
-    else
-        nEndPos++;
-
-    rStr = OUString::Concat(rStr.subView( 0, nStartPos )) + rStr.subView( nEndPos );
-
-    // erase trailing empty lines
-    {
-        sal_Int32 n = nStartPos;
-        sal_Int32 nLen = rStr.getLength();
-        while ( ( n < nLen ) && ( rStr[ n ] == LINE_SEP ||
-                                  rStr[ n ] == LINE_SEP_CR ) )
-        {
-            n++;
-        }
-
-        if ( n > nStartPos )
-        {
-            rStr = OUString::Concat(rStr.subView( 0, nStartPos )) + rStr.subView( n );
-        }
-    }
-}
-
 sal_uInt32 CalcLineCount( SvStream& rStream )
 {
     sal_uInt32 nLFs = 0;
@@ -757,6 +711,7 @@ static bool QueryDel(std::u16string_view rName, const OUString &rStr, weld::Widg
 
 bool QueryDelMacro( std::u16string_view rName, weld::Widget* pParent )
 {
+    EnsureIde();
     return QueryDel( rName, IDEResId( RID_STR_QUERYDELMACRO ), pParent );
 }
 

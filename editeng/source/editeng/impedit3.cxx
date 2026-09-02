@@ -2889,6 +2889,7 @@ void ImpEditEngine::SeekCursor( ContentNode* pNode, sal_Int32 nPos, SvxFont& rFo
     {
         const SvxFontItem& rFontItem = static_cast<const SvxFontItem&>(pNode->GetContentAttribs().GetItem( GetScriptItemId( EE_CHAR_FONTINFO, nScriptType ) ));
         rFont.SetFamilyName( rFontItem.GetFamilyName() );
+        rFont.SetStyleName( rFontItem.GetStyleName() );
         rFont.SetFamily( rFontItem.GetFamily() );
         rFont.SetPitch( rFontItem.GetPitch() );
         rFont.SetCharSet( rFontItem.GetCharSet() );
@@ -4792,7 +4793,7 @@ Color ImpEditEngine::GetAutoColor(const SvxFont* pFont) const
     Color aBackgroundColor(COL_AUTO);
     if (pFont) //check for char background color
         aBackgroundColor = pFont->GetFillColor();
-    if (aBackgroundColor == COL_AUTO) // check for aother background (i.e: cell color)
+    if (aBackgroundColor == COL_AUTO) // check for another background (i.e: cell color)
         aBackgroundColor = GetBackgroundColor();
 
     const SfxViewShell* pKitSh = comphelper::LibreOfficeKit::isActive() ? SfxViewShell::Current() : nullptr;

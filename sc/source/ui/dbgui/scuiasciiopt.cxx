@@ -43,9 +43,9 @@
 
 #include <unicode/ucsdet.h>
 #include <sfx2/objsh.hxx>
-#include <svx/txenctab.hxx>
 #include <unotools/filteroptions_settings.hxx>
-#include <unotools/viewoptions.hxx>
+#include <svx/txenctab.hxx>
+#include <svtools/viewoptions.hxx>
 #include <vcl/weld/Button.hxx>
 #include <vcl/weld/Dialog.hxx>
 #include <vcl/weld/Frame.hxx>
@@ -260,12 +260,12 @@ ScImportAsciiDlg::ScImportAsciiDlg(weld::Window* pParent, std::u16string_view aD
     , mnStreamInitPos(mnStreamPos)
     , mnRowPosCount(0)
     , mcTextSep(ScAsciiOptions::cDefaultTextSep)
-    , meDetectedCharSet(RTL_TEXTENCODING_DONTKNOW)
-    , mbCharSetDetect(true)
+    , meDetectedEncoding(RTL_TEXTENCODING_DONTKNOW)
+    , mbEncodingDetect(true)
     , meCall(eCall)
-    , mxFtCharSet(m_xBuilder->weld_label(u"textcharset"_ustr))
-    , mxLbCharSet(new SvxTextEncodingBox(m_xBuilder->weld_combo_box(u"charset"_ustr)))
-    , mxFtDetectedCharSet(m_xBuilder->weld_label(u"textdetectedcharset"_ustr))
+    , mxFtEncoding(m_xBuilder->weld_label(u"textencoding"_ustr))
+    , mxLbEncoding(new SvxTextEncodingBox(m_xBuilder->weld_combo_box(u"encoding"_ustr)))
+    , mxFtDetectedEncoding(m_xBuilder->weld_label(u"textdetectedencoding"_ustr))
     , mxFtCustomLang(m_xBuilder->weld_label(u"textlanguage"_ustr))
     , mxLbCustomLang(new SvxLanguageBox(m_xBuilder->weld_combo_box(u"language"_ustr)))
     , mxFtRow(m_xBuilder->weld_label(u"textfromrow"_ustr))
@@ -374,16 +374,39 @@ ScImportAsciiDlg::ScImportAsciiDlg(weld::Window* pParent, std::u16string_view aD
     else
         mxRbDetectSep->set_active(true);
 
-    // Detect character set only once and then use it for "Detect" option.
-    mpDatStream->DetectEncoding();
-    meDetectedCharSet = mpDatStream->GetStreamEncoding();
-    if (meDetectedCharSet == RTL_TEXTENCODING_DONTKNOW)
+    // this can be called from different cases, at least these:
+    // 1) csv file opening
+    //    sc/source/ui/unoobj/filtuno.cxx ScFilterOptionsObj::execute,  part "!bExport && aFilterString == SC_TEXT_CSV_FILTER_NAME"
+    //    (eg: tdf#171097). In this part, we added in the same commit pInStream->SetStreamEncoding(RTL_TEXTENCODING_DONTKNOW)
+    //    since we can't presume about the encoding of a csv
+    //    => we need to call DetectEncoding
+    //
+    // 2) copy paste of 2 CJK lines in Calc from another application
+    //    sc/source/ui/view/viewfun5.cxx ScViewFunc::PasteDataFormatFormattedText,
+    //    part "nFormatId == SotClipboardFormatId::STRING || nFormatId == SotClipboardFormatId::STRING_TSVC..."
+    //    (eg: tdf#172587). In this part, we use ScImportStringStream which sets explicitly the encoding to RTL_TEXTENCODING_UNICODE
+    //    => we don't need to call DetectEncoding
+    //
+    // 3) use of Text to Columns function (in Calc/Data)
+    //    sc/source/ui/view/cellsh2.cxx ScCellShell::ExecuteDB, part SID_TEXT_TO_COLUMNS
+    //    (eg: tdf#166299). In this part, we use a SvMemoryStream and we already set the encoding to RTL_TEXTENCODING_UNICODE
+    //    => we don't need to call DetectEncoding
+
+    // Retrieve encoding, first time from the stream
+    meDetectedEncoding = mpDatStream->GetStreamEncoding();
+    if (meDetectedEncoding == RTL_TEXTENCODING_DONTKNOW)
     {
-        meDetectedCharSet = osl_getThreadTextEncoding();
-        // Prefer UTF-8, as UTF-16 would have already been detected from the stream.
-        // This gives a better chance that the file is going to be opened correctly.
-        if ( meDetectedCharSet == RTL_TEXTENCODING_UNICODE && mpDatStream )
-            meDetectedCharSet = RTL_TEXTENCODING_UTF8;
+        // the stream encoding was unknown, second chance
+        mpDatStream->DetectEncoding();
+        meDetectedEncoding = mpDatStream->GetStreamEncoding();
+        if (meDetectedEncoding == RTL_TEXTENCODING_DONTKNOW)
+        {
+            meDetectedEncoding = osl_getThreadTextEncoding();
+            // Prefer UTF-8, as UTF-16 would have already been detected from the stream.
+            // This gives a better chance that the file is going to be opened correctly.
+            if ( meDetectedEncoding == RTL_TEXTENCODING_UNICODE && mpDatStream )
+                meDetectedEncoding = RTL_TEXTENCODING_UTF8;
+        }
     }
 
     if (bIsTSV)
@@ -419,12 +442,12 @@ ScImportAsciiDlg::ScImportAsciiDlg(weld::Window* pParent, std::u16string_view aD
 
     // *** text encoding ListBox ***
     // all encodings allowed, including Unicode, but subsets are excluded
-    mxLbCharSet->FillFromTextEncodingTable( true );
+    mxLbEncoding->FillFromTextEncodingTable( true );
     // Insert one "SYSTEM" entry for compatibility in AsciiOptions and system
     // independent document linkage.
-    mxLbCharSet->InsertTextEncoding( RTL_TEXTENCODING_DONTKNOW, ScResId( SCSTR_CHARSET_USER ) );
-    // Insert one for detecting charset.
-    mxLbCharSet->InsertTextEncoding( RTL_TEXTENCODING_USER_DETECTED, "- " + ScResId( SCSTR_AUTOMATIC ) + " -" );
+    mxLbEncoding->InsertTextEncoding( RTL_TEXTENCODING_DONTKNOW, ScResId( SCSTR_ENCODING_USER ) );
+    // Insert one for detecting encoding.
+    mxLbEncoding->InsertTextEncoding( RTL_TEXTENCODING_USER_DETECTED, "- " + ScResId( SCSTR_AUTOMATIC ) + " -" );
 
     // Clipboard is always Unicode, and TextToColumns doesn't use encoding.
     if (meCall != SC_IMPORTFILE)
@@ -432,10 +455,10 @@ ScImportAsciiDlg::ScImportAsciiDlg(weld::Window* pParent, std::u16string_view aD
     else if (eEncoding == RTL_TEXTENCODING_DONTKNOW)
         eEncoding = RTL_TEXTENCODING_USER_DETECTED;
 
-    mxLbCharSet->SelectTextEncoding(eEncoding);
+    mxLbEncoding->SelectTextEncoding(eEncoding);
 
-    SetSelectedCharSet();
-    mxLbCharSet->connect_changed( LINK( this, ScImportAsciiDlg, CharSetHdl ) );
+    SetSelectedEncoding();
+    mxLbEncoding->connect_changed( LINK( this, ScImportAsciiDlg, EncodingHdl ) );
 
     mxLbCustomLang->SetLanguageList(
         SvxLanguageListFlags::ALL | SvxLanguageListFlags::ONLY_KNOWN, false, false);
@@ -443,10 +466,18 @@ ScImportAsciiDlg::ScImportAsciiDlg(weld::Window* pParent, std::u16string_view aD
     mxLbCustomLang->set_active_id(static_cast<LanguageType>(nLanguage));
 
     // *** column type ListBox ***
-    OUString aColumnUser( ScResId( SCSTR_COLUMN_USER ) );
-    for (sal_Int32 nIdx {0}; nIdx>=0; )
+    static const std::array<TranslateId, 7> aColumnTypes = {
+        SCSTR_COLUMN_USER_STANDARD,
+        SCSTR_COLUMN_USER_TEXT,
+        SCSTR_COLUMN_USER_DATE_DMY,
+        SCSTR_COLUMN_USER_DATE_MDY,
+        SCSTR_COLUMN_USER_DATE_YMD,
+        SCSTR_COLUMN_USER_US_ENGLISH,
+        SCSTR_COLUMN_USER_SKIP,
+    };
+    for (const auto& nId : aColumnTypes)
     {
-        mxLbType->append_text(aColumnUser.getToken(0, ';', nIdx));
+        mxLbType->append_text(ScResId(nId));
     }
 
     mxLbType->connect_changed( LINK( this, ScImportAsciiDlg, LbColTypeHdl ) );
@@ -471,7 +502,7 @@ ScImportAsciiDlg::ScImportAsciiDlg(weld::Window* pParent, std::u16string_view aD
     if (nFromRow != 1)
     {
         mxNfRow->set_value(nFromRow);
-        // tdf#163638 - show visual indicator for from rows
+        // tdf#163638 - show visual indicator for the "From Row" value
         mxTableBox->GetGrid().Execute(CSVCMD_SETFIRSTIMPORTLINE, nFromRow - 1);
     }
     mxNfRow->connect_value_changed(LINK(this, ScImportAsciiDlg, FirstRowHdl));
@@ -480,8 +511,8 @@ ScImportAsciiDlg::ScImportAsciiDlg(weld::Window* pParent, std::u16string_view aD
     {
         m_xBuilder->weld_frame(u"frame1"_ustr)->hide(); // the whole "Import" section
 
-        mxFtCharSet->set_sensitive(false);
-        mxLbCharSet->set_sensitive(false);
+        mxFtEncoding->set_sensitive(false);
+        mxLbEncoding->set_sensitive(false);
         mxFtCustomLang->set_sensitive(false);
         mxLbCustomLang->set_active_id(LANGUAGE_SYSTEM);
         mxLbCustomLang->set_sensitive(false);
@@ -532,7 +563,7 @@ bool ScImportAsciiDlg::GetLine( sal_uLong nLine, OUString &rText, sal_Unicode& r
     if (!mpRowPosArray)
         mpRowPosArray.reset( new sal_uLong[ASCIIDLG_MAXROWS + 2] );
 
-    if (!mnRowPosCount) // complete re-fresh
+    if (!mnRowPosCount) // complete refresh
     {
         memset( mpRowPosArray.get(), 0, sizeof(mpRowPosArray[0]) * (ASCIIDLG_MAXROWS+2));
 
@@ -573,10 +604,10 @@ bool ScImportAsciiDlg::GetLine( sal_uLong nLine, OUString &rText, sal_Unicode& r
         mnStreamPos = mpDatStream->Tell();
     }
 
-    //  If the file content isn't unicode, ReadUniStringLine
+    //  If the file content isn't Unicode, ReadUniStringLine
     //  may try to seek beyond the file's end and cause a CANTSEEK error
     //  (depending on the stream type). The error code has to be cleared,
-    //  or further read operations (including non-unicode) will fail.
+    //  or further read operations (including non-Unicode) will fail.
     if ( mpDatStream->GetError() == ERRCODE_IO_CANTSEEK )
         mpDatStream->ResetError();
 
@@ -587,8 +618,8 @@ bool ScImportAsciiDlg::GetLine( sal_uLong nLine, OUString &rText, sal_Unicode& r
 
 void ScImportAsciiDlg::GetOptions( ScAsciiOptions& rOpt )
 {
-    rOpt.SetCharSet( meCharSet );
-    rOpt.SetCharSetSystem( mbCharSetSystem );
+    rOpt.SetEncoding( meEncoding );
+    rOpt.SetEncodingSystem( mbEncodingSystem );
     rOpt.SetLanguage(mxLbCustomLang->get_active_id());
     rOpt.SetFixedLen( mxRbFixed->get_active() );
     rOpt.SetStartRow( mxNfRow->get_value() );
@@ -626,7 +657,7 @@ void ScImportAsciiDlg::SaveParameters()
                      mxCkbQuotedAsText->get_active(), mxCkbDetectNumber->get_active(), mxCkbDetectScientificNumber->get_active(),
                      mxRbFixed->get_active() ? FIXED : (mxRbDetectSep->get_active() ? DETECT_SEPARATOR : SEPARATOR),
                      mxNfRow->get_value(),
-                     mxLbCharSet->GetSelectTextEncoding(),
+                     mxLbEncoding->GetSelectTextEncoding(),
                      static_cast<sal_uInt16>(mxLbCustomLang->get_active_id()),
                      mxCkbSkipEmptyCells->get_active(), mxCkbRemoveSpace->get_active(),
                      mxCkbEvaluateFormulas->get_active());
@@ -676,26 +707,26 @@ void ScImportAsciiDlg::SetSeparators( sal_Unicode cSep )
     }
 }
 
-void ScImportAsciiDlg::SetSelectedCharSet()
+void ScImportAsciiDlg::SetSelectedEncoding()
 {
-    rtl_TextEncoding eOldCharSet = meCharSet;
-    meCharSet = mxLbCharSet->GetSelectTextEncoding();
-    mbCharSetDetect = (meCharSet == RTL_TEXTENCODING_USER_DETECTED);
-    mbCharSetSystem = (meCharSet == RTL_TEXTENCODING_DONTKNOW);
-    if (mbCharSetDetect)
+    rtl_TextEncoding eOldEncoding = meEncoding;
+    meEncoding = mxLbEncoding->GetSelectTextEncoding();
+    mbEncodingDetect = (meEncoding == RTL_TEXTENCODING_USER_DETECTED);
+    mbEncodingSystem = (meEncoding == RTL_TEXTENCODING_DONTKNOW);
+    if (mbEncodingDetect)
     {
-        meCharSet = meDetectedCharSet;
-        mxFtDetectedCharSet->set_label(SvxTextEncodingTable::GetTextString(meCharSet));
+        meEncoding = meDetectedEncoding;
+        mxFtDetectedEncoding->set_label(SvxTextEncodingTable::GetTextString(meEncoding));
     }
-    else if( mbCharSetSystem )
+    else if( mbEncodingSystem )
     {
-        meCharSet = osl_getThreadTextEncoding();
-        mxFtDetectedCharSet->set_label(SvxTextEncodingTable::GetTextString(meCharSet));
+        meEncoding = osl_getThreadTextEncoding();
+        mxFtDetectedEncoding->set_label(SvxTextEncodingTable::GetTextString(meEncoding));
     }
     else
-        mxFtDetectedCharSet->set_label(SvxTextEncodingTable::GetTextString(meCharSet));
+        mxFtDetectedEncoding->set_label(SvxTextEncodingTable::GetTextString(meEncoding));
 
-    if (eOldCharSet != meCharSet)
+    if (eOldEncoding != meEncoding)
         DetectCsvSeparators();
 
     RbSepFix();
@@ -768,7 +799,7 @@ void ScImportAsciiDlg::SetupSeparatorCtrls()
 void ScImportAsciiDlg::DetectCsvSeparators()
 {
     mpDatStream->Seek(mnStreamInitPos);
-    SfxObjectShell::DetectCsvSeparators(*mpDatStream, meCharSet, maDetectedFieldSeps, mcTextSep);
+    SfxObjectShell::DetectCsvSeparators(*mpDatStream, meEncoding, maDetectedFieldSeps, mcTextSep);
     mpDatStream->Seek(mnStreamPos);
 }
 
@@ -776,7 +807,7 @@ void ScImportAsciiDlg::UpdateVertical()
 {
     mnRowPosCount = 0;
     if (mpDatStream)
-        mpDatStream->SetStreamEncoding(meCharSet);
+        mpDatStream->SetStreamEncoding(meEncoding);
 }
 
 void ScImportAsciiDlg::RbSepFix()
@@ -813,7 +844,7 @@ IMPL_LINK( ScImportAsciiDlg, SeparatorComboBoxHdl, weld::ComboBox&, rCtrl, void 
     SeparatorHdl(&rCtrl);
 }
 
-IMPL_LINK( ScImportAsciiDlg, SeparatorEditHdl, weld::Entry&, rEdit, void )
+IMPL_LINK(ScImportAsciiDlg, SeparatorEditHdl, weld::TextWidget&, rEdit, void)
 {
     SeparatorHdl(&rEdit);
 }
@@ -848,7 +879,7 @@ void ScImportAsciiDlg::SeparatorHdl(const weld::Widget* pCtrl)
     OUString aOldFldSeps( maFieldSeparators);
     sal_Unicode cOldSep = mcTextSep;
     mcTextSep = lcl_CharFromCombo( *mxCbTextSep, SCSTR_TEXTSEP );
-    // Any separator changed may result in completely different lines due to
+    // Any separator change may result in completely different lines due to
     // embedded line breaks.
     if (cOldSep != mcTextSep)
     {
@@ -870,15 +901,15 @@ void ScImportAsciiDlg::SeparatorHdl(const weld::Widget* pCtrl)
     mxTableBox->GetGrid().Execute( CSVCMD_NEWCELLTEXTS );
 }
 
-IMPL_LINK_NOARG(ScImportAsciiDlg, CharSetHdl, weld::ComboBox&, void)
+IMPL_LINK_NOARG(ScImportAsciiDlg, EncodingHdl, weld::ComboBox&, void)
 {
-    if (mxLbCharSet->get_active() != -1)
+    if (mxLbEncoding->get_active() != -1)
     {
         weld::WaitObject aWaitObj(m_xDialog.get());
-        rtl_TextEncoding eOldCharSet = meCharSet;
-        SetSelectedCharSet();
-        // switching char-set invalidates 8bit -> String conversions
-        if (eOldCharSet != meCharSet)
+        rtl_TextEncoding eOldEncoding = meEncoding;
+        SetSelectedEncoding();
+        // switching encoding invalidates 8bit -> String conversions
+        if (eOldEncoding != meEncoding)
             UpdateVertical();
 
         mxTableBox->GetGrid().Execute( CSVCMD_NEWCELLTEXTS );

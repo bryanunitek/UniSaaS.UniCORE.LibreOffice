@@ -51,7 +51,11 @@ enum
     PROP_HISTOGRAMCHARTTYPE_BINCOUNT,
     PROP_HISTOGRAMCHARTTYPE_FREQUENCYTYPE,
     PROP_HISTOGRAMCHARTTYPE_OVERLAP_SEQUENCE,
-    PROP_HISTOGRAMCHARTTYPE_GAPWIDTH_SEQUENCE
+    PROP_HISTOGRAMCHARTTYPE_GAPWIDTH_SEQUENCE,
+    PROP_HISTOGRAMCHARTTYPE_USEUNDERFLOWBIN,
+    PROP_HISTOGRAMCHARTTYPE_UNDERFLOWBINVALUE,
+    PROP_HISTOGRAMCHARTTYPE_USEOVERFLOWBIN,
+    PROP_HISTOGRAMCHARTTYPE_OVERFLOWBINVALUE
 };
 
 void lcl_AddPropertiesToVector(std::vector<beans::Property>& rOutProperties)
@@ -77,6 +81,23 @@ void lcl_AddPropertiesToVector(std::vector<beans::Property>& rOutProperties)
                                 cppu::UnoType<uno::Sequence<sal_Int32>>::get(),
                                 beans::PropertyAttribute::BOUND
                                     | beans::PropertyAttribute::MAYBEDEFAULT);
+
+    rOutProperties.emplace_back(
+        "UseUnderflowBin", PROP_HISTOGRAMCHARTTYPE_USEUNDERFLOWBIN, cppu::UnoType<bool>::get(),
+        beans::PropertyAttribute::BOUND | beans::PropertyAttribute::MAYBEDEFAULT);
+
+    rOutProperties.emplace_back("UnderflowBinValue", PROP_HISTOGRAMCHARTTYPE_UNDERFLOWBINVALUE,
+                                cppu::UnoType<double>::get(),
+                                beans::PropertyAttribute::BOUND
+                                    | beans::PropertyAttribute::MAYBEDEFAULT);
+
+    rOutProperties.emplace_back(
+        "UseOverflowBin", PROP_HISTOGRAMCHARTTYPE_USEOVERFLOWBIN, cppu::UnoType<bool>::get(),
+        beans::PropertyAttribute::BOUND | beans::PropertyAttribute::MAYBEDEFAULT);
+
+    rOutProperties.emplace_back(
+        "OverflowBinValue", PROP_HISTOGRAMCHARTTYPE_OVERFLOWBINVALUE, cppu::UnoType<double>::get(),
+        beans::PropertyAttribute::BOUND | beans::PropertyAttribute::MAYBEDEFAULT);
 }
 
 ::cppu::OPropertyArrayHelper& StaticHistogramChartTypeInfoHelper()
@@ -169,11 +190,19 @@ void HistogramChartType::createCalculatedDataSeries()
     sal_Int32 nFrequencyType = 0;
     double fBinWidth = 0.0;
     sal_Int32 nBinCount = 0;
+    bool bUseUnderflowBin = false;
+    double fUnderflowBinValue = 0.0;
+    bool bUseOverflowBin = false;
+    double fOverflowBinValue = 0.0;
     try
     {
         getPropertyValue(u"FrequencyType"_ustr) >>= nFrequencyType;
         getPropertyValue(u"BinWidth"_ustr) >>= fBinWidth;
         getPropertyValue(u"BinCount"_ustr) >>= nBinCount;
+        getPropertyValue(u"UseUnderflowBin"_ustr) >>= bUseUnderflowBin;
+        getPropertyValue(u"UnderflowBinValue"_ustr) >>= fUnderflowBinValue;
+        getPropertyValue(u"UseOverflowBin"_ustr) >>= bUseOverflowBin;
+        getPropertyValue(u"OverflowBinValue"_ustr) >>= fOverflowBinValue;
     }
     catch (const uno::Exception&)
     {
@@ -205,42 +234,58 @@ void HistogramChartType::createCalculatedDataSeries()
         }
 
         // 2. Regenerate the calculated-y frequencies
-        rtl::Reference<HistogramDataSequence> xCalcSeq
-            = new HistogramDataSequence(xValuesY, false, nFrequencyType, fBinWidth, nBinCount);
+        rtl::Reference<HistogramDataSequence> xCalcSeq = new HistogramDataSequence(
+            xValuesY, false, nFrequencyType, fBinWidth, nBinCount, bUseUnderflowBin,
+            fUnderflowBinValue, bUseOverflowBin, fOverflowBinValue);
         uno::Reference<chart2::data::XLabeledDataSequence> xLabeledCalc
             = new LabeledDataSequence(xCalcSeq);
         xSeries->setCalculatedYSequence(xLabeledCalc);
 
-        // 3. Regenerate the categories (bins)
-        rtl::Reference<HistogramDataSequence> xCatSeq
-            = new HistogramDataSequence(xValuesY, true, nFrequencyType, fBinWidth, nBinCount);
+        auto createCategorySequence = [&]() {
+            rtl::Reference<HistogramDataSequence> xCatSeq = new HistogramDataSequence(
+                xValuesY, true, nFrequencyType, fBinWidth, nBinCount, bUseUnderflowBin,
+                fUnderflowBinValue, bUseOverflowBin, fOverflowBinValue);
 
-        uno::Reference<chart2::data::XDataSequence> xCatDataSeq(xCatSeq);
-        uno::Reference<beans::XPropertySet> xCatProp(xCatDataSeq, uno::UNO_QUERY);
-        if (xCatProp.is())
-        {
-            xCatProp->setPropertyValue(u"Role"_ustr, uno::Any(u"categories"_ustr));
-        }
+            uno::Reference<chart2::data::XDataSequence> xCatDataSeq(xCatSeq);
+            uno::Reference<beans::XPropertySet> xCatProp(xCatDataSeq, uno::UNO_QUERY);
+            if (xCatProp.is())
+            {
+                xCatProp->setPropertyValue(u"Role"_ustr, uno::Any(u"categories"_ustr));
+            }
 
-        uno::Reference<chart2::data::XLabeledDataSequence> xLabeledCat
-            = new LabeledDataSequence(xCatSeq);
+            return uno::Reference<chart2::data::XLabeledDataSequence>(
+                new LabeledDataSequence(xCatSeq));
+        };
 
-        // 4. Attach the categories to the DataSeries so the View can find them
+        // 3. Update existing histogram categories in place. The X axis and the DataSeries hold
+        // the same sequence, so new bin parameters reach the axis labels through it.
         bool bHasCategories = false;
         for (auto& seq : aSeqs)
         {
-            if (seq.is() && DataSeriesHelper::getRole(seq) == "categories")
+            if (!seq.is() || DataSeriesHelper::getRole(seq) != u"categories"_ustr)
+                continue;
+
+            rtl::Reference<HistogramDataSequence> xHistogramSequence
+                = dynamic_cast<HistogramDataSequence*>(seq->getValues().get());
+
+            if (xHistogramSequence.is())
             {
-                seq = xLabeledCat;
-                bHasCategories = true;
-                break;
+                xHistogramSequence->setBinningParameters(nFrequencyType, fBinWidth, nBinCount,
+                                                         bUseUnderflowBin, fUnderflowBinValue,
+                                                         bUseOverflowBin, fOverflowBinValue);
             }
+            else
+            {
+                seq = createCategorySequence();
+            }
+
+            bHasCategories = true;
+            break;
         }
 
+        // 4. Attach generated categories when the series does not have them yet
         if (!bHasCategories)
-        {
-            aSeqs.push_back(xLabeledCat);
-        }
+            aSeqs.push_back(createCategorySequence());
 
         xSeries->setData(aSeqs);
     }
@@ -285,6 +330,14 @@ void HistogramChartType::GetDefaultValue(sal_Int32 nHandle, uno::Any& rAny) cons
             aTmp, PROP_HISTOGRAMCHARTTYPE_OVERLAP_SEQUENCE, aSeq);
         ::chart::PropertyHelper::setPropertyValueDefault(
             aTmp, PROP_HISTOGRAMCHARTTYPE_GAPWIDTH_SEQUENCE, aSeq);
+        ::chart::PropertyHelper::setPropertyValueDefault(
+            aTmp, PROP_HISTOGRAMCHARTTYPE_USEUNDERFLOWBIN, false);
+        ::chart::PropertyHelper::setPropertyValueDefault(
+            aTmp, PROP_HISTOGRAMCHARTTYPE_UNDERFLOWBINVALUE, 0.0);
+        ::chart::PropertyHelper::setPropertyValueDefault(
+            aTmp, PROP_HISTOGRAMCHARTTYPE_USEOVERFLOWBIN, false);
+        ::chart::PropertyHelper::setPropertyValueDefault(
+            aTmp, PROP_HISTOGRAMCHARTTYPE_OVERFLOWBINVALUE, 0.0);
 
         return aTmp;
     }();
@@ -294,6 +347,14 @@ void HistogramChartType::GetDefaultValue(sal_Int32 nHandle, uno::Any& rAny) cons
         rAny.clear();
     else
         rAny = (*aFound).second;
+}
+
+// HistogramDataSequence snapshots binning settings, so changing histogram
+// bin properties must rebuild the derived frequency and category sequences.
+void HistogramChartType::firePropertyChangeEvent()
+{
+    createCalculatedDataSeries();
+    ChartType::firePropertyChangeEvent();
 }
 
 // ____ XPropertySet ____

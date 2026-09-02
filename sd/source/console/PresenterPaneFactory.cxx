@@ -31,7 +31,6 @@
 using namespace ::com::sun::star;
 using namespace ::com::sun::star::uno;
 using namespace ::com::sun::star::lang;
-using namespace ::com::sun::star::drawing::framework;
 
 namespace sdext::presenter {
 
@@ -93,17 +92,6 @@ void PresenterPaneFactory::disposing(std::unique_lock<std::mutex>&)
     if (xCC.is())
         xCC->removeResourceFactoryForReference(this);
     mxConfigurationControllerWeak.clear();
-
-    // Dispose the panes in the cache.
-    if (mpResourceCache != nullptr)
-    {
-        for (const auto& rxPane : *mpResourceCache)
-        {
-            if (rxPane.second.is())
-                rxPane.second->dispose();
-        }
-        mpResourceCache.reset();
-    }
 }
 
 //----- AbstractPaneFactory ----------------------------------------------------------
@@ -123,32 +111,7 @@ rtl::Reference<sd::framework::AbstractResource> PresenterPaneFactory::createReso
     if (sPaneURL.isEmpty())
         return nullptr;
 
-    if (mpResourceCache != nullptr)
-    {
-        // Has the requested resource already been created?
-        ResourceContainer::const_iterator iResource (mpResourceCache->find(sPaneURL));
-        if (iResource != mpResourceCache->end())
-        {
-            // Yes.  Mark it as active.
-            rtl::Reference<PresenterPaneContainer> pPaneContainer(
-                mpPresenterController->GetPaneContainer());
-            PresenterPaneContainer::SharedPaneDescriptor pDescriptor (
-                pPaneContainer->FindPaneURL(sPaneURL));
-            if (pDescriptor)
-            {
-                pDescriptor->SetActivationState(true);
-                if (pDescriptor->mxBorderWindow.is())
-                    pDescriptor->mxBorderWindow->setVisible(true);
-                pPaneContainer->StorePane(pDescriptor->mxPane);
-            }
-
-            return iResource->second;
-        }
-    }
-
-    // No.  Create a new one.
-    rtl::Reference<sd::framework::AbstractResource> xResource = CreatePane(rxPaneId);
-    return xResource;
+    return CreatePane(rxPaneId);
 }
 
 void PresenterPaneFactory::releaseResource (const rtl::Reference<sd::framework::AbstractResource>& rxResource)
@@ -174,22 +137,13 @@ void PresenterPaneFactory::releaseResource (const rtl::Reference<sd::framework::
     if (pDescriptor->mxBorderWindow.is())
         pDescriptor->mxBorderWindow->setVisible(false);
 
-    if (mpResourceCache != nullptr)
-    {
-        // Store the pane in the cache.
-        (*mpResourceCache)[sPaneURL] = rxResource;
-    }
-    else
-    {
-        // Dispose the pane.
-        if (rxResource.is())
-            rxResource->dispose();
-    }
+    // Dispose the pane.
+    if (rxResource.is())
+        rxResource->dispose();
 }
 
-
-rtl::Reference<sd::framework::AbstractResource> PresenterPaneFactory::CreatePane (
-    const rtl::Reference<sd::framework::ResourceId>& rxPaneId)
+rtl::Reference<sdext::presenter::PresenterPaneBase>
+PresenterPaneFactory::CreatePane(const rtl::Reference<sd::framework::ResourceId>& rxPaneId)
 {
     if ( ! rxPaneId.is())
         return nullptr;
@@ -221,14 +175,12 @@ rtl::Reference<sd::framework::AbstractResource> PresenterPaneFactory::CreatePane
     return nullptr;
 }
 
-rtl::Reference<sd::framework::AbstractResource> PresenterPaneFactory::CreatePane (
-    const rtl::Reference<sd::framework::ResourceId>& rxPaneId,
-    const rtl::Reference<sd::framework::AbstractPane>& rxParentPane,
-    const bool bIsSpritePane)
+rtl::Reference<sdext::presenter::PresenterPaneBase>
+PresenterPaneFactory::CreatePane(const rtl::Reference<sd::framework::ResourceId>& rxPaneId,
+                                 const rtl::Reference<sd::framework::AbstractPane>& rxParentPane,
+                                 const bool bIsSpritePane)
 {
     Reference<XComponentContext> xContext (mxComponentContextWeak);
-    Reference<lang::XMultiComponentFactory> xFactory (
-        xContext->getServiceManager(), UNO_SET_THROW);
 
     // Create a border window and canvas and store it in the pane
     // container.

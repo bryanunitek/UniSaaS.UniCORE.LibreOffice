@@ -391,10 +391,11 @@ OUString encloseOrEscapeLiteral(const OUString& string, bool force)
     if (force)
         return "\"" + string + "\"";
     OUStringBuffer result;
+    // Standard math operators (+, -, *, /, =, <, >) are kept bare by the loop
+    // below, so they are deliberately not listed here.
     const std::unordered_set<sal_Unicode> DelimiterTable1{
         //keeping " as first entry is important to not get into recursive replacement
-        ' ', '\t', '\n', '\r', '+', '-', '*', '/', '=', '^',
-        '_', '#',  '%',  '>',  '<', '&', '|', '~', '`'
+        ' ', '\t', '\n', '\r', '^', '_', '#', '%', '&', '|', '~', '`'
     };
     const std::unordered_set<sal_Unicode> DelimiterTable2{
         //keeping " as first entry is important to not get into recursive replacement
@@ -404,6 +405,11 @@ OUString encloseOrEscapeLiteral(const OUString& string, bool force)
     {
         if (string[i] == '"')
             result.append("\"\\\"\"");
+        else if (isSingleCharMathOperator(string[i]))
+            // Standard math operators stay bare so StarMath renders them with
+            // math-font glyphs. A run like "-4" becomes the minus operator
+            // followed by 4 rather than a literal text hyphen.
+            result.append(string[i]);
         else if (DelimiterTable1.find(string[i]) != DelimiterTable1.end())
             result.append("\"" + OUStringChar(string[i]) + "\"");
         else if (DelimiterTable2.find(string[i]) != DelimiterTable2.end())
@@ -1508,9 +1514,9 @@ std::unique_ptr<SmNode> SmParser5::DoSubSup(TG nActiveGroup, std::unique_ptr<SmN
 
     std::unique_ptr<SmSubSupNode> pNode(new SmSubSupNode(m_aCurToken));
     pNode->SetSelection(m_aCurESelection);
-    //! Of course 'm_aCurToken' is just the first sub-/supscript token.
+    //! Of course 'm_aCurToken' is just the first sub-/superscript token.
     //! It should be of no further interest. The positions of the
-    //! sub-/supscripts will be identified by the corresponding subnodes
+    //! sub-/superscripts will be identified by the corresponding subnodes
     //! index in the 'aSubNodes' array (enum value from 'SmSubSup').
 
     pNode->SetUseLimits(nActiveGroup == TG::Limit);
@@ -1519,7 +1525,7 @@ std::unique_ptr<SmNode> SmParser5::DoSubSup(TG nActiveGroup, std::unique_ptr<SmN
     std::vector<std::unique_ptr<SmNode>> aSubNodes(1 + SUBSUP_NUM_ENTRIES);
     aSubNodes[0] = std::move(xGivenNode);
 
-    // process all sub-/supscripts
+    // process all sub-/superscripts
     int nIndex = 0;
     while (TokenInGroup(nActiveGroup))
     {
@@ -1562,12 +1568,12 @@ std::unique_ptr<SmNode> SmParser5::DoSubSup(TG nActiveGroup, std::unique_ptr<SmN
         }
         else
         {
-            // skip sub-/supscript token
+            // skip sub-/superscript token
             NextToken();
         }
 
-        // get sub-/supscript node
-        // (even when we saw a double-sub/supscript error in the above
+        // get sub-/superscript node
+        // (even when we saw a double-sub/superscript error in the above
         // in order to minimize mess and continue parsing.)
         std::unique_ptr<SmNode> xSNode;
         if (eType == TFROM || eType == TTO)
@@ -1597,7 +1603,7 @@ std::unique_ptr<SmNode> SmParser5::DoSubSupEvaluate(std::unique_ptr<SmNode> xGiv
     std::vector<std::unique_ptr<SmNode>> aSubNodes(1 + SUBSUP_NUM_ENTRIES);
     aSubNodes[0] = std::move(xGivenNode);
 
-    // process all sub-/supscripts
+    // process all sub-/superscripts
     int nIndex = 0;
     while (TokenInGroup(TG::Limit))
     {
@@ -1625,9 +1631,9 @@ std::unique_ptr<SmNode> SmParser5::DoSubSupEvaluate(std::unique_ptr<SmNode> xGiv
             xENode = DoError(SmParseError::DoubleSubsupscript); // this also skips current token.
         }
         else
-            NextToken(); // skip sub-/supscript token
+            NextToken(); // skip sub-/superscript token
 
-        // get sub-/supscript node
+        // get sub-/superscript node
         std::unique_ptr<SmNode> xSNode;
         xSNode = DoTerm(true);
 
@@ -1647,7 +1653,7 @@ std::unique_ptr<SmNode> SmParser5::DoOpSubSup()
     xNode->SetSelection(m_aCurESelection);
     // skip operator token
     NextToken();
-    // get sub- supscripts if any
+    // get sub- superscripts if any
     if (m_aCurToken.nGroup == TG::Power)
         return DoSubSup(TG::Power, std::move(xNode));
     return xNode;
@@ -1657,7 +1663,7 @@ std::unique_ptr<SmNode> SmParser5::DoPower()
 {
     DepthProtect aDepthGuard(m_nParseDepth);
 
-    // get body for sub- supscripts on top of stack
+    // get body for sub- superscripts on top of stack
     std::unique_ptr<SmNode> xNode(DoTerm(false));
 
     if (m_aCurToken.nGroup == TG::Power)

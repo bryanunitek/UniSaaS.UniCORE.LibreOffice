@@ -34,7 +34,7 @@ public:
     }
     virtual uno::Any SAL_CALL nextElement() override
     {
-        // FIXME: should be add menubar
+        // FIXME: should add menubar
         if( !hasMoreElements() )
             throw container::NoSuchElementException();
 
@@ -71,7 +71,7 @@ ScVbaMenuBars::createEnumeration()
 uno::Any
 ScVbaMenuBars::createCollectionObject( const uno::Any& aSource )
 {
-    // make no sense
+    // makes no sense
     return aSource;
 }
 

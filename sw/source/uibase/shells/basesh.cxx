@@ -18,6 +18,7 @@
  */
 
 #include <svx/dialmgr.hxx>
+#include <svx/strings.hrc>
 #include <config_features.h>
 #include <config_fuzzers.h>
 
@@ -121,7 +122,6 @@
 #include <UndoManager.hxx>
 #include <fmtrfmrk.hxx>
 #include <txtrfmrk.hxx>
-#include <translatehelper.hxx>
 #include <rootfrm.hxx>
 
 FlyMode SwBaseShell::s_eFrameMode = FLY_DRAG_END;
@@ -1027,7 +1027,7 @@ void SwBaseShell::Execute(SfxRequest &rReq)
                         medium = sh->GetMedium();
                     }
                     rSh.GetLinkManager().UpdateAllLinks(
-                        false, nullptr, medium == nullptr ? OUString() : medium->GetName() );
+                        false, medium == nullptr ? OUString() : medium->GetName() );
                     rSh.EndAllAction();
                 }
                 SfxDispatcher &rDis = *rTempView.GetViewFrame().GetDispatcher();
@@ -1549,7 +1549,7 @@ void SwBaseShell::Execute(SfxRequest &rReq)
                         medium = sh->GetMedium();
                     }
                     rSh.GetLinkManager().UpdateAllLinks(
-                        false, nullptr, medium == nullptr ? OUString() : medium->GetName() );
+                        false, medium == nullptr ? OUString() : medium->GetName() );
                     rSh.EndAllAction();
                 }
             }
@@ -2705,7 +2705,7 @@ void SwBaseShell::GetBckColState(SfxItemSet &rSet)
             {
                 // if this was intended to have a independent copy of the Item to be set
                 // this is not needed due to the ItemSet/Pool cloning Items which get set anyways.
-                // Keeping code as reference - it may have had other reasons I do notz see (?!?)
+                // Keeping code as reference - it may have had other reasons I do not see (?!?)
                 // std::unique_ptr<SfxPoolItem> pNewItem(aBrushItem.CloneSetWhich(GetPool().GetWhich(nWhich)));
                 rSet.Put(*aBrushItem);
                 break;
@@ -2807,8 +2807,9 @@ void SwBaseShell::ExecBckCol(SfxRequest& rReq)
         // Adapt to new DrawingLayer FillStyle; use a parent which has XFILL_NONE set
         SfxItemSet aCoreSet(SfxItemSet::makeFixedSfxItemSet<XATTR_FILL_FIRST, XATTR_FILL_LAST>(GetPool()));
 
-        aCoreSet.SetParent(&GetView().GetDocShell()->GetDoc()->GetDfltFrameFormat()->GetAttrSet());
-        setSvxBrushItemAsFillAttributesToTargetSet(*aBrushItem, aCoreSet);
+        SwDoc* pDoc = GetView().GetDocShell()->GetDoc();
+        aCoreSet.SetParent(&pDoc->GetDfltFrameFormat()->GetAttrSet());
+        setSvxBrushItemAsFillAttributesToTargetSet(*aBrushItem, aCoreSet, pDoc->GetLinkReferer());
 
         if((SelectionType::Frame & nSelType) || (SelectionType::Graphic & nSelType))
         {
@@ -3091,7 +3092,7 @@ void SwBaseShell::ExecDlg(SfxRequest &rReq)
             // Open ThemeColorEditDialog to create/edit the new color set
             auto pSubDialog = std::make_shared<svx::ThemeColorEditDialog>(GetView().GetFrameWeld(), *pCurrentColorSet);
 
-            weld::DialogController::runAsync(pSubDialog, [pSubDialog, this](sal_uInt32 nResult) {
+            weld::DialogController::runAsync(pSubDialog, [pSubDialog](sal_uInt32 nResult) {
                 if (nResult != RET_OK)
                     return;
 
@@ -3100,8 +3101,6 @@ void SwBaseShell::ExecDlg(SfxRequest &rReq)
                 {
                     // Add the new color set to the global collection with auto-rename if needed
                     svx::ColorSets::get().insert(aColorSet);
-                    // Invalidate to update the toolbar control
-                    GetView().GetViewFrame().GetBindings().Invalidate(SID_ADD_THEME);
                 }
             });
 
@@ -3268,7 +3267,7 @@ void SwBaseShell::InsertTable( SfxRequest& _rRequest )
             // Use Default Style if no autoformat is provided
             else
             {
-                aTableNameIn = SvxResId(STR_TABSTYLE_DEFAULT);
+                aAutoNameIn = SvxResId(RID_SVXSTR_TBLAFMT_DEFAULT_STYLE);
                 pTAFormatIn.reset(new SwTableAutoFormat(rTableTable[0]));
             }
 
@@ -3323,7 +3322,7 @@ void SwBaseShell::InsertTable( SfxRequest& _rRequest )
 
             // Set Default Style name is no autoformat is provided
             if (aAutoNameIn.isEmpty())
-                aAutoNameIn = SvxResId(STR_TABSTYLE_DEFAULT);
+                aAutoNameIn = SvxResId(RID_SVXSTR_TBLAFMT_DEFAULT_STYLE);
 
             InsertTableImpl( rSh, rTempView, UIName(aTableNameIn), nRowsIn, nColsIn, aInsTableOptsIn, TableStyleName(aAutoNameIn), pTAFormatIn );
 

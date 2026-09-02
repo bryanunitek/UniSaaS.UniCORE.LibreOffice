@@ -24,8 +24,8 @@
 #include <cppuhelper/implbase.hxx>
 #include <vcl/toolkit/lstbox.hxx>
 
-/** This class represents non editable text fields.
-    From the ListBox passed to the constructor, always the selected item is token to be made
+/** This class represents non-editable text fields.
+    From the ListBox passed to the constructor, always the selected item is taken to be made
     accessible by this class.  When the selected item changes then also the
     exported text changes.
 */
@@ -42,12 +42,6 @@ public:
     sal_Int16 SAL_CALL getAccessibleRole() override;
     css::uno::Reference< css::accessibility::XAccessible > SAL_CALL
         getAccessibleParent(  ) override;
-
-    // XServiceInfo
-    virtual OUString SAL_CALL getImplementationName() override;
-    // Return text field specific services.
-    virtual css::uno::Sequence< OUString > SAL_CALL
-        getSupportedServiceNames() override;
 
 private:
     virtual ~VCLXAccessibleTextField() override = default;

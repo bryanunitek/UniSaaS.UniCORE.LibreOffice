@@ -154,12 +154,12 @@ public:
         sal_uInt32 nIndex(0);
 
         // test as long as there are at least two points and as long as the index
-        // is smaller or equal second last point
+        // is smaller than or equal second last point
         while((maVector.size() > 1) && (nIndex <= maVector.size() - 2))
         {
             if(maVector[nIndex] == maVector[nIndex + 1])
             {
-                // if next is same as index, delete next
+                // if next is the same as index, delete next
                 maVector.erase(maVector.begin() + (nIndex + 1));
             }
             else
@@ -172,9 +172,19 @@ public:
 
     void transform(const basegfx::B2DHomMatrix& rMatrix)
     {
+        const double m00 = rMatrix.get(0, 0);
+        const double m01 = rMatrix.get(0, 1);
+        const double m02 = rMatrix.get(0, 2);
+        const double m10 = rMatrix.get(1, 0);
+        const double m11 = rMatrix.get(1, 1);
+        const double m12 = rMatrix.get(1, 2);
+
         for (auto& point : maVector)
         {
-            point *= rMatrix;
+            const double x = point.getX();
+            const double y = point.getY();
+            point.setX(m00 * x + m01 * y + m02);
+            point.setY(m10 * x + m11 * y + m12);
         }
     }
 
@@ -452,7 +462,7 @@ public:
 
         if(aStart == aEnd)
         {
-            // swap Prev and Next at middle element (if exists)
+            // swap Prev and Next at middle element (if it exists)
             aStart->flip();
         }
 
@@ -528,17 +538,17 @@ public:
                                     // inside the current range without control points. Expand current range by
                                     // subdividing the bezier segment.
                                     // Ideal here is a subdivision at the extreme values, so use
-                                    // getAllExtremumPositions to get all extremas in one run
-                                    std::vector< double > aExtremas;
+                                    // getAllExtremumPositions to get all extrema in one run
+                                    std::vector< double > aExtrema;
 
-                                    aExtremas.reserve(4);
-                                    aEdge.getAllExtremumPositions(aExtremas);
+                                    aExtrema.reserve(4);
+                                    aEdge.getAllExtremumPositions(aExtrema);
 
-                                    const sal_uInt32 nExtremaCount(aExtremas.size());
+                                    const sal_uInt32 nExtremaCount(aExtrema.size());
 
                                     for(sal_uInt32 c(0); c < nExtremaCount; c++)
                                     {
-                                        aNewRange.expand(aEdge.interpolatePoint(aExtremas[c]));
+                                        aNewRange.expand(aEdge.interpolatePoint(aExtrema[c]));
                                     }
                                 }
                             }
@@ -562,11 +572,11 @@ public:
 class ImplB2DPolygon
 {
 private:
-    // The point vector. This vector exists always and defines the
+    // The point vector. This vector always exists and defines the
     // count of members.
     CoordinateDataArray2D                         maPoints;
 
-    // The control point vectors. This vectors are created on demand
+    // The control point vectors. These vectors are created on demand
     // and may be zero.
     std::optional< ControlVectorArray2D >         moControlVector;
 
@@ -575,7 +585,7 @@ private:
     // but add buffered data that is valid for all referencing instances
     mutable std::unique_ptr<ImplBufferedData> mpBufferedData;
 
-    // flag which decides if this polygon is opened or closed
+    // flag which decides if this polygon is open or closed
     bool                                          mbIsClosed;
 
 public:
@@ -626,7 +636,7 @@ public:
     :   maPoints(rToBeCopied.maPoints, nIndex, nCount),
         mbIsClosed(rToBeCopied.mbIsClosed)
     {
-        // complete initialization using partly copy
+        // complete initialization using partial copy
         if(rToBeCopied.moControlVector && rToBeCopied.moControlVector->isUsed())
         {
             moControlVector.emplace( *rToBeCopied.moControlVector, nIndex, nCount );
@@ -918,7 +928,7 @@ public:
     {
         if(mbIsClosed)
         {
-            // check for same start and end point
+            // check for identical start and end points
             const sal_uInt32 nIndex(maPoints.count() - 1);
 
             if(maPoints.getCoordinate(0) == maPoints.getCoordinate(nIndex))
@@ -1066,6 +1076,13 @@ public:
 
         if(moControlVector)
         {
+            const double m00 = rMatrix.get(0, 0);
+            const double m01 = rMatrix.get(0, 1);
+            const double m02 = rMatrix.get(0, 2);
+            const double m10 = rMatrix.get(1, 0);
+            const double m11 = rMatrix.get(1, 1);
+            const double m12 = rMatrix.get(1, 2);
+
             for(sal_uInt32 a(0); a < maPoints.count(); a++)
             {
                 basegfx::B2DPoint aCandidate = maPoints.getCoordinate(a);
@@ -1077,19 +1094,22 @@ public:
 
                     if(!rPrevVector.equalZero())
                     {
-                        basegfx::B2DVector aPrevVector(rMatrix * rPrevVector);
-                        moControlVector->setPrevVector(a, aPrevVector);
+                        const double x = rPrevVector.getX();
+                        const double y = rPrevVector.getY();
+                        moControlVector->setPrevVector(a, basegfx::B2DVector(m00 * x + m01 * y, m10 * x + m11 * y));
                     }
 
                     if(!rNextVector.equalZero())
                     {
-                        basegfx::B2DVector aNextVector(rMatrix * rNextVector);
-                        moControlVector->setNextVector(a, aNextVector);
+                        const double x = rNextVector.getX();
+                        const double y = rNextVector.getY();
+                        moControlVector->setNextVector(a, basegfx::B2DVector(m00 * x + m01 * y, m10 * x + m11 * y));
                     }
                 }
 
-                aCandidate *= rMatrix;
-                maPoints.setCoordinate(a, aCandidate);
+                const double x = aCandidate.getX();
+                const double y = aCandidate.getY();
+                maPoints.setCoordinate(a, basegfx::B2DPoint(m00 * x + m01 * y + m02, m10 * x + m11 * y + m12));
             }
 
             if(!moControlVector->isUsed())
@@ -1524,7 +1544,7 @@ namespace basegfx
         mpPolygon->addOrReplaceSystemDependentData(rData);
     }
 
-    SystemDependentData_SharedPtr B2DPolygon::getSystemDependantDataInternal(SDD_Type aType) const
+    SystemDependentData_SharedPtr B2DPolygon::getSystemDependentDataInternal(SDD_Type aType) const
     {
         return mpPolygon->getSystemDependentData(aType);
     }

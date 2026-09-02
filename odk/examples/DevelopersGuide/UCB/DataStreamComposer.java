@@ -60,7 +60,7 @@ public class DataStreamComposer {
      *                          -workdir=...           (optional)
      *                       See Help (method printCmdLineUsage()).
      *                       Without the arguments a new connection to a
-     *                       running office cannot created.
+     *                       running office cannot be created.
      */
     public DataStreamComposer( String args[] ) throws java.lang.Exception {
 
@@ -94,7 +94,7 @@ public class DataStreamComposer {
      * Write the document data stream of a document content.
      *
      *@param  sourceURL    Source URL
-     *@return true if data stream successfully seted, false otherwise
+     *@return true if data stream successfully set, false otherwise
      */
     public boolean setDataStream( String sourceURL )
         throws com.sun.star.ucb.CommandAbortedException,
@@ -116,7 +116,7 @@ public class DataStreamComposer {
     /**
      * Write the document data stream of a document content...
      *
-     *@return boolean        Returns true if data stream successfully seted, false otherwise
+     *@return boolean        Returns true if data stream successfully set, false otherwise
      */
     public boolean setDataStream( XInputStream stream )
         throws com.sun.star.ucb.CommandAbortedException, com.sun.star.uno.Exception {

@@ -45,13 +45,6 @@ class FontSelectPattern;
 
 namespace vcl::font
 {
-struct FontMatchStatus
-{
-public:
-    int mnFaceMatch;
-    const OUString* mpTargetStyleName;
-};
-
 struct RawFontData
 {
 public:
@@ -148,7 +141,7 @@ public:
 
     SAL_DLLPRIVATE RawFontData GetRawFontData(uint32_t) const;
 
-    bool IsBetterMatch(const vcl::font::FontSelectPattern&, FontMatchStatus&) const;
+    bool IsBetterMatch(const vcl::font::FontSelectPattern&, int& rnBestMatch) const;
     sal_Int32 CompareIgnoreSize(const PhysicalFontFace&) const;
 
     // CreateFontSubset: a method to get a subset of glyphs of a font inside a
@@ -182,6 +175,9 @@ public:
 
     OUString GetName(NameID, const LanguageTag&) const;
     OUString GetName(NameID aNameID) const { return GetName(aNameID, LanguageTag(LANGUAGE_NONE)); }
+    std::vector<OUString> GetLocalizedNames(NameID) const;
+
+    bool MatchFamilyName(std::u16string_view rFamilyName) const;
 
     std::vector<OUString> GetAliases() const;
 
@@ -191,6 +187,8 @@ public:
         assert(false);
         return nullptr;
     }
+
+    bool HasOpenTypeMathTable() const;
 
     virtual const std::vector<vcl::font::Variation>&
     GetVariations(const LogicalFontInstance&) const;

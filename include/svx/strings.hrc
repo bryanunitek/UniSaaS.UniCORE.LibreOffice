@@ -677,6 +677,7 @@
 #define RID_SVXSTR_COLOR_PINK                               NC_("RID_SVXSTR_COLOR_PINK", "Pink")
 #define RID_SVXSTR_COLOR_TURQUOISE                          NC_("RID_SVXSTR_COLOR_TURQUOISE", "Turquoise")
 /* 16 old AutoFormat Table Styles */
+#define RID_SVXSTR_TBLAFMT_DEFAULT_STYLE                    NC_("RID_SVXSTR_TBLAFMT_DEFAULT_STYLE", "Default Style")
 #define RID_SVXSTR_TBLAFMT_3D                               NC_("RID_SVXSTR_TBLAFMT_3D", "3D")
 #define RID_SVXSTR_TBLAFMT_BLACK1                           NC_("RID_SVXSTR_TBLAFMT_BLACK1", "Black 1")
 #define RID_SVXSTR_TBLAFMT_BLACK2                           NC_("RID_SVXSTR_TBLAFMT_BLACK2", "Black 2")
@@ -1425,6 +1426,7 @@
 #define STR_IMAGE_CAPACITY_WITH_REDUCTION                   NC_("STR_IMAGE_CAPACITY_WITH_REDUCTION", "$(CAPACITY) KiB ($(REDUCTION)% reduction)")
 #define STR_IMAGE_GIF                                       NC_("STR_IMAGE_GIF", "GIF image")
 #define STR_IMAGE_JPEG                                      NC_("STR_IMAGE_JPEG", "JPEG image")
+#define STR_IMAGE_JXL                                       NC_("STR_IMAGE_JXL", "JPEG XL image")
 #define STR_IMAGE_PNG                                       NC_("STR_IMAGE_PNG", "PNG image")
 #define STR_IMAGE_TIFF                                      NC_("STR_IMAGE_TIFF", "TIFF image")
 #define STR_IMAGE_WMF                                       NC_("STR_IMAGE_WMF", "WMF image")
@@ -1477,6 +1479,7 @@
 
 // Used in the Slide Setup dialog of Impress
 #define STR_SLIDE_NUMBERS                                   NC_("STR_SLIDE_NUMBERS", "Slide numbers:")
+#define STR_RESIZE_ALL_SLIDES                               NC_("STR_RESIZE_ALL_SLIDES", "Resize all slides")
 
 // String for saving modified image (instead of original)
 #define RID_SVXSTR_SAVE_MODIFIED_IMAGE                      NC_("RID_SVXSTR_SAVE_MODIFIED_IMAGE", "The image has been modified. By default the original image will be saved.\nDo you want to save the modified version instead?")
@@ -1836,6 +1839,11 @@
 #define RID_SVXSTR_PAGEDIR_RTL_VERT                         NC_("RID_SVXSTR_PAGEDIR_RTL_VERT", "Right-to-left (vertical)")
 #define RID_SVXSTR_PAGEDIR_LTR_VERT                         NC_("RID_SVXSTR_PAGEDIR_LTR_VERT", "Left-to-right (vertical)")
 #define RID_SVXSTR_PAGEDIR_LTR_BTT_VERT                     NC_("RID_SVXSTR_PAGEDIR_LTR_BTT_VERT", "Bottom-to-top, left-to-right (vertical)")
+// page gutter
+#define RID_SVXSTR_PAGEGUTTER_LEFT                          NC_("RID_SVXSTR_PAGEGUTTER_LEFT", "Left")
+#define RID_SVXSTR_PAGEGUTTER_INNER                         NC_("RID_SVXSTR_PAGEGUTTER_INNER", "Inner")
+#define RID_SVXSTR_PAGEGUTTER_RIGHT                         NC_("RID_SVXSTR_PAGEGUTTER_RIGHT", "Right")
+#define RID_SVXSTR_PAGEGUTTER_OUTER                         NC_("RID_SVXSTR_PAGEGUTTER_OUTER", "Outer")
 
 #define RID_SVXSTR_FONTWORK                                 NC_("RID_SVXSTR_FONTWORK", "Text along Path...")
 
@@ -1903,6 +1911,11 @@
 #define STR_GRAPHIC_SIZE_CHECK_DIALOG_TITLE   NC_("STR_GRAPHIC_SIZE_CHECK_DIALOG_TITLE", "Graphic Size Check")
 #define STR_WARNING_GRAPHIC_PIXEL_COUNT_LOW   NC_("STR_WARNING_GRAPHIC_PIXEL_COUNT_LOW", "Image '%NAME%' has too few pixels for the current size (%DPIX% x %DPIY% DPI)")
 #define STR_WARNING_GRAPHIC_PIXEL_COUNT_HIGH  NC_("STR_WARNING_GRAPHIC_PIXEL_COUNT_HIGH", "Image '%NAME%' has too many pixels for the current size (%DPIX% x %DPIY% DPI)")
+
+/*--------------------------------------------------------------------
+    Description: Statusbar popup menu in Calc.
+ --------------------------------------------------------------------*/
+#define RID_SVXSTR_COPY_VALUES                      NC_("RID_SVXSTR_COPY_VALUES", "Copy values")
 
 #endif
 

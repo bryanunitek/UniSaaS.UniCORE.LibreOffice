@@ -203,13 +203,13 @@ void ScModelTestBase::testFormats(ScDocument* pDoc,std::u16string_view sFormat)
     CPPUNIT_ASSERT_EQUAL_MESSAGE("font should be blue", COL_BLUE, aComplexColor.getFinalColor());
     pPattern = pDoc->GetPattern(1,1,1);
     pPattern->fillFontOnly(aFont);
-    CPPUNIT_ASSERT_EQUAL_MESSAGE("font should be striked out with a single line", STRIKEOUT_SINGLE, aFont.GetStrikeout());
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("font should be struck out with a single line", STRIKEOUT_SINGLE, aFont.GetStrikeout());
     //some tests on sheet2 only for ods
     if (sFormat == u"calc8")
     {
         pPattern = pDoc->GetPattern(1,2,1);
         pPattern->fillFontOnly(aFont);
-        CPPUNIT_ASSERT_EQUAL_MESSAGE("font should be striked out with a double line", STRIKEOUT_DOUBLE, aFont.GetStrikeout());
+        CPPUNIT_ASSERT_EQUAL_MESSAGE("font should be struck out with a double line", STRIKEOUT_DOUBLE, aFont.GetStrikeout());
         pPattern = pDoc->GetPattern(1,3,1);
         pPattern->fillFontOnly(aFont);
         CPPUNIT_ASSERT_EQUAL_MESSAGE("font should be underlined with a dotted line", LINESTYLE_DOTTED, aFont.GetUnderline());
@@ -318,7 +318,8 @@ void ScModelTestBase::insertStringToCell(const OUString& rCell, std::u16string_v
     Scheduler::ProcessEventsToIdle();
 }
 
-void ScModelTestBase::insertArrayToCell(const OUString& rCell, std::u16string_view rStr)
+void ScModelTestBase::insertArrayToCell(const OUString& rCell, std::u16string_view rStr,
+                                        bool bDynamicArrayMaster)
 {
     goToCell(rCell);
 
@@ -328,6 +329,27 @@ void ScModelTestBase::insertArrayToCell(const OUString& rCell, std::u16string_vi
     pModelObj->postKeyEvent(LOK_KEYEVENT_KEYINPUT, 0, KEY_MOD1 | KEY_SHIFT | awt::Key::RETURN);
     pModelObj->postKeyEvent(LOK_KEYEVENT_KEYUP, 0, KEY_MOD1 | KEY_SHIFT | awt::Key::RETURN);
     Scheduler::ProcessEventsToIdle();
+
+    if (!bDynamicArrayMaster)
+        return;
+
+    // The Ctrl+Shift+Enter path creates a static array master. When the
+    // caller asks for dynamic behaviour, opt the master into the auto-
+    // resize gate so the matrix grows or shrinks with the source data.
+    // A dirty flag plus a full recalc applies the gate to the result
+    // already on the cell.
+    ScDocShell* pDocSh = getScDocShell();
+    ScDocument& rDoc = pDocSh->GetDocument();
+    ScAddress aAddr;
+    sal_Int32 nOffset = 0;
+    ScRangeStringConverter::GetAddressFromString(aAddr, rCell, rDoc,
+                                                 formula::FormulaGrammar::CONV_OOO, nOffset);
+    if (ScFormulaCell* pMaster = rDoc.GetFormulaCell(aAddr))
+    {
+        pMaster->SetDynamicArrayMaster(true);
+        pMaster->SetDirty();
+        rDoc.CalcAll();
+    }
 }
 
 void ScModelTestBase::clearCell(const OUString& rCell)
@@ -526,7 +548,7 @@ bool checkOutput(
     SCROW nOutRowSize = e.Row() - s.Row() + 1;
     SCCOL nOutColSize = e.Col() - s.Col() + 1;
 
-    // Check if expected size iz smaller than actual size (and prevent a crash)
+    // Check if expected size is smaller than actual size (and prevent a crash)
     if (aCheck.size() < o3tl::make_unsigned(nOutRowSize) || aCheck[0].size() < o3tl::make_unsigned(nOutColSize))
     {
         // Dump the arrays to console, so we can compare
@@ -900,7 +922,7 @@ bool ScUcalcTestBase::insertRangeNames(
             aA1, ScRangeData::Type::Name,
             formula::FormulaGrammar::GRAM_ENGLISH);
         pNew->SetIndex(p->mnIndex);
-        bool bSuccess = pNames->insert(pNew);
+        bool bSuccess = pNames->insert(std::unique_ptr<ScRangeData>(pNew));
         if (!bSuccess)
         {
             std::cerr << "Insertion failed." << std::endl;
@@ -913,7 +935,7 @@ bool ScUcalcTestBase::insertRangeNames(
 
 OUString ScUcalcTestBase::getRangeByName(const ScDocument* pDoc, const OUString& aRangeName)
 {
-    ScRangeData* pName = pDoc->GetRangeName()->findByUpperName(aRangeName.toAsciiUpperCase());
+    ScRangeData* pName = pDoc->GetRangeName().findByUpperName(aRangeName.toAsciiUpperCase());
     CPPUNIT_ASSERT(pName);
     return pName->GetSymbol(pDoc->GetGrammar());
 }

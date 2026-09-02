@@ -25,6 +25,7 @@
 #include <sfx2/objsh.hxx>
 #include <sfx2/sfxresid.hxx>
 #include <sfx2/templatedlglocalview.hxx>
+#include <svtools/viewoptions.hxx>
 #include <templatecontaineritem.hxx>
 #include <templateviewitem.hxx>
 #include <sfx2/thumbnailviewitem.hxx>
@@ -32,7 +33,6 @@
 #include <tools/urlobj.hxx>
 #include <unotools/moduleoptions.hxx>
 #include <unotools/pathoptions.hxx>
-#include <unotools/viewoptions.hxx>
 #include <vcl/event.hxx>
 #include <vcl/svapp.hxx>
 #include <vcl/weld/Builder.hxx>
@@ -298,17 +298,16 @@ void SfxTemplateManagerDlg::setTemplateViewMode(TemplateViewMode eViewMode)
     {
         mxThumbnailViewButton->set_active(true);
         mxListViewButton->set_active(false);
-        maLocalView.ThumbnailView::GrabFocus();
     }
     else
     {
         assert(eViewMode == TemplateViewMode::ListView);
         mxListViewButton->set_active(true);
         mxThumbnailViewButton->set_active(false);
-        maLocalView.ListView::grab_focus();
     }
 
     maLocalView.setTemplateViewMode(eViewMode);
+    maLocalView.GrabFocus();
     maLocalView.Show();
 }
 
@@ -438,17 +437,11 @@ void SfxTemplateManagerDlg::readSettings ()
         mxActionBar->set_item_sensitive(MNI_ACTION_DELETE_FOLDER, !bIsBuiltInRegion);
     }
 
-    if (nViewMode == static_cast<sal_Int16>(TemplateViewMode::ListView)
-        || nViewMode == static_cast<sal_Int16>(TemplateViewMode::ThumbnailView))
-    {
-        TemplateViewMode eViewMode = static_cast<TemplateViewMode>(nViewMode);
-        setTemplateViewMode(eViewMode);
-    }
-    else
-    {
-        //Default ViewMode
-        setTemplateViewMode(TemplateViewMode::ThumbnailView);
-    }
+    const TemplateViewMode eViewMode
+        = (nViewMode == static_cast<sal_Int16>(TemplateViewMode::ListView))
+              ? TemplateViewMode::ListView
+              : TemplateViewMode::ThumbnailView;
+    setTemplateViewMode(eViewMode);
 }
 
 void SfxTemplateManagerDlg::writeSettings ()
@@ -555,8 +548,10 @@ void SfxTemplateManagerDlg::DefaultTemplateMenuSelectHdl(std::u16string_view rId
 
 IMPL_LINK_NOARG(SfxTemplateManagerDlg, OkClickHdl, weld::Button&, void)
 {
-   OnTemplateOpen();
-   m_xDialog->response(RET_OK);
+    const TemplateViewItem* pItem = *maSelTemplates.begin();
+    OpenTemplateHdl(pItem->getPath());
+
+    m_xDialog->response(RET_OK);
 }
 
 IMPL_LINK_NOARG(SfxTemplateManagerDlg, MoveTemplateHdl, void*, void)
@@ -782,7 +777,7 @@ IMPL_LINK(SfxTemplateManagerDlg, DefaultTemplateHdl, ThumbnailViewItem*, pItem, 
     updateMenuItems();
 }
 
-IMPL_LINK_NOARG(SfxTemplateManagerDlg, SearchUpdateHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(SfxTemplateManagerDlg, SearchUpdateHdl, weld::TextWidget&, void)
 {
     m_aUpdateDataTimer.Start();
 }
@@ -1035,12 +1030,6 @@ void SfxTemplateManagerDlg::OnTemplateExport()
     }
 }
 
-void SfxTemplateManagerDlg::OnTemplateOpen ()
-{
-    const TemplateViewItem* pItem = *maSelTemplates.begin();
-    OpenTemplateHdl(pItem->getPath());
-}
-
 void SfxTemplateManagerDlg::OnCategoryNew()
 {
     SvxNameDialog dlg(m_xDialog.get(), u""_ustr, SfxResId(STR_INPUT_NEW), SfxResId(STR_WINDOW_TITLE_RENAME_NEW_CATEGORY));
@@ -1253,7 +1242,7 @@ SfxTemplateCategoryDialog::~SfxTemplateCategoryDialog()
 {
 }
 
-IMPL_LINK_NOARG(SfxTemplateCategoryDialog, NewCategoryEditHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(SfxTemplateCategoryDialog, NewCategoryEditHdl, weld::TextWidget&, void)
 {
     OUString sParam = comphelper::string::strip(mxNewCategoryEdit->get_text(), ' ');
     mxLBCategory->set_sensitive(sParam.isEmpty());

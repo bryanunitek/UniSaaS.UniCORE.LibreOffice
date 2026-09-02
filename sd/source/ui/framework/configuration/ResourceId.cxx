@@ -32,7 +32,6 @@ namespace com::sun::star::uno { class XComponentContext; }
 using namespace ::com::sun::star;
 using namespace ::com::sun::star::uno;
 using namespace ::com::sun::star::lang;
-using namespace ::com::sun::star::drawing::framework;
 
 namespace sd::framework {
 
@@ -189,7 +188,7 @@ sal_Int16 ResourceId::CompareToLocalImplementation (const ResourceId& rId) const
     const sal_uInt32 nLocalURLCount (maResourceURLs.size());
     const sal_uInt32 nURLCount(rId.maResourceURLs.size());
 
-    // Start comparison with the top most anchors.
+    // Start comparison with the top-most anchors.
     for (sal_Int32 nIndex=nURLCount-1,nLocalIndex=nLocalURLCount-1;
          nIndex>=0 && nLocalIndex>=0;
          --nIndex,--nLocalIndex)
@@ -259,7 +258,7 @@ bool ResourceId::IsBoundToAnchor (
 
     // Check the lengths.
     if (nLocalAnchorURLCount<nAnchorURLCount ||
-        (eMode==AnchorBindingMode_DIRECT && nLocalAnchorURLCount!=nAnchorURLCount))
+        (eMode == AnchorBindingMode::DIRECT && nLocalAnchorURLCount != nAnchorURLCount))
     {
         return false;
     }
@@ -284,7 +283,7 @@ bool ResourceId::IsBoundToAnchor (
 
     // Check the lengths.
     if (nLocalAnchorURLCount<nAnchorURLCount ||
-        (eMode==AnchorBindingMode_DIRECT && nLocalAnchorURLCount!=nAnchorURLCount))
+        (eMode == AnchorBindingMode::DIRECT && nLocalAnchorURLCount != nAnchorURLCount))
     {
         return false;
     }

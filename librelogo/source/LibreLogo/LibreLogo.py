@@ -17,6 +17,7 @@ import itertools
 import threading
 import time as __time__
 from math import pi, sin, cos, asin, hypot
+from math import log10, sqrt # noqa: F401
 
 from com.sun.star.awt import Point as __Point__
 from com.sun.star.awt import Gradient as __Gradient__
@@ -203,6 +204,7 @@ __match_fontfeatures__ = re.compile( r"(</?)("
 __match_localized_colors__ = {}
 # LABEL not localized tags (localized translated to these):
 __match_tags__ = [re.compile(i, re.IGNORECASE) for i in [r'<(b|strong)>', r'</(b|strong)>', r'<(i|em)>', r'</(i|em)>', '<u>', '</u>', r'<(s|del)>', r'</(s|del)>', '<sup>', '</sup>', '<sub>', '</sub>', r'<(fontcolor) ([^<>]*)>', r'</(fontcolor)>', r'<(fillcolor) ([^<>]*)>', r'</(fillcolor)>', r'<(fontfamily) ([^<>]*)>', r'</(fontfamily)>', r'<(fontfeature) ([^<>]*)>', r'</(fontfeature) ?([^<>]*)>', r'<(fontheight) ([^<>]*)>', r'</(fontheight)>']]
+__lastdialogmessage__ = ""
 
 class __Doc__:
     def __init__(self, doc):
@@ -373,6 +375,7 @@ def Print(s):
         __checkhalt__()
 
 def MessageBox(parent, message, title, msgtype = "messbox", buttons = __OK__):
+    global __lastdialogmessage__
     msgtypes = ("messbox", "infobox", "errorbox", "warningbox", "querybox")
     if msgtype not in msgtypes:
         msgtype = "messbox"
@@ -384,7 +387,7 @@ def MessageBox(parent, message, title, msgtype = "messbox", buttons = __OK__):
     d.WindowAttributes = buttons
     tk = parent.getToolkit()
     msgbox = tk.createWindow(d)
-    msgbox.MessageText = message
+    msgbox.MessageText = __lastdialogmessage__ = message
     if title:
         msgbox.CaptionText = title
     return msgbox.execute()
@@ -610,6 +613,10 @@ class LogoProgram(threading.Thread):
 # to check LibreLogo program termination (in that case, return value is False)
 def __is_alive__():
     return __thread__ is not None
+
+# to check the message of the last dialog (MessageBox) presented by LibreLogo
+def __last_dialog_message__():
+    return __lastdialogmessage__
 
 def __encodestring__(m):
     __strings__.append(re.sub("(\\[^\\]|\\\\(?=[‘’“”»」』]))", "", m.group(2)))
@@ -1408,7 +1415,7 @@ def __get_HTML_format__(orig_st):
                   if bit > 5 and (tag in extra_data):
                       if bit == 9 and len(m.group(2)) > 0:
                           # create a new list to keep the extra data of the previous characters,
-                          # and remove the last occurance of the feature
+                          # and remove the last occurrence of the feature
                           z = list(extra_data[tag])
                           for j in reversed(range(len(z))):
                               if z[j].startswith(m.group(2)):
@@ -1894,6 +1901,7 @@ def __loadlang__(lang, a):
         if i[0:3] not in ["LIB", "ERR", "PT", "INC", "MM", "CM", "HOU", "DEG"] and i not in __STRCONST__: # uppercase native commands
             a[i] = a[i].upper()
     repcount = a['REPCOUNT'].split('|')[0]
+    repcount = re.sub("[ .']", '_', repcount)
     loopi = itertools.count()
     loop = lambda r: "%(i)s = 1\n%(orig)s%(j)s = %(i)s\n%(i)s += 1\n" % \
         { "i": repcount + str(next(loopi)), "j": repcount, "orig": re.sub( r"(?ui)(?<!:)\b%s\b" % repcount, repcount + str(next(loopi)-1), r.group(0)) }
@@ -1906,10 +1914,10 @@ def __loadlang__(lang, a):
     [r"(?<!\n)\[(?= |\n)", ":\n[\n"], # start block
     [r"( ]|\n]$)", "\n]\n"], # finish block
     [r"(?<!:)\b(?:%s)\b" % a['FOR'], "\nfor"],
+    [r"(?<!:)\b(?:%s)\b" % a['REPCOUNT'], repcount],
     [r"(?<!:)\b(?:%s)\b" % a['REPEAT'], "\n__repeat__"],
     [r"(?<!:)\b(?:%s)\b" % a['BREAK'], "\nbreak"],
     [r"(?<!:)\b(?:%s)\b" % a['CONTINUE'], "\ncontinue"],
-    [r"(?<!:)\b(?:%s)\b" % a['REPCOUNT'], repcount],
     [r"(?<!:)\b(?:%s)\b" % a['IF'], "\nif"],
     [r"(?<!:)\b(?:%s)\b" % a['WHILE'], "\nwhile"],
     [r"(?<!:)\b(?:%s)\b" % a['OUTPUT'], "\nreturn"],

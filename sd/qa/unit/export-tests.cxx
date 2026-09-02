@@ -1148,8 +1148,6 @@ CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfFont)
         int nFontHeight = getXPath(pXml, "//font[2]", "height").toInt32();
         CPPUNIT_ASSERT_EQUAL(494, nFontHeight);
     }
-#if !defined _WIN32
-    //TODO, debug this
     {
         OUString sWeight = getXPath(pXml, "//font[3]", "weight");
         // was "normal" before
@@ -1158,9 +1156,8 @@ CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfFont)
         OUString sFontName = getXPath(pXml, "//font[3]", "name");
         CPPUNIT_ASSERT_EQUAL(u"Liberation Sans"_ustr, sFontName);
         sal_Int32 nFontHeight = getXPath(pXml, "//font[3]", "height").toInt32();
-        CPPUNIT_ASSERT_EQUAL(564, nFontHeight);
+        CPPUNIT_ASSERT_EQUAL(sal_Int32(564), nFontHeight);
     }
-#endif
 }
 
 CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfHindi)
@@ -1185,12 +1182,12 @@ CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfHindi)
 
     // ensure the expected content
     assertXPathContent(pXmlDoc,
-                       "/office:document/office:body/office:drawing/draw:page/draw:g/draw:frame[4]/"
-                       "draw:text-box/text:p[@text:style-name='P8'][1]",
+                       "/office:document/office:body/office:drawing/draw:page/draw:g/draw:frame[3]/"
+                       "draw:text-box/text:p[@text:style-name='P6'][1]",
                        u"FIRST-YEAR HINDI COURSE");
 
     // ensure the expected font name
-    assertXPath(pXmlDoc, "/office:document/office:automatic-styles/style:style[@style:name='P8']/"
+    assertXPath(pXmlDoc, "/office:document/office:automatic-styles/style:style[@style:name='P6']/"
                          "style:text-properties[@style:font-name='AcademyEngravedLetPlain']");
 }
 
@@ -1351,7 +1348,7 @@ CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfPatternStroke)
 
     xmlDocUniquePtr pXmlDoc = parseExportedFile();
 
-    // ensure the stroke color is this redish color, and not gray which is what it
+    // ensure the stroke color is this reddish color, and not gray which is what it
     // defaults to if the stroke pattern isn't taken into account.
     assertXPath(pXmlDoc, "/office:document/office:automatic-styles/style:style[@style:name='gr1']/"
                          "style:graphic-properties[@svg:stroke-color='#ed1b2d']");
@@ -1375,7 +1372,7 @@ CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfPatternFill)
 
     xmlDocUniquePtr pXmlDoc = parseExportedFile();
 
-    // ensure the stroke color is this redish color, and not gray which is what it
+    // ensure the stroke color is this reddish color, and not gray which is what it
     // defaults to if the stroke pattern isn't taken into account.
     assertXPath(pXmlDoc, "/office:document/office:automatic-styles/style:style[@style:name='gr1']/"
                          "style:graphic-properties[@style:repeat='repeat' and "

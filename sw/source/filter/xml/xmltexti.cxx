@@ -53,6 +53,7 @@
 #include "xmltexti.hxx"
 #include "XMLRedlineImportHelper.hxx"
 #include <xmloff/XMLFilterServiceNames.h>
+#include <SwAppletImpl.hxx>
 #include <ndole.hxx>
 #include <docsh.hxx>
 #include <sfx2/docfile.hxx>
@@ -343,73 +344,36 @@ uno::Reference< XPropertySet > SwXMLTextImportHelper::createAndInsertOLEObject(
         SwOLENode *pOLENode = pNdIdx->GetNodes()[pNdIdx->GetIndex() + 1]->GetOLENode();
         OSL_ENSURE( pOLENode, "Where is the OLE node" );
 
-        OUStringBuffer aBuffer( rTableName.getLength() );
-        bool bQuoted = false;
-        bool bEscape = false;
-        bool bError = false;
-        for( sal_Int32 i=0; i < rTableName.getLength(); i++ )
+        OUString sTableName( rTableName );
+        // Documents written by older versions wrap a table name in single
+        // quotes (escaping inner quotes and backslashes with a backslash)
+        // when it contains spaces, dots, quotes or backslashes. Newer
+        // versions write the name unquoted, so only unescape the legacy form.
+        if( rTableName.startsWith("'") )
         {
+            OUStringBuffer aBuffer( rTableName.getLength() );
+            bool bEscape = false;
             bool bEndOfNameFound = false;
-            sal_Unicode c = rTableName[i];
-            switch( c )
+            for( sal_Int32 i = 1; i < rTableName.getLength() && !bEndOfNameFound; ++i )
             {
-            case '\'':
+                sal_Unicode c = rTableName[i];
                 if( bEscape )
                 {
                     aBuffer.append( c );
                     bEscape = false;
                 }
-                else if( bQuoted )
-                {
-                    bEndOfNameFound = true;
-                }
-                else if( 0 == i )
-                {
-                    bQuoted = true;
-                }
-                else
-                {
-                    bError = true;
-                }
-                break;
-            case '\\':
-                if( bEscape )
-                {
-                    aBuffer.append( c );
-                    bEscape = false;
-                }
-                else
-                {
+                else if( c == '\\' )
                     bEscape = true;
-                }
-                break;
-            case ' ':
-            case '.':
-                if( !bQuoted )
-                {
+                else if( c == '\'' )
                     bEndOfNameFound = true;
-                }
                 else
-                {
                     aBuffer.append( c );
-                    bEscape = false;
-                }
-                break;
-            default:
-                {
-                    aBuffer.append( c );
-                    bEscape = false;
-                }
-                break;
             }
-            if( bError || bEndOfNameFound )
-                break;
+            sTableName = aBuffer.makeStringAndClear();
         }
-        if( !bError )
-        {
-            OUString sTableName( aBuffer.makeStringAndClear() );
-            pOLENode->SetChartTableName( UIName(GetRenameMap().Get( XML_TEXT_RENAME_TYPE_TABLE, sTableName )) );
-        }
+
+        pOLENode->SetChartTableName(
+            UIName(GetRenameMap().Get(XML_TEXT_RENAME_TYPE_TABLE, sTableName)) );
     }
 
     sal_Int64 nDrawAspect = 0;
@@ -602,6 +566,125 @@ uno::Reference< XPropertySet > SwXMLTextImportHelper::createAndInsertOOoLink(
     return xPropSet;
 }
 
+uno::Reference< XPropertySet > SwXMLTextImportHelper::createAndInsertApplet(
+        const OUString &rName,
+        const OUString &rCode,
+        bool bMayScript,
+        const OUString& rHRef,
+        sal_Int32 nWidth, sal_Int32 nHeight )
+{
+    // this method will modify the document directly -> lock SolarMutex
+    SolarMutexGuard aGuard;
+
+    OTextCursorHelper* pTextCursor = dynamic_cast<OTextCursorHelper*>(GetCursor().get());
+    assert( pTextCursor && "SwXTextCursor missing" );
+    SwDoc *pDoc = pTextCursor->GetDoc();
+
+    SfxItemSet aItemSet(SfxItemSet::makeFixedSfxItemSet<RES_FRMATR_BEGIN, RES_FRMATR_END>( pDoc->GetAttrPool() ));
+    lcl_putHeightAndWidth( aItemSet, nHeight, nWidth);
+
+    SwApplet_Impl aAppletImpl ( std::move(aItemSet) );
+
+    OUString sCodeBase;
+    if( !rHRef.isEmpty() )
+        sCodeBase = GetXMLImport().GetAbsoluteReference( rHRef );
+
+    aAppletImpl.CreateApplet ( rCode, rName, bMayScript, sCodeBase, GetXMLImport().GetDocumentBase() );
+
+    // set the size of the applet
+    lcl_setObjectVisualArea( aAppletImpl.GetApplet(),
+                            embed::Aspects::MSOLE_CONTENT,
+                            Size( nWidth, nHeight ),
+                            MapUnit::Map100thMM );
+
+    SwFrameFormat *const pFrameFormat =
+        pDoc->getIDocumentContentOperations().InsertEmbObject( *pTextCursor->GetPaM(),
+        ::svt::EmbeddedObjectRef(aAppletImpl.GetApplet(), embed::Aspects::MSOLE_CONTENT),
+        &aAppletImpl.GetItemSet());
+    rtl::Reference<SwXTextEmbeddedObject> xPropSet = SwXTextEmbeddedObject::CreateXTextEmbeddedObject(
+                *pDoc, pFrameFormat);
+    if( pDoc->getIDocumentDrawModelAccess().GetDrawModel() )
+    {
+        // req for z-order
+        SwXFrame::GetOrCreateSdrObject(*static_cast<SwFlyFrameFormat*>(pFrameFormat));
+    }
+
+    return xPropSet;
+}
+
+uno::Reference< XPropertySet > SwXMLTextImportHelper::createAndInsertPlugin(
+        const OUString &rMimeType,
+        const OUString& rHRef,
+        sal_Int32 nWidth, sal_Int32 nHeight )
+{
+    OTextCursorHelper* pTextCursor = dynamic_cast<OTextCursorHelper*>(GetCursor().get());
+    assert( pTextCursor && "SwXTextCursor missing" );
+    SwDoc *pDoc = pTextCursor->GetDoc();
+
+    SfxItemSet aItemSet(SfxItemSet::makeFixedSfxItemSet<RES_FRMATR_BEGIN, RES_FRMATR_END>( pDoc->GetAttrPool() ));
+    lcl_putHeightAndWidth( aItemSet, nHeight, nWidth);
+
+    // We'll need a (valid) URL, or we need a MIME type. If we don't have
+    // either, do not insert plugin and return early. Copy URL into URL object
+    // on the way.
+    INetURLObject aURLObj;
+
+    bool bValidURL = !rHRef.isEmpty() &&
+                     aURLObj.SetURL( URIHelper::SmartRel2Abs( INetURLObject( GetXMLImport().GetBaseURL() ), rHRef ) );
+    bool bValidMimeType = !rMimeType.isEmpty();
+    if( !bValidURL && !bValidMimeType )
+        return nullptr;
+
+    rtl::Reference < SwXTextEmbeddedObject > xPropSet;
+    uno::Reference < embed::XStorage > xStorage = comphelper::OStorageHelper::GetTemporaryStorage();
+    try
+    {
+        // create object with desired ClassId
+        uno::Sequence < sal_Int8 > aClass( SvGlobalName( SO3_PLUGIN_CLASSID ).GetByteSequence() );
+        uno::Reference < embed::XEmbeddedObjectCreator > xFactory =  embed::EmbeddedObjectCreator::create( ::comphelper::getProcessComponentContext() );
+        uno::Reference < embed::XEmbeddedObject > xObj( xFactory->createInstanceInitNew(
+            aClass, OUString(), xStorage, u"DummyName"_ustr,
+            uno::Sequence < beans::PropertyValue >() ), uno::UNO_QUERY );
+
+        // set size to the object
+        lcl_setObjectVisualArea( xObj,
+                                embed::Aspects::MSOLE_CONTENT,
+                                Size( nWidth, nHeight ),
+                                MapUnit::Map100thMM );
+
+        if ( svt::EmbeddedObjectRef::TryRunningState( xObj ) )
+        {
+            uno::Reference < beans::XPropertySet > xSet( xObj->getComponent(), uno::UNO_QUERY );
+            if ( xSet.is() )
+            {
+                if( bValidURL )
+                    xSet->setPropertyValue(u"PluginURL"_ustr,
+                        Any( aURLObj.GetMainURL( INetURLObject::DecodeMechanism::NONE ) ) );
+                if( bValidMimeType )
+                    xSet->setPropertyValue(u"PluginMimeType"_ustr,
+                        Any( rMimeType ) );
+            }
+
+            SwFrameFormat *const pFrameFormat =
+                pDoc->getIDocumentContentOperations().InsertEmbObject(
+                    *pTextCursor->GetPaM(),
+                    ::svt::EmbeddedObjectRef(xObj, embed::Aspects::MSOLE_CONTENT),
+                    &aItemSet);
+            xPropSet = SwXTextEmbeddedObject::CreateXTextEmbeddedObject(
+                            *pDoc, pFrameFormat);
+            if( pDoc->getIDocumentDrawModelAccess().GetDrawModel() )
+            {
+                SwXFrame::GetOrCreateSdrObject(*
+                        static_cast<SwFlyFrameFormat*>(pFrameFormat)); // req for z-order
+            }
+        }
+    }
+    catch ( uno::Exception& )
+    {
+    }
+
+    return xPropSet;
+}
 uno::Reference< XPropertySet > SwXMLTextImportHelper::createAndInsertFloatingFrame(
         const OUString& rName,
         const OUString& rHRef,
@@ -754,6 +837,60 @@ uno::Reference< XPropertySet > SwXMLTextImportHelper::createAndInsertFloatingFra
     }
 
     return xPropSet;
+}
+
+void SwXMLTextImportHelper::endAppletOrPlugin(
+        const uno::Reference < XPropertySet > &rPropSet,
+        std::map < const OUString, OUString > &rParamMap)
+{
+    // this method will modify the document directly -> lock SolarMutex
+    SolarMutexGuard aGuard;
+
+    SwXFrame* pFrame = dynamic_cast<SwXFrame*>(rPropSet.get());
+    assert(pFrame && "SwXFrame missing");
+    SwFrameFormat *pFrameFormat = pFrame->GetFrameFormat();
+    const SwFormatContent& rContent = pFrameFormat->GetContent();
+    const SwNodeIndex *pNdIdx = rContent.GetContentIdx();
+    SwOLENode *pOLENd = pNdIdx->GetNodes()[pNdIdx->GetIndex() + 1]->GetNoTextNode()->GetOLENode();
+    SwOLEObj& rOLEObj = pOLENd->GetOLEObj();
+
+    uno::Reference < embed::XEmbeddedObject > xEmbObj( rOLEObj.GetOleRef() );
+    if ( !svt::EmbeddedObjectRef::TryRunningState( xEmbObj ) )
+        return;
+
+    uno::Reference < beans::XPropertySet > xSet( xEmbObj->getComponent(), uno::UNO_QUERY );
+    if ( !xSet.is() )
+        return;
+
+    const sal_Int32 nCount = rParamMap.size();
+    uno::Sequence< beans::PropertyValue > aCommandSequence( nCount );
+
+    std::transform(rParamMap.begin(), rParamMap.end(), aCommandSequence.getArray(),
+                   [](const auto& rParam)
+                   {
+                       return beans::PropertyValue(/* Name   */ rParam.first,
+                                                   /* Handle */ -1,
+                                                   /* Value  */ uno::Any(rParam.second),
+                                                   /* State  */ beans::PropertyState_DIRECT_VALUE);
+                   });
+
+    // unfortunately the names of the properties are depending on the object
+    OUString aParaName(u"AppletCommands"_ustr);
+    try
+    {
+        xSet->setPropertyValue( aParaName, Any( aCommandSequence ) );
+    }
+    catch ( uno::Exception& )
+    {
+        aParaName = "PluginCommands";
+        try
+        {
+            xSet->setPropertyValue( aParaName, Any( aCommandSequence ) );
+        }
+        catch ( uno::Exception& )
+        {
+        }
+    }
 }
 
 // redlining helper methods

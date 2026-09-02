@@ -41,9 +41,9 @@
 #include <vcl/weld/MessageDialog.hxx>
 #include <unotools/ucbhelper.hxx>
 #include <unotools/pathoptions.hxx>
-#include <unotools/viewoptions.hxx>
 #include <svtools/ehdl.hxx>
 #include <svtools/sfxecode.hxx>
+#include <svtools/viewoptions.hxx>
 
 #include <fpicker/strings.hrc>
 #include <svtools/helpids.h>
@@ -2275,7 +2275,7 @@ IMPL_LINK_NOARG(QueryFolderNameDialog, OKHdl, weld::Button&, void)
     m_xDialog->response(RET_OK);
 }
 
-IMPL_LINK_NOARG(QueryFolderNameDialog, NameHdl, weld::Entry&, void)
+IMPL_LINK_NOARG(QueryFolderNameDialog, NameHdl, weld::TextWidget&, void)
 {
     // trim the strings
     OUString aName = comphelper::string::strip(m_xNameEdit->get_text(), ' ');
