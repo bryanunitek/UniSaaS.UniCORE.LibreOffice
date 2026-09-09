@@ -20,6 +20,7 @@
 #pragma once
 
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <string_view>
 #include <vector>
@@ -79,7 +80,7 @@ struct ShapeStyleRef
     ShapeStyleRef() : mnThemedIdx(0) {}
 };
 
-typedef ::std::map< sal_Int32, ShapeStyleRef > ShapeStyleRefMap;
+typedef ::std::unordered_map< sal_Int32, ShapeStyleRef > ShapeStyleRefMap;
 
 /** Additional information for a chart embedded in a drawing shape. */
 struct ChartShapeInfo
@@ -462,7 +463,7 @@ private:
     /// Aspect ratio for an in-diagram shape.
     double mfAspectRatio = 0;
 
-    /// Number of child shapes to be layouted vertically inside org chart in-diagram shape.
+    /// Number of child shapes to be laid out vertically inside org chart in-diagram shape.
     sal_Int32 mnVerticalShapesCount = 0;
 
     // Is this a connector shape?

@@ -44,6 +44,8 @@
 #include <anchoredobject.hxx>
 #include <flyfrm.hxx>
 
+#include <workctrl.hxx>
+
 namespace
 {
 class SwUiWriterTest11 : public SwModelTestBase
@@ -573,8 +575,10 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf163194)
                                comphelper::makePropertyValue(u"URL"_ustr, maTempFile.GetURL()) };
     dispatchCommand(mxComponent, u".uno:ExportToPDF"_ustr, aDescriptor);
 
-    if (auto pPdfDocument = parsePDFExport()) // This part will be skipped without PDFium
+    if (std::shared_ptr<vcl::pdf::PDFium> pPDFium
+        = vcl::pdf::PDFiumLibrary::get()) // This part will be skipped without PDFium
     {
+        auto pPdfDocument = parsePDFExport(pPDFium);
         CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
         auto pPage = pPdfDocument->openPage(0);
         CPPUNIT_ASSERT(pPage);
@@ -694,8 +698,10 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf111880RtlPageCommentsOnLeftSide)
                                comphelper::makePropertyValue(u"URL"_ustr, maTempFile.GetURL()) };
     dispatchCommand(mxComponent, u".uno:ExportToPDF"_ustr, aDescriptor);
 
-    if (auto pPdfDocument = parsePDFExport()) // This part will be skipped without PDFium
+    if (std::shared_ptr<vcl::pdf::PDFium> pPDFium
+        = vcl::pdf::PDFiumLibrary::get()) // This part will be skipped without PDFium
     {
+        auto pPdfDocument = parsePDFExport(pPDFium);
         CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
         auto pPage = pPdfDocument->openPage(0);
         CPPUNIT_ASSERT(pPage);
@@ -1199,6 +1205,39 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testTdf124442)
     // - Expected: Test
     // - Actual  :
     CPPUNIT_ASSERT_EQUAL(sSearchString, sText);
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest11, testNavigateByHyperlinkOrder)
+{
+    createSwDoc("navigate_by_hyperlink.odt");
+
+    SwDoc* pDoc = getSwDoc();
+    SwWrtShell* pWrtShell = getSwDocShell()->GetWrtShell();
+    SwCursorShell* pShell(pDoc->GetEditShell());
+    CPPUNIT_ASSERT(pShell);
+    SwPaM* pCursor = pShell->GetCursor();
+
+    // navigate by hyperlink
+    SwView::SetMoveType(NID_HYPERLINK);
+
+    const OUString aStringArray[]{ "Sed",
+                                   "eros",
+                                   "turpis",
+                                   "Footnote hyperlink1",
+                                   "Footnote hyperlink2",
+                                   "Footnote hyperlink3",
+                                   "Footnote hyperlink4",
+                                   "ultricies",
+                                   "Endnote hyperlink" };
+
+    for (const OUString& rString : aStringArray)
+    {
+        // navigate to the next hyperlink and test that it is equal to rString
+        dispatchCommand(mxComponent, u".uno:ScrollToNext"_ustr, {});
+        pWrtShell->Right(SwCursorSkipMode::Chars, /*bSelect=*/true, rString.getLength(),
+                         /*bBasicCall=*/false);
+        CPPUNIT_ASSERT_EQUAL(rString, pCursor->GetText());
+    }
 }
 
 } // end of anonymous namespace

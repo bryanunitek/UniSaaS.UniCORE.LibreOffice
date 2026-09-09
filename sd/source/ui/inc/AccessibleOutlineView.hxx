@@ -37,11 +37,9 @@ class AccessibleOutlineView final
     : public AccessibleDocumentViewBase
 {
 public:
-    AccessibleOutlineView (
-        ::sd::Window* pSdWindow,
-        ::sd::OutlineViewShell* pViewShell,
-        const css::uno::Reference<css::frame::XController>& rxController,
-        const css::uno::Reference<css::accessibility::XAccessible>& rxParent);
+    AccessibleOutlineView(::sd::Window* pSdWindow, ::sd::OutlineViewShell* pViewShell,
+                          const css::uno::Reference<css::frame::XController>& rxController,
+                          const rtl::Reference<comphelper::OAccessible>& rpParent);
 
     virtual ~AccessibleOutlineView() override;
 
@@ -71,13 +69,6 @@ public:
     virtual void SAL_CALL
         removeAccessibleEventListener (
             const css::uno::Reference<css::accessibility::XAccessibleEventListener >& xListener) override;
-
-    //=====  XServiceInfo  ====================================================
-
-    /** Returns an identifier for the implementation of this object.
-    */
-    virtual OUString SAL_CALL
-        getImplementationName() override;
 
     //=====  lang::XEventListener  ============================================
 

@@ -93,13 +93,13 @@ namespace dbtools
 
     // date conversion
 
-    // calculates the default numberformat for a given datatype and a give language
+    // calculates the default numberformat for a given datatype and a given language
     OOO_DLLPUBLIC_DBTOOLS
     sal_Int32 getDefaultNumberFormat(const css::uno::Reference< css::beans::XPropertySet >& _xColumn,
                                      const css::uno::Reference< css::util::XNumberFormatTypes >& _xTypes,
                                      const css::lang::Locale& _rLocale);
 
-    // calculates the default numberformat for a given datatype and a give language
+    // calculates the default numberformat for a given datatype and a given language
     // @param  _nDataType @see com.sun.star.sdbc.DataType
     // @param _nScale       can be zero
     OOO_DLLPUBLIC_DBTOOLS
@@ -241,7 +241,7 @@ namespace dbtools
             Your fields live as long as this component lives.<br/>
 
             Additionally, you are encouraged to dispose this component as soon as you don't need the fields anymore.
-            It depends on the connection's implementation if this is necessary, but the is no guarantee, so to
+            It depends on the connection's implementation if this is necessary, but there is no guarantee, so to
             be on the safe side with respect to resource leaks, you should dispose the component.
 
         @param _pErrorInfo
@@ -842,33 +842,33 @@ namespace dbase
                     FoxProMemo       = 0xF5
     };
 
-    /** decode a DBase file's codepage byte to a RTL charset
-        @param  _out_nCharset
-            in case of success, the decoded RTL charset is written there.
+    /** decode a DBase file's codepage byte to a RTL encoding
+        @param  _out_nEncoding
+            in case of success, the decoded RTL encoding is written there.
             else, this is not written to.
         @param  nType
             the file's type byte
         @param  nCodepage
             the file's codepage byte
         @return
-            true if a RTL charset was successfully decoded and written to _out_nCharset
-            false if nothing was written to _out_nCharset
+            true if a RTL charset was successfully decoded and written to _out_nEncoding
+            false if nothing was written to _out_nEncoding
     */
-    OOO_DLLPUBLIC_DBTOOLS bool dbfDecodeCharset(rtl_TextEncoding &_out_nCharset, sal_uInt8 nType, sal_uInt8 nCodepage);
+    OOO_DLLPUBLIC_DBTOOLS bool dbfDecodeEncoding(rtl_TextEncoding &_out_nCharset, sal_uInt8 nType, sal_uInt8 nCodepage);
 
-    /** decode a DBase file's codepage byte to a RTL charset
-        @param  _out_nCharset
-            in case of success, the decoded RTL charset is written there.
+    /** decode a DBase file's codepage byte to a RTL encoding
+        @param  _out_nEncoding
+            in case of success, the decoded RTL encoding is written there.
             else, this is not written to.
         @param  dbf_Stream
             pointer to a SvStream encapsulating the DBase file.
             The stream will be rewound and read from.
             No guarantee is made on its position afterwards. Caller must reposition it itself.
         @return
-            true if a RTL charset was successfully decoded and written to _out_nCharset
-            false if nothing was written to _out_nCharset
+            true if a RTL encoding was successfully decoded and written to _out_nEncoding
+            false if nothing was written to _out_nEncoding
     */
-    OOO_DLLPUBLIC_DBTOOLS bool dbfReadCharset(rtl_TextEncoding &nCharSet, SvStream* dbf_Stream);
+    OOO_DLLPUBLIC_DBTOOLS bool dbfReadEncoding(rtl_TextEncoding &nCharSet, SvStream* dbf_Stream);
 
 } // namespace connectivity::dbase
 } // namespace connectivity

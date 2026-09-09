@@ -28,7 +28,7 @@
 /**
  * Handling of tokens in XML:
  *
- * This header defines te enum ::xmloff::token::XMLTokenEnum containing one
+ * This header defines the enum ::xmloff::token::XMLTokenEnum containing one
  * value for every fixed string used in our XML files.
  *
  * Usage:
@@ -537,6 +537,7 @@ namespace xmloff::token {
         XML_COPY_STYLES,
         XML_CORNER_RADIUS,
         XML_CORRECT,
+        XML_CORRELATION_CIRCLE,
         XML_COS,
         XML_COSH,
         XML_COT,
