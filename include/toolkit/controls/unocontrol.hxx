@@ -32,8 +32,9 @@
 #include <toolkit/helper/listenermultiplexer.hxx>
 #include <tools/long.hxx>
 #include <comphelper/interfacecontainer3.hxx>
-#include <cppuhelper/weakref.hxx>
-#include <cppuhelper/implbase9.hxx>
+#include <comphelper/OAccessible.hxx>
+#include <cppuhelper/implbase8.hxx>
+#include <unotools/weakref.hxx>
 #include <com/sun/star/util/XModeChangeBroadcaster.hpp>
 #include <memory>
 
@@ -60,12 +61,11 @@ struct UnoControlComponentInfos
 struct UnoControl_Data;
 
 
-typedef ::cppu::WeakAggImplHelper9  <   css::awt::XControl
+typedef ::cppu::WeakAggImplHelper8  <   css::awt::XControl
                                     ,   css::awt::XWindow2
                                     ,   css::awt::XView
                                     ,   css::beans::XPropertiesChangeListener
                                     ,   css::lang::XServiceInfo
-                                    ,   css::accessibility::XAccessible
                                     ,   css::util::XModeChangeBroadcaster
                                     ,   css::awt::XUnitConversion
                                     ,   css::awt::XStyleSettingsSupplier
@@ -92,8 +92,8 @@ protected:
     css::uno::Reference< css::awt::XControlModel >    mxModel;
     css::uno::Reference< css::awt::XGraphics >        mxGraphics;
 
-    css::uno::WeakReferenceHelper
-                                        maAccessibleContext;    /// our most recent XAccessibleContext instance
+    /// our most recent accessible
+    unotools::WeakReference<comphelper::OAccessible> mpAccessible;
 
     bool                            mbDisposePeer;
     bool                            mbRefreshingPeer;
@@ -118,8 +118,7 @@ protected:
     void                                                                        ImplLockPropertyChangeNotification( const OUString& rPropertyName, bool bLock );
     void                                                                        ImplLockPropertyChangeNotifications( const css::uno::Sequence< OUString >& rPropertyNames, bool bLock );
 
-    void DisposeAccessibleContext(css::uno::Reference<
-            css::lang::XComponent> const& xContext);
+    void DisposeAccessibleContext(const rtl::Reference<comphelper::OAccessible>& rpAccessible);
 
     void setPeer( const css::uno::Reference< css::awt::XVclWindowPeer >& _xPeer)
     {
@@ -199,9 +198,6 @@ public:
     sal_Bool SAL_CALL supportsService( const OUString& ServiceName ) override;
     css::uno::Sequence< OUString > SAL_CALL getSupportedServiceNames(  ) override;
 
-    // XAccessible
-    virtual css::uno::Reference< css::accessibility::XAccessibleContext > SAL_CALL getAccessibleContext(  ) override;
-
     // XModeChangeBroadcaster
     virtual void SAL_CALL addModeChangeListener( const css::uno::Reference< css::util::XModeChangeListener >& _rxListener ) override;
     virtual void SAL_CALL removeModeChangeListener( const css::uno::Reference< css::util::XModeChangeListener >& _rxListener ) override;
@@ -217,6 +213,7 @@ public:
     // XStyleSettingsSupplier
     virtual css::uno::Reference< css::awt::XStyleSettings > SAL_CALL getStyleSettings() override;
 
+    rtl::Reference<comphelper::OAccessible> getAccessible();
     css::uno::Reference< css::awt::XVclWindowPeer > getVclWindowPeer();
 
 protected:

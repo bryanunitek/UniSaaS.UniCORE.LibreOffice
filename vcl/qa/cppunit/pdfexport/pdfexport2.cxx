@@ -498,7 +498,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTocLink)
     // Save as PDF.
     save(TestFilter::PDF_WRITER);
 
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
 
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
@@ -515,7 +516,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testReduceSmallImage)
     // Load the Writer document.
     loadFromFile(u"reduce-small-image.fodt");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -540,7 +542,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf114256)
 {
     loadFromFile(u"tdf114256.ods");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -555,7 +558,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf150931)
 {
     loadFromFile(u"tdf150931.ods");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -605,7 +609,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf147027)
     // Load the Calc document.
     loadFromFile(u"tdf147027.ods");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -621,7 +626,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf135346)
     // Load the Calc document.
     loadFromFile(u"tdf135346.ods");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -636,7 +642,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf147164)
 {
     loadFromFile(u"tdf147164.odp");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(2, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/1);
     CPPUNIT_ASSERT(pPdfPage);
@@ -675,7 +682,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testReduceImage)
     aOutputStream.Close();
 
     // Parse the PDF: get the image.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -701,7 +709,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testLinkWrongPage)
     // Import the bugdoc and export as PDF.
     loadFromFile(u"link-wrong-page.odp");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     // The document has 2 pages.
     CPPUNIT_ASSERT_EQUAL(2, pPdfDocument->getPageCount());
@@ -733,7 +742,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testLinkWrongPagePartial)
     save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Then make sure the we have a link on the 1st page, but not on the 2nd one:
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(2, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -756,7 +766,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testPageRange)
     save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Then make sure the resulting PDF has 2 pages:
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     // Without the accompanying fix in place, this test would have failed with:
     // - Expected: 2
     // - Actual  : 3
@@ -769,7 +780,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testLargePage)
     // Import the bugdoc and export as PDF.
     loadFromFile(u"6m-wide.odg");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     // The document has 1 page.
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -805,7 +817,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testPdfImageResourceInlineXObjectRef)
     save(TestFilter::PDF_WRITER);
 
     // Parse the export result.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
 
     // Make sure that the page -> form -> form has a child image.
@@ -854,7 +867,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testDefaultVersion)
     save(TestFilter::PDF_WRITER);
 
     // Parse the export result.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     int nFileVersion = pPdfDocument->getFileVersion();
     CPPUNIT_ASSERT_EQUAL(17, nFileVersion);
 }
@@ -872,7 +886,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testVersion15)
     save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     int nFileVersion = pPdfDocument->getFileVersion();
     CPPUNIT_ASSERT_EQUAL(15, nFileVersion);
 }
@@ -968,7 +983,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testVersion20)
     save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     int nFileVersion = pPdfDocument->getFileVersion();
     CPPUNIT_ASSERT_EQUAL(20, nFileVersion);
 }
@@ -1133,7 +1149,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testFormFontName)
     save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result with pdfium.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     // The document has one page.
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -3557,7 +3574,9 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf157397)
                 CPPUNIT_ASSERT_EQUAL("Link"_ostr, pASubtype->GetValue());
                 auto pAContents = dynamic_cast<vcl::filter::PDFHexStringElement*>(
                     pAnnot->Lookup("Contents"_ostr));
-                CPPUNIT_ASSERT(!pAContents);
+                CPPUNIT_ASSERT_EQUAL(
+                    u"https://de.wikipedia.org/wiki/Kl\u00E4ranlage#Mechanische_Vorreinigung"_ustr,
+                    ::vcl::filter::PDFDocument::DecodeHexStringUTF16BE(*pAContents));
                 CPPUNIT_ASSERT_EQUAL("Link"_ostr, pASubtype->GetValue());
                 auto pAA
                     = dynamic_cast<vcl::filter::PDFDictionaryElement*>(pAnnot->Lookup("A"_ostr));
@@ -4590,7 +4609,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testPdfImageRotate180)
     save(TestFilter::PDF_WRITER);
 
     // Parse the export result.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
 
     // Make sure that the page -> form -> form has a child image.
@@ -4632,7 +4652,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf144222)
 #ifdef _WIN32
     loadFromFile(u"tdf144222.ods");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     // The document has one page.
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -4673,7 +4694,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf145873)
     loadFromFile(u"tdf145873.pptx");
     save(TestFilter::PDF_WRITER);
 
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     // The document has one page.
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -4709,7 +4731,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testPdfImageHyperlink)
     save(TestFilter::PDF_WRITER);
 
     // Then make sure that link is preserved:
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
     // Without the accompanying fix in place, this test would have failed, the hyperlink of the PDF
@@ -4888,7 +4911,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testPdfImageAnnots)
     save(TestFilter::PDF_WRITER);
 
     // Then make sure only the hyperlink is kept, since Draw itself has its own comments:
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
     // Without the accompanying fix in place, this test would have failed with:
@@ -4919,7 +4943,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testPdfImageEncryption)
     save(TestFilter::PDF_WRITER, /*rParams*/ {}, /*pPassword*/ "secret");
 
     // Then make sure that the image is not lost:
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport("secret"_ostr);
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get(), "secret"_ostr);
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -4947,7 +4972,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testBitmapScaledown)
     save(TestFilter::PDF_WRITER);
 
     // Then verify that the bitmap is not downscaled:
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -4975,7 +5001,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf139627)
 #if HAVE_MORE_FONTS
     loadFromFile(u"justified-arabic-kashida.odt");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     // The document has one page.
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -5018,7 +5045,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf139627)
     int rehmim = 0, kasreh = 1, jehtatweel = 2;
 
     CPPUNIT_ASSERT_EQUAL(u"رم"_ustr, sText[rehmim].trim());
-    CPPUNIT_ASSERT_EQUAL(OUString::fromUtf8("\xD9\x90\xD8\xAC"), sText[kasreh].trim());
+    CPPUNIT_ASSERT_EQUAL(OUString::fromUtf8("\xD8\xAC\xD9\x90"), sText[kasreh].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, sText[jehtatweel].trim());
 
     // "Kasreh" should be within "jeh" character
@@ -5372,7 +5399,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTrueTypeCompositeFont)
     CPPUNIT_ASSERT(pDescriptor->Lookup("FontFile2"_ostr));
 
     // and the text can still be extracted
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -5541,7 +5569,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf171869)
                    != std::string::npos);
 
     // Check the text can be extracted (i.e. the ToUnicode CMap works)
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -5563,7 +5592,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf48707_1)
     save(TestFilter::PDF_WRITER);
 
     // Parse the export result with pdfium.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
 
@@ -5594,7 +5624,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf48707_2)
     save(TestFilter::PDF_WRITER);
 
     // Parse the export result with pdfium.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
 
@@ -5625,7 +5656,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf156528)
 {
     loadFromFile(u"wide_page1.fodt");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     // The document has two pages
     CPPUNIT_ASSERT_EQUAL(2, pPdfDocument->getPageCount());
@@ -5693,7 +5725,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf113866)
     save(TestFilter::PDF_WRITER);
 
     // Parse the export result with pdfium.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     // Non-NULL pPdfDocument means pdfium is available.
     if (pPdfDocument != nullptr)
@@ -5728,7 +5761,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf159817)
     loadFromFile(u"tdf159817.fodt");
     save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
 
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(/*nIndex=*/0);
@@ -5805,7 +5839,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf61444)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(4), aText.size());
 
@@ -5829,7 +5864,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf124116TrackUntrack)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     // The underlying document has 4 lines:
     // - שמחַ plain
@@ -5862,15 +5898,16 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf134226)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(8), aText.size());
 
     CPPUNIT_ASSERT_EQUAL(u"ة"_ustr, aText[0].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[1].trim());
-    CPPUNIT_ASSERT_EQUAL(u"\u0651ق"_ustr, aText[2].trim());
+    CPPUNIT_ASSERT_EQUAL(u"ق\r\n\u0651"_ustr, aText[2].trim());
     CPPUNIT_ASSERT_EQUAL(u"ش"_ustr, aText[3].trim());
-    CPPUNIT_ASSERT_EQUAL(u"\u0651ق"_ustr, aText[4].trim());
+    CPPUNIT_ASSERT_EQUAL(u"ق\u0651"_ustr, aText[4].trim());
     CPPUNIT_ASSERT_EQUAL(u"ش"_ustr, aText[5].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[6].trim());
     CPPUNIT_ASSERT_EQUAL(u"ة"_ustr, aText[7].trim());
@@ -5896,18 +5933,19 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf71956)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(12), aText.size());
 
     CPPUNIT_ASSERT_EQUAL(u"ه"_ustr, aText[0].trim());
-    CPPUNIT_ASSERT_EQUAL(u"\u064e\u0651\u0670ل"_ustr, aText[1].trim());
+    CPPUNIT_ASSERT_EQUAL(u"ل\r\n\u064e\u0651\u0670"_ustr, aText[1].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[2].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[3].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[4].trim());
     CPPUNIT_ASSERT_EQUAL(u"ل"_ustr, aText[5].trim());
     CPPUNIT_ASSERT_EQUAL(u"ل"_ustr, aText[6].trim());
-    CPPUNIT_ASSERT_EQUAL(u"\u064e\u0651\u0670ل"_ustr, aText[7].trim());
+    CPPUNIT_ASSERT_EQUAL(u"ل\u064e\u0651\u0670"_ustr, aText[7].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[8].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[9].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[10].trim());
@@ -5933,7 +5971,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf101686)
 {
     loadFromFile(u"tdf101686.fodt");
     save(TestFilter::PDF_WRITER);
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
 
@@ -6037,7 +6076,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf157390)
     loadFromFile(u"tdf157390-overlapping-kanji.fodt");
     save(TestFilter::PDF_WRITER);
 
-    auto pPdfDocument = parsePDFExport();
+    auto pPdfDocument = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
 
     auto pPdfPage = pPdfDocument->openPage(/*nIndex*/ 0);
@@ -6093,7 +6132,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf162205Ltr)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(10), aText.size());
 
@@ -6126,7 +6166,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf162205Rtl)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(10), aText.size());
 
@@ -6159,7 +6200,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf162194SoftHyphen)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(4), aText.size());
 
@@ -6177,7 +6219,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf160786)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(5), aText.size());
 
@@ -6204,24 +6247,25 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf151748KashidaSpace)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(17), aText.size());
 
     // Box 1: Not enough room for kashida
-    CPPUNIT_ASSERT_EQUAL(u"خط تخوردگی"_ustr, aText.at(0).trim());
+    CPPUNIT_ASSERT_EQUAL(u"تخوردگی خط"_ustr, aText.at(0).trim());
     CPPUNIT_ASSERT_EQUAL(u"وتوسط"_ustr, aText.at(1).trim());
 
     // Box 2: One kashida toward end
     CPPUNIT_ASSERT_EQUAL(u"وردگی"_ustr, aText.at(2).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(3).trim()); // Kashida
-    CPPUNIT_ASSERT_EQUAL(u"خط تخ"_ustr, aText.at(4).trim());
+    CPPUNIT_ASSERT_EQUAL(u"تخ خط"_ustr, aText.at(4).trim());
     CPPUNIT_ASSERT_EQUAL(u"وتوسط"_ustr, aText.at(5).trim());
 
     // Box 3: Two kashida
     CPPUNIT_ASSERT_EQUAL(u"وردگی"_ustr, aText.at(6).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(7).trim()); // Kashida
-    CPPUNIT_ASSERT_EQUAL(u"ط تخ"_ustr, aText.at(8).trim());
+    CPPUNIT_ASSERT_EQUAL(u"تخ ط"_ustr, aText.at(8).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(9).trim()); // Kashida
     CPPUNIT_ASSERT_EQUAL(u"خ"_ustr, aText.at(10).trim());
     CPPUNIT_ASSERT_EQUAL(u"وتوسط"_ustr, aText.at(11).trim());
@@ -6242,13 +6286,14 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf163105SwKashidaSpaceExpansion)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(5), aText.size());
 
     CPPUNIT_ASSERT_EQUAL(u"یده"_ustr, aText.at(0).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(1).trim());
-    CPPUNIT_ASSERT_EQUAL(u"ه کش"_ustr, aText.at(2).trim()); // This span is whitespace justified
+    CPPUNIT_ASSERT_EQUAL(u"کش ه"_ustr, aText.at(2).trim()); // This span is whitespace justified
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(3).trim());
     CPPUNIT_ASSERT_EQUAL(u"نویس"_ustr, aText.at(4).trim());
 
@@ -6264,7 +6309,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf163105Writer)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     // The fix allows kashida justification in this document.
     // Without the fix, this will be 1.
@@ -6272,7 +6318,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf163105Writer)
 
     CPPUNIT_ASSERT_EQUAL(u"ارسی"_ustr, aText.at(0).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(1).trim());
-    CPPUNIT_ASSERT_EQUAL(u"تن ف"_ustr, aText.at(2).trim()); // This span is whitespace justified
+    CPPUNIT_ASSERT_EQUAL(u"ف تن"_ustr, aText.at(2).trim()); // This span is whitespace justified
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(3).trim());
     CPPUNIT_ASSERT_EQUAL(u"م"_ustr, aText.at(4).trim());
 
@@ -6288,7 +6334,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf163105Editeng)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     // The fix allows kashida justification in this document.
     // Without the fix, this will be 1.
@@ -6296,7 +6343,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf163105Editeng)
 
     CPPUNIT_ASSERT_EQUAL(u"ارسی"_ustr, aText.at(0).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(1).trim());
-    CPPUNIT_ASSERT_EQUAL(u"تن ف"_ustr, aText.at(2).trim()); // This span is whitespace justified
+    CPPUNIT_ASSERT_EQUAL(u"ف تن"_ustr, aText.at(2).trim()); // This span is whitespace justified
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(3).trim());
     CPPUNIT_ASSERT_EQUAL(u"م"_ustr, aText.at(4).trim());
 
@@ -6310,21 +6357,22 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf140767SyriacJustification)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(11), aText.size());
 
     CPPUNIT_ASSERT_EQUAL(u"ܝ"_ustr, aText.at(0).trim());
-    CPPUNIT_ASSERT_EQUAL(u"ܺܛ"_ustr, aText.at(1).trim());
+    CPPUNIT_ASSERT_EQUAL(u"ܛܺ"_ustr, aText.at(1).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(2).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(3).trim());
-    CPPUNIT_ASSERT_EQUAL(u"ܰܚ"_ustr, aText.at(4).trim());
+    CPPUNIT_ASSERT_EQUAL(u"ܚܰ"_ustr, aText.at(4).trim());
     CPPUNIT_ASSERT_EQUAL(u"ܕ"_ustr, aText.at(5).trim()); // This span is whitespace justified
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(6).trim());
-    CPPUNIT_ASSERT_EQUAL(u"ܰܓ"_ustr, aText.at(7).trim());
+    CPPUNIT_ASSERT_EQUAL(u"ܓܰ"_ustr, aText.at(7).trim());
     CPPUNIT_ASSERT_EQUAL(u"ܒ"_ustr, aText.at(8).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(9).trim());
-    CPPUNIT_ASSERT_EQUAL(u"ܰܐ"_ustr, aText.at(10).trim());
+    CPPUNIT_ASSERT_EQUAL(u"ܐܰ"_ustr, aText.at(10).trim());
 
     // Without kashida justification, this space will be 224.328
     CPPUNIT_ASSERT_LESS(90.0, aRect.at(5).getWidth());
@@ -6337,7 +6385,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf36709FirstLineIndentEm)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(16), aText.size());
 
@@ -6387,7 +6436,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf163913LeftRightMarginEm)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(9), aText.size());
 
@@ -6433,7 +6483,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testFormRoundtrip)
     save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the round-tripped document with PDFium
-    auto pPdfDocument = parsePDFExport();
+    auto pPdfDocument = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     // Should be 1 page
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPage = pPdfDocument->openPage(0);
@@ -6479,7 +6529,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf162750SmallCapsLigature)
     loadFromFile(u"tdf162750.fodt");
     save(TestFilter::PDF_WRITER);
 
-    auto pPdfDocument = parsePDFExport();
+    auto pPdfDocument = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
 
     auto pPdfPage = pPdfDocument->openPage(/*nIndex*/ 0);
@@ -6518,7 +6568,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf164106SplitReorderedClusters)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(14), aText.size());
 
@@ -6554,7 +6605,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testPDFAttachmentsWithEncryptedFile)
          /*pPassword*/ "secret");
 
     // Parse the round-tripped document with PDFium
-    auto pPdfDocument = parsePDFExport("secret"_ostr);
+    auto pPdfDocument = parsePDFExport(vcl::pdf::PDFiumLibrary::get(), "secret"_ostr);
 
     // Should be 1 page
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -6614,7 +6665,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTextBoxRuby)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(17), aText.size());
 
@@ -6676,7 +6728,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf166044ContFootnoteOnlyOnePgNum)
     loadFromFile(u"tdf166044-cont-footnote-one-pgnum.fodt");
     save(TestFilter::PDF_WRITER);
 
-    auto pPdfDocument = parsePDFExport();
+    auto pPdfDocument = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(2, pPdfDocument->getPageCount());
 
     auto pPdfPage = pPdfDocument->openPage(0);
@@ -6709,7 +6761,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf118350StartEndParaAlign)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(24), aText.size());
 
@@ -6779,7 +6832,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf72640LabelAlignIgnoresDirOff)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*page*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*page*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(10), aText.size());
 
@@ -6809,7 +6863,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf72640LabelAlignIgnoresDirOn)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*page*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*page*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(10), aText.size());
 
@@ -6838,7 +6893,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, tdf150076BackgroundPdf)
     save(TestFilter::PDF_WRITER);
 
     // Parse the export result.
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
     std::unique_ptr<vcl::pdf::PDFiumPage> pPdfPage = pPdfDocument->openPage(0);
     CPPUNIT_ASSERT(pPdfPage);
@@ -6857,7 +6913,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf155557UnderlineKashidaPortion)
     loadFromFile(u"tdf155557-underline-kashida-portion.fodt");
     save(TestFilter::PDF_WRITER);
 
-    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport();
+    std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
+        = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
 
@@ -6898,7 +6955,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testTdf117941RtlStrikeoutChars)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*page*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*page*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(8), aText.size());
 
@@ -6935,7 +6993,8 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest2, testDropCapPaint)
 
     std::vector<OUString> aText;
     std::vector<basegfx::B2DRectangle> aRect;
-    GetPdfPageTextObjectsAndBounds(parsePDFExport(), /*nPage*/ 0, aText, aRect);
+    GetPdfPageTextObjectsAndBounds(parsePDFExport(vcl::pdf::PDFiumLibrary::get()), /*nPage*/ 0,
+                                   aText, aRect);
 
     CPPUNIT_ASSERT_EQUAL(size_t(7), aText.size());
 

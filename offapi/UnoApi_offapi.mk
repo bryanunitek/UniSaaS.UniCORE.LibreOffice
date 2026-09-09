@@ -479,21 +479,7 @@ $(eval $(call gb_UnoApi_add_idlfiles_nohdl,offapi,com/sun/star/xml/xslt,\
 	XSLTTransformer \
 ))
 
-
-$(eval $(call gb_UnoApi_add_idlfiles_noheader,offapi,com/sun/star/accessibility,\
-	AccessibleContext \
-))
 $(eval $(call gb_UnoApi_add_idlfiles_noheader,offapi,com/sun/star/awt,\
-	AccessibleButton \
-	AccessibleCheckBox \
-	AccessibleComboBox \
-	AccessibleList \
-	AccessibleListBox \
-	AccessibleRadioButton \
-	AccessibleScrollBar \
-	AccessibleStatusBar \
-	AccessibleStatusBarItem \
-	AccessibleWindow \
 	AnimatedImagesControl \
 	AnimatedImagesControlModel \
 	RoadmapItem \
@@ -587,6 +573,7 @@ $(eval $(call gb_UnoApi_add_idlfiles_noheader,offapi,com/sun/star/chart,\
 	ChartTitle \
 	ChartTwoAxisXSupplier \
 	ChartTwoAxisYSupplier \
+	CorrelationCircleDiagram \
 	Diagram \
 	Dim3DDiagram \
 	DonutDiagram \

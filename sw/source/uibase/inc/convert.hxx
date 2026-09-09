@@ -26,6 +26,7 @@
 #include <vcl/weld/CheckButton.hxx>
 #include <vcl/weld/Container.hxx>
 #include <vcl/weld/Entry.hxx>
+#include <vcl/weld/Label.hxx>
 #include <vcl/weld/RadioButton.hxx>
 #include <vcl/weld/SpinButton.hxx>
 #include <vcl/weld/TreeView.hxx>
@@ -58,6 +59,8 @@ class SwConvertTableDlg final : public SfxDialogController
     std::unique_ptr<weld::Container> m_xRepeatRows;
     std::unique_ptr<weld::SpinButton> m_xRepeatHeaderNF;
 
+    std::unique_ptr<weld::SpinButton> m_xColumnNumNF;
+
     std::unique_ptr<weld::CheckButton> m_xDontSplitCB;
 
     std::unique_ptr<SwTableAutoFormat> mxTAutoFormat;
@@ -68,6 +71,8 @@ class SwConvertTableDlg final : public SfxDialogController
     std::unique_ptr<weld::CheckButton> m_xBtnFont;
     std::unique_ptr<weld::CheckButton> m_xBtnPattern;
     std::unique_ptr<weld::CheckButton> m_xBtnAlignment;
+    std::unique_ptr<weld::Label> m_xLabelColumn;
+
     SvxAutoFmtPreview m_aWndPreview;
     std::unique_ptr<weld::CustomWeld> m_xWndPreview;
 
@@ -79,6 +84,7 @@ class SwConvertTableDlg final : public SfxDialogController
     DECL_LINK(RepeatHeaderCheckBoxHdl, weld::Toggleable&, void);
     DECL_LINK(CheckHdl, weld::Toggleable&, void);
     DECL_LINK(SelFormatHdl, weld::ItemView&, void);
+    DECL_LINK(ColNumHdl, weld::SpinButton&, void);
 
 public:
     SwConvertTableDlg(SwView& rView, bool bToTable);
