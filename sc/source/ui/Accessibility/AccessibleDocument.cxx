@@ -417,7 +417,7 @@ bool ScChildrenShapes::ReplaceChild (::accessibility::AccessibleShape* pCurrentC
 {
     // create the new child
     rtl::Reference< ::accessibility::AccessibleShape > pReplacement(::accessibility::ShapeTypeHandler::Instance().CreateAccessibleObject (
-        ::accessibility::AccessibleShapeInfo ( _rxShape, pCurrentChild->getAccessibleParent(), this ),
+        ::accessibility::AccessibleShapeInfo ( _rxShape, pCurrentChild->implGetAccessibleParent(), this ),
         _rShapeTreeInfo
     ));
 
@@ -1284,14 +1284,12 @@ void ScChildrenShapes::VisAreaChanged() const
             pAccShapeData->pAccShape->ViewForwarderChanged();
 }
 
-ScAccessibleDocument::ScAccessibleDocument(
-        const uno::Reference<XAccessible>& rxParent,
-        ScTabViewShell* pViewShell,
-        ScSplitPos eSplitPos)
-    : ImplInheritanceHelper(rxParent),
-    mpViewShell(pViewShell),
-    meSplitPos(eSplitPos),
-    mbCompleteSheetSelected(false)
+ScAccessibleDocument::ScAccessibleDocument(const rtl::Reference<comphelper::OAccessible>& rpParent,
+                                           ScTabViewShell* pViewShell, ScSplitPos eSplitPos)
+    : ImplInheritanceHelper(rpParent)
+    , mpViewShell(pViewShell)
+    , meSplitPos(eSplitPos)
+    , mbCompleteSheetSelected(false)
 {
     maVisArea = GetVisibleArea_Impl();
 }
@@ -1734,8 +1732,9 @@ void SAL_CALL
     if (nChildIndex < 0 || nChildIndex >= nCount)
         throw lang::IndexOutOfBoundsException();
 
-    uno::Reference < XAccessible > xAccessible = mpChildrenShapes->Get(nChildIndex);
-    if (xAccessible.is())
+    rtl::Reference<::accessibility::AccessibleShape> pAccessible
+        = mpChildrenShapes->Get(nChildIndex);
+    if (pAccessible.is())
     {
         bool bWasTableSelected(IsTableSelected());
         mpChildrenShapes->Select(nChildIndex); // throws no lang::IndexOutOfBoundsException if Index is too high
@@ -1763,8 +1762,9 @@ sal_Bool SAL_CALL
         if (nChildIndex < 0 || nChildIndex >= nCount)
             throw lang::IndexOutOfBoundsException();
 
-        uno::Reference < XAccessible > xAccessible = mpChildrenShapes->Get(nChildIndex);
-        if (xAccessible.is())
+        rtl::Reference<::accessibility::AccessibleShape> pAccessible
+            = mpChildrenShapes->Get(nChildIndex);
+        if (pAccessible.is())
         {
             uno::Reference<drawing::XShape> xShape;
             bResult = mpChildrenShapes->IsSelected(nChildIndex, xShape); // throws no lang::IndexOutOfBoundsException if Index is too high
@@ -1869,8 +1869,9 @@ void SAL_CALL
 
     bool bTabMarked(IsTableSelected());
 
-    uno::Reference < XAccessible > xAccessible = mpChildrenShapes->Get(nChildIndex);
-    if (xAccessible.is())
+    rtl::Reference<::accessibility::AccessibleShape> pAccessible
+        = mpChildrenShapes->Get(nChildIndex);
+    if (pAccessible.is())
     {
         mpChildrenShapes->Deselect(nChildIndex); // throws no lang::IndexOutOfBoundsException if Index is too high
         if (bTabMarked)
@@ -1990,8 +1991,7 @@ SCTAB ScAccessibleDocument::getVisibleTable() const
     return nVisibleTable;
 }
 
-uno::Reference < XAccessible >
-    ScAccessibleDocument::GetAccessibleSpreadsheet()
+rtl::Reference<ScAccessibleSpreadsheet> ScAccessibleDocument::GetAccessibleSpreadsheet()
 {
     if (!mpAccessibleSpreadsheet.is() && mpViewShell)
     {

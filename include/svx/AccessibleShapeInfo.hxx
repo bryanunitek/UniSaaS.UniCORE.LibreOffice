@@ -20,6 +20,8 @@
 #pragma once
 
 #include <com/sun/star/uno/Reference.hxx>
+#include <comphelper/OAccessible.hxx>
+#include <rtl/ref.hxx>
 #include <svx/svxdllapi.h>
 
 namespace com::sun::star {
@@ -54,8 +56,7 @@ public:
 
     /** The accessible parent object of the shape.
     */
-    css::uno::Reference<
-        css::accessibility::XAccessible> mxParent;
+    rtl::Reference<comphelper::OAccessible> mpParent;
 
     /** This object that may be realized by the same implementation as that
         of that of <member>mxParent</member> can be used to modify
@@ -66,21 +67,15 @@ public:
 
     /** Copy the given values into the members described above.
     */
-    AccessibleShapeInfo (
-        css::uno::Reference<
-            css::drawing::XShape> xShape,
-        css::uno::Reference<
-            css::accessibility::XAccessible> xParent,
-        IAccessibleParent* pChildrenManager);
+    AccessibleShapeInfo(css::uno::Reference<css::drawing::XShape> xShape,
+                        const rtl::Reference<comphelper::OAccessible>& rpParent,
+                        IAccessibleParent* pChildrenManager);
 
     /** Copy the given values into the members described above.
         The accessible parent implementation object is set to NULL.
     */
-    AccessibleShapeInfo (
-        css::uno::Reference<
-            css::drawing::XShape> xShape,
-        css::uno::Reference<
-            css::accessibility::XAccessible> xParent);
+    AccessibleShapeInfo(css::uno::Reference<css::drawing::XShape> xShape,
+                        const rtl::Reference<comphelper::OAccessible>& rpParent);
 
     ~AccessibleShapeInfo();
 

@@ -605,7 +605,7 @@ void ScOrcusFactory::pushMatrixFormulaToken(const ScAddress& rPos, const OUStrin
 void ScOrcusFactory::pushFormulaResult(const ScAddress& rPos, double fValue)
 {
     // Formula result is expected to be pushed immediately following the
-    // formula token it belongs.
+    // formula token it belongs to.
     if (maCellStoreTokens.empty())
         return;
 
@@ -631,7 +631,7 @@ void ScOrcusFactory::pushFormulaResult(const ScAddress& rPos, double fValue)
 void ScOrcusFactory::pushFormulaResult(const ScAddress& rPos, const OUString& rValue)
 {
     // Formula result is expected to be pushed immediately following the
-    // formula token it belongs.
+    // formula token it belongs to.
     if (maCellStoreTokens.empty())
         return;
 
@@ -1600,7 +1600,8 @@ size_t ScOrcusSharedStrings::commit_segments()
     for (const auto & [ rSel, rFormat ] : maFormatSegments)
         mrEditEngine.QuickSetAttribs(rFormat, rSel);
 
-    auto nPos = mrFactory.appendFormattedString(mrEditEngine.CreateTextObject());
+    auto nPos = mrFactory.appendFormattedString(
+        std::make_unique<EditTextObject>(mrEditEngine.CreateTextObject()));
     mrEditEngine.Clear();
     maFormatSegments.clear();
     return nPos;

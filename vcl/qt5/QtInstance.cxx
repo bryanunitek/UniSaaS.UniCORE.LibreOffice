@@ -828,22 +828,21 @@ std::unique_ptr<QApplication> QtInstance::CreateQApplication()
     return pQApp;
 }
 
-bool QtInstance::DoExecute(int& nExitCode)
+bool QtInstance::DoExecute()
 {
-    const bool bIsUseSystemEventLoop = Application::IsUseSystemEventLoop();
-    if (bIsUseSystemEventLoop)
-    {
+    if (!Application::IsUseSystemEventLoop())
+        return false;
+
 #if defined __EMSCRIPTEN__
-        // For Emscripten, QApplication::exec() will unwind the stack by throwing a JavaScript
-        // exception, so we need to manually undo the call of AcquireYieldMutex() done in InitVCL:
-        ReleaseYieldMutex(false);
+    // For Emscripten, QApplication::exec() will unwind the stack by throwing a JavaScript
+    // exception, so we need to manually undo the call of AcquireYieldMutex() done in InitVCL:
+    ReleaseYieldMutex(false);
 #endif
-        nExitCode = QApplication::exec();
+    QApplication::exec();
 #if defined __EMSCRIPTEN__
-        O3TL_UNREACHABLE;
+    O3TL_UNREACHABLE;
 #endif
-    }
-    return bIsUseSystemEventLoop;
+    return true;
 }
 
 void QtInstance::DoQuit()
@@ -945,15 +944,14 @@ std::unique_ptr<weld::Builder> QtInstance::CreateInterimBuilder(vcl::Window* pPa
     return std::make_unique<QtInstanceBuilder>(pWidget, rUIRoot, rUIFile);
 }
 
-weld::MessageDialog* QtInstance::CreateMessageDialog(weld::Widget* pParent,
-                                                     VclMessageType eMessageType,
-                                                     VclButtonsType eButtonsType,
-                                                     const OUString& rPrimaryMessage)
+std::unique_ptr<weld::MessageDialog>
+QtInstance::CreateMessageDialog(weld::Widget* pParent, VclMessageType eMessageType,
+                                VclButtonsType eButtonsType, const OUString& rPrimaryMessage)
 {
     SolarMutexGuard g;
     if (!IsMainThread())
     {
-        weld::MessageDialog* pDialog = nullptr;
+        std::unique_ptr<weld::MessageDialog> pDialog;
         RunInMainThread([&] {
             pDialog = CreateMessageDialog(pParent, eMessageType, eButtonsType, rPrimaryMessage);
         });
@@ -972,7 +970,8 @@ weld::MessageDialog* QtInstance::CreateMessageDialog(weld::Widget* pParent,
         pMessageBox->setText(toQString(rPrimaryMessage));
         pMessageBox->setIcon(vclMessageTypeToQtIcon(eMessageType));
         pMessageBox->setWindowTitle(toQString(GetStandardMessageDialogText(eMessageType)));
-        QtInstanceMessageDialog* pDialog = new QtInstanceMessageDialog(pMessageBox);
+        std::unique_ptr<QtInstanceMessageDialog> pDialog
+            = std::make_unique<QtInstanceMessageDialog>(pMessageBox);
         pDialog->addStandardButtons(eButtonsType);
         return pDialog;
     }

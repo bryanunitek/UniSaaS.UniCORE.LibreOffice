@@ -118,7 +118,7 @@ ScImportExport::ScImportExport( ScDocument& r )
     pExtOptions = nullptr;
 }
 
-// Insert am current cell without range(es)
+// Insert at current cell without range(es)
 ScImportExport::ScImportExport( ScDocument& r, const ScAddress& rPt )
     : pDocSh( r.GetDocumentShell() ), rDoc( r ),
       aRange( rPt ),
@@ -1069,7 +1069,7 @@ static bool lcl_PutString(
             {
                 ScFieldEditEngine& rEngine = rDoc.GetEditEngine();
                 rEngine.SetTextCurrentDefaults(rStr);
-                rDocImport.setEditCell(ScAddress(nCol, nRow, nTab), rEngine.CreateTextObject());
+                rDocImport.setEditCell(ScAddress(nCol, nRow, nTab), std::make_unique<EditTextObject>(rEngine.CreateTextObject()));
                 return true;
             }
             else
@@ -1480,7 +1480,7 @@ static bool lcl_PutString(
         ScFieldEditEngine& rEngine = rDoc.GetEditEngine();
         rEngine.SetTextCurrentDefaults(rStr);
         if ( bUseDocImport )
-            rDocImport.setEditCell(ScAddress(nCol, nRow, nTab), rEngine.CreateTextObject());
+            rDocImport.setEditCell(ScAddress(nCol, nRow, nTab), std::make_unique<EditTextObject>(rEngine.CreateTextObject()));
         else
             rDoc.SetEditText( ScAddress( nCol, nRow, nTab ), rEngine.CreateTextObject() );
     }

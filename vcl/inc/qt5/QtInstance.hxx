@@ -190,10 +190,9 @@ public:
                                                                 const OUString& rUIRoot,
                                                                 const OUString& rUIFile,
                                                                 bool bAllowCycleFocusOut) override;
-    virtual weld::MessageDialog* CreateMessageDialog(weld::Widget* pParent,
-                                                     VclMessageType eMessageType,
-                                                     VclButtonsType eButtonType,
-                                                     const OUString& rPrimaryMessage) override;
+    virtual std::unique_ptr<weld::MessageDialog>
+    CreateMessageDialog(weld::Widget* pParent, VclMessageType eMessageType,
+                        VclButtonsType eButtonType, const OUString& rPrimaryMessage) override;
     virtual std::unique_ptr<weld::ColorChooserDialog>
     CreateColorChooserDialog(weld::Window* pParent, vcl::ColorPickerMode eMode) override;
 
@@ -237,7 +236,7 @@ public:
 
     void* CreateGStreamerSink(const SystemChildWindow*) override;
 
-    bool DoExecute(int& nExitCode) override;
+    bool DoExecute() override;
     void DoQuit() override;
 
     static QWidget* GetQWidget(weld::Widget* pWidget);

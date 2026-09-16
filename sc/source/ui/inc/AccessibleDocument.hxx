@@ -44,10 +44,8 @@ class ScAccessibleDocument final
       public accessibility::IAccessibleViewForwarder
 {
 public:
-    ScAccessibleDocument(
-        const css::uno::Reference<css::accessibility::XAccessible>& rxParent,
-        ScTabViewShell* pViewShell,
-        ScSplitPos eSplitPos);
+    ScAccessibleDocument(const rtl::Reference<comphelper::OAccessible>& rpParent,
+                         ScTabViewShell* pViewShell, ScSplitPos eSplitPos);
 
     void PreInit();
 
@@ -160,8 +158,7 @@ public:
 
     rtl::Reference<utl::AccessibleRelationSetHelper> GetRelationSet(const ScAddress* pAddress) const;
 
-    css::uno::Reference< css::accessibility::XAccessible >
-        GetAccessibleSpreadsheet();
+    rtl::Reference<ScAccessibleSpreadsheet> GetAccessibleSpreadsheet();
 
 protected:
     virtual std::unordered_map<OUString, OUString> implGetExtendedAttributes() override;

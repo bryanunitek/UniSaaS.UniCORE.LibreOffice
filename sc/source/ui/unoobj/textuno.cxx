@@ -184,7 +184,7 @@ SvxTextForwarder* ScHeaderFooterTextData::GetTextForwarder()
             // no access to ScDocument, use temporary default CellAttributeHelper
             // was: "use global pool from module" which is usually ScMessagePool
             // and gets set in ScTabViewObj::SelectionChanged() by
-            // ScFormatShell::ScFormatShell which  calls
+            // ScFormatShell::ScFormatShell which calls
             //    SetPool( &pTabViewShell->GetPool() );
             pTmp.reset(new CellAttributeHelper(ScModule::get()->GetPool()));
             pCellAttributeDefault = &pTmp->getDefaultCellAttribute();
@@ -221,13 +221,13 @@ void ScHeaderFooterTextData::UpdateData()
 {
     if (pEditEngine)
     {
-        mpTextObj = pEditEngine->CreateTextObject();
+        mpTextObj = std::make_unique<EditTextObject>(pEditEngine->CreateTextObject());
     }
 }
 
 void ScHeaderFooterTextData::UpdateData(EditEngine& rEditEngine)
 {
-    mpTextObj = rEditEngine.CreateTextObject();
+    mpTextObj = std::make_unique<EditTextObject>(rEditEngine.CreateTextObject());
     bDataValid = false;
 }
 
@@ -485,7 +485,7 @@ uno::Reference<container::XEnumerationAccess> SAL_CALL ScHeaderFooterTextObj::ge
 
 uno::Reference<container::XNameAccess> SAL_CALL ScHeaderFooterTextObj::getTextFieldMasters()
 {
-    //  this does not exists in Calc (?)
+    //  this does not exist in Calc (?)
     return nullptr;
 }
 
@@ -720,7 +720,7 @@ void ScEditEngineTextObj::SetText( const EditTextObject& rTextObject )
     SetSelection( aSel );
 }
 
-std::unique_ptr<EditTextObject> ScEditEngineTextObj::CreateTextObject()
+EditTextObject ScEditEngineTextObj::CreateTextObject()
 {
     return GetEditEngine()->CreateTextObject();
 }

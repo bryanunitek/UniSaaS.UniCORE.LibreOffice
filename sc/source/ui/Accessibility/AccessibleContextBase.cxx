@@ -37,11 +37,9 @@ using namespace ::com::sun::star;
 using namespace ::com::sun::star::accessibility;
 
 ScAccessibleContextBase::ScAccessibleContextBase(
-                                                 uno::Reference<XAccessible> xParent,
-                                                 const sal_Int16 aRole)
-                                                 :
-    mxParent(std::move(xParent)),
-    maRole(aRole)
+    const rtl::Reference<comphelper::OAccessible>& rpParent, const sal_Int16 aRole)
+    : mpParent(rpParent)
+    , maRole(aRole)
 {
 }
 
@@ -74,7 +72,7 @@ void SAL_CALL ScAccessibleContextBase::disposing()
 
     OAccessible::disposing();
 
-    mxParent.clear();
+    mpParent.clear();
 }
 
 
@@ -110,16 +108,11 @@ bool ScAccessibleContextBase::isShowing(  )
     SolarMutexGuard aGuard;
     ensureAlive();
     bool bShowing(false);
-    if (mxParent.is())
+    if (mpParent.is())
     {
-        uno::Reference<XAccessibleComponent> xParentComponent (mxParent->getAccessibleContext(), uno::UNO_QUERY);
-        if (xParentComponent.is())
-        {
-            tools::Rectangle aParentBounds(
-                vcl::unohelper::ConvertToVCLRect(xParentComponent->getBounds()));
-            tools::Rectangle aBounds(vcl::unohelper::ConvertToVCLRect(getBounds()));
-            bShowing = aBounds.Overlaps(aParentBounds);
-        }
+        tools::Rectangle aParentBounds(vcl::unohelper::ConvertToVCLRect(mpParent->getBounds()));
+        tools::Rectangle aBounds(vcl::unohelper::ConvertToVCLRect(getBounds()));
+        bShowing = aBounds.Overlaps(aParentBounds);
     }
     return bShowing;
 }
@@ -149,7 +142,7 @@ sal_Int32 SAL_CALL ScAccessibleContextBase::getBackground(  )
 uno::Reference<XAccessible> SAL_CALL
        ScAccessibleContextBase::getAccessibleParent()
 {
-    return mxParent;
+    return mpParent;
 }
 
 sal_Int16 SAL_CALL
@@ -211,18 +204,12 @@ sal_Int64 SAL_CALL ScAccessibleContextBase::getAccessibleStateSet()
     return 0;
 }
 
-lang::Locale SAL_CALL
-       ScAccessibleContextBase::getLocale()
+lang::Locale SAL_CALL ScAccessibleContextBase::getLocale()
 {
     SolarMutexGuard aGuard;
     ensureAlive();
-    if (mxParent.is())
-    {
-        uno::Reference<XAccessibleContext> xParentContext (
-            mxParent->getAccessibleContext());
-        if (xParentContext.is())
-            return xParentContext->getLocale ();
-    }
+    if (mpParent.is())
+        return mpParent->getLocale();
 
     //  No locale and no parent.  Therefore throw exception to indicate this
     //  cluelessness.

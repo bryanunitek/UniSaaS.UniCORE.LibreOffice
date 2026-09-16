@@ -25,29 +25,27 @@ namespace accessibility {
 
 AccessibleShapeInfo::AccessibleShapeInfo (
         css::uno::Reference<css::drawing::XShape> xShape,
-        css::uno::Reference<css::accessibility::XAccessible> xParent,
+        const rtl::Reference<comphelper::OAccessible>& rpParent,
         IAccessibleParent* pChildrenManager)
     : mxShape (std::move(xShape)),
-      mxParent (std::move(xParent)),
+      mpParent (rpParent),
       mpChildrenManager (pChildrenManager)
 {
     // empty.
 }
 
-
-AccessibleShapeInfo::AccessibleShapeInfo (
-        css::uno::Reference<css::drawing::XShape> xShape,
-        css::uno::Reference<css::accessibility::XAccessible> xParent)
-    : mxShape (std::move(xShape)),
-      mxParent (std::move(xParent)),
-      mpChildrenManager (nullptr)
+AccessibleShapeInfo::AccessibleShapeInfo(css::uno::Reference<css::drawing::XShape> xShape,
+                                         const rtl::Reference<comphelper::OAccessible>& rpParent)
+    : mxShape(std::move(xShape))
+    , mpParent(rpParent)
+    , mpChildrenManager(nullptr)
 {
     // empty.
 }
 
 AccessibleShapeInfo::AccessibleShapeInfo (const AccessibleShapeInfo &rOther)
     : mxShape (rOther.mxShape),
-      mxParent (rOther.mxParent),
+      mpParent (rOther.mpParent),
       mpChildrenManager (rOther.mpChildrenManager)
 {
     // empty.
