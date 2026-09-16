@@ -99,11 +99,10 @@ sal_uInt8 FormulaToken::GetParamCount() const
         && !FormulaCompiler::IsOpCodeJumpCommand(eOp) && eOp != ocPercentSign)
         return 0;       // parameters and specials
                         // ocIf... jump commands not for FAP, have cByte then
-    else if (ocStartBinaryOperators <= eOp && eOp < ocStopBinaryOperators
-        && eOp != ocAnd && eOp != ocOr && eOp != ocCall)
+    else if (isBinaryOperatorOpCode(eOp) && eOp != ocAnd && eOp != ocOr && eOp != ocCall)
         return 2;           // binary operators, compiler checked; OR and AND legacy but are
                             // functions; ocCall may have more than two params
-    else if ((ocStartUnaryOperators <= eOp && eOp < ocStopUnaryOperators) || eOp == ocPercentSign)
+    else if (isUnaryOperatorOpCode(eOp) || eOp == ocPercentSign)
         return 1;           // unary operators, compiler checked
     else if (ocStartNoParameters <= eOp && eOp < ocStopNoParameters)
         return 0;           // no parameter
@@ -1374,7 +1373,7 @@ FormulaTokenArray * FormulaTokenArray::RewriteMissing( const MissingConvention &
     FormulaMissingContext* pCtx = (nAlloc < nTokens ? new FormulaMissingContext[nTokens] : &aCtx[0]);
     int* pOcas = (nAlloc < nTokens ? new int[nTokens] : &aOpCodeAddressStack[0]);
     int* pOcds = (nAlloc < nTokens ? new int[nTokens] : &aOpCodeDcountStack[0]);
-    // Never go below 0, never use 0, mpFunc always NULL.
+    // Never go below 0, never use 0, mpFunc always nullptr.
     pCtx[0].Clear();
     int nFn = 0;
     int nOcas = 0;
@@ -1532,9 +1531,8 @@ bool FormulaTokenArray::MayReferenceFollow()
     if (i > 0 || !isWhitespaceOpCode( pCode[i]->GetOpCode()))
     {
         OpCode eOp = pCode[i]->GetOpCode();
-        if ( (ocStartBinaryOperators <= eOp && eOp < ocStopBinaryOperators ) ||
-             (ocStartUnaryOperators <= eOp && eOp < ocStopUnaryOperators ) ||
-             eOp == ocOpen || eOp == ocSep )
+        if (isBinaryOperatorOpCode(eOp) || isUnaryOperatorOpCode(eOp) || eOp == ocOpen
+            || eOp == ocSep)
         {
             return true;
         }

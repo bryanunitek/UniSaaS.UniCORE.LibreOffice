@@ -65,8 +65,8 @@ DRAGONBOX_TARBALL := dragonbox-1.1.3.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-FAST_FLOAT_SHA256SUM := 76f958dd97b1cf4d8862d1f0986a47d4bdfa8845252bae15ef0f40de3b95961f
-FAST_FLOAT_TARBALL := fast_float-8.2.10.tar.gz
+FAST_FLOAT_SHA256SUM := 90485994d0fed61d0693e8dba32c464b0e8adf7f2e7c2efbf5bff0df5ef5b13f
+FAST_FLOAT_TARBALL := fast_float-8.3.0.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -262,8 +262,8 @@ FONT_SCHEHERAZADE_TARBALL := Scheherazade-2.100.zip
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-FREEHAND_SHA256SUM := a431d78767e5aa27ade7c6d1b7a11a9f1848cb4b9260bf0a6a44689553ecccfe
-FREEHAND_TARBALL := libfreehand-0.1.3.tar.xz
+FREEHAND_SHA256SUM := 350b10d24a76d7e8c8ae98b74c2d432a2c8ddec08935d09856d20b695a35e600
+FREEHAND_TARBALL := libfreehand-0.1.4.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -452,8 +452,8 @@ LXML_TARBALL := lxml-6.1.1.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-LZMA_SHA256SUM := 3d3a1b973af218114f4f889bbaa2f4c037deaae0c8e815eec381c3d546b974a0
-LZMA_TARBALL := xz-5.8.3.tar.gz
+LZMA_SHA256SUM := 0014c7886930454fe8bd4228665b51af55eeae560ea135c9c4cd33f55b2591d9
+LZMA_TARBALL := xz-5.8.4.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -493,8 +493,8 @@ MYTHES_TARBALL := mythes-1.2.6.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-NSS_SHA256SUM := bfd84218ee9b0b24775723eb62bdf4590bf21a3818e8210d37de0b2c2db79750
-NSS_TARBALL := nss-3.128-with-nspr-4.39.tar.gz
+NSS_SHA256SUM := d389064d5e5ef09d597f8ae8dadc066f71e97b982bd7418b835686425fc3a189
+NSS_TARBALL := nss-3.129-with-nspr-4.39.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -524,8 +524,8 @@ ONLINEUPDATE_TARBALL := onlineupdate-c003be8b9727672e7d30972983b375f4c200233f-2.
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-OPENLDAP_SHA256SUM := 9e86f37da375aa948a1b478dd76fe87b02090e47c21facae19223588e3407922
-OPENLDAP_TARBALL := openldap-2.7.0.tgz
+OPENLDAP_SHA256SUM := 253db80f301258ea69cda1184766d57395b836aaabf41157eb0316eb0fac1341
+OPENLDAP_TARBALL := openldap-2.7.1.tgz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts

@@ -189,8 +189,9 @@ public:
                                                                 const OUString& rUIRoot,
                                                                 const OUString& rUIFile,
                                                                 bool bAllowCycleFocusOut);
-    virtual weld::MessageDialog* CreateMessageDialog(weld::Widget* pParent, VclMessageType eMessageType,
-                                                     VclButtonsType eButtonType, const OUString& rPrimaryMessage);
+    virtual std::unique_ptr<weld::MessageDialog>
+    CreateMessageDialog(weld::Widget* pParent, VclMessageType eMessageType,
+                        VclButtonsType eButtonType, const OUString& rPrimaryMessage);
     virtual std::unique_ptr<weld::ColorChooserDialog>
     CreateColorChooserDialog(weld::Window* pParent, vcl::ColorPickerMode eMode);
     virtual weld::Window* GetFrameWeld(const css::uno::Reference<css::awt::XWindow>& rWindow);
@@ -231,10 +232,10 @@ public:
 
     virtual void* CreateGStreamerSink(const SystemChildWindow*) { return nullptr; }
 
-    virtual void BeforeAbort(const OUString& /* rErrorText */, bool /* bDumpCore */) {}
+    virtual void BeforeAbort() {}
 
     // both must be implemented, if the VCL plugin needs to run via system event loop
-    virtual bool DoExecute(int &nExitCode);
+    virtual bool DoExecute();
     virtual void DoQuit();
 };
 

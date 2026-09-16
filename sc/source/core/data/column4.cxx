@@ -505,8 +505,8 @@ public:
             case sc::FormulaResultValue::String:
                 if (aRes.mbMultiLine)
                 {
-                    std::unique_ptr<EditTextObject> pObj(mrDoc.CreateSharedStringTextObject(aRes.maString));
-                    maResValues.setValue(nRow, std::move(pObj));
+                    EditTextObject aObj(mrDoc.CreateSharedStringTextObject(aRes.maString));
+                    maResValues.setValue(nRow, std::make_unique<EditTextObject>(std::move(aObj)));
                 }
                 else
                 {
@@ -1496,7 +1496,7 @@ public:
                 continue;
             }
 
-            // If This is the last group in the range, see if the group
+            // If this is the last group in the range, see if the group
             // extends beyond the range, in which case have the excess
             // formula cells stop listening.
             size_t nEndGroupPos = (pp - ppBeg) + pFC->GetSharedLength();

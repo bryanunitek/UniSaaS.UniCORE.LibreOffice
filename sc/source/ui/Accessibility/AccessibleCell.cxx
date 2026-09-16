@@ -50,29 +50,23 @@
 using namespace ::com::sun::star;
 using namespace ::com::sun::star::accessibility;
 
-rtl::Reference<ScAccessibleCell> ScAccessibleCell::create(
-        const uno::Reference<XAccessible>& rxParent,
-        ScTabViewShell* pViewShell,
-        const ScAddress& rCellAddress,
-        sal_Int64 nIndex,
-        ScSplitPos eSplitPos,
-        ScAccessibleDocument* pAccDoc)
+rtl::Reference<ScAccessibleCell>
+ScAccessibleCell::create(const rtl::Reference<comphelper::OAccessible>& rpParent,
+                         ScTabViewShell* pViewShell, const ScAddress& rCellAddress,
+                         sal_Int64 nIndex, ScSplitPos eSplitPos, ScAccessibleDocument* pAccDoc)
 {
-    rtl::Reference<ScAccessibleCell> x(new ScAccessibleCell(
-        rxParent, pViewShell, rCellAddress, nIndex, eSplitPos, pAccDoc));
+    rtl::Reference<ScAccessibleCell> x(
+        new ScAccessibleCell(rpParent, pViewShell, rCellAddress, nIndex, eSplitPos, pAccDoc));
     x->Init();
     return x;
 }
 
-ScAccessibleCell::ScAccessibleCell(
-        const uno::Reference<XAccessible>& rxParent,
-        ScTabViewShell* pViewShell,
-        const ScAddress& rCellAddress,
-        sal_Int64 nIndex,
-        ScSplitPos eSplitPos,
-        ScAccessibleDocument* pAccDoc)
+ScAccessibleCell::ScAccessibleCell(const rtl::Reference<comphelper::OAccessible>& rpParent,
+                                   ScTabViewShell* pViewShell, const ScAddress& rCellAddress,
+                                   sal_Int64 nIndex, ScSplitPos eSplitPos,
+                                   ScAccessibleDocument* pAccDoc)
     :
-    ScAccessibleCellBase(rxParent, GetDocument(pViewShell), rCellAddress, nIndex),
+    ScAccessibleCellBase(rpParent, GetDocument(pViewShell), rCellAddress, nIndex),
         ::accessibility::AccessibleStaticTextBase(CreateEditSource(pViewShell, rCellAddress, eSplitPos)),
     mpViewShell(pViewShell),
     mpAccDoc(pAccDoc),
@@ -330,7 +324,8 @@ bool ScAccessibleCell::IsSelected()
 {
     if (IsFormulaMode())
     {
-        const ScAccessibleSpreadsheet *pSheet =static_cast<const ScAccessibleSpreadsheet*>(mxParent.get());
+        const ScAccessibleSpreadsheet* pSheet
+            = static_cast<const ScAccessibleSpreadsheet*>(mpParent.get());
         if (pSheet)
         {
             return pSheet->IsScAddrFormulaSel(maCellAddress);
@@ -515,7 +510,7 @@ uno::Sequence< beans::PropertyValue > SAL_CALL ScAccessibleCell::getCharacterAtt
 
 bool ScAccessibleCell::IsFormulaMode()
 {
-    ScAccessibleSpreadsheet* pSheet = static_cast<ScAccessibleSpreadsheet*>(mxParent.get());
+    ScAccessibleSpreadsheet* pSheet = static_cast<ScAccessibleSpreadsheet*>(mpParent.get());
     if (pSheet)
     {
         return pSheet->IsFormulaMode();
