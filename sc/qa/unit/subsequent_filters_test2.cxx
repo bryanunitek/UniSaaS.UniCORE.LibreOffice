@@ -11,6 +11,7 @@
 
 #include <osl/thread.h>
 #include <svl/numformat.hxx>
+#include <drwlayer.hxx>
 #include <svl/zformat.hxx>
 #include <svx/svdograf.hxx>
 
@@ -639,6 +640,35 @@ CPPUNIT_TEST_FIXTURE(ScFiltersTest2, testExternalRefCacheXLSX)
     CPPUNIT_ASSERT_EQUAL(u"Andy"_ustr, pDoc->GetString(ScAddress(0, 1, 0)));
     CPPUNIT_ASSERT_EQUAL(u"Bruce"_ustr, pDoc->GetString(ScAddress(0, 2, 0)));
     CPPUNIT_ASSERT_EQUAL(u"Charlie"_ustr, pDoc->GetString(ScAddress(0, 3, 0)));
+}
+
+CPPUNIT_TEST_FIXTURE(ScFiltersTest2, testExternalRefWholeColumnXLOOKUP)
+{
+    createScDoc("xlsx/external-ref-wholecol-xlookup.xlsx");
+    ScDocument* pDoc = getScDoc();
+
+    // Excel's cached results are applied on import, recalculate to run the formulas.
+    pDoc->CalcAll();
+
+    // Entire external columns, the search value takes an implicit intersection.
+    for (SCROW nRow = 1; nRow <= 5; ++nRow)
+        CPPUNIT_ASSERT_EQUAL(9.0 + nRow, pDoc->GetValue(ScAddress(1, nRow, 0)));
+
+    // Array formula over an entire column right of the cached ones.
+    CPPUNIT_ASSERT_EQUAL(u"#N/A"_ustr, pDoc->GetString(ScAddress(1, 9, 0)));
+}
+
+CPPUNIT_TEST_FIXTURE(ScFiltersTest2, testExternalRefWholeColumnResult)
+{
+    createScDoc("xlsx/external-ref-wholecol-xlookup.xlsx");
+    ScDocument* pDoc = getScDoc();
+
+    // Excel's cached results are applied on import, recalculate to run the formulas.
+    pDoc->CalcAll();
+
+    // D2:D6 are @ on an entire external column, each row takes its own.
+    for (SCROW nRow = 1; nRow <= 5; ++nRow)
+        CPPUNIT_ASSERT_EQUAL(9.0 + nRow, pDoc->GetValue(ScAddress(3, nRow, 0)));
 }
 
 CPPUNIT_TEST_FIXTURE(ScFiltersTest2, testExternalRefCacheODS)

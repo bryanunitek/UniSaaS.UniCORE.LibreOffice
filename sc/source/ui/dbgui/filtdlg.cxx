@@ -855,333 +855,70 @@ IMPL_LINK(ScFilterDlg, LbSelectHdl, weld::ComboBox&, rLb, void)
     /*
      * Handle enable/disable logic depending on which ListBox was selected
      */
-    sal_uInt16 nOffset = GetSliderPos();
-
-    if ( &rLb == m_xLbConnect1.get() )
+    const size_t nOffset = GetSliderPos();
+    for (size_t nRow = 0; nRow < QUERY_ENTRY_COUNT; ++nRow)
     {
-        m_xLbField1->set_sensitive(true);
-        m_xLbCond1->set_sensitive(true);
-        m_xEdVal1->set_sensitive(true);
-        m_xBtnRemove1->set_sensitive(true);
+        const size_t nQE = nRow + nOffset;
 
-        const sal_Int32 nConnect1 = m_xLbConnect1->get_active();
-        size_t nQE = nOffset;
-        theQueryData.GetEntry(nQE).eConnect =static_cast<ScQueryConnect>(nConnect1);
-        if (maRefreshExceptQuery.size() < nQE + 1)
-            maRefreshExceptQuery.resize(nQE + 1, false);
-        maRefreshExceptQuery[nQE] = true;
-    }
-    else if ( &rLb == m_xLbConnect2.get() )
-    {
-        m_xLbField2->set_sensitive(true);
-        m_xLbCond2->set_sensitive(true);
-        m_xEdVal2->set_sensitive(true);
-        m_xBtnRemove2->set_sensitive(true);
-
-        const sal_Int32 nConnect2 = m_xLbConnect2->get_active();
-        size_t nQE = 1+nOffset;
-        theQueryData.GetEntry(nQE).eConnect =static_cast<ScQueryConnect>(nConnect2);
-        if (maRefreshExceptQuery.size() < nQE + 1)
-            maRefreshExceptQuery.resize(nQE + 1, false);
-        maRefreshExceptQuery[nQE]=true;
-    }
-    else if ( &rLb == m_xLbConnect3.get() )
-    {
-        m_xLbField3->set_sensitive(true);
-        m_xLbCond3->set_sensitive(true);
-        m_xEdVal3->set_sensitive(true);
-        m_xBtnRemove3->set_sensitive(true);
-
-        const sal_Int32 nConnect3 = m_xLbConnect3->get_active();
-        size_t nQE = 2 + nOffset;
-        theQueryData.GetEntry(nQE).eConnect = static_cast<ScQueryConnect>(nConnect3);
-        if (maRefreshExceptQuery.size() < nQE + 1)
-            maRefreshExceptQuery.resize(nQE + 1, false);
-        maRefreshExceptQuery[nQE] = true;
-
-    }
-    else if ( &rLb == m_xLbConnect4.get() )
-    {
-        m_xLbField4->set_sensitive(true);
-        m_xLbCond4->set_sensitive(true);
-        m_xEdVal4->set_sensitive(true);
-        m_xLbColor4->set_sensitive(true);
-        m_xBtnRemove4->set_sensitive(true);
-
-        const sal_Int32 nConnect4 = m_xLbConnect4->get_active();
-        size_t nQE = 3 + nOffset;
-        theQueryData.GetEntry(nQE).eConnect = static_cast<ScQueryConnect>(nConnect4);
-        if (maRefreshExceptQuery.size() < nQE + 1)
-            maRefreshExceptQuery.resize(nQE + 1, false);
-        maRefreshExceptQuery[nQE] = true;
-    }
-    else if ( &rLb == m_xLbField1.get() )
-    {
-        if ( m_xLbField1->get_active() == 0 )
+        if (&rLb == maConnLbArr[nRow])
         {
-            m_xLbConnect2->set_active(-1);
-            m_xLbConnect3->set_active(-1);
-            m_xLbConnect4->set_active(-1);
-            m_xLbField2->set_active( 0 );
-            m_xLbField3->set_active( 0 );
-            m_xLbField4->set_active( 0 );
-            m_xLbCond2->set_active( 0 );
-            m_xLbCond3->set_active( 0 );
-            m_xLbCond4->set_active( 0 );
-            ClearValueList( 1 );
-            ClearValueList( 2 );
-            ClearValueList( 3 );
-            ClearValueList( 4 );
+            maFieldLbArr[nRow]->set_sensitive(true);
+            maCondLbArr[nRow]->set_sensitive(true);
+            maValueEdArr[nRow]->set_sensitive(true);
+            maRemoveBtnArr[nRow]->set_sensitive(true);
 
-            m_xLbConnect2->set_sensitive(false);
-            m_xLbConnect3->set_sensitive(false);
-            m_xLbConnect4->set_sensitive(false);
-            m_xLbField2->set_sensitive(false);
-            m_xLbField3->set_sensitive(false);
-            m_xLbField4->set_sensitive(false);
-            m_xLbCond2->set_sensitive(false);
-            m_xLbCond3->set_sensitive(false);
-            m_xLbCond4->set_sensitive(false);
-            m_xEdVal2->set_sensitive(false);
-            m_xEdVal3->set_sensitive(false);
-            m_xEdVal4->set_sensitive(false);
-            m_xLbColor2->set_sensitive(false);
-            m_xLbColor3->set_sensitive(false);
-            m_xLbColor4->set_sensitive(false);
-            m_xBtnRemove2->set_sensitive(false);
-            m_xBtnRemove3->set_sensitive(false);
-            m_xBtnRemove4->set_sensitive(false);
-            SCSIZE nCount = theQueryData.GetEntryCount();
-            if (maRefreshExceptQuery.size() < nCount + 1)
-                maRefreshExceptQuery.resize(nCount + 1, false);
-            for (SCSIZE i = nOffset; i < nCount; ++i)
-            {
-                theQueryData.GetEntry(i).bDoQuery = false;
-                maRefreshExceptQuery[i] = false;
-                theQueryData.GetEntry(i).nField =  static_cast<SCCOL>(0);
-            }
-            maRefreshExceptQuery[nOffset] = true;
+            theQueryData.GetEntry(nQE).eConnect = static_cast<ScQueryConnect>(rLb.get_active());
+            if (maRefreshExceptQuery.size() < nQE + 1)
+                maRefreshExceptQuery.resize(nQE + 1, false);
+            maRefreshExceptQuery[nQE] = true;
+            return;
         }
-        else
-        {
-            UpdateValueList( 1 );
-            UpdateColorList( 1 );
-            if ( !m_xLbConnect2->get_sensitive() )
-            {
-                m_xLbConnect2->set_sensitive(true);
-            }
-            theQueryData.GetEntry(nOffset).bDoQuery = true;
-            const sal_Int32 nField  = rLb.get_active();
-            theQueryData.GetEntry(nOffset).nField = theQueryData.nCol1 + static_cast<SCCOL>(nField) - 1 ;
-        }
-    }
-    else if ( &rLb == m_xLbField2.get() )
-    {
-        if ( m_xLbField2->get_active() == 0 )
-        {
-            m_xLbConnect3->set_active(-1);
-            m_xLbConnect4->set_active(-1);
-            m_xLbField3->set_active( 0 );
-            m_xLbField4->set_active( 0 );
-            m_xLbCond3->set_active( 0 );
-            m_xLbCond4->set_active( 0 );
-            ClearValueList( 2 );
-            ClearValueList( 3 );
-            ClearValueList( 4 );
 
-            m_xLbConnect3->set_sensitive(false);
-            m_xLbConnect4->set_sensitive(false);
-            m_xLbField3->set_sensitive(false);
-            m_xLbField4->set_sensitive(false);
-            m_xLbCond3->set_sensitive(false);
-            m_xLbCond4->set_sensitive(false);
-            m_xEdVal3->set_sensitive(false);
-            m_xEdVal4->set_sensitive(false);
-            m_xLbColor3->set_sensitive(false);
-            m_xLbColor4->set_sensitive(false);
-            m_xBtnRemove3->set_sensitive(false);
-            m_xBtnRemove4->set_sensitive(false);
-
-            sal_uInt16 nTemp=nOffset+1;
-            SCSIZE nCount = theQueryData.GetEntryCount();
-            if (maRefreshExceptQuery.size() < nCount)
-                maRefreshExceptQuery.resize(nCount, false);
-            for (SCSIZE i= nTemp; i< nCount; i++)
-            {
-                theQueryData.GetEntry(i).bDoQuery = false;
-                maRefreshExceptQuery[i] = false;
-                theQueryData.GetEntry(i).nField =  static_cast<SCCOL>(0);
-            }
-            maRefreshExceptQuery[nTemp] = true;
-        }
-        else
+        if (&rLb == maFieldLbArr[nRow])
         {
-            UpdateValueList( 2 );
-            UpdateColorList( 2 );
-            if ( !m_xLbConnect3->get_sensitive() )
-            {
-                m_xLbConnect3->set_sensitive(true);
-            }
             const sal_Int32 nField = rLb.get_active();
-            sal_uInt16 nQ=1+nOffset;
-            theQueryData.GetEntry(nQ).bDoQuery = true;
-            theQueryData.GetEntry(nQ).nField = theQueryData.nCol1 + static_cast<SCCOL>(nField) - 1 ;
-        }
-    }
-    else if ( &rLb == m_xLbField3.get() )
-    {
-        if ( m_xLbField3->get_active() == 0 )
-        {
-            m_xLbConnect4->set_active(-1);
-            m_xLbField4->set_active( 0 );
-            m_xLbCond4->set_active( 0 );
-            ClearValueList( 3 );
-            ClearValueList( 4 );
-
-            m_xLbConnect4->set_sensitive(false);
-            m_xLbField4->set_sensitive(false);
-            m_xLbCond4->set_sensitive(false);
-            m_xEdVal4->set_sensitive(false);
-            m_xLbColor4->set_sensitive(false);
-            m_xBtnRemove4->set_sensitive(false);
-
-            sal_uInt16 nTemp=nOffset+2;
-            SCSIZE nCount = theQueryData.GetEntryCount();
-            if (maRefreshExceptQuery.size() < nCount)
-                maRefreshExceptQuery.resize(nCount, false);
-            for (SCSIZE i = nTemp; i < nCount; ++i)
+            if (nField == 0)
             {
-                theQueryData.GetEntry(i).bDoQuery = false;
-                maRefreshExceptQuery[i] = false;
-                theQueryData.GetEntry(i).nField =  static_cast<SCCOL>(0);
-            }
-            maRefreshExceptQuery[nTemp] = true;
-        }
-        else
-        {
-            UpdateValueList( 3 );
-            UpdateColorList( 3 );
-            if ( !m_xLbConnect4->get_sensitive() )
-            {
-                m_xLbConnect4->set_sensitive(true);
+                // tdf#82008 - remove a single query entry and keep the following criteria
+                RemoveQueryEntry(nQE, nOffset);
+                return;
             }
 
-            const sal_Int32 nField = rLb.get_active();
-            sal_uInt16 nQ=2+nOffset;
-            theQueryData.GetEntry(nQ).bDoQuery = true;
-            theQueryData.GetEntry(nQ).nField = theQueryData.nCol1 + static_cast<SCCOL>(nField) - 1 ;
+            UpdateValueList(nRow + 1);
+            UpdateColorList(nRow + 1);
+            if (nRow + 1 < QUERY_ENTRY_COUNT)
+                maConnLbArr[nRow + 1]->set_sensitive(true);
 
-        }
-    }
-    else if ( &rLb == m_xLbField4.get() )
-    {
-        if ( m_xLbField4->get_active() == 0 )
-        {
-            ClearValueList( 4 );
-            sal_uInt16 nTemp=nOffset+3;
-            SCSIZE nCount = theQueryData.GetEntryCount();
-            if (maRefreshExceptQuery.size() < nCount)
-                maRefreshExceptQuery.resize(nCount, false);
-            for (SCSIZE i = nTemp; i < nCount; ++i)
-            {
-                theQueryData.GetEntry(i).bDoQuery = false;
-                maRefreshExceptQuery[i] = false;
-                theQueryData.GetEntry(i).nField =  static_cast<SCCOL>(0);
-            }
-            maRefreshExceptQuery[nTemp] = true;
-        }
-        else
-        {
-            UpdateValueList( 4 );
-            UpdateColorList( 4 );
-            const sal_Int32 nField = rLb.get_active();
-            sal_uInt16 nQ=3+nOffset;
-            theQueryData.GetEntry(nQ).bDoQuery = true;
-            theQueryData.GetEntry(nQ).nField = theQueryData.nCol1 + static_cast<SCCOL>(nField) - 1 ;
+            ScQueryEntry& rEntry = theQueryData.GetEntry(nQE);
+            rEntry.bDoQuery = true;
+            rEntry.nField = theQueryData.nCol1 + static_cast<SCCOL>(nField) - 1;
+            return;
         }
 
-    }
-    else if (&rLb == m_xLbCond1.get() || &rLb == m_xLbCond2.get() || &rLb == m_xLbCond3.get()
-             || &rLb == m_xLbCond4.get())
-    {
-        ScQueryOp op;
-        sal_uInt16 nQ = 0;
-        bool bEnableColorLb = false;
-        if (rLb.get_active_text() == aStrFontColor || rLb.get_active_text() == aStrBackgroundColor)
+        if (&rLb == maCondLbArr[nRow])
         {
-            bEnableColorLb = true;
-            op = SC_EQUAL;
-        }
-        else
-        {
-            op = static_cast<ScQueryOp>(rLb.get_active());
+            const OUString aCond = rLb.get_active_text();
+            const bool bByColor = aCond == aStrFontColor || aCond == aStrBackgroundColor;
+
+            maColorLbArr[nRow]->set_visible(bByColor);
+            maColorLbArr[nRow]->set_sensitive(bByColor);
+            maValueEdArr[nRow]->set_visible(!bByColor);
+            UpdateColorList(nRow + 1);
+
+            theQueryData.GetEntry(nQE).eOp
+                = bByColor ? SC_EQUAL : static_cast<ScQueryOp>(rLb.get_active());
+            return;
         }
 
-        if (&rLb == m_xLbCond1.get())
+        if (&rLb == maColorLbArr[nRow])
         {
-            nQ = nOffset;
-            m_xLbColor1->set_visible(bEnableColorLb);
-            m_xLbColor1->set_sensitive(bEnableColorLb);
-            m_xEdVal1->set_visible(!bEnableColorLb);
-            UpdateColorList(1);
-        }
-        else if (&rLb == m_xLbCond2.get())
-        {
-            nQ = 1 + nOffset;
-            m_xLbColor2->set_visible(bEnableColorLb);
-            m_xLbColor2->set_sensitive(bEnableColorLb);
-            m_xEdVal2->set_visible(!bEnableColorLb);
-            UpdateColorList(2);
-        }
-        else if (&rLb == m_xLbCond3.get())
-        {
-            nQ = 2 + nOffset;
-            m_xLbColor3->set_visible(bEnableColorLb);
-            m_xLbColor3->set_sensitive(bEnableColorLb);
-            m_xEdVal3->set_visible(!bEnableColorLb);
-            UpdateColorList(3);
-        }
-        else if (&rLb == m_xLbCond4.get())
-        {
-            nQ = 3 + nOffset;
-            m_xLbColor4->set_visible(bEnableColorLb);
-            m_xLbColor4->set_sensitive(bEnableColorLb);
-            m_xEdVal4->set_visible(!bEnableColorLb);
-            UpdateColorList(4);
-        }
-
-        theQueryData.GetEntry(nQ).eOp = op;
-    }
-    else if (&rLb == m_xLbColor1.get() || &rLb == m_xLbColor2.get() || &rLb == m_xLbColor3.get()
-             || &rLb == m_xLbColor4.get())
-    {
-        sal_uInt16 nQ = 0;
-        if (&rLb == m_xLbColor1.get())
-        {
-            nQ = nOffset;
-        }
-        else if (&rLb == m_xLbColor2.get())
-        {
-            nQ = 1 + nOffset;
-        }
-        else if (&rLb == m_xLbColor3.get())
-        {
-            nQ = 2 + nOffset;
-        }
-        else if (&rLb == m_xLbColor4.get())
-        {
-            nQ = 3 + nOffset;
-        }
-
-        ScQueryEntry& aEntry = theQueryData.GetEntry(nQ);
-        Color aColor = Color::STRtoRGB(maColorLbArr[nQ]->get_active_id());
-        if (maCondLbArr[nQ]->get_active_text() == aStrFontColor)
-        {
-            aEntry.SetQueryByTextColor(aColor);
-        }
-        else if (maCondLbArr[nQ]->get_active_text() == aStrBackgroundColor)
-        {
-            aEntry.SetQueryByBackgroundColor(aColor);
+            ScQueryEntry& rEntry = theQueryData.GetEntry(nQE);
+            const Color aColor = Color::STRtoRGB(rLb.get_active_id());
+            if (maCondLbArr[nRow]->get_active_text() == aStrFontColor)
+                rEntry.SetQueryByTextColor(aColor);
+            else if (maCondLbArr[nRow]->get_active_text() == aStrBackgroundColor)
+                rEntry.SetQueryByBackgroundColor(aColor);
+            return;
         }
     }
 }
@@ -1321,13 +1058,17 @@ IMPL_LINK( ScFilterDlg, BtnRemoveHdl, weld::Button&, rBtn, void )
         nButtonIndex = 2;
     if ( &rBtn == m_xBtnRemove4.get() )
         nButtonIndex = 3;
-    SCSIZE nRowToDelete = nOffset + nButtonIndex;
+    // tdf#82008 - remove a single query entry and keep the following criteria
+    RemoveQueryEntry(nOffset + nButtonIndex, nOffset);
+}
 
+void ScFilterDlg::RemoveQueryEntry(SCSIZE nRowToDelete, size_t nOffset)
+{
     // Check that the index is sensible
     SCSIZE nCount = theQueryData.GetEntryCount();
     if (nRowToDelete >= nCount)
     {
-        SAL_WARN( "sc", "ScFilterDlg::BtnRemoveHdl: could not delete row - invalid index.");
+        SAL_WARN( "sc", "ScFilterDlg::RemoveQueryEntry: could not delete row - invalid index.");
         return;
     }
 

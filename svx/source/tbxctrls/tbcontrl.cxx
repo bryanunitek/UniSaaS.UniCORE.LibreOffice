@@ -47,6 +47,7 @@
 #include <svl/style.hxx>
 #include <svtools/ctrltool.hxx>
 #include <svtools/borderhelper.hxx>
+#include <svtools/fontsubstconfig.hxx>
 #include <vcl/InterimItemWindow.hxx>
 #include <sfx2/tbxctrl.hxx>
 #include <sfx2/tplpitem.hxx>
@@ -1781,12 +1782,29 @@ void SvxFontNameBox_Base::CheckAndMarkUnknownFont()
     }
     else
     {
-        if( font.GetItalicMaybeAskConfig() != ITALIC_NORMAL )
+        font.SetItalic(ITALIC_NORMAL);
+        m_xWidget->set_entry_font(font);
+        OUString sSubstitute;
+        const bool bHasSubstitute = svtools::GetFontSubstitute(fontname, sSubstitute);
+        // no nested replacements: if 'Foo' is substituted by 'Bar' and 'Bar' by some existing font
+        // this font won't be used
+        if (bHasSubstitute && CheckFontIsAvailable(sSubstitute))
         {
-            font.SetItalic( ITALIC_NORMAL );
-            m_xWidget->set_entry_font(font);
+            m_xWidget->set_entry_message_type(weld::EntryMessageType::Info);
+            OUString sTip = SvxResId(RID_SVXSTR_CHARFONTNAME_NOTAVAILABLE);
+            sTip = sTip.replaceAll("%1", fontname);
+            sTip = sTip.replaceAll("%2", sSubstitute);
+            m_xWidget->set_tooltip_text(sTip);
+        }
+        else
+        {
             m_xWidget->set_entry_message_type(weld::EntryMessageType::Warning);
-            m_xWidget->set_tooltip_text(SvxResId(RID_SVXSTR_CHARFONTNAME_NOTAVAILABLE));
+            OUString sTip = SvxResId(bHasSubstitute ? RID_SVXSTR_CHARFONTNAME_NOTAVAILABLE_HASSUBST
+                                                    : RID_SVXSTR_CHARFONTNAME_NOTAVAILABLE_NOSUBST);
+            sTip = sTip.replaceAll("%1", fontname);
+            if (bHasSubstitute)
+                sTip = sTip.replaceAll("%2", sSubstitute);
+            m_xWidget->set_tooltip_text(sTip);
         }
     }
     mbCheckingUnknownFont = false;
@@ -2131,11 +2149,9 @@ ColorWindow::~ColorWindow()
 {
 }
 
-NamedColor ColorWindow::GetSelectEntryColor(const ColorIconView& rColorIconView)
+NamedColor ColorWindow::GetEntryColor(const ColorIconView& rColorIconView, int nIndex)
 {
-    Color aColor = rColorIconView.getColor(rColorIconView.get_selected_index());
-    const OUString sColorName = rColorIconView.getColorName(rColorIconView.get_selected_index());
-    return { aColor, sColorName };
+    return { rColorIconView.getColor(nIndex), rColorIconView.getColorName(nIndex) };
 }
 
 namespace
@@ -2189,27 +2205,27 @@ namespace
 NamedColor ColorWindow::GetSelectEntryColor() const
 {
     if (maColorIconView.get_selected_index() != -1)
-        return GetSelectEntryColor(maColorIconView);
+        return GetEntryColor(maColorIconView, maColorIconView.get_selected_index());
     if (maRecentColorIconView.get_selected_index() != -1)
-        return GetSelectEntryColor(maRecentColorIconView);
+        return GetEntryColor(maRecentColorIconView, maRecentColorIconView.get_selected_index());
     if (mxButtonNoneColor.get() == mpDefaultButton)
         return GetNoneColor();
     return GetAutoColor();
 }
 
-IMPL_LINK_NOARG(ColorWindow, ColorSelectHdl, const Color&, void)
+IMPL_LINK(ColorWindow, ColorSelectHdl, int, nIndex, void)
 {
-    ApplySelectedColor(maColorIconView);
+    ApplyColor(maColorIconView, nIndex);
 }
 
-IMPL_LINK_NOARG(ColorWindow, RecentColorSelectHdl, const Color&, void)
+IMPL_LINK(ColorWindow, RecentColorSelectHdl, int, nIndex, void)
 {
-    ApplySelectedColor(maRecentColorIconView);
+    ApplyColor(maRecentColorIconView, nIndex);
 }
 
-void ColorWindow::ApplySelectedColor(ColorIconView& rColorIconView)
+void ColorWindow::ApplyColor(ColorIconView& rColorIconView, int nIndex)
 {
-    NamedColor aNamedColor = GetSelectEntryColor(rColorIconView);
+    NamedColor aNamedColor = GetEntryColor(rColorIconView, nIndex);
 
     if (&rColorIconView != &maRecentColorIconView)
     {
@@ -2229,10 +2245,9 @@ void ColorWindow::ApplySelectedColor(ColorIconView& rColorIconView)
 
     if (bThemePaletteSelected)
     {
-        const sal_uInt16 nSelectedItemPos = rColorIconView.get_selected_index();
         sal_uInt16 nThemeIndex;
         sal_uInt16 nEffectIndex;
-        if (PaletteManager::GetThemeAndEffectIndex(nSelectedItemPos, nThemeIndex, nEffectIndex))
+        if (PaletteManager::GetThemeAndEffectIndex(nIndex, nThemeIndex, nEffectIndex))
         {
             aNamedColor.m_nThemeIndex = nThemeIndex;
             mxPaletteManager->GetLumModOff(nThemeIndex, nEffectIndex, aNamedColor.m_nLumMod, aNamedColor.m_nLumOff);

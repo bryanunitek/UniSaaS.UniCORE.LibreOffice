@@ -353,6 +353,16 @@ void PDFWriter::SetLinkDest( sal_Int32 nLinkId, sal_Int32 nDestId )
     xImplementation->setLinkDest( nLinkId, nDestId );
 }
 
+void PDFWriter::SetDestStructureElement(sal_Int32 nDestId, sal_Int32 nStructElementId)
+{
+    xImplementation->setDestStructureElement(nDestId, nStructElementId);
+}
+
+void PDFWriter::AddStructureRef(sal_Int32 nElementId, sal_Int32 nRefElementId)
+{
+    xImplementation->addStructureRef(nElementId, nRefElementId);
+}
+
 void PDFWriter::SetLinkURL( sal_Int32 nLinkId, const OUString& rURL )
 {
     xImplementation->setLinkURL( nLinkId, rURL );

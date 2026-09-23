@@ -1108,8 +1108,6 @@ cygwin*|wsl*)
 
     DLLPOST=".dll"
     LINKFLAGSNOUNDEFS=
-    # bypass check for ninja, it is not in default path, but it can be used nevertheless by default
-    NINJA="assumed to be available from Visual Studio"
 
     if test "$host_cpu" = "aarch64"; then
         build_skia=yes
@@ -1498,6 +1496,7 @@ if test "$_os" != "WINNT"; then
     # Clang 12.0.1 occasionally SEGVs on some of the test invocations during AC_PROG_CC with -O2):
     save_CFLAGS=$CFLAGS
     CFLAGS=-g
+    ac_cv_prog_cc_c23=no
     AC_PROG_CC
     CFLAGS=$save_CFLAGS
     if test -z "$CC_BASE"; then
@@ -4736,6 +4735,10 @@ if test "$_os" = "WINNT"; then
     # Find the cmake.exe in Visual Studio Extensions
     PathFormat "$VC_PRODUCT_DIR/../Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
     CMAKE="$formatted_path"
+
+    # Find the ninja that ships with Visual Studio, beside that cmake.
+    PathFormat "$VC_PRODUCT_DIR/../Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
+    NINJA="$formatted_path"
 
     # Find the version of devenv.exe
     PathFormat "$VC_PRODUCT_DIR/../Common7/IDE/devenv.exe"
@@ -10620,9 +10623,9 @@ else
     fi
     if test "$COM" = "MSC"; then
         if test "$MSVC_USE_DEBUG_RUNTIME" = TRUE; then
-            LIBXML_LIBS="${WORKDIR}/UnpackedTarball/libxml2/Debug/libxml2d.lib"
+            LIBXML_LIBS="${WORKDIR}/UnpackedTarball/libxml2/libxml2d.lib"
         else
-            LIBXML_LIBS="${WORKDIR}/UnpackedTarball/libxml2/Release/libxml2.lib"
+            LIBXML_LIBS="${WORKDIR}/UnpackedTarball/libxml2/libxml2.lib"
         fi
     else
         LIBXML_LIBS="-L${WORKDIR}/UnpackedTarball/libxml2/.libs -lxml2"
@@ -14999,7 +15002,7 @@ if test "$need_meson" = "yes"; then
     fi
 fi
 
-if test -z "$NINJA" || test "$NINJA" = 'assumed to be available from Visual Studio'; then
+if test -z "$NINJA"; then
     x_NINJA=[\#]
 else
     x_NINJA=
