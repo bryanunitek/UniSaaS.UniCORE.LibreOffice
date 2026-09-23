@@ -1207,8 +1207,7 @@ bool SwDBManager::MergeMailFiles(SwWrtShell& rSourceShell,
             else
             {
                 xProgressDlg = std::make_shared<PrintMonitor>(pSourceWindow->GetFrameWeld());
-                static_cast<PrintMonitor*>(xProgressDlg.get())->set_title(
-                    pSourceDocSh->GetTitle(22));
+                xProgressDlg->set_title(pSourceDocSh->GetTitle(22));
             }
             weld::DialogController::runAsync(xProgressDlg, [this, &xProgressDlg](sal_Int32 nResult){
                 if (nResult == RET_CANCEL)
@@ -1364,8 +1363,9 @@ bool SwDBManager::MergeMailFiles(SwWrtShell& rSourceShell,
                         static_cast<CreateMonitor*>(xProgressDlg.get())->SetCurrentPosition(nDocNo);
                     else {
                         PrintMonitor *pPrintMonDlg = static_cast<PrintMonitor*>(xProgressDlg.get());
-                        pPrintMonDlg->m_xPrinter->set_label(bNeedsTempFiles
-                            ? aTempFileURL->GetBase() : pSourceDocSh->GetTitle( 2));
+                        pPrintMonDlg->m_xPrinter->set_label(
+                            bNeedsTempFiles ? aTempFileURL->GetBase()
+                                            : pSourceDocSh->GetTitle(SFX_TITLE_FULLNAME));
                         OUString sStat = SwResId(STR_STATSTR_LETTER) + " " + OUString::number( nDocNo );
                         pPrintMonDlg->m_xPrintInfo->set_label(sStat);
                     }

@@ -260,6 +260,29 @@ double CoordinateMapper::ViewSubPixelToLogicUnitsY(double fY) const
     return ViewToLogicDistanceDoubleY(fY, maMapRes.mfMapScY) - maMapRes.mnMapOfsY;
 }
 
+tools::Long CoordinateMapper::ViewSubPixelToLogicUnitsIntX(double fX) const
+{
+    // Uses the version that rounds the distance BEFORE the offset shift
+    return ViewSubPixelToLogicDistanceX(fX) - maMapRes.mnMapOfsX;
+}
+
+tools::Long CoordinateMapper::ViewSubPixelToLogicUnitsIntY(double fY) const
+{
+    // Uses the version that rounds the distance BEFORE the offset shift
+    return ViewSubPixelToLogicDistanceY(fY) - maMapRes.mnMapOfsY;
+}
+
+tools::Long CoordinateMapper::ViewSubPixelToLogicIntX(double fX, const ImplMapRes& rRes) const
+{
+    // Round distance (using custom scale), strip custom MapOfs, then strip internal OutOffLogic
+    return ViewToLogicDistanceX(std::llround(fX), rRes.mfMapScX) - rRes.mnMapOfsX - mnOutOffLogicX;
+}
+
+tools::Long CoordinateMapper::ViewSubPixelToLogicIntY(double fY, const ImplMapRes& rRes) const
+{
+    return ViewToLogicDistanceY(std::llround(fY), rRes.mfMapScY) - rRes.mnMapOfsY - mnOutOffLogicY;
+}
+
 double CoordinateMapper::LogicUnitsToViewSubPixelX(double fX) const
 {
     return LogicToViewDistanceSubPixelX(std::llround(fX + maMapRes.mnMapOfsX), maMapRes.mfMapScX);
@@ -580,6 +603,22 @@ double CoordinateMapper::ViewSubPixelToLogicY(double fY) const
 {
     const double fLogicUnits = ViewSubPixelToLogicUnitsY(fY);
     return fLogicUnits - static_cast<double>(mnOutOffLogicY);
+}
+
+tools::Long CoordinateMapper::ViewSubPixelToLogicIntX(double fX) const
+{
+    // Move from View to Logic Units (Rounds distance, then strips mnMapOfs)
+    const tools::Long nLogicUnits = ViewSubPixelToLogicUnitsIntX(fX);
+
+    return nLogicUnits - mnOutOffLogicX;
+}
+
+tools::Long CoordinateMapper::ViewSubPixelToLogicIntY(double fY) const
+{
+    // Move from View to Logic Units (Rounds distance, then strips mnMapOfs)
+    const tools::Long nLogicUnits = ViewSubPixelToLogicUnitsIntY(fY);
+
+    return nLogicUnits - mnOutOffLogicY;
 }
 
 // Absolute Logic -> View (Forward: Add Logical -> Add Mapping/Scale)

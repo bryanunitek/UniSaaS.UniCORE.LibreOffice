@@ -18,6 +18,7 @@
 #include <sfx2/dispatch.hxx>
 #include <svx/dlgctrl.hxx>
 #include <swmodule.hxx>
+#include <uitool.hxx>
 #include <usrpref.hxx>
 #include <comphelper/lok.hxx>
 #include <vcl/weld/Builder.hxx>
@@ -124,6 +125,14 @@ void TableEditPanel::NotifyItemUpdate(const sal_uInt16 nSID, const SfxItemState 
             }
             break;
         }
+        case SID_ATTR_METRIC:
+        {
+            FieldUnit eFieldUnit = ::GetDfltMetric(false);
+            m_aRowHeightEdit.SetFieldUnit(eFieldUnit);
+            m_aColumnWidthEdit.SetFieldUnit(eFieldUnit);
+            m_aLeftSpacingEdit.SetFieldUnit(eFieldUnit);
+            m_aRightSpacingEdit.SetFieldUnit(eFieldUnit);
+        }
     }
 }
 
@@ -151,6 +160,7 @@ TableEditPanel::TableEditPanel(weld::Widget* pParent,
     , m_aRightSpacingEdit(m_xBuilder->weld_metric_spin_button(u"rightspace"_ustr, FieldUnit::CM))
     , m_xMisc(m_xBuilder->weld_toolbar(u"misc"_ustr))
     , m_xMiscDispatch(new ToolbarUnoDispatcher(*m_xMisc, *m_xBuilder, rxFrame))
+    , m_aMetricController(SID_ATTR_METRIC, *pBindings, *this)
     , m_aRowHeightController(SID_ATTR_TABLE_ROW_HEIGHT, *pBindings, *this)
     , m_aColumnWidthController(SID_ATTR_TABLE_COLUMN_WIDTH, *pBindings, *this)
     , m_aAlignmentController(SID_ATTR_TABLE_ALIGNMENT, *pBindings, *this)
@@ -186,10 +196,10 @@ TableEditPanel::TableEditPanel(weld::Widget* pParent,
 
 void TableEditPanel::InitRowHeightToolitem()
 {
-    Link<weld::MetricSpinButton&, void> aLink = LINK(this, TableEditPanel, RowHeightMofiyHdl);
+    Link<weld::MetricSpinButton&, void> aLink = LINK(this, TableEditPanel, RowHeightModifyHdl);
     m_aRowHeightEdit.connect_value_changed(aLink);
 
-    FieldUnit eFieldUnit = SwModule::get()->GetFieldUnit();
+    FieldUnit eFieldUnit = ::GetDfltMetric(false);
     m_aRowHeightEdit.SetFieldUnit(eFieldUnit);
 
     m_aRowHeightEdit.set_min(MINLAY, FieldUnit::TWIP);
@@ -200,10 +210,10 @@ void TableEditPanel::InitRowHeightToolitem()
 
 void TableEditPanel::InitColumnWidthToolitem()
 {
-    Link<weld::MetricSpinButton&, void> aLink = LINK(this, TableEditPanel, ColumnWidthMofiyHdl);
+    Link<weld::MetricSpinButton&, void> aLink = LINK(this, TableEditPanel, ColumnWidthModifyHdl);
     m_aColumnWidthEdit.connect_value_changed(aLink);
 
-    FieldUnit eFieldUnit = SwModule::get()->GetFieldUnit();
+    FieldUnit eFieldUnit = ::GetDfltMetric(false);
     m_aColumnWidthEdit.SetFieldUnit(eFieldUnit);
 
     m_aColumnWidthEdit.set_min(MINLAY, FieldUnit::TWIP);
@@ -230,7 +240,7 @@ void TableEditPanel::InitAlignmentControls()
     m_xAlignment->append(OUString::number(text::HoriOrientation::NONE),
                          SwResId(STR_TABLE_PANEL_ALIGN_MANUAL));
 
-    FieldUnit eFieldUnit = SwModule::get()->GetFieldUnit();
+    FieldUnit eFieldUnit = ::GetDfltMetric(false);
     m_aLeftSpacingEdit.SetFieldUnit(eFieldUnit);
     m_aRightSpacingEdit.SetFieldUnit(eFieldUnit);
 }
@@ -274,6 +284,7 @@ TableEditPanel::~TableEditPanel()
     m_aSetOptimalColumnWidthController.dispose();
     m_aDistributeColumnsController.dispose();
     m_aMergeCellsController.dispose();
+    m_aMetricController.dispose();
 }
 
 void TableEditPanel::EnableLeftRight(sal_uInt16 nAlignment)
@@ -303,7 +314,7 @@ void TableEditPanel::EnableLeftRight(sal_uInt16 nAlignment)
     m_aRightSpacingEdit.set_sensitive(enableRight);
 }
 
-IMPL_LINK_NOARG(TableEditPanel, RowHeightMofiyHdl, weld::MetricSpinButton&, void)
+IMPL_LINK_NOARG(TableEditPanel, RowHeightModifyHdl, weld::MetricSpinButton&, void)
 {
     SwTwips nNewHeight = static_cast<SwTwips>(
         m_aRowHeightEdit.denormalize(m_aRowHeightEdit.get_value(FieldUnit::TWIP)));
@@ -314,7 +325,7 @@ IMPL_LINK_NOARG(TableEditPanel, RowHeightMofiyHdl, weld::MetricSpinButton&, void
                                               { &aRowHeight });
 }
 
-IMPL_LINK_NOARG(TableEditPanel, ColumnWidthMofiyHdl, weld::MetricSpinButton&, void)
+IMPL_LINK_NOARG(TableEditPanel, ColumnWidthModifyHdl, weld::MetricSpinButton&, void)
 {
     SwTwips nNewWidth = static_cast<SwTwips>(
         m_aColumnWidthEdit.denormalize(m_aColumnWidthEdit.get_value(FieldUnit::TWIP)));
