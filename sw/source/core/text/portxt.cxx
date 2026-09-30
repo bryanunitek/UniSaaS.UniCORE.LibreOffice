@@ -325,9 +325,36 @@ bool SwTextPortion::IsCompoundSplit( SwTextFormatInfo &rInf, const SwTextGuess &
 
     LanguageType aLang = rInf.GetTextFrame()->GetLangOfChar(rInf.GetIdx(), 1, true);
 
-    // Hungarian-only yet
-    if ( LANGUAGE_HUNGARIAN != aLang )
+    // is compound-based "smart" hyphenation enabled?
+    SvxAdjustItem aAdjustItem =
+        rInf.GetTextFrame()->GetTextNodeForParaProps()->GetSwAttrSet().GetAdjust();
+    if ( !aAdjustItem.GetCompoundBased() )
         return false;
+
+    // need Hunspell dictionaries with compound-based heuristics
+    // TODO update the list according to the dictionary update
+    if ( LANGUAGE_ICELANDIC != aLang &&
+         LANGUAGE_DANISH != aLang &&
+         LANGUAGE_DUTCH != aLang &&
+         LANGUAGE_DUTCH_BELGIAN != aLang &&
+         LANGUAGE_ESTONIAN != aLang &&
+         LANGUAGE_FINNISH != aLang &&
+         LANGUAGE_LATVIAN != aLang &&
+         LANGUAGE_GERMAN != aLang &&
+         LANGUAGE_GERMAN_AUSTRIAN != aLang &&
+         LANGUAGE_GERMAN_LIECHTENSTEIN != aLang &&
+         LANGUAGE_GERMAN_LUXEMBOURG != aLang &&
+         LANGUAGE_GERMAN_SWISS != aLang &&
+         LANGUAGE_HUNGARIAN != aLang &&
+         LANGUAGE_MONGOLIAN_CYRILLIC_MONGOLIA != aLang &&
+         LANGUAGE_NORWEGIAN_BOKMAL != aLang &&
+         LANGUAGE_NORWEGIAN_NYNORSK != aLang &&
+         LANGUAGE_SWEDISH != aLang &&
+         LANGUAGE_SWEDISH_FINLAND != aLang &&
+         LANGUAGE_USER_ESPERANTO != aLang )
+    {
+          return false;
+    }
 
     LanguageTag aLanguageTag(aLang);
 
@@ -733,6 +760,7 @@ bool SwTextPortion::Format_( SwTextFormatInfo &rInf )
 
                 // perhaps there is a compound splitting in the same word before the plain hyphenation
                 bool bPossibleCompoundSplit = bOrigHyphenated3 &&
+                        aAdjustItem.GetCompoundBased() &&
                         pGuess3->HyphWord()->getHyphenationPos() < pGuess2->HyphWord()->getHyphenationPos() &&
                         pGuess3->HyphWord()->getWord().equals(pGuess2->HyphWord()->getWord());
 
@@ -1279,31 +1307,35 @@ SwPositiveSize SwTextPortion::GetTextSize( const SwTextSizeInfo &rInf ) const
     return aSize;
 }
 
+void SwTextPortion::PaintDecorations(const SwTextPaintInfo& rInf) const
+{
+    rInf.DrawBackBrush(*this);
+    rInf.DrawBorder(*this);
+
+    rInf.DrawCSDFHighlighting(*this);
+
+    // do we have to repaint a post it portion?
+    if (rInf.OnWin() && mpNextPortion && !mpNextPortion->Width())
+        mpNextPortion->PrePaint(rInf, this);
+}
+
+void SwTextPortion::PaintText(const SwTextPaintInfo& rInf, const bool bWrong) const
+{
+    const bool bGrammarCheck = rInf.GetGrammarCheckList() != nullptr;
+    const bool bSmartTags = rInf.GetSmartTags() != nullptr;
+
+    if (bWrong || bSmartTags || bGrammarCheck)
+        rInf.DrawMarkedText(*this, rInf.GetLen(), bWrong, bSmartTags, bGrammarCheck);
+    else
+        rInf.DrawText(*this, rInf.GetLen());
+}
+
 void SwTextPortion::Paint( const SwTextPaintInfo &rInf ) const
 {
     if( GetLen() )
     {
-        rInf.DrawBackBrush( *this );
-        rInf.DrawBorder( *this );
-
-        rInf.DrawCSDFHighlighting(*this);
-
-        // do we have to repaint a post it portion?
-        if( rInf.OnWin() && mpNextPortion && !mpNextPortion->Width() )
-            mpNextPortion->PrePaint( rInf, this );
-
-        auto const* pWrongList = rInf.GetpWrongList();
-        auto const* pGrammarCheckList = rInf.GetGrammarCheckList();
-        auto const* pSmarttags = rInf.GetSmartTags();
-
-        const bool bWrong = nullptr != pWrongList;
-        const bool bGrammarCheck = nullptr != pGrammarCheckList;
-        const bool bSmartTags = nullptr != pSmarttags;
-
-        if ( bWrong || bSmartTags || bGrammarCheck )
-            rInf.DrawMarkedText( *this, rInf.GetLen(), bWrong, bSmartTags, bGrammarCheck );
-        else
-            rInf.DrawText( *this, rInf.GetLen() );
+        PaintDecorations(rInf);
+        PaintText(rInf, rInf.GetpWrongList() != nullptr);
     }
 }
 

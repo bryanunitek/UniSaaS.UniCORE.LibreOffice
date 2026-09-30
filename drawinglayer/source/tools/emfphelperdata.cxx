@@ -1632,8 +1632,10 @@ namespace emfplushelper
                 if (mbMultipart)
                 {
                     SAL_INFO("drawinglayer.emf", "EMF+ multipart record flags: " << mMFlags);
-                    mMStream.Seek(0);
-                    processObjectRecord(mMStream, mMFlags, 0, true);
+                    // a read-only view of the parts written so far, which cannot grow on a seek
+                    SvMemoryStream aObjectStream(const_cast<void*>(mMStream.GetData()),
+                                                 mMStream.Tell(), StreamMode::READ);
+                    processObjectRecord(aObjectStream, mMFlags, 0, true);
                 }
 
                 mbMultipart = false;
@@ -1844,6 +1846,19 @@ namespace emfplushelper
                         }
 
                         rMS.ReadUInt32(rectangles);
+                        // The record that is left says how many rectangles there can really be,
+                        // whatever count the file gave.
+                        const sal_uInt32 nBytesPerRectangle = (flags & 0x4000) ? 8 : 16;
+                        const sal_uInt64 nRecordLeft
+                            = rMS.Tell() < next ? std::min(next - rMS.Tell(), rMS.remainingSize())
+                                                : 0;
+                        const sal_uInt64 nMaxRectangles = nRecordLeft / nBytesPerRectangle;
+                        if (rectangles > nMaxRectangles)
+                        {
+                            SAL_WARN("drawinglayer.emf", "EMF+\twants " << rectangles
+                                     << " rectangles, the record holds " << nMaxRectangles);
+                            rectangles = static_cast<sal_uInt32>(nMaxRectangles);
+                        }
                         for (sal_uInt32 i = 0; i < rectangles; i++)
                         {
                             ReadRectangle(rMS, x, y, width, height, bool(flags & 0x4000));
