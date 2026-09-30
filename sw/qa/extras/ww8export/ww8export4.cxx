@@ -26,6 +26,7 @@
 #include <svx/svdpage.hxx>
 
 #include <docsh.hxx>
+#include <frameformats.hxx>
 #include <drawdoc.hxx>
 #include <IDocumentDrawModelAccess.hxx>
 #include <IDocumentMarkAccess.hxx>
@@ -278,6 +279,15 @@ CPPUNIT_TEST_FIXTURE(Test, testEndnotesAtSectEndDOC)
     SwSectionFormat* pFormat = rSections[0];
     // Without the accompanying fix in place, this test would have failed, endnotes were at doc end.
     CPPUNIT_ASSERT(pFormat->GetEndAtTextEnd().IsAtEnd());
+}
+
+DECLARE_WW8EXPORT_TEST(testTdf173671_textlineTop, "tdf173671_textlineTop.doc")
+{
+    const auto xShape = getShape(1);
+    CPPUNIT_ASSERT_EQUAL(css::text::RelOrientation::TEXT_LINE,
+                         getProperty<sal_Int16>(xShape, u"VertOrientRelation"_ustr));
+    CPPUNIT_ASSERT_EQUAL(css::text::VertOrientation::LINE_TOP,
+                         getProperty<sal_Int16>(xShape, u"VertOrient"_ustr));
 }
 
 DECLARE_WW8EXPORT_TEST(testTdf90408, "tdf90408.doc")

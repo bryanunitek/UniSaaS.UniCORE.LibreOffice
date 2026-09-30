@@ -2544,7 +2544,11 @@ void DomainMapper_Impl::finishParagraph( const ParagraphPropertyMapPtr& pParaCon
                 //select paragraph
                 xParaCursor->gotoStartOfParagraph( true );
                 xParaCursor->setPropertyToDefault(getPropertyName(PROP_CHAR_ESCAPEMENT));
+                // The size the initial is written with belongs to the frame Word puts it
+                // in, not to the character: Writer's layout sizes a drop cap itself.
                 xParaCursor->setPropertyToDefault(getPropertyName(PROP_CHAR_HEIGHT));
+                xParaCursor->setPropertyToDefault(getPropertyName(PROP_CHAR_HEIGHT_ASIAN));
+                xParaCursor->setPropertyToDefault(getPropertyName(PROP_CHAR_HEIGHT_COMPLEX));
                 //handles (2) and part of (6)
                 pToBeSavedProperties = new ParagraphProperties(pParaContext->props());
                 sal_Int32 nCount = xParaCursor->getString().getLength();
@@ -3067,6 +3071,8 @@ void DomainMapper_Impl::finishParagraph( const ParagraphPropertyMapPtr& pParaCon
                     // table style has got bigger precedence than docDefault style
                     // collect these pending paragraph properties to process in endTable()
                     rtl::Reference<SwXTextCursor> xCur = dynamic_cast<SwXTextCursor*>(xTextRange->getText( )->createTextCursor().get());
+                    if (!xCur)
+                        throw uno::RuntimeException();
                     xCur->gotoEnd(false);
                     xCur->goLeft(1, false);
                     rtl::Reference<SwXTextCursor> xParaCursor = dynamic_cast<SwXTextCursor*>
@@ -3289,8 +3295,7 @@ void DomainMapper_Impl::finishParagraph( const ParagraphPropertyMapPtr& pParaCon
 
     }
 
-    bool bIgnoreFrameState = IsInHeaderFooter();
-    if( (!bIgnoreFrameState && pParaContext && pParaContext->props().IsFrameMode()) || (bIgnoreFrameState && GetIsPreviousParagraphFramed()) )
+    if (pParaContext && pParaContext->props().IsFrameMode())
         SetIsPreviousParagraphFramed(true);
     else
         SetIsPreviousParagraphFramed(false);
@@ -3839,9 +3844,21 @@ void DomainMapper_Impl::appendStarMath( const Value& val )
             uno::Any(sal_Int32(0)));
         xComponentProperties->setPropertyValue(getPropertyName( PROP_BOTTOM_MARGIN ),
             uno::Any(sal_Int32(0)));
+
+        auto* pFormula = dynamic_cast<oox::FormulaImExportBase*>(xInterface.get());
+        // A formula whose own markup carries no font size is drawn at the size of the text
+        // around it, which the styles and the document defaults hold.
+        double fCharHeight = 0;
+        if (pFormula && pFormula->getFormulaFontSizeInHalfPoints() == 0
+            && (GetAnyProperty(PROP_CHAR_HEIGHT, GetTopContextOfType(CONTEXT_CHARACTER))
+                >>= fCharHeight))
+        {
+            pFormula->setFormulaFontSizeInHalfPoints(std::lround(fCharHeight * 2));
+        }
+
         Size size( 1000, 1000 );
-        if( oox::FormulaImExportBase* formulaimport = dynamic_cast< oox::FormulaImExportBase* >( xInterface.get()))
-            size = formulaimport->getFormulaSize();
+        if( pFormula )
+            size = pFormula->getFormulaSize();
         xStarMath->setPropertyValue(getPropertyName( PROP_WIDTH ),
             uno::Any( sal_Int32(size.Width())));
         xStarMath->setPropertyValue(getPropertyName( PROP_HEIGHT ),
@@ -10419,6 +10436,10 @@ void DomainMapper_Impl::substream(Id rName,
         m_bSaxError = true;
         throw;
     }
+
+    // finalize any waiting, substream-created frames before ending the substream
+    CheckUnregisteredFrameConversion();
+    ExecuteFrameConversion();
 
     switch( rName )
     {

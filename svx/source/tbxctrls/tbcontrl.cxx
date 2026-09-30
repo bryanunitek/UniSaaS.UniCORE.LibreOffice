@@ -1799,11 +1799,11 @@ void SvxFontNameBox_Base::CheckAndMarkUnknownFont()
         else
         {
             m_xWidget->set_entry_message_type(weld::EntryMessageType::Warning);
-            OUString sTip = SvxResId(bHasSubstitute ? RID_SVXSTR_CHARFONTNAME_NOTAVAILABLE_HASSUBST
-                                                    : RID_SVXSTR_CHARFONTNAME_NOTAVAILABLE_NOSUBST);
+            OUString sTip = SvxResId(RID_SVXSTR_CHARFONTNAME_NOTAVAILABLE_NOSUBST);
+            const OUString sReplaceBy
+                = Application::GetDefaultDevice()->GetFontReplacement(fontname);
             sTip = sTip.replaceAll("%1", fontname);
-            if (bHasSubstitute)
-                sTip = sTip.replaceAll("%2", sSubstitute);
+            sTip = sTip.replaceAll("%2", sReplaceBy);
             m_xWidget->set_tooltip_text(sTip);
         }
     }
@@ -2122,6 +2122,11 @@ ColorWindow::ColorWindow(OUString  rCommand,
 
     mxPaletteManager->ReloadColorSet(maColorIconView);
     mxPaletteManager->ReloadRecentColorSet(maRecentColorIconView);
+
+    // ensure minimum height to also provide space for palettes with
+    // more colors when one with few colors is initially selected
+    if (maColorIconView.get_size_request().Height() < 200)
+        maColorIconView.set_size_request(-1, 200);
 
     AddStatusListener( u".uno:ColorTableState"_ustr );
     AddStatusListener( maCommand );

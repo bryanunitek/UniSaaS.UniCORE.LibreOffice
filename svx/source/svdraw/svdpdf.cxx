@@ -796,19 +796,19 @@ void ImpSdrPdfImport::ImportPdfObject(
     switch (ePageObjectType)
     {
         case vcl::pdf::PDFPageObjectType::Text:
-            ImportText(pPageObject, pPage, pTextPage, nPageObjectIndex);
+            ImportText(pPageObject, pTextPage);
             break;
         case vcl::pdf::PDFPageObjectType::Path:
-            ImportPath(pPageObject, pPage, nPageObjectIndex);
+            ImportPath(pPageObject);
             break;
         case vcl::pdf::PDFPageObjectType::Image:
-            ImportImage(pPageObject, nPageObjectIndex);
+            ImportImage(pPageObject);
             break;
         case vcl::pdf::PDFPageObjectType::Shading:
             SAL_WARN("sd.filter", "Got page object SHADING: " << nPageObjectIndex);
             break;
         case vcl::pdf::PDFPageObjectType::Form:
-            ImportForm(pPageObject, pPage, pTextPage, nPageObjectIndex);
+            ImportForm(pPageObject, pPage, pTextPage);
             break;
         default:
             SAL_WARN("sd.filter", "Unknown PDF page object #" << nPageObjectIndex << " of type: "
@@ -819,8 +819,7 @@ void ImpSdrPdfImport::ImportPdfObject(
 
 void ImpSdrPdfImport::ImportForm(std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject,
                                  std::unique_ptr<vcl::pdf::PDFiumPage> const& pPage,
-                                 std::unique_ptr<vcl::pdf::PDFiumTextPage> const& pTextPage,
-                                 int /*nPageObjectIndex*/)
+                                 std::unique_ptr<vcl::pdf::PDFiumTextPage> const& pTextPage)
 {
     // Get the form matrix to perform correct translation/scaling of the form sub-objects.
     const basegfx::B2DHomMatrix aOldMatrix = maCurrentMatrix;
@@ -1734,11 +1733,10 @@ EmbeddedFontInfo ImpSdrPdfImport::convertToOTF(std::u16string_view prefix, SubSe
 // There isn't, as far as I know, a way to stroke with a pattern at the moment,
 // so extract some sensible color if this is a stroke pattern
 Color ImpSdrPdfImport::getStrokeColor(
-    std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject,
-    std::unique_ptr<vcl::pdf::PDFiumPage> const& pPage)
+    std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject)
 {
     if (std::unique_ptr<vcl::pdf::PDFiumBitmap> bitmap
-        = pPageObject->getRenderedStrokePattern(*mpPdfDocument, *pPage))
+        = pPageObject->getRenderedStrokePattern(*mpPdfDocument))
     {
         Bitmap aBitmap(bitmap->createBitmapFromBuffer());
         if (!aBitmap.IsEmpty())
@@ -1750,11 +1748,10 @@ Color ImpSdrPdfImport::getStrokeColor(
 
 // Typically for a fill pattern you want to use some pattern fill equivalent
 // but if that's not possible then this fallback can be useful
-Color ImpSdrPdfImport::getFillColor(std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject,
-                                    std::unique_ptr<vcl::pdf::PDFiumPage> const& pPage)
+Color ImpSdrPdfImport::getFillColor(std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject)
 {
     if (std::unique_ptr<vcl::pdf::PDFiumBitmap> bitmap
-        = pPageObject->getRenderedFillPattern(*mpPdfDocument, *pPage))
+        = pPageObject->getRenderedFillPattern(*mpPdfDocument))
     {
         Bitmap aBitmap(bitmap->createBitmapFromBuffer());
         if (!aBitmap.IsEmpty())
@@ -1782,9 +1779,7 @@ static bool AllowRect(const tools::Rectangle& rRect)
 }
 
 void ImpSdrPdfImport::ImportText(std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject,
-                                 std::unique_ptr<vcl::pdf::PDFiumPage> const& pPage,
-                                 std::unique_ptr<vcl::pdf::PDFiumTextPage> const& pTextPage,
-                                 int /*nPageObjectIndex*/)
+                                 std::unique_ptr<vcl::pdf::PDFiumTextPage> const& pTextPage)
 {
     basegfx::B2DRectangle aTextRect = pPageObject->getBounds();
     basegfx::B2DHomMatrix aMatrix = pPageObject->getMatrix();
@@ -1889,8 +1884,7 @@ void ImpSdrPdfImport::ImportText(std::unique_ptr<vcl::pdf::PDFiumPageObject> con
     }
     if (bUse)
     {
-        Color aColor
-            = bFill ? getFillColor(pPageObject, pPage) : getStrokeColor(pPageObject, pPage);
+        Color aColor = bFill ? getFillColor(pPageObject) : getStrokeColor(pPageObject);
         if (aColor != COL_TRANSPARENT)
             aTextColor = aColor.GetRGBColor();
     }
@@ -1947,8 +1941,7 @@ void ImpSdrPdfImport::InsertTextObject(const Point& rPos, const Size& rSize, con
     if (nChars > 1 && nVclInkedWidth > 0 && nPdfInkedWidth > 0)
     {
         const tools::Long nKern = (nPdfInkedWidth - nVclInkedWidth) / (nChars - 1);
-        nExtraKerning
-            = static_cast<short>(std::clamp<tools::Long>(nKern, SAL_MIN_INT16, SAL_MAX_INT16));
+        nExtraKerning = static_cast<short>(std::clamp<tools::Long>(nKern, 0, SAL_MAX_INT16));
     }
 
     // As per ImpEditEngine::CalcParaWidth the width of the text box has to be 1 unit wider than the text
@@ -2043,8 +2036,7 @@ ImpSdrPdfImport::GetClip(const std::unique_ptr<vcl::pdf::PDFiumClipPath>& pClipP
     return aClipPolyPoly;
 }
 
-void ImpSdrPdfImport::ImportImage(std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject,
-                                  int /*nPageObjectIndex*/)
+void ImpSdrPdfImport::ImportImage(std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject)
 {
     std::unique_ptr<vcl::pdf::PDFiumBitmap> bitmap = pPageObject->getImageBitmap();
     if (!bitmap)
@@ -2184,9 +2176,7 @@ void ImpSdrPdfImport::appendSegmentsToPolyPoly(
     }
 }
 
-void ImpSdrPdfImport::ImportPath(std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject,
-                                 std::unique_ptr<vcl::pdf::PDFiumPage> const& pPage,
-                                 int /*nPageObjectIndex*/)
+void ImpSdrPdfImport::ImportPath(std::unique_ptr<vcl::pdf::PDFiumPageObject> const& pPageObject)
 {
     auto aPathMatrix = pPageObject->getMatrix();
 
@@ -2232,7 +2222,7 @@ void ImpSdrPdfImport::ImportPath(std::unique_ptr<vcl::pdf::PDFiumPageObject> con
     }
 
     if (std::unique_ptr<vcl::pdf::PDFiumBitmap> bitmap
-        = pPageObject->getRenderedFillPattern(*mpPdfDocument, *pPage))
+        = pPageObject->getRenderedFillPattern(*mpPdfDocument))
     {
         moFillPattern = bitmap->createBitmapFromBuffer();
         moFillColor.reset();
@@ -2244,7 +2234,7 @@ void ImpSdrPdfImport::ImportPath(std::unique_ptr<vcl::pdf::PDFiumPageObject> con
     }
 
     if (bStroke)
-        mpVD->SetLineColor(getStrokeColor(pPageObject, pPage));
+        mpVD->SetLineColor(getStrokeColor(pPageObject));
     else
         mpVD->SetLineColor(COL_TRANSPARENT);
 
