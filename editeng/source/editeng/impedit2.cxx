@@ -77,7 +77,6 @@
 #include <limits>
 #include <memory>
 #include <fstream>
-#include <outleeng.hxx>
 
 using namespace ::com::sun::star;
 
@@ -94,7 +93,7 @@ static sal_uInt16 lcl_CalcExtraSpace( const SvxLineSpacingItem& rLSItem )
 
 constexpr tools::Long constMaxPaperSize = 0x7FFFFFFF;
 
-ImpEditEngine::ImpEditEngine( EditEngine* pEE, SfxItemPool* pItemPool ) :
+ImpEditEngine::ImpEditEngine( EditEngine* pEE, SfxItemPool* pItemPool, Outliner* pEngOwner ) :
     pSharedVCL(EditDLL::Get().GetSharedVclResources()),
     maPaperSize(constMaxPaperSize, constMaxPaperSize),
     maMinAutoPaperSize(0, 0),
@@ -114,6 +113,7 @@ ImpEditEngine::ImpEditEngine( EditEngine* pEE, SfxItemPool* pItemPool ) :
     mnCurTextHeight(0),
     maOnlineSpellTimer("editeng::ImpEditEngine aOnlineSpellTimer"),
     maStatusTimer("editeng::ImpEditEngine aStatusTimer"),
+    mpOwner(pEngOwner),
     mbKernAsianPunctuation(false),
     mbAddExtLeading(false),
     mbIsFormatting(false),
@@ -1525,10 +1525,10 @@ EditPaM ImpEditEngine::WordLeft( const EditPaM& rPaM )
     if ( nCurrentPos == 0 )
     {
         // Previous paragraph...
-        sal_Int32 nCurPara = maEditDoc.GetPos( aNewPaM.GetNode() );
-        ContentNode* pPrevNode = maEditDoc.GetObject( --nCurPara );
-        if ( pPrevNode )
+        sal_Int32 nPrevPara = maEditDoc.GetPos( aNewPaM.GetNode() ) - 1;
+        if (nPrevPara >= 0)
         {
+            ContentNode* pPrevNode = maEditDoc.GetObject( nPrevPara );
             aNewPaM.SetNode( pPrevNode );
             aNewPaM.SetIndex( pPrevNode->Len() );
         }
@@ -1575,10 +1575,10 @@ EditPaM ImpEditEngine::WordRight( const EditPaM& rPaM, sal_Int16 nWordType )
     if ( aNewPaM.GetIndex() >= nMax )
     {
         // Next paragraph ...
-        sal_Int32 nCurPara = maEditDoc.GetPos( aNewPaM.GetNode() );
-        ContentNode* pNextNode = maEditDoc.GetObject( ++nCurPara );
-        if ( pNextNode )
+        sal_Int32 nNextPara = maEditDoc.GetPos( aNewPaM.GetNode() ) + 1;
+        if (nNextPara < maEditDoc.Count())
         {
+            ContentNode* pNextNode = maEditDoc.GetObject( nNextPara );
             aNewPaM.SetNode( pNextNode );
             aNewPaM.SetIndex( 0 );
         }
@@ -2572,7 +2572,7 @@ void ImpEditEngine::ImpRemoveParagraph( sal_Int32 nPara )
 {
     assert(maEditDoc.GetObject(nPara));
 
-    ContentNode* pNextNode = maEditDoc.GetObject( nPara+1 );
+    ContentNode* pNextNode = nPara+1 < maEditDoc.Count() ? maEditDoc.GetObject( nPara+1 ) : nullptr;
 
     std::unique_ptr<ContentNode> pNode = maEditDoc.Release(nPara);
     maDeletedNodes.push_back(std::make_unique<DeletedNodeInfo>(pNode.get(), nPara));
@@ -4120,7 +4120,7 @@ EditSelection ImpEditEngine::ConvertSelection(
     EditSelection aNewSelection;
 
     // Start...
-    ContentNode* pNode = maEditDoc.GetObject( nStartPara );
+    ContentNode* pNode = nStartPara >= maEditDoc.Count() ? nullptr : maEditDoc.GetObject( nStartPara );
     sal_Int32 nIndex = nStartPos;
     if ( !pNode )
     {
@@ -4134,7 +4134,7 @@ EditSelection ImpEditEngine::ConvertSelection(
     aNewSelection.Min().SetIndex( nIndex );
 
     // End...
-    pNode = maEditDoc.GetObject( nEndPara );
+    pNode = nEndPara >= maEditDoc.Count() ? nullptr : maEditDoc.GetObject( nEndPara );
     nIndex = nEndPos;
     if ( !pNode )
     {
@@ -4750,9 +4750,8 @@ bool ImpEditEngine::isInEmptyClusterAtTheEnd(const ParaPortion& rPortion, bool b
     {
         if (nCurrent == nPortion)
         {
-            OutlinerEditEng* pOutlEditEng{ dynamic_cast<OutlinerEditEng*>(mpEditEngine)};
-            if (!bIsScaling && pOutlEditEng)
-                return pOutlEditEng->GetDepth(nCurrent) < 0;
+            if (!bIsScaling && mpEditEngine->GetOwner() != nullptr)
+                return mpEditEngine->GetNumberingDepth(nCurrent) < 0;
             else
                 return true;
         }

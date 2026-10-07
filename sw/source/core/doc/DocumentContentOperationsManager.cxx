@@ -2187,7 +2187,7 @@ void DocumentContentOperationsManager::DeleteDummyChar(
 
 void DocumentContentOperationsManager::DeleteRange( SwPaM & rPam )
 {
-    // Seek all redlines that are in that PaM to be deleted..
+    // Seek all redlines that are in that PaM to be deleted.
     SwRedlineTable::size_type nRedlStart = m_rDoc.getIDocumentRedlineAccess().GetRedlinePos(
         rPam.Start()->GetNode(), RedlineType::Any);
     SwRedlineTable::size_type nRedlEnd = m_rDoc.getIDocumentRedlineAccess().GetRedlineEndPos(
@@ -4605,6 +4605,14 @@ bool DocumentContentOperationsManager::DeleteRangeImplImpl(SwPaM & rPam, SwDelet
 
     if (!rPam.HasMark()
         || (*pStart == *pEnd && !IsFlySelectedByCursor(m_rDoc, *pStart, *pEnd)))
+    {
+        return false;
+    }
+
+    // A delete stays within one cell of a table, the same rule that a cursor selection follows
+    const SwStartNode* pStartBox = pStart->GetNode().FindTableBoxStartNode();
+    const SwStartNode* pEndBox = pEnd->GetNode().FindTableBoxStartNode();
+    if (pStartBox != pEndBox)
     {
         return false;
     }
