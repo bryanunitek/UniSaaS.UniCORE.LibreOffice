@@ -22,6 +22,7 @@
 #include <vcl/ColorDialog.hxx>
 #include <vcl/weld/Entry.hxx>
 #include <vcl/hexcolorcontrol.hxx>
+#include <vcl/idle.hxx>
 #include <vcl/virdev.hxx>
 #include <vcl/weld/DialogController.hxx>
 #include <vcl/weld/MetricSpinButton.hxx>
@@ -152,15 +153,19 @@ public:
     double GetValue() const { return mdValue; }
 
     void SetModifyHdl(const Link<ColorSliderControl&, void>& rLink) { maModifyHdl = rLink; }
+    void SetResizeHdl(const Link<ColorSliderControl&, void>& rLink) { maResizeHdl = rLink; }
 
-    sal_Int16 GetLevel() const { return mnLevel; }
+    sal_Int16 GetLevel() const
+    {
+        return static_cast<sal_Int16>((1.0 - mdValue) * GetOutputSizePixel().Height());
+    }
 
 private:
     Link<ColorSliderControl&, void> maModifyHdl;
+    Link<ColorSliderControl&, void> maResizeHdl;
     Color maColor;
     ColorMode meMode;
     VclPtr<VirtualDevice> mxBitmap;
-    sal_Int16 mnLevel;
     double mdValue;
 };
 
@@ -206,6 +211,8 @@ private:
     double mdHue, mdSat, mdBri;
     double mdCyan, mdMagenta, mdYellow, mdKey;
 
+    Idle maUpdateMarkersIdle;
+
 public:
     ColorPickerDialog(weld::Window* pParent, const Color& rColor, vcl::ColorPickerMode eDialogMode);
 
@@ -221,6 +228,8 @@ private:
 
     DECL_LINK(ColorFieldControlModifydl, ColorFieldControl&, void);
     DECL_LINK(ColorSliderControlModifyHdl, ColorSliderControl&, void);
+    DECL_LINK(ColorSliderResizeHdl, ColorSliderControl&, void);
+    DECL_LINK(UpdateMarkersHdl, Timer*, void);
     DECL_LINK(ColorModifyMetricHdl, weld::MetricSpinButton&, void);
     DECL_LINK(ColorModifySpinHdl, weld::SpinButton&, void);
     DECL_LINK(ColorModifyEditHdl, weld::Entry&, void);

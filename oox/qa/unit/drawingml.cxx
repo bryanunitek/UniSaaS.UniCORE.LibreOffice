@@ -39,7 +39,9 @@
 #include <docmodel/theme/Theme.hxx>
 
 #include <comphelper/sequenceashashmap.hxx>
+#include <comphelper/scopeguard.hxx>
 #include <basegfx/utils/gradienttools.hxx>
+#include <osl/process.h>
 
 using namespace ::com::sun::star;
 
@@ -93,6 +95,34 @@ CPPUNIT_TEST_FIXTURE(OoxDrawingmlTest, testTransparentText)
     // - Actual  : 0
     // i.e. the transparency of the character color was lost on import/export.
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int16>(75), nTransparency);
+}
+
+CPPUNIT_TEST_FIXTURE(OoxDrawingmlTest, testUnderlineFillOverridesInheritedFollowText)
+{
+    loadFromFile(u"underline-inherited-follow-text.pptx");
+
+    uno::Reference<drawing::XDrawPagesSupplier> xDrawPagesSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawPage> xDrawPage(xDrawPagesSupplier->getDrawPages()->getByIndex(0),
+                                                 uno::UNO_QUERY);
+    uno::Reference<container::XEnumerationAccess> xShape(xDrawPage->getByIndex(0), uno::UNO_QUERY);
+    uno::Reference<container::XEnumeration> xParagraphs = xShape->createEnumeration();
+    uno::Reference<container::XEnumerationAccess> xParagraph;
+    auto getUnderlineColor = [&xParagraph]() {
+        uno::Reference<beans::XPropertySet> xRun(xParagraph->createEnumeration()->nextElement(),
+                                                 uno::UNO_QUERY);
+        Color aColor;
+        xRun->getPropertyValue(u"CharUnderlineColor"_ustr) >>= aColor;
+        return aColor;
+    };
+
+    // Without the fix in place, this test would have failed with
+    // - Expected: rgba[ff0000ff]
+    // - Actual  : rgba[ffffff00]
+    // i.e. the inherited uFillTx won over the uFill of the run
+    xParagraph.set(xParagraphs->nextElement(), uno::UNO_QUERY);
+    CPPUNIT_ASSERT_EQUAL(Color(0xFF0000), getUnderlineColor());
+    xParagraph.set(xParagraphs->nextElement(), uno::UNO_QUERY);
+    CPPUNIT_ASSERT_EQUAL(COL_AUTO, getUnderlineColor());
 }
 
 CPPUNIT_TEST_FIXTURE(OoxDrawingmlTest, testTdf131082)
@@ -674,6 +704,27 @@ CPPUNIT_TEST_FIXTURE(OoxDrawingmlTest, testTdf113187ConstantArcTo)
     CPPUNIT_ASSERT_EQUAL(sal_Int32(3600000), aViewBox.Height);
 }
 
+CPPUNIT_TEST_FIXTURE(OoxDrawingmlTest, testTdf139425PathWithoutGuideReferences)
+{
+    // The shape has a guide list, but its path uses plain numbers and none of the guides.
+    loadFromFile(u"tdf139425_pathWithoutGuideReferences.pptx");
+
+    uno::Reference<drawing::XDrawPagesSupplier> xDrawPagesSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawPage> xDrawPage(xDrawPagesSupplier->getDrawPages()->getByIndex(0),
+                                                 uno::UNO_QUERY);
+    uno::Reference<drawing::XShape> xShape(xDrawPage->getByIndex(0), uno::UNO_QUERY);
+    uno::Reference<beans::XPropertySet> xShapeProps(xShape, uno::UNO_QUERY);
+    uno::Sequence<beans::PropertyValue> aGeoPropSeq;
+    xShapeProps->getPropertyValue(u"CustomShapeGeometry"_ustr) >>= aGeoPropSeq;
+    comphelper::SequenceAsHashMap aGeoPropMap(aGeoPropSeq);
+
+    // The path holds ooxml coordinates, so the ViewBox carries the shape size in the same unit.
+    // Without the fix its width and height were 0, and the polygon came out 360 times too large.
+    auto aViewBox = aGeoPropMap[u"ViewBox"_ustr].get<css::awt::Rectangle>();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(325438), aViewBox.Width);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(357187), aViewBox.Height);
+}
+
 CPPUNIT_TEST_FIXTURE(OoxDrawingmlTest, testTdf125085WordArtFontTheme)
 {
     // The font info for the shape is in the theme, the text run has no font settings.
@@ -842,6 +893,90 @@ CPPUNIT_TEST_FIXTURE(OoxDrawingmlTest, testPPTXImportOutlinerListStyle)
     // - Actual  : 3600
     // i.e. the master was wrong, re-export to PPTX could not write the correct numbering rules.
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(2388), nLeftMargin);
+}
+
+CPPUNIT_TEST_FIXTURE(OoxDrawingmlTest, testConnectorText)
+{
+    // This test belongs to new SmartArt implementation.
+    // Adapt the test, when using fallback provided by drawing.xml is dropped.
+    static OUString constexpr var{ u"DIAGRAM_IGNORE_EXTDRAWINGS"_ustr };
+    osl_setEnvironment(var.pData, u"1"_ustr.pData);
+    comphelper::ScopeGuard g([] { osl_clearEnvironment(var.pData); });
+
+    loadFromFile(u"cool15967_BasicProcess_ConnectorText.pptx");
+    uno::Reference<drawing::XDrawPagesSupplier> xDrawPagesSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawPage> xDrawPage(xDrawPagesSupplier->getDrawPages()->getByIndex(0),
+                                                 uno::UNO_QUERY);
+    // Get SmartArt object, which is actually a group with 8 shapes.
+    uno::Reference<drawing::XShape> xSmartArt(xDrawPage->getByIndex(0), uno::UNO_QUERY);
+    CPPUNIT_ASSERT_EQUAL(u"com.sun.star.drawing.GroupShape"_ustr, xSmartArt->getShapeType());
+    uno::Reference<container::XIndexAccess> xGroup(xSmartArt, uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xGroup.is());
+    CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(8), xGroup->getCount());
+
+    // Access to underlying model is not yet possible. Thus we can only test indirectly with
+    // properties available in UNO. Without fix, the shape names were identical.
+    OUString sName;
+    uno::Reference<beans::XPropertySet> xConnAProps(getChildShape(xSmartArt, 2), uno::UNO_QUERY);
+    xConnAProps->getPropertyValue(u"Name"_ustr) >>= sName;
+    CPPUNIT_ASSERT_EQUAL(u"{06F924E1-8519-4DEB-B576-001BD7EEDCA2}"_ustr, sName);
+    uno::Reference<beans::XPropertySet> xConnBProps(getChildShape(xSmartArt, 4), uno::UNO_QUERY);
+    xConnBProps->getPropertyValue(u"Name"_ustr) >>= sName;
+    CPPUNIT_ASSERT_EQUAL(u"{6B4132B0-E8B4-435F-9A22-55740C4BDF51}"_ustr, sName);
+    uno::Reference<beans::XPropertySet> xConnCProps(getChildShape(xSmartArt, 6), uno::UNO_QUERY);
+    xConnCProps->getPropertyValue(u"Name"_ustr) >>= sName;
+    CPPUNIT_ASSERT_EQUAL(u"{55B8016A-A755-4069-A179-DFC2070CA8C9}"_ustr, sName);
+}
+
+CPPUNIT_TEST_FIXTURE(OoxDrawingmlTest, testUnderlineFillColorTypes)
+{
+    loadFromFile(u"underline-fill-colors.pptx");
+
+    // Each paragraph has one underlined run, and the color of each underline uses a different
+    // color type of DrawingML.
+    // accent1 is 5B9BD5 and accent2 is ED7D31 in the theme of the document
+    const std::tuple<OUString, Color, model::ThemeColorType> aExpected[] = {
+        { u"srgbClr"_ustr, Color(0xFF0000), model::ThemeColorType::Unknown },
+        { u"schemeClr"_ustr, Color(0xED7D31), model::ThemeColorType::Accent2 },
+        { u"schemeClr lumMod"_ustr, Color(0x2E75B6), model::ThemeColorType::Accent1 },
+        { u"prstClr"_ustr, Color(0x008000), model::ThemeColorType::Unknown },
+        { u"hslClr"_ustr, Color(0x00FFFF), model::ThemeColorType::Unknown },
+        { u"scrgbClr"_ustr, Color(0x0000FF), model::ThemeColorType::Unknown },
+        { u"no uFill"_ustr, COL_AUTO, model::ThemeColorType::Unknown },
+    };
+
+    uno::Reference<drawing::XDrawPagesSupplier> xDrawPagesSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawPage> xDrawPage(xDrawPagesSupplier->getDrawPages()->getByIndex(0),
+                                                 uno::UNO_QUERY);
+    uno::Reference<text::XTextRange> xShape(xDrawPage->getByIndex(0), uno::UNO_QUERY);
+    uno::Reference<container::XEnumerationAccess> xText(xShape->getText(), uno::UNO_QUERY);
+    uno::Reference<container::XEnumeration> xParagraphs = xText->createEnumeration();
+    for (const auto & [ rText, rColor, eThemeColorType ] : aExpected)
+    {
+        CPPUNIT_ASSERT(xParagraphs->hasMoreElements());
+        uno::Reference<container::XEnumerationAccess> xParagraph(xParagraphs->nextElement(),
+                                                                 uno::UNO_QUERY);
+        uno::Reference<text::XTextRange> xRun(xParagraph->createEnumeration()->nextElement(),
+                                              uno::UNO_QUERY);
+        CPPUNIT_ASSERT_EQUAL(rText, xRun->getString());
+
+        uno::Reference<beans::XPropertySet> xRunProperties(xRun, uno::UNO_QUERY);
+        Color aUnderlineColor;
+        xRunProperties->getPropertyValue(u"CharUnderlineColor"_ustr) >>= aUnderlineColor;
+        // Without the fix in place, this test would have failed for the schemeClr runs with
+        // - Expected: rgba[ed7d31ff]
+        // - Actual  : rgba[000000ff]
+        // and the hslClr and scrgbClr runs had COL_AUTO, so their underline took the text color
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(rText.toUtf8().getStr(), rColor, aUnderlineColor);
+
+        // A theme color keeps its link to the theme, next to the RGB value it resolves to
+        uno::Reference<util::XComplexColor> xComplexColor;
+        xRunProperties->getPropertyValue(u"CharUnderlineComplexColor"_ustr) >>= xComplexColor;
+        CPPUNIT_ASSERT(xComplexColor.is());
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(
+            rText.toUtf8().getStr(), eThemeColorType,
+            model::color::getFromXComplexColor(xComplexColor).getThemeColorType());
+    }
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

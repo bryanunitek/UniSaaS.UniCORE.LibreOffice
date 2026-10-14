@@ -248,15 +248,12 @@ const OUString& SdrObject::getDiagramDataModelID() const
 
 bool SdrObject::isDiagramBackgroundShape() const
 {
-    const OUString& rID(getDiagramDataModelID());
-    if (rID.isEmpty())
-        return false;
-
     const std::shared_ptr< svx::diagram::DiagramHelper_svx >& rDiagramHelper(getDiagramHelper());
     if (!rDiagramHelper)
         return false;
 
-    return rID == rDiagramHelper->getBackgroundShapeModelID();
+    // BGShape has empty string for identification
+    return EMPTY_OUSTRING == getDiagramDataModelID();
 }
 
 bool SdrObject::isDiagramTextNode() const
@@ -1984,14 +1981,6 @@ bool SdrObject::Equals(const SdrObject& rOtherObj) const
                 // on MasterPages
                 switch (nWhich)
                 {
-                    case XATTRSET_LINE:
-                    case XATTRSET_FILL:
-                        // these Items are not really used (maybe removed),
-                        // ignore. Diffs come from these being SfxSetItems
-                        // on different models with slightly different defaults
-                        // in the contained complete default SfxItemSet
-                        continue;
-
                     // somewhere defaults for some objects seem to be set on MasterPages
                     // that define Items (here: for XATTR_FILLGRADIENT and FillStyle_BITMAP).
                     // These can be ignored when the FillStyle does not *use* these anyways.

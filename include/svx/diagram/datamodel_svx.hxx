@@ -34,6 +34,7 @@
 
 #include <com/sun/star/xml/dom/XDocument.hpp>
 #include <com/sun/star/drawing/XShape.hpp>
+#include <com/sun/star/frame/XModel.hpp>
 #include <oox/token/tokens.hxx>
 #include <sax/fshelper.hxx>
 #include <boost/property_tree/ptree.hpp>
@@ -74,7 +75,7 @@ struct SVXCORE_DLLPUBLIC Connection
     /* 0         */ sal_Int32       mnSourceOrder; // XML_srcOrd
     /* 0         */ sal_Int32       mnDestOrder; // XML_destOrd
 
-    void writeDiagramData(const sax_fastparser::FSHelperPtr& rTarget);
+    void writeDiagramData_connection(const sax_fastparser::FSHelperPtr& rTarget);
     void addDiagramModelData(boost::property_tree::ptree& rTarget) const;
 };
 
@@ -153,16 +154,14 @@ class UNLESS_MERGELIBS(SVXCORE_DLLPUBLIC) DiagramDataState
     Points maPoints;
     std::vector<css::uno::Reference<css::drawing::XShape>> mxShapes;
     basegfx::B2DHomMatrix maTransformation;
-    OUString msBackgroundShapeModelID;
 
 public:
-    DiagramDataState(const Connections& aConnections, const Points& aPoints, const css::uno::Reference< css::drawing::XShape >& rRootShape, const OUString& rBackgroundShapeModelID);
+    DiagramDataState(const Connections& aConnections, const Points& aPoints, const css::uno::Reference< css::drawing::XShape >& rRootShape);//, const OUString& rBackgroundShapeModelID);
 
     const Connections& getConnections() const { return maConnections; }
     const Points& getPoints() const { return maPoints; }
     const std::vector<css::uno::Reference<css::drawing::XShape>>& getXShapes() const { return mxShapes;}
     const basegfx::B2DHomMatrix& getTransformation() const { return maTransformation; }
-    const OUString& getBackgroundShapeModelID() const { return msBackgroundShapeModelID; }
 };
 
 typedef std::shared_ptr< DiagramDataState > DiagramDataStatePtr;
@@ -192,9 +191,10 @@ protected:
     explicit DiagramData_svx(const boost::property_tree::ptree& rDiagramModel);
 
 public:
-    // access associated SdrObjGroup/XShape/RootShape
+    // access associated SdrObjGroup/XShape/RootShape/XModel
     css::uno::Reference< css::drawing::XShape >& accessRootShape() { return mxRootShape; }
     const css::uno::Reference< css::drawing::XShape >& accessRootShape() const { return mxRootShape; }
+    const css::uno::Reference< css::frame::XModel >& accessRootModel() const;
 
     virtual ~DiagramData_svx();
 
@@ -220,9 +220,6 @@ public:
 
     const css::uno::Reference< css::xml::dom::XDocument >& getThemeDocument() const { return mxThemeDocument; }
     void setThemeDocument( const css::uno::Reference< css::xml::dom::XDocument >& xRef ) { mxThemeDocument = xRef; }
-
-    const OUString& getBackgroundShapeModelID() const { return msBackgroundShapeModelID; }
-    void setBackgroundShapeModelID( const OUString& rModelID ) { msBackgroundShapeModelID = rModelID; }
 
     // model modifiers
     std::pair<OUString, DomMapFlags> addDiagramNode();
@@ -271,7 +268,6 @@ protected:
     PointsNameMap     maPointsPresNameMap;
     ConnectionNameMap maConnectionNameMap;
     StringMap         maPresOfNameMap;
-    OUString          msBackgroundShapeModelID;
 };
 
 typedef std::shared_ptr< DiagramData_svx > DiagramDataPtr_svx;

@@ -60,18 +60,16 @@ private:
     Color  ( * m_pColor2Fn )( Color );
     Color  ( * m_pColorDistFn )( Color, Color );
 
-    tools::Long    m_nMinWidth;
     SvxBorderLineStyle m_nStyle;
 
 public:
     ImpLineListData( BorderWidthImpl aWidthImpl,
-           SvxBorderLineStyle nStyle, tools::Long nMinWidth, Color ( *pColor1Fn )( Color ),
+           SvxBorderLineStyle nStyle, Color ( *pColor1Fn )( Color ),
            Color ( *pColor2Fn )( Color ), Color ( *pColorDistFn )( Color, Color ) ) :
         m_aWidthImpl( aWidthImpl ),
         m_pColor1Fn( pColor1Fn ),
         m_pColor2Fn( pColor2Fn ),
         m_pColorDistFn( pColorDistFn ),
-        m_nMinWidth( nMinWidth ),
         m_nStyle( nStyle )
     {
     }
@@ -100,8 +98,6 @@ public:
         return ( *m_pColorDistFn )( rMain, rDefault );
     }
 
-    /** Returns the minimum width in twips */
-    tools::Long   GetMinWidth( ) const { return m_nMinWidth;}
     SvxBorderLineStyle GetStyle( ) const { return m_nStyle;}
 };
 
@@ -186,11 +182,11 @@ All sizes are in 1/10 typographic point (pt).
 The passed FontList must be retained until the next fill call.
 
 Additionally it supports a relative mod, which allows entering
-percentage values. This, eg., can be useful for template dialogs.
+percentage values. This, e.g., can be useful for template dialogs.
 This mode can only be enabled, but not disabled again.
 
 For DontKnow the FontSizeBox should be filled FontMetric(), so it will
-contain a list with the standard sizes. Th currently shown size
+contain a list with the standard sizes. The currently shown size
 probably needs to be reset by the application.
 
 See also
@@ -208,8 +204,6 @@ inline Color sameDistColor( Color /*rMain*/, Color rDefault )
 {
     return rDefault;
 }
-
-class ValueSet;
 
 class SVT_DLLPUBLIC SvtLineListBox final : public WeldToolbarPopup
 {
@@ -234,7 +228,7 @@ public:
 
     /** Insert a listbox entry with all widths in Twips. */
     void            InsertEntry(const BorderWidthImpl& rWidthImpl,
-                        SvxBorderLineStyle nStyle, tools::Long nMinWidth = 0,
+                        SvxBorderLineStyle nStyle,
                         ColorFunc pColor1Fn = &sameColor,
                         ColorFunc pColor2Fn = &sameColor,
                         ColorDistFunc pColorDistFn = &sameDistColor);
@@ -349,8 +343,7 @@ private:
     static std::vector<OUString> LoadMRUEntries(const OUString& aFontMRUEntriesFile);
     void            SaveMRUEntries( const OUString& aFontMRUEntriesFile ) const;
 
-    OutputDevice&   CachePreview(size_t nIndex, Point* pTopLeft,
-                                 sal_Int32 nDPIX = 96, sal_Int32 nDPIY = 96);
+    OutputDevice& CachePreview(size_t nIndex, Point* pTopLeft);
 
 public:
     FontNameBox(std::unique_ptr<weld::ComboBox> p);

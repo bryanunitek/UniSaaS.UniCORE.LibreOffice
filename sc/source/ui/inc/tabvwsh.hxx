@@ -382,13 +382,15 @@ public:
 
     ScNavigatorSettings*    GetNavigatorSettings();
 
-    // Drucken:
+    // Printing:
     virtual SfxPrinter*     GetPrinter( bool bCreate = false ) override;
     virtual sal_uInt16      SetPrinter( SfxPrinter* pNewPrinter,
                                           SfxPrinterChangeFlags nDiffFlags = SFX_PRINTER_ALL ) override;
 
     virtual bool            HasPrintOptionsPage() const override;
     virtual std::unique_ptr<SfxTabPage> CreatePrintOptionsPage(weld::Container* pPage, weld::DialogController* pController, const SfxItemSet &rOptions) override;
+
+    tools::Long GetCurrentPage() const;
 
     void            ConnectObject( const SdrOle2Obj* pObj );
     void            ActivateObject(SdrOle2Obj* pObj, sal_Int32 nVerb);
