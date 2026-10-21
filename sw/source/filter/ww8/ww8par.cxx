@@ -94,6 +94,7 @@
 #include <IDocumentLayoutAccess.hxx>
 #include <IDocumentMarkAccess.hxx>
 #include <IDocumentStylePoolAccess.hxx>
+#include <istyleaccess.hxx>
 #include <IDocumentExternalData.hxx>
 #include <DocumentRedlineManager.hxx>
 #include <docufld.hxx>
@@ -2620,7 +2621,8 @@ void SwWW8ImplReader::FinalizeTextNode(SwPosition& rPos, bool bAddNew)
                 items.Put(*pItem);
         }
         SwFormatAutoFormat item(RES_PARATR_LIST_AUTOFMT);
-        item.SetStyleHandle(std::make_shared<SfxItemSet>(items));
+        item.SetStyleHandle(
+            m_rDoc.GetIStyleAccess().getAutomaticStyle(items, IStyleAccess::AUTO_STYLE_CHAR));
         pText->SetAttr(item);
     }
 
@@ -6219,7 +6221,7 @@ bool TestImportDOC(SvStream &rStream, const OUString &rFltName)
     SwGlobals::ensure();
 
     SfxObjectShellLock xDocSh(new SwDocShell(SfxObjectCreateMode::INTERNAL));
-    xDocSh->DoInitNew();
+    xDocSh->DoInitNew(SfxNewDocumentMacros::Disallow);
     SwDoc *pD =  static_cast<SwDocShell*>((&xDocSh))->GetDoc();
 
     SwPaM aPaM(pD->GetNodes().GetEndOfContent(), SwNodeOffset(-1));

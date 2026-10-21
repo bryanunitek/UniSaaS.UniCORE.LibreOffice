@@ -55,9 +55,7 @@ SwToContentAnchoredObjectPosition::SwToContentAnchoredObjectPosition( SdrObject&
       mpVertPosOrientFrame( nullptr ),
       mbAnchorToChar ( false ),
       mpToCharOrientFrame( nullptr ),
-      mpToCharRect( nullptr ),
-      // #i22341#
-      mnToCharTopOfLine( 0 )
+      mpToCharRect( nullptr )
 {}
 
 SwToContentAnchoredObjectPosition::~SwToContentAnchoredObjectPosition()
@@ -79,7 +77,7 @@ const SwRect* SwToContentAnchoredObjectPosition::ToCharRect() const
 }
 
 // #i22341#
-SwTwips SwToContentAnchoredObjectPosition::ToCharTopOfLine() const
+gfx::Length SwToContentAnchoredObjectPosition::ToCharTopOfLine() const
 {
     return mnToCharTopOfLine;
 }
@@ -211,14 +209,14 @@ void SwToContentAnchoredObjectPosition::CalcPosition()
             // rectangle can have no height. Thus, check also the width
             if ( ( !GetAnchoredObj().GetLastCharRect().Height() &&
                    !GetAnchoredObj().GetLastCharRect().Width() ) ||
-                 !GetAnchoredObj().GetLastTopOfLine() )
+                 GetAnchoredObj().GetLastTopOfLine() == 0_emu)
             {
                 GetAnchoredObj().CheckCharRectAndTopOfLine( false );
                 // Due to table break algorithm the character
                 // rectangle can have no height. Thus, check also the width
                 if ( ( !GetAnchoredObj().GetLastCharRect().Height() &&
                        !GetAnchoredObj().GetLastCharRect().Width() ) ||
-                     !GetAnchoredObj().GetLastTopOfLine() )
+                     GetAnchoredObj().GetLastTopOfLine() == 0_emu)
                 {
                     // Get default for <mpVertPosOrientFrame>, if it's not set.
                     if ( !mpVertPosOrientFrame )
@@ -466,11 +464,11 @@ void SwToContentAnchoredObjectPosition::CalcPosition()
             // (including the xml-filter)
             {
                 // determine position
-                SwTwips nAttrRelPosY = nRelPosY - nAlignAreaOffset;
+                gfx::Length nAttrRelPosY = gfx::Length::twip(nRelPosY - nAlignAreaOffset);
                 // set
-                if ( nAttrRelPosY != aVert.GetPos() )
+                if (nAttrRelPosY != aVert.getPosition())
                 {
-                    aVert.SetPos( nAttrRelPosY );
+                    aVert.setPosition(nAttrRelPosY);
                     const_cast<SwFrameFormat&>(rFrameFormat).LockModify();
                     const_cast<SwFrameFormat&>(rFrameFormat).SetFormatAttr( aVert );
                     const_cast<SwFrameFormat&>(rFrameFormat).UnlockModify();
@@ -557,10 +555,10 @@ void SwToContentAnchoredObjectPosition::CalcPosition()
                 }
                 else
                 {
-                    nVertOffsetToFrameAnchorPos = aRectFnSet.YDiff( ToCharTopOfLine(),
+                    nVertOffsetToFrameAnchorPos = aRectFnSet.YDiff(ToCharTopOfLine().as_twip<SwTwips>(),
                                                                     nTopOfOrient );
                 }
-                nRelPosY = nVertOffsetToFrameAnchorPos - aVert.GetPos();
+                nRelPosY = nVertOffsetToFrameAnchorPos - aVert.getPosition().as_twip<SwTwips>();
             }
             else
             {
@@ -627,12 +625,12 @@ void SwToContentAnchoredObjectPosition::CalcPosition()
                     SwTwips nPageBottom = aRectFnSet.GetBottom(aPgPrtRect);
                     nVertOffsetToFrameAnchorPos += aRectFnSet.YDiff(nPageBottom, nTopOfOrient);
                 }
-                nRelPosY = nVertOffsetToFrameAnchorPos + aVert.GetPos();
+                nRelPosY = nVertOffsetToFrameAnchorPos + aVert.getPosition().as_twip<SwTwips>();
                 if (bFollowSplitFly)
                 {
                     // This is a follow of a split fly: shift it up to match the anchor position,
                     // because the vertical offset is meant to be handled only on the first page.
-                    nRelPosY -= aVert.GetPos();
+                    nRelPosY -= aVert.getPosition().as_twip<SwTwips>();
 
                     if (aVert.GetRelationOrient() == text::RelOrientation::PAGE_FRAME
                         && rPageAlignLayFrame.IsPageFrame())
@@ -1164,11 +1162,11 @@ void SwToContentAnchoredObjectPosition::CalcPosition()
         // save calculated horizontal position - needed for filters
         // (including the xml-filter)
         {
-            SwTwips nAttrRelPosX = nRelPosX - nHoriOffsetToFrameAnchorPos;
-            if ( aHori.GetHoriOrient() != text::HoriOrientation::NONE &&
-                 aHori.GetPos() != nAttrRelPosX )
+            gfx::Length nAttrRelPosX = gfx::Length::twip(nRelPosX - nHoriOffsetToFrameAnchorPos);
+            if (aHori.GetHoriOrient() != text::HoriOrientation::NONE &&
+                aHori.getPosition() != nAttrRelPosX)
             {
-                aHori.SetPos( nAttrRelPosX );
+                aHori.setPosition(nAttrRelPosX);
                 const_cast<SwFrameFormat&>(rFrameFormat).LockModify();
                 const_cast<SwFrameFormat&>(rFrameFormat).SetFormatAttr( aHori );
                 const_cast<SwFrameFormat&>(rFrameFormat).UnlockModify();
@@ -1227,7 +1225,8 @@ void SwToContentAnchoredObjectPosition::CalcOverlap(const SwTextFrame* pAnchorFr
             = SwTextBoxHelper::getOtherTextBoxFormat(&rFrameFormat, RES_FLYFRMFMT);
         if (pShapeOfTextBox)
         {
-            SwTwips nYDiff = pShapeOfTextBox->GetWrapInfluenceOnObjPos().GetOverlapVertOffset();
+            SwTwips nYDiff
+                = pShapeOfTextBox->GetWrapInfluenceOnObjPos().GetOverlapVertOffset().as_twip<SwTwips>();
             if (nYDiff > 0)
             {
                 rRelPos.setY(rRelPos.getY() + nYDiff + 1);
@@ -1376,7 +1375,7 @@ void SwToContentAnchoredObjectPosition::CalcOverlap(const SwTextFrame* pAnchorFr
         // Store our offset that avoids the overlap. If this is a shape of a textbox, then the frame
         // of the textbox will use it.
         SwFormatWrapInfluenceOnObjPos aInfluence(rFrameFormat.GetWrapInfluenceOnObjPos());
-        aInfluence.SetOverlapVertOffset(nYDiff);
+        aInfluence.SetOverlapVertOffset(gfx::Length::twip(nYDiff));
         const_cast<SwFrameFormat&>(rFrameFormat).LockModify();
         const_cast<SwFrameFormat&>(rFrameFormat).SetFormatAttr(aInfluence);
         const_cast<SwFrameFormat&>(rFrameFormat).UnlockModify();

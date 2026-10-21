@@ -3184,8 +3184,7 @@ void DrawViewShell::FuTemporary(SfxRequest& rReq)
                     //there exists a previous numbering level
                     if (nDepth != sal_uInt16(-1) && nDepth > 0)
                     {
-                        Paragraph* pPara = pOL->GetParagraph(aSel.end.nPara);
-                        pOL->Remove(pPara, 1);
+                        pOL->Remove(aSel.end.nPara, 1);
                     }
                 }
             }
@@ -4510,6 +4509,13 @@ void DrawViewShell::FuTemporary(SfxRequest& rReq)
         case SID_ATTR_GLOW_TEXT_RADIUS:
         case SID_ATTR_GLOW_TEXT_TRANSPARENCY:
         case SID_ATTR_SOFTEDGE_RADIUS:
+        case SID_ATTR_REFLECTION:
+        case SID_ATTR_REFLECTION_DISTANCE:
+        case SID_ATTR_REFLECTION_BLUR_RADIUS:
+        case SID_ATTR_REFLECTION_START_TRANSPARENCY:
+        case SID_ATTR_REFLECTION_START_POSITION:
+        case SID_ATTR_REFLECTION_END_TRANSPARENCY:
+        case SID_ATTR_REFLECTION_END_POSITION:
         case SID_ATTR_TEXTCOLUMNS_NUMBER:
         case SID_ATTR_TEXTCOLUMNS_SPACING:
         case SID_ATTR_TEXT_AUTOGROWWIDTH:

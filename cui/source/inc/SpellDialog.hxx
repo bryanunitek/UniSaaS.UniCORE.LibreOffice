@@ -20,6 +20,7 @@
 
 #include <sfx2/basedlgs.hxx>
 #include <com/sun/star/linguistic2/DictionaryEvent.hpp>
+#include <com/sun/star/linguistic2/XDictionary.hpp>
 #include <com/sun/star/uno/Reference.hxx>
 
 
@@ -48,7 +49,6 @@ struct ImplSVEvent;
 
 // forward ---------------------------------------------------------------
 
-struct SpellDialog_Impl;
 namespace com::sun::star::linguistic2 { class XSpellChecker1; }
 
 namespace svx{
@@ -153,15 +153,14 @@ private:
     OUString        m_sTitleSpelling;
     OUString        m_sTitleSpellingGrammar;
 
-    Link<SpellUndoAction_Impl&,void> aDialogUndoLink;
-    bool            bFocusLocked;
+    Link<SpellUndoAction_Impl&, void> m_aDialogUndoLink;
+    bool m_bFocusLocked;
 
-    svx::SpellDialogChildWindow& rParent;
+    svx::SpellDialogChildWindow& m_rParent;
     svx::SpellPortions           m_aSavedSentence;
 
-    std::unique_ptr<SpellDialog_Impl> pImpl;
-    css::uno::Reference<
-        css::linguistic2::XSpellChecker1 >     xSpell;
+    css::uno::Sequence<css::uno::Reference<css::linguistic2::XDictionary>> m_aDicts;
+    css::uno::Reference<css::linguistic2::XSpellChecker1> m_xSpell;
 
     rtl::Reference<DictionaryEventListener> m_xChangeAllDictListener;
     bool m_bResumeClearsChangeAllDict = false; // clear if another instance changed this word list
@@ -215,7 +214,7 @@ private:
     int             InitUserDicts();
     void            UpdateBoxes_Impl(bool bCallFromSelectHdl = false);
     void            SpellContinue_Impl(std::unique_ptr<UndoChangeGroupGuard>* pGuard = nullptr, bool UseSavedSentence = false, bool bIgnoreCurrentError = false );
-    void            LockFocusChanges( bool bLock ) {bFocusLocked = bLock;}
+    void LockFocusChanges(bool bLock) { m_bFocusLocked = bLock; }
     void            ToplevelFocusChanged();
     void            Impl_Restore(bool bUseSavedSentence, bool bClearChangeAll);
 
@@ -235,10 +234,8 @@ protected:
     void processDictionaryEvent(const css::linguistic2::DictionaryEvent& rDicEvt);
 
 public:
-    SpellDialog(
-        svx::SpellDialogChildWindow* pChildWindow,
-        weld::Window * pParent,
-        SfxBindings* pBindings);
+    SpellDialog(svx::SpellDialogChildWindow& rChildWindow, weld::Window* pParent,
+                SfxBindings* pBindings);
     virtual ~SpellDialog() override;
 
     /* Initialize, to be called after the constructor to prevent virtual calls

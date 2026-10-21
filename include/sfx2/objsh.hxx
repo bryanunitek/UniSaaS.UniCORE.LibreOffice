@@ -172,6 +172,15 @@ enum class SfxObjectCreateMode
     INTERNAL
 };
 
+/// The macro state a document made by SfxObjectShell::DoInitNew starts with.
+enum class SfxNewDocumentMacros
+{
+    /// A document the user goes on to work in, so its macros are the user's own.
+    Allow,
+    /// A document that holds content from elsewhere, or one that only serves another operation.
+    Disallow
+};
+
 /*
     The class SfxObjectShell is the base class for SFx-objects, ie documents
     and parts of documents that can be integrated as separate objects
@@ -296,6 +305,10 @@ public:
     bool                        AcceptStateUpdate() const;
     bool                        IsHelpDocument() const;
 
+    // Whether the document's location lets its links update without asking. A document embedded
+    // in another one has no location of its own and is never in a trusted location.
+    bool                        IsTrustedLocationForUpdatingLinks() const;
+
     bool                        IsDocShared() const;
     OUString                    GetSharedFileURL() const;
     bool                        SwitchToShared( bool bShared, bool bSave );
@@ -318,7 +331,7 @@ public:
      * @return true if the initialization is successful, false otherwise.
      */
     void                        DoInitUnitTest();
-    bool                        DoInitNew();
+    bool                        DoInitNew(SfxNewDocumentMacros eMacros);
     bool                        DoLoad( SfxMedium* pMedium );
     bool                        DoLoadExternal( SfxMedium* pMed );
     bool                        DoSave();
@@ -759,6 +772,7 @@ public:
     SAL_DLLPRIVATE void InitOwnModel_Impl();
     SAL_DLLPRIVATE void BreakMacroSign_Impl( bool bBreakMacroSing );
     SAL_DLLPRIVATE void CheckSecurityOnLoading_Impl();
+    SAL_DLLPRIVATE bool DocumentUIConfigurationHasMacroCalls_Impl();
     SAL_DLLPRIVATE void CheckForBrokenDocSignatures_Impl();
     SAL_DLLPRIVATE void CheckEncryption_Impl( const css::uno::Reference< css::task::XInteractionHandler >& xHandler );
     SAL_DLLPRIVATE void SetModifyPasswordEntered( bool bEntered = true );

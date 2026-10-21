@@ -50,7 +50,6 @@ class SdrOutliner;
 class SdrTextObj;
 class SdPageLink;
 class SfxItemSet;
-class Paragraph;
 class Outliner;
 class SdStyleSheet;
 class Graphic;
@@ -273,6 +272,8 @@ public:
     sal_Int32   getTransitionFadeColor() const { return mnTransitionFadeColor;}
     void        setTransitionFadeColor( sal_Int32 nTransitionFadeColor );
 
+    static constexpr double DEFAULT_TRANSITION_DURATION = 2.0;
+
     double      getTransitionDuration() const { return mfTransitionDuration;}
     void        setTransitionDuration( double fTransitionDuration );
 
@@ -362,10 +363,10 @@ public:
         bool bEdit ) override;
 
     /** callback from the sd::View when a new paragraph for one object on this page is created */
-    void onParagraphInserted( const ::Outliner* pOutliner, Paragraph const * pPara, SdrObject* pObj );
+    void onParagraphInserted( sal_Int32 nParaPos, SdrObject* pObj );
 
     /** callback from the sd::View when a paragraph from one object on this page is removed */
-    void onParagraphRemoving( const ::Outliner* pOutliner, Paragraph const * pPara, SdrObject* pObj );
+    void onParagraphRemoving( const ::Outliner* pOutliner, sal_Int32 nParaPos, SdrObject* pObj );
 
     /** callback from the sd::View when an object just left text edit mode */
     void onEndTextEdit( SdrObject* pObj );

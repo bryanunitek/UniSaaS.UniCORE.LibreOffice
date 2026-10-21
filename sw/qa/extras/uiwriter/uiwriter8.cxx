@@ -685,9 +685,9 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf145584)
         comphelper::InitPropertySequence({ { "Selection", uno::Any(true) } }));
 
     // Without the fix in place, this test would have crashed here
-    save(TestFilter::PDF_WRITER, {
-                                     comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData),
-                                 });
+    save(TestFilter::PDF, {
+                              comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData),
+                          });
 
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport(pPDFium);
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -718,9 +718,9 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf131728)
     uno::Sequence<beans::PropertyValue> aFilterData(comphelper::InitPropertySequence(
         { { "ExportBookmarksToPDFDestination", uno::Any(true) } }));
 
-    save(TestFilter::PDF_WRITER, {
-                                     comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData),
-                                 });
+    save(TestFilter::PDF, {
+                              comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData),
+                          });
 
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport(pPDFium);
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -757,9 +757,9 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf95239)
     uno::Sequence<beans::PropertyValue> aFilterData(comphelper::InitPropertySequence(
         { { "ExportBookmarksToPDFDestination", uno::Any(true) } }));
 
-    save(TestFilter::PDF_WRITER, {
-                                     comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData),
-                                 });
+    save(TestFilter::PDF, {
+                              comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData),
+                          });
 
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport(pPDFium);
     CPPUNIT_ASSERT_EQUAL(2, pPdfDocument->getPageCount());
@@ -810,9 +810,9 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf152575)
         comphelper::InitPropertySequence({ { "ExportNotesInMargin", uno::Any(true) } }));
 
     // Without the fix in place, this test would have crashed here
-    save(TestFilter::PDF_WRITER, {
-                                     comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData),
-                                 });
+    save(TestFilter::PDF, {
+                              comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData),
+                          });
 
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument = parsePDFExport(pPDFium);
     CPPUNIT_ASSERT_EQUAL(3, pPdfDocument->getPageCount());
@@ -1332,9 +1332,8 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest8, testTdf131771)
 
     uno::Reference<text::XTextTable> xTextTable(xIndexAccess->getByIndex(0), uno::UNO_QUERY);
 
-    // By default every table has 'Default Style' table style
-    CPPUNIT_ASSERT_EQUAL(u"Default Style"_ustr,
-                         getProperty<OUString>(xTextTable, u"TableTemplateName"_ustr));
+    // Table styles must not be used (unless someone improves them so they work flawlessly)
+    CPPUNIT_ASSERT_EQUAL(u""_ustr, getProperty<OUString>(xTextTable, u"TableTemplateName"_ustr));
 
     uno::Reference<beans::XPropertySet> xTableProps(xTextTable, uno::UNO_QUERY_THROW);
     xTableProps->setPropertyValue(u"TableTemplateName"_ustr, uno::Any(u"Elegant"_ustr));

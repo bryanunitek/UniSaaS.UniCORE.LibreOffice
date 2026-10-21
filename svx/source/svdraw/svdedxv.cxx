@@ -2262,21 +2262,20 @@ bool SdrObjEditView::ImpIsTextEditAllSelected() const
         if (SdrTextObj::HasTextImpl(mpTextEditOutliner.get()))
         {
             const sal_Int32 nParaCnt = mpTextEditOutliner->GetParagraphCount();
-            Paragraph* pLastPara
-                = mpTextEditOutliner->GetParagraph(nParaCnt > 1 ? nParaCnt - 1 : 0);
+            sal_Int32 nLastPara = nParaCnt > 1 ? nParaCnt - 1 : 0;
 
             ESelection aESel(mpTextEditOutlinerView->GetSelection());
             if (aESel.start.nPara == 0 && aESel.start.nIndex == 0
                 && aESel.end.nPara == (nParaCnt - 1))
             {
-                if (mpTextEditOutliner->GetText(pLastPara).getLength() == aESel.end.nIndex)
+                if (mpTextEditOutliner->GetText(nLastPara).getLength() == aESel.end.nIndex)
                     bRet = true;
             }
             // in case the selection was done backwards
             if (!bRet && aESel.end.nPara == 0 && aESel.end.nIndex == 0
                 && aESel.start.nPara == (nParaCnt - 1))
             {
-                if (mpTextEditOutliner->GetText(pLastPara).getLength() == aESel.start.nIndex)
+                if (mpTextEditOutliner->GetText(nLastPara).getLength() == aESel.start.nIndex)
                     bRet = true;
             }
         }
@@ -2884,7 +2883,8 @@ static const WhichRangesContainer& GetFormatRangeImpl(bool bTextOnly, bool withP
                    SDRATTR_GRAF_FIRST, SDRATTR_GRAF_LAST, SDRATTR_TABLE_FIRST, SDRATTR_TABLE_LAST,
                    SDRATTR_GLOW_FIRST, SDRATTR_GLOW_LAST, SDRATTR_SOFTEDGE_FIRST,
                    SDRATTR_SOFTEDGE_LAST, SDRATTR_GLOW_TEXT_FIRST, SDRATTR_GLOW_TEXT_LAST,
-                   EE_PARA_START, EE_PARA_END, EE_CHAR_START, EE_CHAR_END>);
+                   SDRATTR_REFLECTION_FIRST, SDRATTR_REFLECTION_LAST, EE_PARA_START, EE_PARA_END,
+                   EE_CHAR_START, EE_CHAR_END>);
 
     static const WhichRangesContainer gTextOnly(
         svl::Items<SDRATTR_MISC_FIRST, SDRATTR_MISC_LAST, EE_CHAR_START, EE_CHAR_END>);
@@ -2992,9 +2992,8 @@ void SdrObjEditView::ApplyFormatPaintBrushToText(SfxItemSet const& rFormatSet, S
         aSet.Put(CreatePaintSet(GetFormatRangeImpl(true), *aSet.GetPool(), rFormatSet, aSet,
                                 bNoCharacterFormats, bNoParagraphFormats));
         rOutliner.SetParaAttribs(nPara, aSet);
-        Paragraph* pParagraph = rOutliner.GetParagraph(nPara);
         if (nDepth > -2)
-            rOutliner.SetDepth(pParagraph, nDepth);
+            rOutliner.SetDepth(nPara, nDepth);
     }
 
     std::optional<OutlinerParaObject> pTemp = rOutliner.CreateParaObject(0, nParaCount);

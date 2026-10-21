@@ -787,7 +787,7 @@ SdDrawDocument* SdDrawDocument::AllocSdDrawDocument() const
 
         pObj = mpCreatingTransferable->GetDocShell().get();
         pNewDocSh = static_cast< ::sd::DrawDocShell*>( pObj );
-        pNewDocSh->DoInitNew();
+        pNewDocSh->DoInitNew(SfxNewDocumentMacros::Disallow);
         pNewModel = pNewDocSh->GetDoc();
 
         // Only necessary for clipboard -
@@ -819,7 +819,7 @@ SdDrawDocument* SdDrawDocument::AllocSdDrawDocument() const
         pDoc->SetAllocDocSh(false);
         pDoc->mxAllocedDocShRef = new ::sd::DrawDocShell(
             SfxObjectCreateMode::EMBEDDED, true, meDocType);
-        pDoc->mxAllocedDocShRef->DoInitNew();
+        pDoc->mxAllocedDocShRef->DoInitNew(SfxNewDocumentMacros::Disallow);
         pNewModel = pDoc->mxAllocedDocShRef->GetDoc();
     }
     else
@@ -1523,7 +1523,7 @@ SdOutliner* SdDrawDocument::GetInternalOutliner(bool bCreateOutliner)
     // Advantages:
     // a) no unnecessary Clear calls
     // b) no wasted memory
-    DBG_ASSERT( !mpInternalOutliner || ( ( mpInternalOutliner->GetParagraphCount() == 1 ) && ( mpInternalOutliner->GetText( mpInternalOutliner->GetParagraph( 0 ) ).isEmpty() ) ), "InternalOutliner: not empty!" );
+    DBG_ASSERT( !mpInternalOutliner || ( ( mpInternalOutliner->GetParagraphCount() == 1 ) && ( mpInternalOutliner->GetText( 0 ).isEmpty() ) ), "InternalOutliner: not empty!" );
 
     return mpInternalOutliner.get();
 }
@@ -1760,8 +1760,6 @@ void SdDrawDocument::dumpAsXml(xmlTextWriterPtr pWriter) const
     (void)xmlTextWriterStartElement(pWriter, BAD_CAST("SdDrawDocument"));
     (void)xmlTextWriterWriteFormatAttribute(pWriter, BAD_CAST("ptr"), "%p", this);
 
-    if (mpOutliner)
-        mpOutliner->dumpAsXml(pWriter);
     FmFormModel::dumpAsXml(pWriter);
     if (GetUndoManager())
         GetUndoManager()->dumpAsXml(pWriter);

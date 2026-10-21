@@ -2508,6 +2508,85 @@ CPPUNIT_TEST_FIXTURE(ScUiCalcTest2, testTdf107994_MoveActiveCellToFreezePaneSpli
     checkCurrentCursorPosition(*pDocSh, u"A1");
 }
 
+CPPUNIT_TEST_FIXTURE(ScUiCalcTest2, testTdf173894_MoveActiveCellBeyondFreezePaneSplitterPos)
+{
+    createScDoc();
+    ScDocShell* pDocSh = getScDocShell();
+
+    // Freeze panes at C3
+    goToCell(u"C3"_ustr);
+    dispatchCommand(mxComponent, u".uno:FreezePanes"_ustr, {});
+
+    // First Home moves to the freeze pane splitter position
+    goToCell(u"E5"_ustr);
+    dispatchCommand(mxComponent, u".uno:GoToStartOfRow"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"C5");
+
+    // Second Home moves to the first column
+    dispatchCommand(mxComponent, u".uno:GoToStartOfRow"_ustr, {});
+    // Without the fix in place, this test would have failed with
+    // - Expected: A5
+    // - Actual  : C5
+    // i.e. the active cell could not be moved beyond the freeze pane splitter position
+    checkCurrentCursorPosition(*pDocSh, u"A5");
+
+    // Home within the frozen area moves to the first column
+    goToCell(u"B5"_ustr);
+    dispatchCommand(mxComponent, u".uno:GoToStartOfRow"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"A5");
+
+    // First Ctrl+Home moves to the freeze pane splitter position, second one to A1
+    goToCell(u"E5"_ustr);
+    dispatchCommand(mxComponent, u".uno:GoToStart"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"C3");
+    dispatchCommand(mxComponent, u".uno:GoToStart"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"A1");
+
+    // Ctrl+Home with only one axis within the frozen area moves to the freeze pane splitter position
+    goToCell(u"B5"_ustr);
+    dispatchCommand(mxComponent, u".uno:GoToStart"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"C3");
+    dispatchCommand(mxComponent, u".uno:GoToStart"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"A1");
+    goToCell(u"E2"_ustr);
+    dispatchCommand(mxComponent, u".uno:GoToStart"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"C3");
+    dispatchCommand(mxComponent, u".uno:GoToStart"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"A1");
+
+    // Ctrl+Home within the frozen area moves to the first cell
+    goToCell(u"B2"_ustr);
+    dispatchCommand(mxComponent, u".uno:GoToStart"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"A1");
+
+    // Hidden freeze pane splitter column/row moves to the next visible one first
+    ScDocument* pDoc = getScDoc();
+    pDoc->SetColHidden(2, 2, 0, true);
+    goToCell(u"E5"_ustr);
+    dispatchCommand(mxComponent, u".uno:GoToStartOfRow"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"D5");
+    dispatchCommand(mxComponent, u".uno:GoToStartOfRow"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"A5");
+    pDoc->SetColHidden(2, 2, 0, false);
+
+    pDoc->SetRowHidden(2, 2, 0, true);
+    goToCell(u"E5"_ustr);
+    dispatchCommand(mxComponent, u".uno:GoToStart"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"C4");
+    dispatchCommand(mxComponent, u".uno:GoToStart"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"A1");
+    pDoc->SetRowHidden(2, 2, 0, false);
+
+    // Merged cell covering the freeze pane splitter column moves to the next column first
+    goToCell(u"B5:C5"_ustr);
+    dispatchCommand(mxComponent, u".uno:ToggleMergeCells"_ustr, {});
+    goToCell(u"E5"_ustr);
+    dispatchCommand(mxComponent, u".uno:GoToStartOfRow"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"D5");
+    dispatchCommand(mxComponent, u".uno:GoToStartOfRow"_ustr, {});
+    checkCurrentCursorPosition(*pDocSh, u"A5");
+}
+
 CPPUNIT_TEST_FIXTURE(ScUiCalcTest2, testSpillMatrixContractionOnPaste)
 {
     createScDoc();

@@ -2936,8 +2936,24 @@ static LibreOfficeKitDocument* lo_documentLoadWithOptions(LibreOfficeKit* pThis,
         sal_Int16 nMacroExecMode = document::MacroExecMode::USE_CONFIG;
 #else
         const OUString aEnableMacrosExecution = extractParameter(aOptions, u"EnableMacrosExecution");
-        sal_Int16 nMacroExecMode = aEnableMacrosExecution == "true" ? document::MacroExecMode::USE_CONFIG :
-            document::MacroExecMode::NEVER_EXECUTE;
+        sal_Int16 nMacroExecMode;
+        if (aEnableMacrosExecution == "true")
+        {
+            nMacroExecMode = document::MacroExecMode::USE_CONFIG;
+        }
+        else
+        {
+            nMacroExecMode = document::MacroExecMode::NEVER_EXECUTE;
+            // also set the global flag so IsMacroDisabled() returns true,
+            // blocking share-location scripts that bypass the per-document
+            // MacroExecutionMode check. Affects this per-document process instance,
+            // may require re-visiting when/if CODA gets macro support.
+            std::shared_ptr<comphelper::ConfigurationChanges> xChanges =
+                comphelper::ConfigurationChanges::create();
+            officecfg::Office::Common::Security::Scripting::DisableMacrosExecution::set(
+                true, xChanges);
+            xChanges->commit();
+        }
 #endif
 
         // set AsTemplate explicitly false to be able to load template files
@@ -8096,6 +8112,9 @@ static int lo_initialize(LibreOfficeKit* pThis, const char* pAppPath, const char
 
     if (const char* pHostExemptVerifyHost = ::getenv("LOK_HOST_ALLOWLIST_EXEMPT_VERIFY_HOST"))
         HostFilter::setAllowedHostsExemptVerifyHost(strncmp(pHostExemptVerifyHost,"1", 1) == 0);
+
+    if (const char* pExtRefPaths = ::getenv("LOK_ALLOWED_EXTREF_PATHS"))
+        HostFilter::setAllowedExtRefPaths(pExtRefPaths);
 
     // What stage are we at ?
     if (pThis == nullptr)

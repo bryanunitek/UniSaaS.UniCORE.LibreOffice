@@ -46,6 +46,7 @@
 #include <com/sun/star/script/provider/XScript.hpp>
 #include <com/sun/star/script/provider/XScriptProvider.hpp>
 #include <com/sun/star/script/provider/XScriptProviderSupplier.hpp>
+#include <com/sun/star/script/vba/XVBACompatibility.hpp>
 #include <com/sun/star/uri/UriReferenceFactory.hpp>
 #include <com/sun/star/uri/XVndSunStarScriptUrl.hpp>
 #include <com/sun/star/util/XModifiable.hpp>
@@ -73,6 +74,7 @@
 #include <basic/sbx.hxx>
 #include <svtools/sfxecode.hxx>
 
+#include <unotools/securityoptions.hxx>
 #include <unotools/ucbhelper.hxx>
 #include <tools/urlobj.hxx>
 #include <svl/sharecontrolfile.hxx>
@@ -80,6 +82,8 @@
 #include <vcl/svapp.hxx>
 #include <framework/interaction.hxx>
 #include <framework/documentundoguard.hxx>
+#include <framework/documentmacrocalls.hxx>
+#include <com/sun/star/ui/UIConfigurationManager.hpp>
 #include <comphelper/interaction.hxx>
 #include <comphelper/storagehelper.hxx>
 #include <comphelper/documentconstants.hxx>
@@ -649,6 +653,14 @@ bool SfxObjectShell::HasSharedXMLFlagSet() const
 
 #endif
 
+bool SfxObjectShell::IsTrustedLocationForUpdatingLinks() const
+{
+    if (GetCreateMode() == SfxObjectCreateMode::EMBEDDED)
+        return SvtSecurityOptions::GetMacroSecurityLevel() == 0;
+    return SvtSecurityOptions::isTrustedLocationUriForUpdatingLinks(
+        pMedium == nullptr ? OUString() : pMedium->GetName());
+}
+
 bool SfxObjectShell::IsDocShared() const
 {
 #if HAVE_FEATURE_MULTIUSER_ENVIRONMENT
@@ -954,6 +966,31 @@ void SfxObjectShell::BreakMacroSign_Impl( bool bBreakMacroSign )
 }
 
 
+bool SfxObjectShell::DocumentUIConfigurationHasMacroCalls_Impl()
+{
+    try
+    {
+        uno::Reference<embed::XStorage> xStorage = GetStorage();
+        if (!xStorage.is() || !xStorage->hasByName(u"Configurations2"_ustr))
+            return false;
+        uno::Reference<embed::XStorage> xConfigStorage
+            = xStorage->openStorageElement(u"Configurations2"_ustr, embed::ElementModes::READ);
+        // A separate manager reads the folder, so the model's own manager is still created when
+        // the view first asks for it.
+        uno::Reference<ui::XUIConfigurationManager2> xConfiguration
+            = ui::UIConfigurationManager::create(comphelper::getProcessComponentContext());
+        xConfiguration->setStorage(xConfigStorage);
+        const bool bHasMacroCalls = framework::documentConfigurationHasMacroCalls(xConfiguration);
+        xConfiguration->dispose();
+        return bHasMacroCalls;
+    }
+    catch (const uno::Exception&)
+    {
+        TOOLS_WARN_EXCEPTION("sfx.doc", "");
+    }
+    return false;
+}
+
 void SfxObjectShell::CheckSecurityOnLoading_Impl()
 {
     if (GetErrorCode() == ERRCODE_IO_BROKENPACKAGE)
@@ -975,10 +1012,27 @@ void SfxObjectShell::CheckSecurityOnLoading_Impl()
     CheckEncryption_Impl( xInteraction );
 
     // check macro security
+    if (!GetMacroCallsSeenWhileLoading() && DocumentUIConfigurationHasMacroCalls_Impl())
+        SetMacroCallsSeenWhileLoading();
     const bool bHasValidContentSignature = HasValidSignatures();
     const bool bHasMacros = pImpl->aMacroMode.hasMacros();
-    pImpl->aMacroMode.checkMacrosOnLoading( xInteraction, bHasValidContentSignature, bHasMacros );
+    const bool bMacrosAllowed = pImpl->aMacroMode.checkMacrosOnLoading(
+        xInteraction, bHasValidContentSignature, bHasMacros);
     pImpl->m_bHadCheckedMacrosOnLoad = bHasMacros;
+    pImpl->m_bMacroCallsAllowed = bMacrosAllowed;
+    if (pImpl->pBaseModel.is())
+        pImpl->pBaseModel->SetUIConfigurationMacroCallsAllowed_Impl(bMacrosAllowed);
+
+    // A document in VBA compatibility mode gets its Basic project loaded once macros are allowed.
+    // Import records that mode on the document's own Basic container, so only one that already
+    // exists can hold it.
+    if (bMacrosAllowed)
+    {
+        uno::Reference<script::vba::XVBACompatibility> xVBACompat(pImpl->xBasicLibraries,
+                                                                  uno::UNO_QUERY);
+        if (xVBACompat.is() && xVBACompat->getVBACompatibilityMode())
+            xVBACompat->setVBACompatibilityMode(true);
+    }
 }
 
 bool SfxObjectShell::GetHadCheckedMacrosOnLoad() const
@@ -1494,7 +1548,7 @@ bool SfxObjectShell::isScriptAccessAllowed( const Reference< XInterface >& _rxSc
 // don't allow LibreLogo to be used with our mouseover/etc dom-alike events
 bool SfxObjectShell::UnTrustedScript(const OUString& rScriptURL)
 {
-    if (!rScriptURL.startsWith("vnd.sun.star.script:"))
+    if (!rScriptURL.startsWithIgnoreAsciiCase("vnd.sun.star.script:"))
         return false;
 
     // ensure URL Escape Codes are decoded
@@ -1893,11 +1947,6 @@ OUString SfxObjectShell_Impl::getDocumentLocation() const
     if ( pMedium )
     {
         sLocation = pMedium->GetName();
-        if ( sLocation.isEmpty() )
-        {
-            // for documents made from a template: get the name of the template
-            sLocation = rDocShell.getDocProperties()->getTemplateURL();
-        }
 
         // tdf#128006 take document base url as location
         if (sLocation.isEmpty())

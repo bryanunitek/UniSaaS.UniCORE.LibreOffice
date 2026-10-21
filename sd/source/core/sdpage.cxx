@@ -130,7 +130,7 @@ SdPage::SdPage(SdDrawDocument& rNewDoc, bool bMasterPage)
 ,   mnTransitionSubtype(0)
 ,   mbTransitionDirection(true)
 ,   mnTransitionFadeColor(0)
-,   mfTransitionDuration(2.0)
+,   mfTransitionDuration(DEFAULT_TRANSITION_DURATION)
 ,   mbIsPrecious(true)
 ,   mnPageId(mnLastPageId++)
 {
@@ -2755,7 +2755,7 @@ void SdPage::SetObjText(SdrTextObj* pObj, SdrOutliner* pOutliner, PresObjKind eO
     pOutl->SetPaperSize( pObj->GetLogicRect().GetSize() );
 
     if( !aString.isEmpty() )
-        pOutl->SetText( aString, pOutl->GetParagraph( 0 ) );
+        pOutl->SetText( aString, 0 );
 
     pObj->SetOutlinerParaObject( pOutl->CreateParaObject() );
 

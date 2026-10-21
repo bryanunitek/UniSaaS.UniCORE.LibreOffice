@@ -31,6 +31,7 @@
 #include <view.hxx>
 #include <txtfrm.hxx>
 #include <pagefrm.hxx>
+#include <shellio.hxx>
 #include <bodyfrm.hxx>
 #include <tabfrm.hxx>
 #include <sortedobjs.hxx>
@@ -686,7 +687,7 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter6, testTdf122607_regression)
 
     // inline the loading because currently properties can't be passed...
     createSwDoc("tdf122607_leerzeile.odt", comphelper::containerToSequence(aFilterOptions));
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     xmlDocUniquePtr pXmlDoc = parseLayoutDump();
     // somehow these 2 rows overlapped in the PDF unless CalcLayout() runs
@@ -713,7 +714,7 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter6, TestTdf150616)
 
     // inline the loading because currently properties can't be passed...
     createSwDoc("in_056132_mod.odt", comphelper::containerToSequence(aFilterOptions));
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     xmlDocUniquePtr pXmlDoc = parseLayoutDump();
     CPPUNIT_ASSERT(pXmlDoc);
@@ -1522,7 +1523,7 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter6, testTdf156724)
 
     // inline the loading because currently properties can't be passed...
     createSwDoc("fdo56797-2-min.odt", comphelper::containerToSequence(aFilterOptions));
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     xmlDocUniquePtr pXmlDoc = parseLayoutDump();
     // both pages have a tab frame and one footnote
@@ -1623,7 +1624,7 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter6, testCool16071_footnoteTailKeptWhenTruncate
     createSwDoc("Cool16071_footnoteTailKeptWhenTruncated.fodt");
     // A layout dump would format what it reads, and that alone repairs the frame: measure the
     // export instead.
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdf = parsePDFExport(pPDFium);
 
     // the last word of the last footnote, on its third line
@@ -1905,6 +1906,15 @@ CPPUNIT_TEST_FIXTURE(SwLayoutWriter6, testTdf169399)
     xmlDocUniquePtr pXmlDoc = parseLayoutDump();
     // Without the fix, this failed, because there were two pages:
     assertXPath(pXmlDoc, "/root/page", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SwLayoutWriter6, testOfz574847387)
+{
+    // Frames anchored to a paragraph in a 2-column section push the previous paragraph down, which
+    // moves their anchor down too, so the layout has no stable state. Without the fix, the layout
+    // never finished.
+    SvFileStream aFileStream(createFileURL(u"ofz574847387-1.rtf"), StreamMode::READ);
+    TestPDFExportRTF(aFileStream);
 }
 
 CPPUNIT_TEST_FIXTURE(SwLayoutWriter6, testTdf155306)

@@ -42,6 +42,7 @@ namespace drawinglayer::primitive2d
 
             // flag which decides if the presentation object has empty placeholder text or not
             bool                                        mbPlaceholderText : 1;
+
             // local decomposition.
             virtual Primitive2DReference create2DDecomposition(const geometry::ViewInformation2D& aViewInformation) const override;
 

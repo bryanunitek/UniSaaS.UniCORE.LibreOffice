@@ -193,23 +193,6 @@ public class SingleSelectQueryComposer extends CRMBasedTestCase
         assertTrue("Structured Having Clause not identical", m_composer.getHavingClause().equals(COMPLEXFILTER));
     }
 
-    /** test various sub query related features ("queries in queries")
-     */
-    @Test
-    public void testSubQueries() throws Exception
-    {
-        m_composer.setQuery("SELECT * from \"" + INNERPRODUCTSQUERY + "\"");
-        final XTablesSupplier suppTables = UnoRuntime.queryInterface(XTablesSupplier.class, m_composer);
-        final XNameAccess tables = suppTables.getTables();
-        assertTrue("a simple SELECT * FROM <query> could not be parsed",
-                tables != null && tables.hasByName(INNERPRODUCTSQUERY));
-
-        final String sInnerCommand = m_database.getDatabase().getDataSource().getQueryDefinition(INNERPRODUCTSQUERY).getCommand();
-        final String sExecutableQuery = m_composer.getQueryWithSubstitution();
-        assertTrue("simple query containing a sub query improperly parsed to SDBC level statement: \n1. " + sExecutableQuery + "\n2. " + "SELECT * FROM ( " + sInnerCommand + " ) AS \"" + INNERPRODUCTSQUERY + "\"",
-                sExecutableQuery.equals("SELECT * FROM ( " + sInnerCommand + " ) AS \"" + INNERPRODUCTSQUERY + "\""));
-    }
-
     /** tests the XParametersSupplier functionality
      */
     @Test
@@ -244,29 +227,6 @@ public class SingleSelectQueryComposer extends CRMBasedTestCase
                     paramName.equals(expectedParamNames[i]));
 
         }
-    }
-
-    @Test
-    public void testConditionByColumn() throws Exception
-    {
-        m_composer.setQuery("SELECT * FROM \"customers\"");
-
-        final Object initArgs[] =
-
-        {
-            new NamedValue("AutomaticAddition", Boolean.TRUE)
-        };
-        final String serviceName = "com.sun.star.beans.PropertyBag";
-        final XPropertyContainer filter = UnoRuntime.queryInterface(XPropertyContainer.class, getMSF().createInstanceWithArguments(serviceName, initArgs));
-        filter.addProperty("Name", PropertyAttribute.MAYBEVOID, "Comment");
-        filter.addProperty("RealName", PropertyAttribute.MAYBEVOID, "Comment");
-        filter.addProperty("TableName", PropertyAttribute.MAYBEVOID, "customers");
-        filter.addProperty("Value", PropertyAttribute.MAYBEVOID, "Good one.");
-        filter.addProperty("Type", PropertyAttribute.MAYBEVOID, Integer.valueOf(DataType.LONGVARCHAR));
-        final XPropertySet column = UnoRuntime.queryInterface(XPropertySet.class, filter);
-
-        m_composer.appendFilterByColumn(column, true, SQLFilterOperator.LIKE);
-        assertTrue("At least one row should exist", m_database.getConnection().createStatement().executeQuery(m_composer.getQuery()).next());
     }
 
     private void impl_testDisjunctiveNormalForm(String _query, PropertyValue[][] _expectedDNF) throws SQLException

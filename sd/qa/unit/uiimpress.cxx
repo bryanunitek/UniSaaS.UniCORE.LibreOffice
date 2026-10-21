@@ -2850,21 +2850,164 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testOutlineDeleteAcrossSlides)
     CPPUNIT_ASSERT_EQUAL(sal_uInt16(2), pDoc->GetSdPageCount(PageKind::Standard));
 }
 
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testOutlineBackspaceMergesTitle)
+{
+    OutlinerView* pOutlinerView = createOutlineView({ u"A", u"B", u"C" });
+    auto pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    SdDrawDocument* pDoc = pImpressDocument->GetDoc();
+    SdPage* pPageA = pDoc->GetSdPage(0, PageKind::Standard);
+    SdPage* pPageC = pDoc->GetSdPage(2, PageKind::Standard);
+
+    // Backspace in front of "B" merges it into "A" and removes the slide of "B".
+    pOutlinerView->SetSelection(ESelection(1, 0, 1, 0));
+    typeOutlineKey(KEY_BACKSPACE);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), pOutlinerView->GetOutliner().GetParagraphCount());
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(2), pDoc->GetSdPageCount(PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageA, pDoc->GetSdPage(0, PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageC, pDoc->GetSdPage(1, PageKind::Standard));
+}
+
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testOutlineDeleteWholeTitle)
+{
+    OutlinerView* pOutlinerView = createOutlineView({ u"A", u"B", u"C", u"D" });
+    auto pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    SdDrawDocument* pDoc = pImpressDocument->GetDoc();
+    SdPage* pPageA = pDoc->GetSdPage(0, PageKind::Standard);
+    SdPage* pPageD = pDoc->GetSdPage(3, PageKind::Standard);
+
+    // Deleting from the end of "A" to the end of "C" removes the slides of "B" and "C".
+    pOutlinerView->SetSelection(ESelection(0, 1, 2, 1));
+    typeOutlineKey(KEY_DELETE);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(2), pOutlinerView->GetOutliner().GetParagraphCount());
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(2), pDoc->GetSdPageCount(PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageA, pDoc->GetSdPage(0, PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageD, pDoc->GetSdPage(1, PageKind::Standard));
+}
+
 CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testOutlineMoveTitleUp)
 {
     OutlinerView* pOutlinerView = createOutlineView({ u"A", u"B", u"C" });
     auto pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
     SdDrawDocument* pDoc = pImpressDocument->GetDoc();
+    SdPage* pPageA = pDoc->GetSdPage(0, PageKind::Standard);
     SdPage* pPageB = pDoc->GetSdPage(1, PageKind::Standard);
     SdPage* pPageC = pDoc->GetSdPage(2, PageKind::Standard);
 
     // Moving "C" up moves its slide in front of the slide of "B".
+    // Order will be A C B
     pOutlinerView->SetSelection(ESelection(2, 0, 2, 1));
     dispatchCommand(mxComponent, u".uno:OutlineUp"_ustr, {});
-    CPPUNIT_ASSERT_EQUAL(u"C"_ustr, pOutlinerView->GetOutliner().GetText(
-                                        pOutlinerView->GetOutliner().GetParagraph(1)));
+    CPPUNIT_ASSERT_EQUAL(u"C"_ustr, pOutlinerView->GetOutliner().GetText(1));
     CPPUNIT_ASSERT_EQUAL(pPageC, pDoc->GetSdPage(1, PageKind::Standard));
     CPPUNIT_ASSERT_EQUAL(pPageB, pDoc->GetSdPage(2, PageKind::Standard));
+
+    // Moving "C" up again moves its slide in front of the slide of "A".
+    // Order will be C A B
+    pOutlinerView->SetSelection(ESelection(1, 0, 1, 1));
+    dispatchCommand(mxComponent, u".uno:OutlineUp"_ustr, {});
+    CPPUNIT_ASSERT_EQUAL(u"C"_ustr, pOutlinerView->GetOutliner().GetText(0));
+    CPPUNIT_ASSERT_EQUAL(pPageC, pDoc->GetSdPage(0, PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageA, pDoc->GetSdPage(1, PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageB, pDoc->GetSdPage(2, PageKind::Standard));
+
+    // Moving "A" down, to test moving to the end.
+    // Order will be C B A
+    pOutlinerView->SetSelection(ESelection(1, 0, 1, 1));
+    dispatchCommand(mxComponent, u".uno:OutlineDown"_ustr, {});
+    CPPUNIT_ASSERT_EQUAL(u"A"_ustr, pOutlinerView->GetOutliner().GetText(2));
+    CPPUNIT_ASSERT_EQUAL(pPageC, pDoc->GetSdPage(0, PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageB, pDoc->GetSdPage(1, PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageA, pDoc->GetSdPage(2, PageKind::Standard));
+}
+
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testOutlineDropSlideDownIntoBody)
+{
+    // Slides "A", "B" with the body paragraphs "y1" and "y2", and "C".
+    createSdImpressDoc();
+    auto pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    SdDrawDocument* pDoc = pImpressDocument->GetDoc();
+    auto xDrawPages = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()->getDrawPages();
+    xDrawPages->insertNewByIndex(0);
+    xDrawPages->insertNewByIndex(1);
+    const std::u16string_view aTitles[] = { u"A", u"B", u"C" };
+    for (sal_uInt16 i = 0; i < std::size(aTitles); ++i)
+    {
+        SdPage* pPage = pDoc->GetSdPage(i, PageKind::Standard);
+        pPage->SetAutoLayout(AUTOLAYOUT_TITLE_CONTENT, true);
+        auto pTitle = static_cast<SdrTextObj*>(pPage->GetPresObj(PresObjKind::Title));
+        pTitle->SetText(OUString(aTitles[i]));
+        pTitle->SetEmptyPresObj(false);
+    }
+    auto pBody = static_cast<SdrTextObj*>(
+        pDoc->GetSdPage(1, PageKind::Standard)->GetPresObj(PresObjKind::Outline));
+    pBody->SetText(u"y1\ny2"_ustr);
+    pBody->SetEmptyPresObj(false);
+    SdPage* pPageA = pDoc->GetSdPage(0, PageKind::Standard);
+    SdPage* pPageB = pDoc->GetSdPage(1, PageKind::Standard);
+    SdPage* pPageC = pDoc->GetSdPage(2, PageKind::Standard);
+
+    dispatchCommand(mxComponent, u".uno:OutlineMode"_ustr, {});
+    sd::ViewShell* pViewShell = pImpressDocument->GetDocShell()->GetViewShell();
+    CPPUNIT_ASSERT_EQUAL(sd::ViewShell::ST_OUTLINE, pViewShell->GetShellType());
+    auto pView = static_cast<sd::SimpleOutlinerView*>(pViewShell->GetView());
+    OutlinerView* pOutlinerView = pView->GetViewByWindow(pViewShell->GetActiveWindow());
+    CPPUNIT_ASSERT(pOutlinerView);
+    Outliner& rOutliner = pOutlinerView->GetOutliner();
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(5), rOutliner.GetParagraphCount());
+    CPPUNIT_ASSERT_EQUAL(u"y2"_ustr, rOutliner.GetText(3));
+
+    // Dropping "A" between "y1" and "y2" moves its slide between the slides of "B" and "C".
+    pOutlinerView->SetSelection(ESelection(0, 0, 0, 1));
+    rOutliner.UndoActionStart(EDITUNDO_DRAGANDDROP);
+    pOutlinerView->GetEditView().MoveParagraphs(Range(0, 0), 3);
+    rOutliner.UndoActionEnd();
+    CPPUNIT_ASSERT_EQUAL(u"A"_ustr, rOutliner.GetText(2));
+    CPPUNIT_ASSERT_EQUAL(pPageB, pDoc->GetSdPage(0, PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageA, pDoc->GetSdPage(1, PageKind::Standard));
+    CPPUNIT_ASSERT_EQUAL(pPageC, pDoc->GetSdPage(2, PageKind::Standard));
+}
+
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testReflectionCommands)
+{
+    // The fourth shape has no reflection.
+    createSdImpressDoc("pptx/shape-reflection-effect.pptx");
+    auto pImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    sd::ViewShell* pViewShell = pImpressDocument->GetDocShell()->GetViewShell();
+    SdrView* pView = pViewShell->GetView();
+    pView->MarkObj(pViewShell->GetActualPage()->GetObj(3), pView->GetSdrPageView());
+    Scheduler::ProcessEventsToIdle();
+
+    dispatchCommand(mxComponent, u".uno:ReflectionEffect"_ustr,
+                    comphelper::InitPropertySequence({ { "ReflectionEffect", uno::Any(true) } }));
+    dispatchCommand(
+        mxComponent, u".uno:ReflectionDistance"_ustr,
+        comphelper::InitPropertySequence({ { "ReflectionDistance", uno::Any(sal_Int32(500)) } }));
+    dispatchCommand(
+        mxComponent, u".uno:ReflectionEndPosition"_ustr,
+        comphelper::InitPropertySequence({ { "ReflectionEndPosition", uno::Any(sal_Int16(70)) } }));
+
+    uno::Reference<beans::XPropertySet> xShape(getShapeFromPage(3, 0));
+    CPPUNIT_ASSERT(xShape->getPropertyValue(u"ReflectionEffect"_ustr).get<bool>());
+    CPPUNIT_ASSERT_EQUAL(
+        sal_Int32(500),
+        xShape->getPropertyValue(u"ReflectionEffectDistance"_ustr).get<sal_Int32>());
+    CPPUNIT_ASSERT_EQUAL(
+        sal_Int16(70),
+        xShape->getPropertyValue(u"ReflectionEffectEndPosition"_ustr).get<sal_Int16>());
+
+    // The state of the selected shape reads back through the same slots, the way the sidebar
+    // sees it.
+    SfxDispatcher* pDispatcher = pViewShell->GetViewFrame()->GetDispatcher();
+    SfxPoolItemHolder aResult;
+    CPPUNIT_ASSERT(pDispatcher->QueryState(SID_ATTR_REFLECTION, aResult) >= SfxItemState::DEFAULT);
+    auto pOnOff = dynamic_cast<const SfxBoolItem*>(aResult.getItem());
+    CPPUNIT_ASSERT(pOnOff);
+    CPPUNIT_ASSERT(pOnOff->GetValue());
+    CPPUNIT_ASSERT(pDispatcher->QueryState(SID_ATTR_REFLECTION_END_POSITION, aResult)
+                   >= SfxItemState::DEFAULT);
+    auto pSize = dynamic_cast<const SfxUInt16Item*>(aResult.getItem());
+    CPPUNIT_ASSERT(pSize);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(70), pSize->GetValue());
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

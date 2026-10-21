@@ -442,8 +442,8 @@ LIBXSLT_TARBALL := libxslt-1.1.$(LIBXSLT_VERSION_MICRO).tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-LXML_SHA256SUM := ba96ae44888e0185281e937633a743ea90d5a196c6000f82565ebb0580012d40
-LXML_TARBALL := lxml-6.1.1.tar.gz
+LXML_SHA256SUM := 45222d94ddd511536f3b2f7d9deae3b2339b4ce0f075f1ca25703b07cad9dd21
+LXML_TARBALL := lxml-6.1.3.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -488,8 +488,8 @@ MYTHES_TARBALL := mythes-1.2.6.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-NSS_SHA256SUM := d122bd039416254567f2dfe7f4c9b6ed4d202d8c6a3ed91332da0d514d0974c0
-NSS_TARBALL := nss-3.130-with-nspr-4.39.tar.gz
+NSS_SHA256SUM := 52408a28cc9edc1ca04a420c74a820b48b63a3390a59fe38c5ec77afc6e2fb1d
+NSS_TARBALL := nss-3.131.1-with-nspr-4.39.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -637,8 +637,8 @@ SKIA_TARBALL := skia-m149-9bb16a741cdbcbde46a0d4caf8ac73f4d07a89e2.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-SQLITE3_SHA256SUM := 68e913b0fe8ec6b4e5f391c594a28872884e80d6cd042a1e50c957be46b5aa4d
-SQLITE3_TARBALL := sqlite-amalgamation-3540000.zip
+SQLITE3_SHA256SUM := 0a9c8e34352dad46006aa82836d5383bff9dc6bc9ce5a60553c05aa30e6ad1f9
+SQLITE3_TARBALL := sqlite-amalgamation-3540100.zip
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts

@@ -186,6 +186,9 @@ class SAL_DLLPUBLIC_RTTI SwRootFrame final : public SwLayoutFrame
     void DeleteEmptyFlys_();
     void RemoveFromList_( SwSectionFrame* pSct ); // Removes SectionFrames from the Delete List
 
+    /// Remove the virtual fly draw objects from the page (called by DestroyImpl)
+    void RemoveVirtFlyDrawObjs();
+
     virtual void DestroyImpl() override;
     virtual ~SwRootFrame() override;
 
@@ -393,6 +396,8 @@ public:
     /// Empty SwFlyFrames are registered here for deletion and destroyed later if they are not
     /// de-registered in the meantime.
     void InsertEmptyFly(SwFlyFrame* pDel);
+    /// Remove an SwFlyFrame from the deferred deletion list before destroying it.
+    void RemoveEmptyFly(SwFlyFrame* pFly);
     void DeleteEmptySct() { if( mpDestroy ) DeleteEmptySct_(); }
     void DeleteEmptyFlys() { if( mpFlyDestroy ) DeleteEmptyFlys_(); }
     void RemoveFromList( SwSectionFrame* pSct ) { if( mpDestroy ) RemoveFromList_( pSct ); }

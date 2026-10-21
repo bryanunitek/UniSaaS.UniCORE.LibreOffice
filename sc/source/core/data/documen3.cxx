@@ -30,6 +30,7 @@
 #include <osl/thread.hxx>
 #include <osl/diagnose.h>
 #include <tools/duration.hxx>
+#include <tools/hostfilter.hxx>
 #include <document.hxx>
 #include <attrib.hxx>
 #include <table.hxx>
@@ -79,6 +80,7 @@
 #include <comphelper/flagguard.hxx>
 #include <config_fuzzers.h>
 #include <memory>
+#include <optional>
 
 using namespace com::sun::star;
 
@@ -609,8 +611,13 @@ bool ScDocument::LinkExternalTab( SCTAB& rTab, const OUString& aDocTab,
     OUString  aFilterName; // Is filled by the Loader
     OUString  aOptions; // Filter options
     sal_uInt32 nLinkCnt = pExtDocOptions ? pExtDocOptions->GetDocSettings().mnLinkCnt : 0;
-    ScDocumentLoader aLoader( aFileName, aFilterName, aOptions, nLinkCnt + 1 );
-    ScDocument* pSrcDoc = aLoader.IsError() ? nullptr : aLoader.GetDocument();
+    // The external document is read only when the user allows link updates, otherwise the sheet
+    // stays empty.
+    std::optional<ScDocumentLoader> oLoader;
+    if (mpShell && mpShell->GetEmbeddedObjectContainer().getUserAllowsLinkUpdate()
+        && !HostFilter::isFileUrlForbidden(aFileName))
+        oLoader.emplace(aFileName, aFilterName, aOptions, nLinkCnt + 1);
+    ScDocument* pSrcDoc = (oLoader && !oLoader->IsError()) ? oLoader->GetDocument() : nullptr;
 
     if (!InsertTab(SC_TAB_APPEND, aDocTab, true))
     {
@@ -631,7 +638,7 @@ bool ScDocument::LinkExternalTab( SCTAB& rTab, const OUString& aDocTab,
 
     bool bWasThere = HasLink( aFileName, aFilterName, aOptions );
     SetLink( rTab, ScLinkMode::VALUE, aFileName, aFilterName, aOptions, aTabName, nRefreshDelay );
-    if ( !bWasThere ) // Add link only once per source document
+    if ( !bWasThere && mpShell ) // Add link only once per source document
     {
         ScTableLink* pLink = new ScTableLink( *mpShell, aFileName, aFilterName, aOptions, nRefreshDelay );
         pLink->SetInCreate( true );

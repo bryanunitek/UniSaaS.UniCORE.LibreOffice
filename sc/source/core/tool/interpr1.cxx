@@ -60,6 +60,7 @@
 #include <jumpmatrix.hxx>
 #include <cellkeytranslator.hxx>
 #include <lookupcache.hxx>
+#include <recursionhelper.hxx>
 #include <rangenam.hxx>
 #include <rangeutl.hxx>
 #include <compiler.hxx>
@@ -10135,17 +10136,25 @@ void ScInterpreter::ScArrayToText()
     }
     const bool bStrict = (nFormat == 1);
 
-    // The concise format joins all values with ", " in row order. The
-    // strict format writes an array constant: braces around the whole
-    // array, "," between columns, ";" between rows, and quoted text.
+    // The concise format joins all values in row order with the function
+    // separator and a space. The strict format writes an array constant:
+    // braces around the whole array, the array column separator between
+    // columns, the array row separator between rows, and quoted text. The
+    // separators are the ones formulas are entered with, and these differ
+    // from the decimal separator of the locale.
     OUStringBuffer aResult;
 
-    auto appendSeparator = [&aResult, bStrict](bool bNewRow)
+    const OUString aFunctionSeparator = ScCompiler::GetNativeSymbol(ocSep) + " ";
+    const OUString aColumnSeparator = ScCompiler::GetNativeSymbol(ocArrayColSep);
+    const OUString aRowSeparator = ScCompiler::GetNativeSymbol(ocArrayRowSep);
+    auto appendSeparator = [&](bool bNewRow)
     {
-        if (bNewRow)
-            aResult.append(bStrict ? u";" : u", ");
+        if (!bStrict)
+            aResult.append(aFunctionSeparator);
+        else if (bNewRow)
+            aResult.append(aRowSeparator);
         else
-            aResult.append(bStrict ? u"," : u", ");
+            aResult.append(aColumnSeparator);
     };
     auto appendText = [&aResult, bStrict](const OUString& rStr)
     {
@@ -14549,7 +14558,12 @@ bool ScInterpreter::LookupQueryWithCache( ScAddress & o_rResultPos,
             case ScLookupCache::CRITERIA_DIFFERENT :
                 bFound = lcl_LookupQuery( o_rResultPos, mrDoc, mrContext, rParam, rEntry,
                     pMyFormulaCell, refData, nSearchMode, nOpCode );
-                if (eCacheResult == ScLookupCache::NOT_CACHED)
+                // Like ScFormulaCell::InterpretTail(), discard results obtained
+                // while dependency calculation is suspended or being aborted.
+                // Otherwise its retry would reuse a provisional lookup result.
+                if (eCacheResult == ScLookupCache::NOT_CACHED
+                    && !mrDoc.GetRecursionHelper().IsInReturn()
+                    && !mrDoc.GetRecursionHelper().IsAbortingDependencyComputation())
                     rCache.insert( o_rResultPos, aCriteria, aPos, bFound);
                 break;
             case ScLookupCache::FOUND :

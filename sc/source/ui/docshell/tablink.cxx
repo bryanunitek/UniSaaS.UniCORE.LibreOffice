@@ -51,6 +51,7 @@
 #include <global.hxx>
 #include <hints.hxx>
 #include <dociter.hxx>
+#include <tools/hostfilter.hxx>
 #include <formula/opcode.hxx>
 #include <formulaiter.hxx>
 #include <tokenarray.hxx>
@@ -138,7 +139,7 @@ bool ScTableLink::Refresh(const OUString& rNewFile, const OUString& rNewFilter,
 {
     //  load document
 
-    if (rNewFile.isEmpty() || rNewFilter.isEmpty())
+    if (rNewFile.isEmpty())
         return false;
 
     if (!m_rDocSh.GetEmbeddedObjectContainer().getUserAllowsLinkUpdate())
@@ -147,7 +148,19 @@ bool ScTableLink::Refresh(const OUString& rNewFile, const OUString& rNewFilter,
     OUString aNewUrl = ScGlobal::GetAbsDocName(rNewFile, &m_rDocSh);
     bool bNewUrlName = aFileName != aNewUrl;
 
-    std::shared_ptr<const SfxFilter> pFilter = m_rDocSh.GetFactory().GetFilterContainer()->GetFilter4FilterName(rNewFilter);
+    if (HostFilter::isFileUrlForbidden(aNewUrl))
+    {
+        SAL_WARN("sc.ui", "ScTableLink::Refresh: blocked file path: \"" << aNewUrl << "\"");
+        return false;
+    }
+
+    // A link from an old xls import has no filter name, so it is found from the file content.
+    OUString aNewFilter = rNewFilter;
+    OUString aDetectedOptions;
+    if (aNewFilter.isEmpty())
+        ScDocumentLoader::GetFilterName(aNewUrl, aNewFilter, aDetectedOptions, true, false);
+
+    std::shared_ptr<const SfxFilter> pFilter = m_rDocSh.GetFactory().GetFilterContainer()->GetFilter4FilterName(aNewFilter);
     if (!pFilter)
         return false;
 
@@ -157,10 +170,12 @@ bool ScTableLink::Refresh(const OUString& rNewFile, const OUString& rNewFilter,
     bool bUndo(rDoc.IsUndoEnabled());
 
     //  if new filter has been selected, forget options
-    if (aFilterName != rNewFilter)
+    if (aFilterName != aNewFilter)
         aOptions.clear();
     if ( pNewOptions )                  // options hard-specified?
         aOptions = *pNewOptions;
+    else if (aOptions.isEmpty())
+        aOptions = aDetectedOptions;
 
     //  always create ItemSet, so that DocShell can set the options
     auto pSet = std::make_shared<SfxAllItemSet>( SfxGetpApp()->GetPool() );
@@ -198,7 +213,7 @@ bool ScTableLink::Refresh(const OUString& rNewFile, const OUString& rNewFilter,
     //  from text filters that don't set the table name,
     //  use the one table regardless of link table name
     bool bAutoTab = (rSrcDoc.GetTableCount() == 1) &&
-                    ScDocShell::HasAutomaticTableName( rNewFilter );
+                    ScDocShell::HasAutomaticTableName( aNewFilter );
 
     SCTAB nCount = rDoc.GetTableCount();
     for (SCTAB nTab=0; nTab<nCount; nTab++)
@@ -333,10 +348,10 @@ bool ScTableLink::Refresh(const OUString& rNewFile, const OUString& rNewFilter,
                 bNotFound = true;
             }
 
-            if ( bNewUrlName || aFilterName != rNewFilter ||
+            if ( bNewUrlName || aFilterName != aNewFilter ||
                     aOptions != aNewOpt || pNewOptions ||
                     nNewRefreshDelaySeconds != GetRefreshDelaySeconds() )
-                rDoc.SetLink( nTab, nMode, aNewUrl, rNewFilter, aNewOpt,
+                rDoc.SetLink( nTab, nMode, aNewUrl, aNewFilter, aNewOpt,
                     aTabName, nNewRefreshDelaySeconds );
         }
     }
@@ -345,8 +360,8 @@ bool ScTableLink::Refresh(const OUString& rNewFile, const OUString& rNewFilter,
 
     if ( bNewUrlName )
         aFileName = aNewUrl;
-    if (aFilterName != rNewFilter)
-        aFilterName = rNewFilter;
+    if (aFilterName != aNewFilter)
+        aFilterName = aNewFilter;
     if (aOptions != aNewOpt)
         aOptions = aNewOpt;
 

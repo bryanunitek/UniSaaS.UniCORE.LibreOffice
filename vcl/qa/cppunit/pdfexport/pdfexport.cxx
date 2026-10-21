@@ -84,7 +84,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testPopupRectangleSize)
     comphelper::SequenceAsHashMap aMediaDescriptor;
     aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
     loadFromFile(u"tdf162955_comment.odp");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -121,7 +121,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf160051)
     loadFromFile(u"tdf160051.odt");
 
     skipValidation();
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -168,7 +168,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testCommentAnnotation)
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf162359.odt");
     skipValidation();
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -228,7 +228,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testFigurePlacement)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf159900_figurePlacement.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -279,7 +279,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf106059)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf106059.odt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -309,7 +309,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf106693)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf106693.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -360,7 +360,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf105461)
 {
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf105461.odp");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -438,7 +438,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf105093)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf105093.odp");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -484,7 +484,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf106206)
     // Import the bugdoc and export as PDF.
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf106206.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -532,7 +532,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf127217)
     comphelper::SequenceAsHashMap aMediaDescriptor;
     aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
     loadFromFile(u"tdf127217.odt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -560,7 +560,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf142741)
     comphelper::SequenceAsHashMap aMediaDescriptor;
     aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
     loadFromFile(u"tdf142741.odt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -591,7 +591,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf109143)
     // Import the bugdoc and export as PDF.
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf109143.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -626,7 +626,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf106972)
     // Import the bugdoc and export as PDF.
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf106972.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -670,7 +670,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf106972Pdf17)
     // Import the bugdoc and export as PDF.
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf106972-pdf17.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -745,7 +745,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf107013)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf107013.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -770,7 +770,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf107018)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf107018.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -836,7 +836,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf148706)
     comphelper::SequenceAsHashMap aMediaDescriptor;
     aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
     loadFromFile(u"tdf148706.odt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -871,7 +871,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf107089)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf107089.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -923,7 +923,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf99680)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf99680.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -969,7 +969,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf99680_2)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf99680-2.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -1017,7 +1017,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf108963)
 {
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf108963.odp");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -1096,7 +1096,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testAlternativeText)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"alternativeText.fodp");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -1130,7 +1130,28 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testAlternativeText)
     auto pLang = dynamic_cast<vcl::filter::PDFLiteralStringElement*>(
         pCatalogDictionary->LookupElement("Lang"_ostr));
     CPPUNIT_ASSERT(pLang);
-    CPPUNIT_ASSERT_EQUAL("en-US"_ostr, pLang->GetValue());
+    // tdf#173661 the document default is es-ES, not the locale setting
+    CPPUNIT_ASSERT_EQUAL("es-ES"_ostr, pLang->GetValue());
+}
+
+CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf173661CalcCatalogLang)
+{
+    vcl::filter::PDFDocument aDocument;
+    loadFromFile(u"tdf135346.ods");
+    save(TestFilter::PDF);
+
+    SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
+    CPPUNIT_ASSERT(aDocument.Read(aStream));
+
+    auto* pCatalog = aDocument.GetCatalog();
+    CPPUNIT_ASSERT(pCatalog);
+    auto* pCatalogDictionary = pCatalog->GetDictionary();
+    CPPUNIT_ASSERT(pCatalogDictionary);
+    auto pLang = dynamic_cast<vcl::filter::PDFLiteralStringElement*>(
+        pCatalogDictionary->LookupElement("Lang"_ostr));
+    CPPUNIT_ASSERT(pLang);
+    // the document default is ru-RU; without the fix this was the locale setting
+    CPPUNIT_ASSERT_EQUAL("ru-RU"_ostr, pLang->GetValue());
 }
 
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf105972)
@@ -1142,7 +1163,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf105972)
     aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf105972.fodt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -1214,7 +1235,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf148442)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf148442.odt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -1291,7 +1312,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf118244_radioButtonGroup)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf118244_radioButtonGroup.odt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -1335,7 +1356,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115117_1)
 #if HAVE_MORE_FONTS
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf115117-1.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -1410,7 +1431,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115117_2)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf115117-2.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -1469,7 +1490,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115117_1a)
 #if HAVE_MORE_FONTS
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf115117-1.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -1505,7 +1526,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115117_2a)
 
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf115117-2.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -1534,7 +1555,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115117_2a)
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf154549)
 {
     loadFromFile(u"tdf154549.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -1567,7 +1588,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf150846)
     // Without the fix in place, this test would have failed with
     // An uncaught exception of type com.sun.star.io.IOException
     loadFromFile(u"tdf150846.txt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -1594,7 +1615,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf150846)
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf160401)
 {
     loadFromFile(u"tdf160401.pptx");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -1628,7 +1649,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf103492)
 {
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf103492.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -1676,7 +1697,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf145274)
 {
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf145274.docx");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -1712,7 +1733,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf156685)
 {
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf156685.docx");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -1752,7 +1773,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf66597_1)
     // This requires Amiri font, if it is missing the test will fail.
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf66597-1.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -1856,7 +1877,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf66597_2)
 #if HAVE_MORE_FONTS
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf66597-2.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -1960,7 +1981,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf66597_3)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf66597-3.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -2057,7 +2078,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf105954)
     comphelper::SequenceAsHashMap aMediaDescriptor;
     aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
     loadFromFile(u"tdf105954.odt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -2083,7 +2104,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf105954)
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testVariableFontPSName1)
 {
     loadFromFile(u"variable-font-psname-1.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     vcl::filter::PDFDocument aDocument;
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -2114,7 +2135,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testVariableFontPSName1)
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testVariableFontPSName2)
 {
     loadFromFile(u"variable-font-psname-2.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     vcl::filter::PDFDocument aDocument;
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -2147,7 +2168,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testVariableFontPSName2)
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testOpticalSizing)
 {
     loadFromFile(u"testOpticalSizing.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     vcl::filter::PDFDocument aDocument;
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -2176,7 +2197,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf157679)
 {
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf157679.pptx");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
         = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
@@ -2205,7 +2226,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf128445)
 {
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf128445.odp");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
         = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
@@ -2230,7 +2251,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf128630)
 
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf128630.odp");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
         = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
 
@@ -2264,7 +2285,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf106702)
 {
     // Import the bugdoc and export as PDF.
     loadFromFile(u"tdf106702.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
         = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
@@ -2322,7 +2343,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf113143)
     comphelper::SequenceAsHashMap aMediaDescriptor;
     aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
     loadFromFile(u"tdf113143.odp");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
         = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
@@ -2381,34 +2402,34 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testForcePoint80)
 {
     // printing asserted in SwCellFrame::FindStartEndOfRowSpanCell
     loadFromFile(u"forcepoint80-1.rtf");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 }
 
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testForcePoint3)
 {
     // printing asserted in SwFrame::GetNextSctLeaf()
     loadFromFile(u"flowframe_null_ptr_deref.sample");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 }
 
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf162586)
 {
     // Without the fix in place, this test would have crashed
     loadFromFile(u"tdf162586.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 }
 
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf84283)
 {
     // Without the fix in place, this test would have crashed
     loadFromFile(u"tdf84283.doc");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 }
 
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115262)
 {
     loadFromFile(u"tdf115262.ods");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
         = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(8, pPdfDocument->getPageCount());
@@ -2448,7 +2469,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115262)
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf121962)
 {
     loadFromFile(u"tdf121962.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
         = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -2473,7 +2494,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf121962)
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf139065)
 {
     loadFromFile(u"tdf139065.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
         = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -2496,7 +2517,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf157816)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf157816.fodt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -2949,8 +2970,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf167121)
     loadFromFile(u"LinkWithIndexMark.fodt");
 
     uno::Sequence aFilterData{ comphelper::makePropertyValue(u"PDFUACompliance"_ustr, true) };
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
     vcl::filter::PDFDocument aDocument;
@@ -2965,8 +2985,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testLinkWithRefMark)
     loadFromFile(u"LinkWithRefMark.fodt");
 
     uno::Sequence aFilterData{ comphelper::makePropertyValue(u"PDFUACompliance"_ustr, true) };
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
     vcl::filter::PDFDocument aDocument;
@@ -2981,8 +3000,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testLinkWithMeta)
     loadFromFile(u"LinkWithMeta.fodt");
 
     uno::Sequence aFilterData{ comphelper::makePropertyValue(u"PDFUACompliance"_ustr, true) };
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
     vcl::filter::PDFDocument aDocument;
@@ -2997,8 +3015,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testIndexMarkWithSpan)
     loadFromFile(u"IndexMarkWithSpan.fodt");
 
     uno::Sequence aFilterData{ comphelper::makePropertyValue(u"PDFUACompliance"_ustr, true) };
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
     vcl::filter::PDFDocument aDocument;
@@ -3030,8 +3047,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testLinkWithRuby)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"LinkWithRuby.fodt");
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -3135,8 +3151,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testLinkWithSpan)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"LinkWithSpan.fodt");
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
     CPPUNIT_ASSERT(aDocument.Read(aStream));
@@ -3204,8 +3219,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testLinkSpanWithFly)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"LinkSpanWithFly.fodt");
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
     CPPUNIT_ASSERT(aDocument.Read(aStream));
@@ -3262,8 +3276,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testSpanWithFly)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"SpanWithFly.fodt");
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
     CPPUNIT_ASSERT(aDocument.Read(aStream));
@@ -3314,8 +3327,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testLinkSpanWraps)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"LinkSpanWraps.fodt");
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
     CPPUNIT_ASSERT(aDocument.Read(aStream));
@@ -3400,8 +3412,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testRubyWithSpan)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"RubyWithSpan.fodt");
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -3491,8 +3502,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf163240)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"LinkMultiLine.fodt");
-    save(TestFilter::PDF_WRITER,
-         { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
+    save(TestFilter::PDF, { comphelper::makePropertyValue(u"FilterData"_ustr, aFilterData) });
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -3637,7 +3647,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf157816Link)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"LinkWithFly.fodt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -3869,7 +3879,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf142133)
 {
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"tdf142133.docx");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -3915,7 +3925,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf142806)
 
     vcl::filter::PDFDocument aDocument;
     loadFromFile(u"LinkPages.fodt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result.
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -4351,7 +4361,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf142806)
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf115967)
 {
     loadFromFile(u"tdf115967.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
         = parsePDFExport(vcl::pdf::PDFiumLibrary::get());
     CPPUNIT_ASSERT_EQUAL(1, pPdfDocument->getPageCount());
@@ -4384,7 +4394,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf167659)
     comphelper::SequenceAsHashMap aMediaDescriptor;
     aMediaDescriptor[u"FilterData"_ustr] <<= aFilterData;
     loadFromFile(u"tdf167659.odt");
-    save(TestFilter::PDF_WRITER, aMediaDescriptor.getAsConstPropertyValueList());
+    save(TestFilter::PDF, aMediaDescriptor.getAsConstPropertyValueList());
 
     // Parse the export result with pdfium.
     std::unique_ptr<vcl::pdf::PDFiumDocument> pPdfDocument
@@ -4408,7 +4418,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testTdf167659)
 CPPUNIT_TEST_FIXTURE(PdfExportTest, testFontVariationSettingsODT)
 {
     loadFromFile(u"testFontVariationSettings.odt");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     vcl::filter::PDFDocument aDocument;
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
@@ -4440,7 +4450,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest, testFontVariationSettingsODP)
 {
 #if defined MACOSX || defined _WIN32
     loadFromFile(u"testFontVariationSettings.odp");
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     vcl::filter::PDFDocument aDocument;
     SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
