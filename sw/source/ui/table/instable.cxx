@@ -17,11 +17,14 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
+#include <doc.hxx>
 #include <instable.hxx>
 #include <shellres.hxx>
 #include <modcfg.hxx>
 #include <swmodule.hxx>
 #include <sfx2/htmlmode.hxx>
+#include <svx/dialmgr.hxx>
+#include <svx/strings.hrc>
 #include <viewopt.hxx>
 #include <comphelper/lok.hxx>
 #include <vcl/weld/Builder.hxx>
@@ -135,13 +138,22 @@ void SwInsTableDlg::InitAutoTableFormat()
     m_xLbFormat->connect_selection_changed(LINK(this, SwInsTableDlg, SelFormatHdl));
 
     m_xTableTable.reset(new SwTableAutoFormatTable);
+    if (m_pShell->GetDoc())
+    {
+        // add the document's table styles: replacing the user-profile table styles
+        SwTableAutoFormatTable& rTableStyles = m_pShell->GetDoc()->GetTableStyles();
+        for (size_t i = 0; i < rTableStyles.size(); ++i)
+        {
+            m_xTableTable->InsertOrReplaceAutoFormat(rTableStyles[i]);
+        }
+    }
 
     for (size_t i = 0; i < m_xTableTable->size(); i++)
     {
         m_xLbFormat->append_text((*m_xTableTable)[i].GetName().toString());
     }
 
-    m_xLbFormat->select(-1); // Do NOT select a table style by default. They just don't work well.
+    m_xLbFormat->select(0);
 
     SelFormatHdl( *m_xLbFormat );
 }
@@ -152,7 +164,7 @@ IMPL_LINK_NOARG(SwInsTableDlg, SelFormatHdl, weld::ItemView&, void)
     int styleIdx = m_xLbFormat->get_selected_index();
     if (styleIdx == -1)
     {
-        SwTableAutoFormat aNone(TableStyleName(SwViewShell::GetShellRes()->aStrNone));
+        SwTableAutoFormat aNone(TableStyleName(SvxResId(RID_SVXSTR_TBLAFMT_NONE)));
         aNone.DisableAll();
         m_aWndPreview.NotifyChange(&aNone);
     }

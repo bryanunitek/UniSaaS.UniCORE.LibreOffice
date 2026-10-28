@@ -350,6 +350,8 @@ void SwHTMLParser::InsertImage()
                     sGrfNm = INetURLObject::GetAbsURL( m_sBaseURL, sGrfNm );
                 break;
             case HtmlOptionId::DATA:
+                if (!m_bXHTML)
+                    break;
                 aGraphicData = rOption.GetString();
                 if (!InternalImgToPrivateURL(aGraphicData))
                     aGraphicData = INetURLObject::GetAbsURL(
@@ -495,12 +497,11 @@ IMAGE_SETEVENT:
             }
         }
     }
-    else if (m_sBaseURL.isEmpty() || !aGraphicData.isEmpty())
+    else if (m_bFromClipboard || !aGraphicData.isEmpty())
     {
         if (comphelper::LibreOfficeKit::isActive() && HostFilter::isForbidden(aGraphicURL.GetHost()))
             SfxLokHelper::sendNetworkAccessError("paste");
 
-        // sBaseURL is empty if the source is clipboard
         // aGraphicData is non-empty for <object data="..."> -> not a linked graphic.
         if (ERRCODE_NONE == GraphicFilter::GetGraphicFilter().ImportGraphic(aGraphic, aGraphicURL))
             sGrfNm.clear();

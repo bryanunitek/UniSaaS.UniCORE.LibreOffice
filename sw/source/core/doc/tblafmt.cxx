@@ -44,6 +44,8 @@
 #include <editeng/shdditem.hxx>
 #include <editeng/udlnitem.hxx>
 #include <editeng/wghtitem.hxx>
+#include <svx/dialmgr.hxx>
+#include <svx/strings.hrc>
 #include <unostyle.hxx>
 #include <names.hxx>
 
@@ -660,6 +662,12 @@ struct SwTableAutoFormatTable::Impl
 SwTableAutoFormatTable::SwTableAutoFormatTable()
     : m_pImpl(new Impl)
 {
+    // Add 'None'' style as first Writer autoformat table (since table styles don't work well)
+    std::unique_ptr<SwTableAutoFormat> pNoneStyle(
+        new SwTableAutoFormat(TableStyleName(SvxResId(RID_SVXSTR_TBLAFMT_NONE))));
+    pNoneStyle->DisableAll();
+    m_pImpl->m_AutoFormats.emplace_back(std::move(pNoneStyle));
+
     Load(true);
 
     for (size_t i = 0; i < size(); i++)
@@ -706,10 +714,10 @@ void SwTableAutoFormatTable::AddAutoFormat(const SwTableAutoFormat& rTableStyle)
     if (FindAutoFormat(rTableStyle.GetName()))
         return;
 
-    InsertAutoFormat(new SwTableAutoFormat(rTableStyle));
+    InsertAutoFormat(&rTableStyle);
 }
 
-bool SwTableAutoFormatTable::InsertAutoFormat(SvxAutoFormatData* pFormat)
+bool SwTableAutoFormatTable::InsertAutoFormat(const SvxAutoFormatData* pFormat)
 {
     if (!pFormat)
     {
@@ -719,6 +727,15 @@ bool SwTableAutoFormatTable::InsertAutoFormat(SvxAutoFormatData* pFormat)
     auto pNew = std::make_unique<SwTableAutoFormat>(*pFormat);
     m_pImpl->m_AutoFormats.emplace_back(std::move(pNew));
     return true;
+}
+
+void SwTableAutoFormatTable::InsertOrReplaceAutoFormat(const SwTableAutoFormat& rFormat)
+{
+    SwTableAutoFormat* pExistingFormat = FindAutoFormat(rFormat.SvxAutoFormatData::GetName());
+    if (pExistingFormat)
+        *pExistingFormat = rFormat;
+    else
+        InsertAutoFormat(&rFormat);
 }
 
 SwTableAutoFormat* SwTableAutoFormatTable::FindAutoFormat(const OUString& rName) const
@@ -780,21 +797,17 @@ SwTableAutoFormatTable::GetResolvedStyle(const SvxAutoFormatData* pStyle) const
     return lcl_GetResolvedStyle(*this, pData, visited);
 }
 
-SwTableAutoFormat* SwTableAutoFormatTable::ReleaseAutoFormat(const OUString& rName)
+std::unique_ptr<SvxAutoFormatData> SwTableAutoFormatTable::ReleaseAutoFormat(const OUString& rName)
 {
-    SwTableAutoFormat* pFormat = FindAutoFormat(rName);
-
     auto iter = std::find_if(m_pImpl->m_AutoFormats.begin(), m_pImpl->m_AutoFormats.end(),
-                             [&pFormat](const std::unique_ptr<SwTableAutoFormat>& rpFormat)
-                             {
-                                 return rpFormat->SvxAutoFormatData::GetName()
-                                        == pFormat->SvxAutoFormatData::GetName();
+                             [&rName](const std::unique_ptr<SwTableAutoFormat>& rpFormat) {
+                                 return rpFormat->SvxAutoFormatData::GetName() == rName;
                              });
 
-    SwTableAutoFormat* pRet = nullptr;
+    std::unique_ptr<SvxAutoFormatData> pRet;
     if (iter != m_pImpl->m_AutoFormats.end())
     {
-        pRet = iter->release();
+        pRet = std::move(*iter);
         m_pImpl->m_AutoFormats.erase(iter);
     }
     ResetParent(rName);
@@ -804,12 +817,10 @@ SwTableAutoFormat* SwTableAutoFormatTable::ReleaseAutoFormat(const OUString& rNa
 std::unique_ptr<SwTableAutoFormat>
 SwTableAutoFormatTable::ReleaseAutoFormat(const TableStyleName& rName)
 {
-    std::unique_ptr<SwTableAutoFormat> pRet;
-    SwTableAutoFormat* pFormat = ReleaseAutoFormat(rName.toString());
-    if (pFormat)
-        pRet = std::make_unique<SwTableAutoFormat>(*pFormat);
+    // release the Svx... unique_ptr and return it as an Sw... unique_ptr
+    auto pRet = static_cast<SwTableAutoFormat*>(ReleaseAutoFormat(rName.toString()).release());
 
-    return pRet;
+    return std::unique_ptr<SwTableAutoFormat>(pRet);
 }
 
 SwCellStyleTable::SwCellStyleTable() {}

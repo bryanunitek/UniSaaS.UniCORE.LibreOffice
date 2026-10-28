@@ -32,8 +32,6 @@
 
 namespace
 {
-constexpr size_t DEFAULT_STYLE = 0;
-
 class SvxStringInputDlg : public SfxDialogController
 {
 private:
@@ -123,7 +121,7 @@ void SvxTableAutoFmtDlg::Init()
         return;
     }
 
-    mnIndex = DEFAULT_STYLE;
+    mnIndex = 0;
     PopulateFormatList();
     mxLbFormat->select(mnIndex);
     SelFormatHdl(*mxLbFormat);
@@ -158,7 +156,9 @@ void SvxTableAutoFmtDlg::PopulateFormatList()
 
 void SvxTableAutoFmtDlg::UpdateUIState()
 {
-    const bool bCanModify = mnIndex != DEFAULT_STYLE && mnIndex < mpFormat.size();
+    const int nDefaultStyle = mbWriter ? 1 : 0;
+    const bool bCanModify
+        = mnIndex > nDefaultStyle && o3tl::make_unsigned(mnIndex) < mpFormat.size();
     mxBtnRename->set_sensitive(bCanModify);
     mxBtnRemove->set_sensitive(bCanModify);
     mxBtnEdit->set_sensitive(bCanModify);
@@ -274,7 +274,9 @@ IMPL_LINK_NOARG(SvxTableAutoFmtDlg, RenameHdl, weld::Button&, void)
 
 IMPL_LINK_NOARG(SvxTableAutoFmtDlg, SelFormatHdl, weld::ItemView&, void)
 {
-    mnIndex = mxLbFormat->get_selected_index();
+    int nIndex = mxLbFormat->get_selected_index();
+    assert(nIndex != -1 && "nothing selected");
+    mnIndex = nIndex;
     UpdateChecks();
     UpdateUIState();
 

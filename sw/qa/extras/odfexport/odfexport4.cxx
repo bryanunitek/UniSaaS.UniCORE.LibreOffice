@@ -1827,6 +1827,42 @@ CPPUNIT_TEST_FIXTURE(Test, testFlyInDeleteRedline)
     CPPUNIT_ASSERT_EQUAL(1, getShapes());
 }
 
+CPPUNIT_TEST_FIXTURE(Test, testTdf173931)
+{
+    // Given a 4x4 table where the header row and its cells have a background, and the other rows
+    // and cells share one row style and one cell style:
+    createSwDoc("tdf173931.fodt");
+
+    // When exporting to ODT:
+    save(TestFilter::ODT);
+
+    // Then make sure identical rows and cells share one automatic style:
+    xmlDocUniquePtr pXmlDoc = parseExport(u"content.xml"_ustr);
+    // Without the fix in place, this test would have failed with:
+    // - Expected: 2
+    // - Actual  : 13
+    // i.e. every body cell got its own style: a new format was inserted after, not before, the
+    // first entry that sorts after it, so the sorted list lost its order and later identical
+    // formats were no longer found.
+    assertXPath(pXmlDoc, "//office:automatic-styles/style:style[@style:family='table-cell']", 2);
+    // Same for rows: 4 instead of 2.
+    assertXPath(pXmlDoc, "//office:automatic-styles/style:style[@style:family='table-row']", 2);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testDecorativeODF14)
+{
+    // a text frame whose graphic style has the ODF 1.4 draw:decorative="true"
+    createSwDoc("decorative-odf14.fodt");
+    CPPUNIT_ASSERT(getProperty<bool>(getShape(1), u"Decorative"_ustr));
+
+    saveAndReload(TestFilter::ODT);
+    CPPUNIT_ASSERT(getProperty<bool>(getShape(1), u"Decorative"_ustr));
+    // Without the fix only loext:decorative was written for a text frame
+    auto pXmlDoc = parseExport(u"content.xml"_ustr);
+    assertXPath(pXmlDoc, "//style:graphic-properties[@draw:decorative='true']", 1);
+    assertXPath(pXmlDoc, "//style:graphic-properties[@loext:decorative='true']", 1);
+}
+
 } // end of anonymous namespace
 CPPUNIT_PLUGIN_IMPLEMENT();
 

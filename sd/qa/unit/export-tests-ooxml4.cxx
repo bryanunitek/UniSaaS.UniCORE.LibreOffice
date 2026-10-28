@@ -13,6 +13,7 @@
 #include <editeng/eeitem.hxx>
 #include <editeng/editobj.hxx>
 #include <editeng/numitem.hxx>
+#include <docmodel/theme/FormatScheme.hxx>
 #include <docmodel/uno/UnoGradientTools.hxx>
 
 #include <svx/xlineit0.hxx>
@@ -246,7 +247,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf125346)
     // There are two themes in the test document, make sure we use the right theme
 
     createSdImpressDoc("pptx/tdf125346.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     uno::Reference<beans::XPropertySet> xShape(getShapeFromPage(0, 0));
     uno::Reference<beans::XPropertySet> xPropSet(xShape, uno::UNO_SET_THROW);
@@ -266,7 +267,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf125346_2)
     // Test more slides with different themes
 
     createSdImpressDoc("pptx/tdf125346_2.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     {
         uno::Reference<beans::XPropertySet> xShape(getShapeFromPage(0, 0));
@@ -319,7 +320,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf125360)
 
     xShape->setPropertyValue(u"FillTransparence"_ustr, uno::Any(static_cast<sal_Int32>(23)));
 
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     xShape.set(getShapeFromPage(0, 0));
 
@@ -339,7 +340,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf125360_1)
 
     xShape->setPropertyValue(u"FillTransparence"_ustr, uno::Any(static_cast<sal_Int32>(23)));
 
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     xShape.set(getShapeFromPage(0, 0));
 
@@ -363,7 +364,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf125360_2)
 
     xShape->setPropertyValue(u"FillTransparence"_ustr, uno::Any(static_cast<sal_Int32>(23)));
 
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     xShape.set(getShapeFromPage(0, 0));
 
@@ -375,21 +376,22 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf125360_2)
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf125551)
 {
     createSdImpressDoc("pptx/tdf125551.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     uno::Reference<drawing::XShapes> xGroupShape(getShapeFromPage(0, 0), uno::UNO_QUERY);
     uno::Reference<drawing::XShape> xShapeBg(xGroupShape->getByIndex(0), uno::UNO_QUERY);
 
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(1024), xShapeBg->getPosition().X);
     CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(576), xShapeBg->getPosition().Y);
-    CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(10816), xShapeBg->getSize().Width);
-    CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(8588), xShapeBg->getSize().Height);
+    // Differences of 1 because of rounding
+    CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(10815), xShapeBg->getSize().Width);
+    CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(8587), xShapeBg->getSize().Height);
 }
 
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf136830)
 {
     createSdImpressDoc("pptx/tdf136830.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     // Without the fix in place, the X position of the shapes would have been 0
     uno::Reference<drawing::XShapes> xGroupShape(getShapeFromPage(0, 0), uno::UNO_QUERY);
@@ -410,7 +412,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf136830)
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf126234)
 {
     createSdImpressDoc("pptx/tdf126234.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     // check relative size of the bullet, 400% is a legitimate value for MS Office document
     // Without a fix, it will fail to set the size correctly
@@ -426,7 +428,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf126234)
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf126741)
 {
     createSdImpressDoc("pptx/tdf126741.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     // dash dot dot line style import fix
     // The original fixed values are replaced with the percent values, because
@@ -1342,6 +1344,63 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testAutofittedTextboxIndent)
                 u"1080000");
 }
 
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf142858ShadowNextToImportedReflection)
+{
+    // The second shape has a reflection from the imported document and no shadow.
+    createSdImpressDoc("pptx/shape-reflection-effect.pptx");
+    uno::Reference<beans::XPropertySet> xShape(getShapeFromPage(1, 0));
+    xShape->setPropertyValue(u"Shadow"_ustr, uno::Any(true));
+    xShape->setPropertyValue(u"ShadowXDistance"_ustr, uno::Any(sal_Int32(-500)));
+    xShape->setPropertyValue(u"ShadowYDistance"_ustr, uno::Any(sal_Int32(-500)));
+    save(TestFilter::PPTX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/slides/slide1.xml"_ustr);
+
+    // The shadow set in the office is written next to the reflection, in the effect order.
+    static constexpr OString sEffects = "/p:sld/p:cSld/p:spTree/p:sp[2]/p:spPr/a:effectLst"_ostr;
+    assertXPathChildren(pXmlDoc, sEffects, 2);
+    assertXPath(pXmlDoc, sEffects + "/*[1]", "dist", u"254558");
+    assertXPath(pXmlDoc, sEffects + "/a:outerShdw", 1);
+    assertXPath(pXmlDoc, sEffects + "/*[2]", "endPos", u"55000");
+    assertXPath(pXmlDoc, sEffects + "/a:reflection", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testShapeShadowTurnedOffIsNotWritten)
+{
+    // The third shape has a glow and a shadow from the imported document.
+    createSdImpressDoc("pptx/effectOrder.pptx");
+    getShapeFromPage(2, 0)->setPropertyValue(u"Shadow"_ustr, uno::Any(false));
+    save(TestFilter::PPTX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/slides/slide1.xml"_ustr);
+
+    static constexpr OString sEffects = "/p:sld/p:cSld/p:spTree/p:sp[3]/p:spPr/a:effectLst"_ostr;
+    assertXPathChildren(pXmlDoc, sEffects, 1);
+    assertXPath(pXmlDoc, sEffects + "/a:glow", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testShapeShadowScaleAndAlignment)
+{
+    // The fourth shape has no effects in the imported document.
+    createSdImpressDoc("pptx/shape-reflection-effect.pptx");
+    uno::Reference<beans::XPropertySet> xShape(getShapeFromPage(3, 0));
+    xShape->setPropertyValue(u"Shadow"_ustr, uno::Any(true));
+    xShape->setPropertyValue(u"ShadowXDistance"_ustr, uno::Any(sal_Int32(200)));
+    xShape->setPropertyValue(u"ShadowYDistance"_ustr, uno::Any(sal_Int32(200)));
+    xShape->setPropertyValue(u"ShadowSizeX"_ustr, uno::Any(sal_Int32(50000)));
+    xShape->setPropertyValue(u"ShadowAlignment"_ustr,
+                             uno::Any(static_cast<sal_Int32>(model::RectangleAlignment::TopLeft)));
+    save(TestFilter::PPTX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/slides/slide1.xml"_ustr);
+
+    // The scale and the alignment of the shadow are written, and the vertical scale, which
+    // equals the schema default, is left out.
+    static constexpr OString sShadow
+        = "/p:sld/p:cSld/p:spTree/p:sp[4]/p:spPr/a:effectLst/a:outerShdw"_ostr;
+    assertXPath(pXmlDoc, sShadow, "sx", u"50000");
+    assertXPathNoAttribute(pXmlDoc, sShadow, "sy");
+    assertXPath(pXmlDoc, sShadow, "algn", u"tl");
+    assertXPath(pXmlDoc, sShadow, "rotWithShape", u"0");
+}
+
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testAirplaneTransition)
 {
     // Given a document with an airplane slide transition:
@@ -1426,6 +1485,87 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testShapeReflectionEffect)
     assertXPathNoAttribute(pXmlDoc, sNew, "endA");
     assertXPathNoAttribute(pXmlDoc, sNew, "endPos");
     assertXPathNoAttribute(pXmlDoc, sNew, "blurRad");
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testGroupConnectorDescription)
+{
+    // Given a slide with a group, a line and a rectangle, each with alt text and a title in its
+    // cNvPr:
+    createSdImpressDoc("pptx/group-connector-descr.pptx");
+
+    auto verify = [this]() {
+        // Without the fix the group and the line had neither, only the rectangle had them
+        CPPUNIT_ASSERT_EQUAL(
+            u"Alt text on the group"_ustr,
+            getShapeFromPage(0, 0)->getPropertyValue(u"Description"_ustr).get<OUString>());
+        CPPUNIT_ASSERT_EQUAL(
+            u"Title on the group"_ustr,
+            getShapeFromPage(0, 0)->getPropertyValue(u"Title"_ustr).get<OUString>());
+        CPPUNIT_ASSERT_EQUAL(
+            u"Alt text on the line"_ustr,
+            getShapeFromPage(1, 0)->getPropertyValue(u"Description"_ustr).get<OUString>());
+        CPPUNIT_ASSERT_EQUAL(
+            u"Title on the line"_ustr,
+            getShapeFromPage(1, 0)->getPropertyValue(u"Title"_ustr).get<OUString>());
+    };
+    verify();
+
+    // and they are written back to the group's and the line's cNvPr
+    saveAndReload(TestFilter::PPTX);
+    verify();
+    xmlDocUniquePtr pSlide = parseExport(u"ppt/slides/slide1.xml"_ustr);
+    assertXPath(pSlide, "//p:grpSp/p:nvGrpSpPr/p:cNvPr", "descr", u"Alt text on the group");
+    assertXPath(pSlide, "//p:grpSp/p:nvGrpSpPr/p:cNvPr", "title", u"Title on the group");
+    assertXPath(pSlide, "//p:cxnSp/p:nvCxnSpPr/p:cNvPr", "descr", u"Alt text on the line");
+    assertXPath(pSlide, "//p:cxnSp/p:nvCxnSpPr/p:cNvPr", "title", u"Title on the line");
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest4, testTdf173682_tableStyleFlags)
+{
+    // Two tables. The first one has the opposite of the svx defaults: no firstRow and no bandRow,
+    // the other four set. The second one has the other half. The first row was still taken as a
+    // header, so tagged PDF made its cells TH.
+    createSdImpressDoc("pptx/tdf173682.pptx");
+    struct Flag
+    {
+        OUString aProperty;
+        const char* pAttribute;
+        bool bFirstTable;
+    };
+    const Flag aFlags[] = {
+        { u"UseFirstRowStyle"_ustr, "firstRow", false },
+        { u"UseLastRowStyle"_ustr, "lastRow", true },
+        { u"UseFirstColumnStyle"_ustr, "firstCol", true },
+        { u"UseLastColumnStyle"_ustr, "lastCol", true },
+        { u"UseBandingRowStyle"_ustr, "bandRow", false },
+        { u"UseBandingColumnStyle"_ustr, "bandCol", true },
+    };
+    auto checkFlags = [this, &aFlags]() {
+        for (int nTable = 0; nTable < 2; ++nTable)
+        {
+            uno::Reference<beans::XPropertySet> xTable(getShapeFromPage(nTable, 0));
+            for (const Flag& rFlag : aFlags)
+                CPPUNIT_ASSERT_EQUAL_MESSAGE(rFlag.pAttribute, rFlag.bFirstTable == (nTable == 0),
+                                             xTable->getPropertyValue(rFlag.aProperty).get<bool>());
+        }
+    };
+    checkFlags();
+
+    // The flags were not written, so they were gone on reload.
+    saveAndReload(TestFilter::PPTX);
+    xmlDocUniquePtr pSlide = parseExport(u"ppt/slides/slide1.xml"_ustr);
+    for (int nTable = 0; nTable < 2; ++nTable)
+    {
+        OString aTblPr = "(//a:tbl)[" + OString::number(nTable + 1) + "]/a:tblPr";
+        for (const Flag& rFlag : aFlags)
+        {
+            if (rFlag.bFirstTable == (nTable == 0))
+                assertXPath(pSlide, aTblPr, rFlag.pAttribute, u"1");
+            else
+                assertXPathNoAttribute(pSlide, aTblPr, rFlag.pAttribute);
+        }
+    }
+    checkFlags();
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

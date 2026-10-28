@@ -2879,6 +2879,7 @@ desktop/inc/app.hxx
 desktop/inc/dp_misc.h
 desktop/inc/dp_shared.hxx
 desktop/inc/lib/init.hxx
+desktop/inc/splash/unxsplash.hxx
 desktop/qa/deployment_misc/test_dp_version.cxx
 desktop/qa/desktop_app/test_desktop_app.cxx
 desktop/qa/desktop_lib/test_desktop_lib.cxx
@@ -3001,14 +3002,13 @@ desktop/source/pkgchk/unopkg/unopkg_misc.cxx
 desktop/source/pkgchk/unopkg/unopkg_shared.h
 desktop/source/splash/splash.cxx
 desktop/source/splash/unxsplash.cxx
-desktop/source/splash/unxsplash.hxx
 desktop/test/deployment/active/active_native.cxx
 desktop/test/deployment/passive/passive_native.cxx
-desktop/unx/source/args.c
-desktop/unx/source/args.h
-desktop/unx/source/file_image.h
-desktop/unx/source/file_image_unx.c
-desktop/unx/source/pagein.c
+desktop/unx/source/args.cxx
+desktop/unx/source/args.hxx
+desktop/unx/source/file_image.hxx
+desktop/unx/source/file_image_unx.cxx
+desktop/unx/source/pagein.cxx
 desktop/unx/source/splashx.c
 desktop/unx/source/start.cxx
 desktop/win32/source/QuickStart/QuickStart.cxx
@@ -11202,7 +11202,6 @@ svx/source/inc/gridcell.hxx
 svx/source/inc/gridcols.hxx
 svx/source/inc/sdbdatacolumn.hxx
 svx/source/inc/sqlparserclient.hxx
-svx/source/inc/svdobjplusdata.hxx
 svx/source/inc/svdoutlinercache.hxx
 svx/source/inc/svxpixelctlaccessiblecontext.hxx
 svx/source/inc/svxrectctaccessiblecontext.hxx
@@ -11422,7 +11421,6 @@ svx/source/svdraw/svdmrkv.cxx
 svx/source/svdraw/svdmrkv1.cxx
 svx/source/svdraw/svdoashp.cxx
 svx/source/svdraw/svdobj.cxx
-svx/source/svdraw/svdobjplusdata.cxx
 svx/source/svdraw/svdobjuserdatalist.cxx
 svx/source/svdraw/svdocapt.cxx
 svx/source/svdraw/svdocirc.cxx

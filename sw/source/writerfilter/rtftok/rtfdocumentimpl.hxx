@@ -16,6 +16,7 @@
 #include <optional>
 
 #include <basegfx/units/Length.hxx>
+#include <com/sun/star/graphic/XGraphic.hpp>
 #include <com/sun/star/text/WrapTextMode.hpp>
 #include <com/sun/star/io/WrongFormatException.hpp>
 #include <oox/mathml/importutils.hxx>
@@ -86,7 +87,7 @@ enum class RTFBufferTypes
     /// Imports a shape.
     ResolveShape,
     EndShape,
-    /// Inserts an already built shape, see RTFDocumentImpl::bufferShapeInsertion().
+    /// Starts an already built shape.
     InsertShape,
     ResolveSubstream,
     /// Restores RTFParserState::aPicture.
@@ -743,6 +744,8 @@ public:
     const rtl::Reference<SwXTextDocument>& getTextDocument() const { return m_xDstDoc; }
     bool isInBackground();
     void setDestinationText(std::u16string_view rString);
+    /// Import the picture data of the current state, false if there is none yet.
+    bool importPict(css::uno::Reference<css::graphic::XGraphic>& rxGraphic);
     /// Resolve a picture: If not inline, then anchored.
     void resolvePict(bool bInline, css::uno::Reference<css::drawing::XShape> const& rShape);
     /** tdf#167713 defer inserting a built shape into the text, if content is being buffered
@@ -751,7 +754,8 @@ public:
         shape has to wait for the cell it belongs to. Returns false when nothing is being buffered
         and the caller should insert the shape itself.
     */
-    bool bufferShapeInsertion(css::uno::Reference<css::drawing::XShape> const& rShape, bool bClose);
+    /// Starts an already built shape in the dmapper, and ends it too when bClose is set.
+    void insertShape(css::uno::Reference<css::drawing::XShape> const& rShape, bool bClose);
 
     /// If this is the first run of the document, starts the initial paragraph.
     void checkFirstRun();
@@ -826,6 +830,9 @@ private:
     /// Appends the entry to the current buffer, or sends it to the dmapper when there is none.
     void bufferOrSend(RTFBufferTypes eType,
                       RTFValue::Pointer_t const& pValue = RTFValue::Pointer_t());
+    /// Resolves a footnote, endnote or annotation substream, or buffers that until the buffer is
+    /// replayed.
+    void bufferOrResolveSubstream(std::size_t nPos, Id nId, OUString const& rCustomMark);
     /// If we have some unicode or hex characters to send.
     void checkUnicode(bool bUnicode, bool bHex);
     /// If we need a final section break at the end of the document.
@@ -1023,6 +1030,8 @@ private:
     bool m_bFormField;
     /// For the INCLUDEPICTURE field's argument.
     OUString m_aPicturePath;
+    /// The absolute URL of the INCLUDEPICTURE file, inserted as a linked picture.
+    OUString m_aPictureLinkURL;
     // Unicode characters are collected here so we don't have to send them one by one.
     OUStringBuffer m_aUnicodeBuffer{ 512 };
     /// Same for hex characters.

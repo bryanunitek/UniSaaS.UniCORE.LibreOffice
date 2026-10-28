@@ -511,10 +511,18 @@ ShapeExport& ShapeExport::WriteGroupShape(const uno::Reference<drawing::XShape>&
         if( GetProperty(xShapeProps, u"Visible"_ustr))
             mAny >>= isVisible;
 
+        OUString sDescr, sTitle;
+        if (GetProperty(xShapeProps, u"Description"_ustr))
+            mAny >>= sDescr;
+        if (GetProperty(xShapeProps, u"Title"_ustr))
+            mAny >>= sTitle;
+
         pFS->startElementNS(mnXmlNamespace, XML_nvGrpSpPr);
         pFS->startElementNS(mnXmlNamespace, XML_cNvPr, XML_id,
                             OString::number(GetNewShapeID(xShape)), XML_name, GetShapeName(xShape),
-                            XML_hidden, sax_fastparser::UseIf("1", !isVisible));
+                            XML_hidden, sax_fastparser::UseIf("1", !isVisible), XML_descr,
+                            sax_fastparser::UseIf(sDescr, !sDescr.isEmpty()), XML_title,
+                            sax_fastparser::UseIf(sTitle, !sTitle.isEmpty()));
         AddExtLst(pFS, xShapeProps);
         pFS->endElementNS(mnXmlNamespace, XML_cNvPr);
         pFS->singleElementNS(mnXmlNamespace, XML_cNvGrpSpPr);
@@ -2024,11 +2032,19 @@ ShapeExport& ShapeExport::WriteConnectorShape( const Reference< XShape >& xShape
     }
     else
     {
+        OUString sDescr, sTitle;
+        if (GetProperty(rXPropSet, u"Description"_ustr))
+            mAny >>= sDescr;
+        if (GetProperty(rXPropSet, u"Title"_ustr))
+            mAny >>= sTitle;
+
         // non visual shape properties
         pFS->startElementNS(mnXmlNamespace, XML_nvCxnSpPr);
         pFS->startElementNS(mnXmlNamespace, XML_cNvPr,
             XML_id, OString::number(GetNewShapeID(xShape)),
-            XML_name, GetShapeName(xShape));
+            XML_name, GetShapeName(xShape),
+            XML_descr, sax_fastparser::UseIf(sDescr, !sDescr.isEmpty()),
+            XML_title, sax_fastparser::UseIf(sTitle, !sTitle.isEmpty()));
         AddExtLst(pFS, rXPropSet);
         pFS->endElementNS(mnXmlNamespace, XML_cNvPr);
         // non visual connector shape drawing properties
@@ -2381,7 +2397,17 @@ void ShapeExport::WriteTable( const Reference< XShape >& rXShape  )
     if ( xPropSet.is() && ( xPropSet->getPropertyValue( u"Model"_ustr ) >>= xTable ) )
     {
         mpFS->startElementNS(XML_a, XML_tbl);
-        mpFS->startElementNS(XML_a, XML_tblPr);
+
+        auto flag = [&xPropSet](const OUString& rName) {
+            return sax_fastparser::UseIf("1", xPropSet->getPropertyValue(rName).get<bool>());
+        };
+        mpFS->startElementNS(XML_a, XML_tblPr,
+                             XML_firstRow, flag(u"UseFirstRowStyle"_ustr),
+                             XML_firstCol, flag(u"UseFirstColumnStyle"_ustr),
+                             XML_lastRow, flag(u"UseLastRowStyle"_ustr),
+                             XML_lastCol, flag(u"UseLastColumnStyle"_ustr),
+                             XML_bandRow, flag(u"UseBandingRowStyle"_ustr),
+                             XML_bandCol, flag(u"UseBandingColumnStyle"_ustr));
         WriteShapeEffects(xPropSet);
         mpFS->endElementNS(XML_a, XML_tblPr);
 

@@ -51,6 +51,7 @@
 #include <osl/diagnose.h>
 #include <oox/helper/graphichelper.hxx>
 #include <vcl/wmfexternal.hxx>
+#include <vcl/GraphicExternalLink.hxx>
 #include <vcl/graph.hxx>
 #include <vcl/settings.hxx>
 #include <vcl/svapp.hxx>
@@ -950,7 +951,7 @@ void RTFDocumentImpl::resolve(Stream& rMapper)
     }
 }
 
-void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XShape> const& rShape)
+bool RTFDocumentImpl::importPict(uno::Reference<graphic::XGraphic>& rxGraphic)
 {
     SvMemoryStream aStream;
     SvStream* pStream = nullptr;
@@ -972,7 +973,7 @@ void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XS
                 b = b << 4;
                 sal_Int8 parsed = o3tl::convertToHex<sal_Int8>(ch);
                 if (parsed == -1)
-                    return;
+                    return false;
                 b += parsed;
                 count--;
                 if (!count)
@@ -989,7 +990,7 @@ void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XS
 
     if (!pStream->Tell())
         // No destination text? Then we'll get it later.
-        return;
+        return false;
 
     SvMemoryStream aDIBStream;
     if (m_aStates.top().getPicture().eStyle == RTFBmpStyle::DIBITMAP)
@@ -1032,8 +1033,21 @@ void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XS
     if (xServiceInfo.is() && xServiceInfo->supportsService(u"com.sun.star.text.TextFrame"_ustr))
         pExtHeader = nullptr;
 
-    uno::Reference<graphic::XGraphic> xGraphic
-        = m_pGraphicHelper->importGraphic(xInputStream, pExtHeader);
+    rxGraphic = m_pGraphicHelper->importGraphic(xInputStream, pExtHeader);
+    return true;
+}
+
+void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XShape> const& rShape)
+{
+    uno::Reference<graphic::XGraphic> xGraphic;
+    if (!m_aPictureLinkURL.isEmpty())
+    {
+        Graphic aGraphic{ GraphicExternalLink(m_aPictureLinkURL) };
+        xGraphic = aGraphic.GetXGraphic();
+        m_aPictureLinkURL.clear();
+    }
+    else if (!importPict(xGraphic))
+        return;
 
     if (m_aStates.top().getPicture().eStyle != RTFBmpStyle::NONE)
     {
@@ -1312,17 +1326,21 @@ void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XS
     }
 }
 
-bool RTFDocumentImpl::bufferShapeInsertion(uno::Reference<drawing::XShape> const& rShape,
-                                           bool const bClose)
+void RTFDocumentImpl::insertShape(uno::Reference<drawing::XShape> const& rShape, bool const bClose)
 {
-    RTFBuffer_t* pBuffer = m_aStates.empty() ? nullptr : m_aStates.top().getCurrentBuffer();
-    if (!pBuffer)
-        return false;
-
-    pBuffer->emplace_back(RTFBufferTypes::InsertShape, new RTFValue(rShape), nullptr);
+    bufferOrSend(RTFBufferTypes::InsertShape, new RTFValue(rShape));
     if (bClose)
-        pBuffer->emplace_back(RTFBufferTypes::EndShape, nullptr, nullptr);
-    return true;
+        bufferOrSend(RTFBufferTypes::EndShape);
+}
+
+void RTFDocumentImpl::bufferOrResolveSubstream(std::size_t nPos, Id nId,
+                                               OUString const& rCustomMark)
+{
+    RTFSprms aAttributes;
+    aAttributes.set(Id(0), new RTFValue(nPos));
+    aAttributes.set(Id(1), new RTFValue(nId));
+    aAttributes.set(Id(2), new RTFValue(rCustomMark));
+    bufferOrSend(RTFBufferTypes::ResolveSubstream, new RTFValue(aAttributes));
 }
 
 RTFError RTFDocumentImpl::resolveChars(char ch)
@@ -1917,9 +1935,35 @@ void RTFDocumentImpl::replayBuffer(RTFBuffer_t& rBuffer, RTFSprms* const pSprms,
     }
 }
 
+static bool lcl_holdsShapeStart(RTFBuffer_t const& rBuffer)
+{
+    int nOpen = 0;
+    for (Buf_t const& rEntry : rBuffer)
+    {
+        switch (std::get<0>(rEntry))
+        {
+            case RTFBufferTypes::StartShape:
+            case RTFBufferTypes::InsertShape:
+                ++nOpen;
+                break;
+            case RTFBufferTypes::EndShape:
+                --nOpen;
+                break;
+            default:
+                break;
+        }
+    }
+    return nOpen > 0;
+}
+
 void RTFDocumentImpl::bufferOrSend(RTFBufferTypes eType, RTFValue::Pointer_t const& pValue)
 {
     RTFBuffer_t* pCurrentBuffer = m_aStates.empty() ? nullptr : m_aStates.top().getCurrentBuffer();
+    // A shape's end follows its start. While the start still waits in the buffer the end waits
+    // behind it, and once a replay has sent the start the end goes to the dmapper directly.
+    if (pCurrentBuffer && eType == RTFBufferTypes::EndShape
+        && !lcl_holdsShapeStart(*pCurrentBuffer))
+        pCurrentBuffer = nullptr;
     if (pCurrentBuffer)
         pCurrentBuffer->emplace_back(eType, pValue, nullptr);
     else
@@ -1991,13 +2035,13 @@ void RTFDocumentImpl::sendBufferEntry(Buf_t aTuple)
         m_aStates.top().setCurrentBuffer(pCurrentBuffer);
     }
     else if (std::get<0>(aTuple) == RTFBufferTypes::EndShape)
-        m_pSdrImport->close();
+        Mapper().endShape();
     else if (std::get<0>(aTuple) == RTFBufferTypes::InsertShape)
     {
         uno::Reference<drawing::XShape> xShape;
         std::get<1>(aTuple)->getAny() >>= xShape;
         if (xShape.is())
-            m_pSdrImport->open(xShape);
+            Mapper().startShape(xShape);
     }
     else if (std::get<0>(aTuple) == RTFBufferTypes::ResolveSubstream)
     {
@@ -2566,43 +2610,23 @@ RTFError RTFDocumentImpl::beforePopState(RTFParserState& rState)
 
             if (!m_aPicturePath.isEmpty())
             {
-                // Read the picture into m_aStates.top().aDestinationText.
+                // The picture is inserted as a link to the file.
                 pushState();
                 dispatchDestination(RTFKeyword::PICT);
-                if (m_aPicturePath.endsWith(".png"))
-                    dispatchFlag(RTFKeyword::PNGBLIP);
                 OUString aFileURL = m_rMediaDescriptor.getUnpackedValueOrDefault(
                     utl::MediaDescriptor::PROP_URL, OUString());
-                OUString aPictureURL;
                 try
                 {
-                    aPictureURL = rtl::Uri::convertRelToAbs(aFileURL, m_aPicturePath);
+                    m_aPictureLinkURL = rtl::Uri::convertRelToAbs(aFileURL, m_aPicturePath);
                 }
                 catch (const rtl::MalformedUriException& rException)
                 {
                     SAL_WARN("writerfilter.rtf",
                              "rtl::Uri::convertRelToAbs() failed: " << rException.getMessage());
                 }
-
-                if (!aPictureURL.isEmpty())
-                {
-                    SvFileStream aStream(aPictureURL, StreamMode::READ);
-                    if (aStream.IsOpen())
-                    {
-                        OUStringBuffer aBuf;
-                        while (aStream.good())
-                        {
-                            unsigned char ch = 0;
-                            aStream.ReadUChar(ch);
-                            if (ch < 16)
-                                aBuf.append("0");
-                            aBuf.append(static_cast<sal_Int32>(ch), 16);
-                        }
-                        m_aStates.top().getDestinationText() = std::move(aBuf);
-                    }
-                }
                 popState();
                 m_aPicturePath.clear();
+                m_aPictureLinkURL.clear();
             }
 
             break;
@@ -3798,13 +3822,7 @@ void RTFDocumentImpl::afterPopState(RTFParserState& rState)
                     && !m_aStates.top().getDrawingObject().getHadShapeText())
                 {
                     m_aStates.top().setHadShapeText(true);
-                    // A replay can send a buffered start before the group ends, and the end
-                    // has to follow it.
-                    if (m_pSdrImport->isOpenInMapper() || !m_aStates.top().getCurrentBuffer())
-                        m_pSdrImport->close();
-                    else
-                        m_aStates.top().getCurrentBuffer()->emplace_back(RTFBufferTypes::EndShape,
-                                                                         nullptr, nullptr);
+                    bufferOrSend(RTFBufferTypes::EndShape);
                 }
 
                 // It's allowed to declare these inside the shape text, and they

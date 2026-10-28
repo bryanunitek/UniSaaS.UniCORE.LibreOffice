@@ -314,6 +314,7 @@ SwHTMLParser::SwHTMLParser( SwDoc* pD, SwPaM& rCursor, SvStream& rIn,
     m_bBodySeen( false ),
     m_bReadingHeaderOrFooter( false ),
     m_bNotifyMacroEventRead( false ),
+    m_bFromClipboard( m_sBaseURL.isEmpty() ),
     m_isInTableStructure(false),
     m_nTableDepth( 0 ),
     m_nFloatingFrames( 0 ),
@@ -2717,7 +2718,7 @@ SwViewShell *SwHTMLParser::CallEndAction( bool bChkAction, bool bChkPtr )
         {
             const Point aVisSttPos( DOCUMENTBORDER, DOCUMENTBORDER );
             if( GetMedium() && aVisSttPos == m_pActionViewShell->VisArea().Pos() )
-                ::JumpToSwMark( m_pActionViewShell,
+                (void)::JumpToSwMark( m_pActionViewShell,
                                 SwMarkName(GetMedium()->GetURLObject().GetMark()) );
             m_bChkJumpMark = false;
         }

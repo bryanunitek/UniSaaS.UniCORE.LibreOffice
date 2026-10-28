@@ -368,11 +368,11 @@ dnl checks build and host OSes
 dnl do this before argument processing to allow for platform dependent defaults
 dnl ===================================================================
 
-# are we running in wsl but are called from git-bash/env with mingw64 or clangarm64 in path?
+# are we running in wsl but are called from git-bash/env with mingw64, ucrt64 or clangarm64 in path?
 # if so, we aim to run nearly everything in the Windows realm, and only run autogen/configure
 # in wsl and run a few tools via wsl
 WSL_ONLY_AS_HELPER=
-if test -n "$WSL_DISTRO_NAME" && $(echo $PATH |grep -q -e mingw64 -e clangarm64); then
+if test -n "$WSL_DISTRO_NAME" && $(echo $PATH |grep -q -e mingw64 -e ucrt64 -e clangarm64); then
     WSL_ONLY_AS_HELPER=TRUE
     shortpath_cmd=$(wslpath -m $srcdir/solenv/bin/shortpath.cmd)
     if test -n "$PKG_CONFIG"; then
@@ -4231,7 +4231,7 @@ reg_get_value()
         regvalue=$($WSL_LO_HELPER --read-registry $1 "$2/$3" 2>/dev/null)
         return
     elif test -n "$WSL_ONLY_AS_HELPER"; then
-        regvalue=$(reg.exe query "$(echo $2 | tr '/' '\\')" /v "$3" /reg:$1 |sed -ne "s|\s*$3.*REG_SZ\s*\(.*\)[\s\r]*$|\1|p")
+        regvalue=$(reg.exe query "$(echo $2 | tr '/' '\\')" /v "$3" /reg:$1 2>/dev/null |sed -ne "s|\s*$3.*REG_SZ\s*\(.*\)[\s\r]*$|\1|p")
         return
     fi
 
@@ -10840,7 +10840,7 @@ if test \( "$cross_compiling" = yes -a -z "$PYTHON_FOR_BUILD" \) -o "$enable_pyt
     SYSTEM_PYTHON=
     PYTHON_VERSION_MAJOR=3
     PYTHON_VERSION_MINOR=13
-    PYTHON_VERSION=${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}.16
+    PYTHON_VERSION=${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}.18
     if ! grep -q -i python.*${PYTHON_VERSION} ${SRC_ROOT}/download.lst; then
         AC_MSG_ERROR([PYTHON_VERSION ${PYTHON_VERSION} but no matching file in download.lst])
     fi
@@ -11735,8 +11735,8 @@ fi
 dnl ===================================================================
 dnl Check for system icu
 dnl ===================================================================
-ICU_MAJOR=78
-ICU_MINOR=3
+ICU_MAJOR=79
+ICU_MINOR=1
 ICU_CFLAGS_internal="-I${WORKDIR}/UnpackedTarball/icu/source/i18n -I${WORKDIR}/UnpackedTarball/icu/source/common"
 ICU_LIBS_internal="-L${WORKDIR}/UnpackedTarball/icu/source/lib -licuuc"
 libo_CHECK_SYSTEM_MODULE([icu],[ICU],[icu-i18n >= 66])
@@ -12283,7 +12283,7 @@ dnl Check for system box2d
 dnl ===================================================================
 AC_MSG_CHECKING([which box2d to use])
 BOX2D_MAJOR=3
-BOX2D_MINOR=1
+BOX2D_MINOR=2
 if test "$with_system_box2d" = "yes"; then
     AC_MSG_RESULT([external])
     SYSTEM_BOX2D=TRUE
@@ -14978,7 +14978,7 @@ if test "$need_meson" = "yes"; then
                     # the internal meson if the external meson's version is
                     # too old
                     if test $_os = Darwin; then
-                        if $MACOSX_SDK_VERSION -ge 260000; then
+                        if test $MACOSX_SDK_VERSION -ge 260000; then
                           _meson_minver=1.8.3
                         fi
                     fi
@@ -14992,7 +14992,7 @@ if test "$need_meson" = "yes"; then
                     else
                         AC_MSG_RESULT([yes])
                         AC_MSG_CHECKING([min version of meson required])
-                        AC_MSG_RESULT([$meson_minver])
+                        AC_MSG_RESULT([$_meson_minver])
                     fi
                 else
                     AC_MSG_RESULT([no])

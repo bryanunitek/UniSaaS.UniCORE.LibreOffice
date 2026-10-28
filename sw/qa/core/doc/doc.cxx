@@ -9,10 +9,17 @@
 
 #include <swmodeltestbase.hxx>
 
+#include <com/sun/star/document/UpdateDocMode.hpp>
+#include <com/sun/star/drawing/XDrawPageSupplier.hpp>
+#include <com/sun/star/form/XFormsSupplier.hpp>
+#include <com/sun/star/form/XLoadable.hpp>
 #include <com/sun/star/graphic/XGraphic.hpp>
 #include <com/sun/star/lang/XInitialization.hpp>
 #include <com/sun/star/view/XSelectionSupplier.hpp>
+#include <com/sun/star/sdb/CommandType.hpp>
 #include <com/sun/star/text/XTextTable.hpp>
+#include <com/sun/star/text/XTextTablesSupplier.hpp>
+#include <com/sun/star/container/XIndexAccess.hpp>
 #include <comphelper/propertysequence.hxx>
 #include <com/sun/star/awt/FontSlant.hpp>
 #include <com/sun/star/style/ParagraphAdjust.hpp>
@@ -39,6 +46,10 @@
 #include <vcl/vclevent.hxx>
 #include <comphelper/propertyvalue.hxx>
 #include <comphelper/scopeguard.hxx>
+#include <sfx2/dispatch.hxx>
+#include <sfx2/viewfrm.hxx>
+#include <svl/stritem.hxx>
+#include <svx/svxids.hrc>
 
 #include <wrtsh.hxx>
 #include <fmtanchr.hxx>
@@ -1333,14 +1344,53 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testDelThenFormat)
     CPPUNIT_ASSERT(!pRedline->GetRedlineData().Next());
 }
 
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTdf173626)
+{
+    createSwDoc("tdf173626.odt");
+    SwDoc* pDoc = getSwDoc();
+    SwTableAutoFormatTable& rStyles = pDoc->GetTableStyles();
+    SwTableAutoFormat* pAcademic = rStyles.FindAutoFormat(u"Academic"_ustr);
+    SwTableAutoFormat* pElegant = rStyles.FindAutoFormat(u"Elegant"_ustr);
+    CPPUNIT_ASSERT(pAcademic);
+    CPPUNIT_ASSERT(pElegant);
+
+    uno::Sequence<beans::PropertyValue> aArgs(comphelper::InitPropertySequence(
+        { { "Rows", uno::Any(sal_Int32(2)) }, { "Columns", uno::Any(sal_Int32(2)) } }));
+    dispatchCommand(mxComponent, u".uno:InsertTable"_ustr, aArgs);
+    uno::Reference<text::XTextTablesSupplier> xTablesSupplier(mxComponent, uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xTablesSupplier.is());
+    uno::Reference<container::XIndexAccess> xTables(xTablesSupplier->getTextTables(),
+                                                    uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xTables.is());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1), xTables->getCount());
+
+    SwView* pView = getSwDocShell()->GetView();
+    SfxStringItem aFormatName(SID_AUTOFORMAT, u"Default Style"_ustr);
+    SfxStringItem aOldName(SID_RESET_AUTOFORMATS, u"Default Style"_ustr);
+    auto resetDefaultStyle = [&]() {
+        pView->GetViewFrame().GetDispatcher()->ExecuteList(
+            SID_RESET_AUTOFORMATS, SfxCallMode::SYNCHRON, { &aFormatName, &aOldName });
+    };
+
+    // The document imports Academic with itself as parent. Editing Default Style
+    // must not loop forever while checking which table styles depend on it.
+    CPPUNIT_ASSERT_EQUAL(u"Academic"_ustr, pAcademic->GetParent());
+    resetDefaultStyle();
+
+    // A cycle spanning two styles must terminate as well.
+    pAcademic->SetParent(u"Elegant"_ustr);
+    pElegant->SetParent(u"Academic"_ustr);
+    resetDefaultStyle();
+}
+
 CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTableAutoFormats)
 {
     // Create an empty document.
     createSwDoc();
     SwDoc* pDoc = getSwDoc();
 
-    // Check table styles size, by default we have 11 styles
-    CPPUNIT_ASSERT_EQUAL(size_t(11), pDoc->GetTableStyles().size());
+    // Check table styles size, by default we have 11 styles (plus a None style)
+    CPPUNIT_ASSERT_EQUAL(size_t(12), pDoc->GetTableStyles().size());
 
     // Create new style
     SwTableAutoFormat aNewStyle(TableStyleName(u"TestStyle"_ustr));
@@ -1368,7 +1418,7 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTableAutoFormats)
     pDoc->GetTableStyles().AddAutoFormat(aNewStyle);
 
     // Test the number of styles after adding the new style
-    CPPUNIT_ASSERT_EQUAL(size_t(12), pDoc->GetTableStyles().size());
+    CPPUNIT_ASSERT_EQUAL(size_t(13), pDoc->GetTableStyles().size());
 
     // Save and reload the document
     saveAndReload(TestFilter::ODT);
@@ -1376,7 +1426,7 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTableAutoFormats)
     pDoc = getSwDoc();
 
     // Test whether the new style is added
-    CPPUNIT_ASSERT_EQUAL(size_t(12), pDoc->GetTableStyles().size());
+    CPPUNIT_ASSERT_EQUAL(size_t(13), pDoc->GetTableStyles().size());
 
     // Test that the new styles has all the new properties
     uno::Sequence<beans::PropertyValue> aArgs(
@@ -1440,6 +1490,72 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testBrushGraphicLinkProtocols)
                               OUString(), GPOS_TILED, RES_BACKGROUND);
     CPPUNIT_ASSERT(aExpandBrush.QueryValue(aValue, MID_GRAPHIC));
     CPPUNIT_ASSERT(!aValue.get<uno::Reference<graphic::XGraphic>>().is());
+}
+
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testExternalDatabaseFormLoadsOnlyAfterLinkUpdateAllowed)
+{
+    // Given a document whose form names its database by connection URL, loaded without link
+    // updates:
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                      sal_Int16(document::UpdateDocMode::NO_UPDATE)),
+    };
+    loadFromFile(u"external-database-form.fodt", aParams);
+    SwDocShell* pDocShell = getSwDocShell();
+    CPPUNIT_ASSERT(pDocShell->HasExternalDatabaseForms());
+
+    uno::Reference<drawing::XDrawPageSupplier> xDrawPageSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<form::XFormsSupplier> xFormsSupplier(xDrawPageSupplier->getDrawPage(),
+                                                        uno::UNO_QUERY);
+    uno::Reference<beans::XPropertySet> xForm(xFormsSupplier->getForms()->getByName(u"Form"_ustr),
+                                              uno::UNO_QUERY);
+    uno::Reference<form::XLoadable> xLoadable(xForm, uno::UNO_QUERY);
+
+    // The .fodt cannot hold an absolute path, so point the form at the table directory next to
+    // it. A flat-file connection made from a bare URL looks for tables with no file extension.
+    const OUString sTableURL = createFileURL(u"database-form-table/names");
+    const OUString sTableDirectoryURL = sTableURL.copy(0, sTableURL.lastIndexOf('/') + 1);
+    xForm->setPropertyValue(u"URL"_ustr, uno::Any("sdbc:flat:" + sTableDirectoryURL));
+    xForm->setPropertyValue(u"Command"_ustr, uno::Any(u"names"_ustr));
+    xForm->setPropertyValue(u"CommandType"_ustr, uno::Any(sdb::CommandType::TABLE));
+
+    // When the form is loaded while link updates are not allowed, it stays unloaded.
+    xLoadable->load();
+    CPPUNIT_ASSERT(!xLoadable->isLoaded());
+
+    // When the user then allows link updates, the form connects and loads.
+    pDocShell->AllowLinkUpdate();
+    CPPUNIT_ASSERT(xLoadable->isLoaded());
+}
+
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testRegisteredDatabaseFormLoadsOnlyAfterLinkUpdateAllowed)
+{
+    // Given a document whose form names a data source registered in the user's configuration,
+    // loaded without link updates:
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                      sal_Int16(document::UpdateDocMode::NO_UPDATE)),
+    };
+    loadFromFile(u"registered-database-form.fodt", aParams);
+    SwDocShell* pDocShell = getSwDocShell();
+
+    // Then the form is an external link of the document, as one naming a connection URL is:
+    CPPUNIT_ASSERT(pDocShell->HasExternalDatabaseForms());
+
+    uno::Reference<drawing::XDrawPageSupplier> xDrawPageSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<form::XFormsSupplier> xFormsSupplier(xDrawPageSupplier->getDrawPage(),
+                                                        uno::UNO_QUERY);
+    uno::Reference<form::XLoadable> xLoadable(xFormsSupplier->getForms()->getByName(u"Form"_ustr),
+                                              uno::UNO_QUERY);
+
+    // When the form is loaded while link updates are not allowed, it stays unloaded.
+    xLoadable->load();
+    CPPUNIT_ASSERT(!xLoadable->isLoaded());
+
+    // When the user then allows link updates, the form connects to the registered data source
+    // and loads.
+    pDocShell->AllowLinkUpdate();
+    CPPUNIT_ASSERT(xLoadable->isLoaded());
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();
