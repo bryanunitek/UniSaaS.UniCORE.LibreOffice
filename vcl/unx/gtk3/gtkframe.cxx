@@ -461,7 +461,7 @@ bool GtkSalFrame::doKeyCallback( guint state,
     if( aEvent.mnCode == 0 )
     {
         // Try and find Latin layout
-        GdkKeymap* keymap = gdk_keymap_get_default();
+        GdkKeymap* keymap = gdk_keymap_get_for_display(gdk_display_get_default());
         guint8 best_group = GetBestAccelKeyGroup(keymap, group);
         guint updated_keyval = GetKeyValFor(keymap, hardware_keycode, best_group);
         aEvent.mnCode = GetKeyCode(updated_keyval);
@@ -941,7 +941,13 @@ void GtkSalFrame::updateScreenNumber()
     int nScreen = 0;
     GdkScreen *pScreen = gtk_widget_get_screen( m_pWindow );
     if( pScreen )
-        nScreen = getDisplay()->getSystem()->getScreenMonitorIdx( pScreen, maGeometry.x(), maGeometry.y() );
+    {
+        // TODO: this will fail horribly for exotic combinations like two
+        // monitors in mirror mode and one extra. Hopefully such
+        // abominations are not used (or, even better, not possible) in
+        // practice .-)
+        nScreen = gdk_screen_get_monitor_at_point(pScreen, maGeometry.x(), maGeometry.y());
+    }
     maGeometry.setScreen(nScreen);
 #endif
 }
@@ -2222,19 +2228,18 @@ Size GtkSalFrame::GetClientSize()
 void GtkSalFrame::GetWorkArea( AbsoluteScreenPixelRectangle& rRect )
 {
     GdkRectangle aRect;
+    GdkDisplay* pDisplay = gtk_widget_get_display(m_pWindow);
 #if !GTK_CHECK_VERSION(4, 0, 0)
-    GdkScreen  *pScreen = gtk_widget_get_screen(m_pWindow);
     AbsoluteScreenPixelRectangle aRetRect;
-    int max = gdk_screen_get_n_monitors (pScreen);
+    int max = gdk_display_get_n_monitors(pDisplay);
     for (int i = 0; i < max; ++i)
     {
-        gdk_screen_get_monitor_workarea(pScreen, i, &aRect);
+        gdk_monitor_get_workarea(gdk_display_get_monitor(pDisplay, i), &aRect);
         AbsoluteScreenPixelRectangle aMonitorRect(aRect.x, aRect.y, aRect.x+aRect.width, aRect.y+aRect.height);
         aRetRect.Union(aMonitorRect);
     }
     rRect = aRetRect;
 #else
-    GdkDisplay* pDisplay = gtk_widget_get_display(m_pWindow);
     GdkSurface* gdkWindow = widget_get_surface(m_pWindow);
     GdkMonitor* pMonitor = gdk_display_get_monitor_at_surface(pDisplay, gdkWindow);
     gdk_monitor_get_geometry(pMonitor, &aRect);
@@ -6242,20 +6247,12 @@ void GtkSalFrame::startDrag(const css::datatransfer::dnd::DragGestureEvent& rEve
     // appropriate device to use.
     if (!aFakeEvent.button.device || !gdk_device_get_window_at_position(aFakeEvent.button.device, nullptr, nullptr))
     {
-        GdkDeviceManager* pDeviceManager = gdk_display_get_device_manager(getGdkDisplay());
-        GList* pDevices = gdk_device_manager_list_devices(pDeviceManager, GDK_DEVICE_TYPE_MASTER);
-        for (GList* pEntry = pDevices; pEntry; pEntry = pEntry->next)
+        GdkSeat* pSeat = gdk_display_get_default_seat(getGdkDisplay());
+        GdkDevice* pPointerDevice = gdk_seat_get_pointer(pSeat);
+        if (gdk_device_get_window_at_position(pPointerDevice, nullptr, nullptr))
         {
-            GdkDevice* pDevice = static_cast<GdkDevice*>(pEntry->data);
-            if (gdk_device_get_source(pDevice) == GDK_SOURCE_KEYBOARD)
-                continue;
-            if (gdk_device_get_window_at_position(pDevice, nullptr, nullptr))
-            {
-                aFakeEvent.button.device = pDevice;
-                break;
-            }
+            aFakeEvent.button.device = pPointerDevice;
         }
-        g_list_free(pDevices);
     }
 
     GdkDragContext *pDrag;

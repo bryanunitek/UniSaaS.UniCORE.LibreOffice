@@ -299,6 +299,21 @@ void Shape::propagateDiagramHelper()
         delete mpDiagramHelper;
         mpDiagramHelper = nullptr;
     }
+
+    // evtl. make DiagramNodes use FitSize in edit mode
+    if (FRAMETYPE_DIAGRAM == meFrameType && mxShape)
+    {
+        SdrObject* pRootObject(SdrObject::getSdrObjectFromXShape(mxShape));
+
+        if (nullptr != pRootObject)
+        {
+            DiagramHelper_oox* pHelper(
+                dynamic_cast<DiagramHelper_oox*>(pRootObject->getDiagramHelper().get()));
+
+            if (nullptr != pHelper)
+                pHelper->applyTextFitToSizeToDiagramNodes(mxShape, /*bKeepFontScale*/true);
+        }
+    }
 }
 
 void Shape::migrateDiagramHelperToNewShape(const ShapePtr& pTarget)
@@ -2942,6 +2957,11 @@ void Shape::finalizeXShape( XmlFilterBase& rFilter, const Reference< XShapes >& 
                 rtl::Reference<chart::ChartSpaceFragment> pChartSpaceFragment = new chart::ChartSpaceFragment(
                         rFilter, mxChartShapeInfo->maFragmentPath, aModel );
                 rFilter.importFragment( pChartSpaceFragment );
+
+                // The DOCX import keeps the chart data parts in its own way, and a spreadsheet's
+                // chart data is in its sheets.
+                if (pPowerPointImport && !aModel.maSheetPath.isEmpty())
+                    rFilter.importChartEmbedding(aModel.maSheetPath);
 
                 // Import styles file.
                 // Create the styles path from the path to the chart*.xml file

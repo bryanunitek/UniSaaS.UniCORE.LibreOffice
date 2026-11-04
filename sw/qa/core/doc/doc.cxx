@@ -9,7 +9,9 @@
 
 #include <swmodeltestbase.hxx>
 
+#include <com/sun/star/document/XEmbeddedObjectSupplier.hpp>
 #include <com/sun/star/document/UpdateDocMode.hpp>
+#include <com/sun/star/drawing/XDrawPagesSupplier.hpp>
 #include <com/sun/star/drawing/XDrawPageSupplier.hpp>
 #include <com/sun/star/form/XFormsSupplier.hpp>
 #include <com/sun/star/form/XLoadable.hpp>
@@ -17,6 +19,7 @@
 #include <com/sun/star/lang/XInitialization.hpp>
 #include <com/sun/star/view/XSelectionSupplier.hpp>
 #include <com/sun/star/sdb/CommandType.hpp>
+#include <com/sun/star/text/XTextEmbeddedObjectsSupplier.hpp>
 #include <com/sun/star/text/XTextTable.hpp>
 #include <com/sun/star/text/XTextTablesSupplier.hpp>
 #include <com/sun/star/container/XIndexAccess.hpp>
@@ -24,6 +27,10 @@
 #include <com/sun/star/awt/FontSlant.hpp>
 #include <com/sun/star/style/ParagraphAdjust.hpp>
 #include <com/sun/star/table/XCellRange.hpp>
+#include <com/sun/star/xforms/XFormsSupplier.hpp>
+#include <com/sun/star/xforms/XModel.hpp>
+#include <com/sun/star/xml/dom/XDocument.hpp>
+#include <com/sun/star/xml/dom/XNodeList.hpp>
 #include <editeng/adjustitem.hxx>
 #include <editeng/svxenum.hxx>
 #include <editeng/postitem.hxx>
@@ -44,11 +51,13 @@
 #include <editeng/langitem.hxx>
 #include <vcl/scheduler.hxx>
 #include <vcl/vclevent.hxx>
+#include <tools/stream.hxx>
 #include <comphelper/propertyvalue.hxx>
 #include <comphelper/scopeguard.hxx>
 #include <sfx2/dispatch.hxx>
 #include <sfx2/viewfrm.hxx>
 #include <svl/stritem.hxx>
+#include <svx/svdograf.hxx>
 #include <svx/svxids.hrc>
 
 #include <wrtsh.hxx>
@@ -80,6 +89,27 @@ public:
     SwCoreDocTest()
         : SwModelTestBase(u"/sw/qa/core/doc/data/"_ustr)
     {
+    }
+
+    /// Loads embedded-drawing-linked-image.fodt: a Writer document holding a Draw object whose page
+    /// has a linked image. An embedded document has no base URL of its own, so the link is pointed
+    /// at the image's full URL in a temporary copy.
+    void loadEmbeddedDrawingWithLinkedImage()
+    {
+        SvFileStream aTemplate(createFileURL(u"embedded-drawing-linked-image.fodt"),
+                               StreamMode::READ);
+        OString aContent = read_uInt8s_ToOString(aTemplate, aTemplate.remainingSize());
+        aContent = aContent.replaceAll(
+            "\"linked-image.png\""_ostr,
+            "\"" + OUStringToOString(createFileURL(u"linked-image.png"), RTL_TEXTENCODING_UTF8)
+                + "\"");
+        utl::TempFileNamed aDocument(u"", true, u".fodt");
+        aDocument.EnableKillingFile();
+        aDocument.GetStream(StreamMode::WRITE)->WriteOString(aContent);
+        aDocument.CloseStream();
+        loadFromURL(aDocument.GetURL(),
+                    { comphelper::makePropertyValue(u"FilterName"_ustr,
+                                                    u"OpenDocument Text Flat XML"_ustr) });
     }
 };
 
@@ -552,6 +582,14 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testLinkedStyleDelete)
 
 namespace
 {
+/// The text of the name element in the default instance of an XForms model.
+OUString getInstanceName(const uno::Reference<xforms::XModel>& xModel)
+{
+    uno::Reference<xml::dom::XNodeList> xNames
+        = xModel->getDefaultInstance()->getElementsByTagName(u"name"_ustr);
+    return xNames->item(0)->getFirstChild()->getNodeValue();
+}
+
 /// This selection listener calls getAnchor() on selection change, which creates UNO cursors and is
 /// invoked in the middle of a bookmark deletion.
 struct SelectionChangeListener : public cppu::WeakImplHelper<view::XSelectionChangeListener>
@@ -1457,6 +1495,41 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTableAutoFormats)
         getProperty<awt::FontSlant>(getParagraphOfText(1, xCell->getText()), u"CharPosture"_ustr));
 }
 
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testXFormsInstanceURLLoadsOnlyAfterLinkUpdateAllowed)
+{
+    // Given a document whose XForms instance has inline data and also names a file. A document in
+    // the source tree cannot hold the file's absolute URL, so write one with it:
+    const OString aInstanceURL
+        = OUStringToOString(createFileURL(u"xforms-instance.xml"), RTL_TEXTENCODING_UTF8);
+    {
+        SvFileStream aStream(maTempFile.GetURL(), StreamMode::WRITE | StreamMode::TRUNC);
+        aStream.WriteOString(Concat2View(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<office:document xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\""
+            " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\""
+            " xmlns:xforms=\"http://www.w3.org/2002/xforms\" office:version=\"1.4\""
+            " office:mimetype=\"application/vnd.oasis.opendocument.text\">"
+            "<office:body><office:text><office:forms>"
+            "<xforms:model id=\"Model\">"
+            "<xforms:instance src=\""
+            + aInstanceURL
+            + "\"><data xmlns=\"\"><name>inline</name></data></xforms:instance>"
+              "</xforms:model>"
+              "</office:forms><text:p/></office:text></office:body></office:document>"));
+    }
+
+    // When the document is loaded, the instance keeps its inline data:
+    loadFromURL(maTempFile.GetURL());
+    uno::Reference<xforms::XFormsSupplier> xFormsSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<xforms::XModel> xModel(xFormsSupplier->getXForms()->getByName(u"Model"_ustr),
+                                          uno::UNO_QUERY);
+    CPPUNIT_ASSERT_EQUAL(u"inline"_ustr, getInstanceName(xModel));
+
+    // When the user then allows link updates, the instance holds the data of the file it names.
+    getSwDocShell()->AllowLinkUpdate();
+    CPPUNIT_ASSERT_EQUAL(u"loaded"_ustr, getInstanceName(xModel));
+}
+
 CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testCloseDocWithFillBitmapLinkTracker)
 {
     // Closing a freshly created document must not crash while its fill-bitmap
@@ -1526,6 +1599,90 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testExternalDatabaseFormLoadsOnlyAfterLinkUp
     // When the user then allows link updates, the form connects and loads.
     pDocShell->AllowLinkUpdate();
     CPPUNIT_ASSERT(xLoadable->isLoaded());
+}
+
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testEmbeddedDocumentsFollowOuterLinkUpdateDecision)
+{
+    // Given a Writer document holding a Draw object that itself holds a Writer object. Type
+    // detection of a flat file finds the inner Draw media type too, so name the filter.
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"FilterName"_ustr, u"OpenDocument Text Flat XML"_ustr),
+    };
+    loadFromFile(u"nested-embedded-documents.fodt", aParams);
+    uno::Reference<text::XTextEmbeddedObjectsSupplier> xObjectsSupplier(mxComponent,
+                                                                        uno::UNO_QUERY);
+    uno::Reference<container::XIndexAccess> xObjects(xObjectsSupplier->getEmbeddedObjects(),
+                                                     uno::UNO_QUERY);
+    uno::Reference<document::XEmbeddedObjectSupplier> xChildSupplier(xObjects->getByIndex(0),
+                                                                     uno::UNO_QUERY);
+    uno::Reference<beans::XPropertySet> xChild(xChildSupplier->getEmbeddedObject(),
+                                               uno::UNO_QUERY_THROW);
+    uno::Reference<drawing::XDrawPagesSupplier> xPagesSupplier(xChild, uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawPage> xPage(xPagesSupplier->getDrawPages()->getByIndex(0),
+                                             uno::UNO_QUERY);
+    uno::Reference<beans::XPropertySet> xShape(xPage->getByIndex(0), uno::UNO_QUERY);
+    uno::Reference<beans::XPropertySet> xGrandchild(xShape->getPropertyValue(u"Model"_ustr),
+                                                    uno::UNO_QUERY_THROW);
+
+    // After load, link updates are off in every level.
+    CPPUNIT_ASSERT(!xChild->getPropertyValue(u"AllowLinkUpdate"_ustr).get<bool>());
+    CPPUNIT_ASSERT(!xGrandchild->getPropertyValue(u"AllowLinkUpdate"_ustr).get<bool>());
+
+    // When the user allows link updates in the outer document, the embedded documents allow
+    // them too.
+    getSwDocShell()->AllowLinkUpdate();
+    CPPUNIT_ASSERT(xChild->getPropertyValue(u"AllowLinkUpdate"_ustr).get<bool>());
+    CPPUNIT_ASSERT(xGrandchild->getPropertyValue(u"AllowLinkUpdate"_ustr).get<bool>());
+}
+
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testEmbeddedDrawingLoadsLinkedImageOnceOuterAllowsLinks)
+{
+    // Given a Writer document holding a Draw object whose page has a linked image:
+    loadEmbeddedDrawingWithLinkedImage();
+    uno::Reference<text::XTextEmbeddedObjectsSupplier> xObjectsSupplier(mxComponent,
+                                                                        uno::UNO_QUERY);
+    uno::Reference<container::XIndexAccess> xObjects(xObjectsSupplier->getEmbeddedObjects(),
+                                                     uno::UNO_QUERY);
+    uno::Reference<document::XEmbeddedObjectSupplier> xChildSupplier(xObjects->getByIndex(0),
+                                                                     uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawPagesSupplier> xPagesSupplier(xChildSupplier->getEmbeddedObject(),
+                                                               uno::UNO_QUERY_THROW);
+    uno::Reference<drawing::XDrawPage> xPage(xPagesSupplier->getDrawPages()->getByIndex(0),
+                                             uno::UNO_QUERY);
+    uno::Reference<drawing::XShape> xShape(xPage->getByIndex(0), uno::UNO_QUERY);
+    auto pImage = dynamic_cast<SdrGrafObj*>(SdrObject::getSdrObjectFromXShape(xShape));
+    CPPUNIT_ASSERT(pImage);
+    CPPUNIT_ASSERT(pImage->IsLinkedGraphic());
+
+    // After load, the image is not loaded.
+    CPPUNIT_ASSERT(pImage->GetGraphicType() != GraphicType::Bitmap);
+
+    // When the user allows link updates in the outer document, the embedded drawing loads it.
+    getSwDocShell()->AllowLinkUpdate();
+    CPPUNIT_ASSERT_EQUAL(GraphicType::Bitmap, pImage->GetGraphicType());
+}
+
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testDocumentOffersLinksOnlyItsEmbeddedDrawingHas)
+{
+    // Given a Writer document with no links of its own, holding a Draw object whose page has a
+    // linked image:
+    loadEmbeddedDrawingWithLinkedImage();
+    // An object inline in a flat file is imported along with its container, so the test opens
+    // the zipped form, where the drawing loads as a document of its own.
+    saveAndReload(TestFilter::ODT);
+
+    // When the embedded drawing loads:
+    uno::Reference<text::XTextEmbeddedObjectsSupplier> xObjectsSupplier(mxComponent,
+                                                                        uno::UNO_QUERY);
+    uno::Reference<container::XIndexAccess> xObjects(xObjectsSupplier->getEmbeddedObjects(),
+                                                     uno::UNO_QUERY);
+    uno::Reference<document::XEmbeddedObjectSupplier> xChildSupplier(xObjects->getByIndex(0),
+                                                                     uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xChildSupplier->getEmbeddedObject());
+
+    // Then the outer document offers to allow updating links.
+    SfxViewFrame& rViewFrame = getSwDocShell()->GetView()->GetViewFrame();
+    CPPUNIT_ASSERT(rViewFrame.HasInfoBarWithID(u"enablecontent"));
 }
 
 CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testRegisteredDatabaseFormLoadsOnlyAfterLinkUpdateAllowed)

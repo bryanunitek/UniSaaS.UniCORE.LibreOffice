@@ -279,7 +279,9 @@ bool ScValidationData::DoMacro( const ScAddress& rPos, const OUString& rInput,
 //  pDocSh->GetSbxObject();
 
 #if HAVE_FEATURE_SCRIPTING
-    //  no security check ahead (only CheckMacroWarn), that happens in CallBasic
+    // The macro mode is decided before the document's Basic is loaded.
+    if (!pDocSh->AdjustMacroMode())
+        return false;
 
     //  Function search by their simple name,
     //  then assemble aBasicStr, aMacroStr for SfxObjectShell::CallBasic
@@ -379,8 +381,8 @@ void ScValidationData::DoError(weld::Window* pParent, const OUString& rInput, co
                                const std::function<void(bool forget)>& callback) const
 {
     if ( eErrorStyle == SC_VALERR_MACRO ) {
-        DoMacro(rPos, rInput, nullptr, pParent);
-        callback(true);
+        // tdf#172202 - only discard the input if the macro returns false
+        callback(DoMacro(rPos, rInput, nullptr, pParent));
         return;
     }
 

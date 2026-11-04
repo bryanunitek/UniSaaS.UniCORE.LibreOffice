@@ -22,6 +22,7 @@
 #include <cstdlib>
 
 #include <tools/debug.hxx>
+#include <tools/hostfilter.hxx>
 #include <tools/inetmsg.hxx>
 #include <comphelper/configuration.hxx>
 #include <comphelper/diagnose_ex.hxx>
@@ -1023,15 +1024,18 @@ void SfxObjectShell::CheckSecurityOnLoading_Impl()
     if (pImpl->pBaseModel.is())
         pImpl->pBaseModel->SetUIConfigurationMacroCallsAllowed_Impl(bMacrosAllowed);
 
-    // A document in VBA compatibility mode gets its Basic project loaded once macros are allowed.
-    // Import records that mode on the document's own Basic container, so only one that already
-    // exists can hold it.
+    // Import records a deferred VBA compatibility mode on the document's own Basic container, so
+    // only one that already exists can hold it.
     if (bMacrosAllowed)
     {
-        uno::Reference<script::vba::XVBACompatibility> xVBACompat(pImpl->xBasicLibraries,
-                                                                  uno::UNO_QUERY);
-        if (xVBACompat.is() && xVBACompat->getVBACompatibilityMode())
+        uno::Reference<beans::XPropertySet> xLibraries(pImpl->xBasicLibraries, uno::UNO_QUERY);
+        if (xLibraries.is()
+            && xLibraries->getPropertyValue(u"DeferredVBACompatibilityMode"_ustr).get<bool>())
+        {
+            uno::Reference<script::vba::XVBACompatibility> xVBACompat(xLibraries,
+                                                                      uno::UNO_QUERY_THROW);
             xVBACompat->setVBACompatibilityMode(true);
+        }
     }
 }
 
@@ -1437,12 +1441,23 @@ void SfxObjectShell::CancelTransfers()
 
 
 AutoReloadTimer_Impl::AutoReloadTimer_Impl(
-    OUString _aURL, sal_uInt32 nTime, SfxObjectShell* pSh )
+    OUString _aURL, sal_uInt32 nTime, SfxObjectShell* pSh, bool _bLinkUpdateAllowed )
     : Timer("sfx2 AutoReloadTimer_Impl"), aUrl(std::move( _aURL )), pObjSh( pSh )
+    , bLinkUpdateAllowed( _bLinkUpdateAllowed )
 {
     SetTimeout( nTime );
 }
 
+
+static void lcl_allowAutoReload(const Reference<XInterface>& rxModel, const OUString& rURL)
+{
+    SfxObjectShell* pObjSh = SfxObjectShell::GetShellFromComponent(rxModel);
+    if (!pObjSh)
+        return;
+    pObjSh->Get_Impl()->pReloadTimer.reset(
+        new AutoReloadTimer_Impl(rURL, 0, pObjSh, /*bLinkUpdateAllowed=*/true));
+    pObjSh->Get_Impl()->pReloadTimer->Start();
+}
 
 void AutoReloadTimer_Impl::Invoke()
 {
@@ -1458,17 +1473,35 @@ void AutoReloadTimer_Impl::Invoke()
             return;
         }
 
+        SfxObjectShell* pSh = pObjSh;
+        const OUString sURL = aUrl;
+        const bool bAllowed = bLinkUpdateAllowed;
+        // Resetting pReloadTimer deletes this timer, so only the copies above are used after it.
+        pSh->Get_Impl()->pReloadTimer.reset();
+
+        if (HostFilter::isFileUrlForbidden(sURL))
+        {
+            SAL_WARN("sfx.doc",
+                     "AutoReloadTimer_Impl::Invoke: blocked file path: \"" << sURL << "\"");
+            return;
+        }
+        if (!sURL.isEmpty() && !bAllowed)
+        {
+            pSh->AddDeferredLinkLoad(pSh->GetModel(),
+                                     [sURL](const Reference<XInterface>& rxModel)
+                                     { lcl_allowAutoReload(rxModel, sURL); });
+            return;
+        }
+
         SfxAllItemSet aSet( SfxGetpApp()->GetPool() );
         aSet.Put( SfxBoolItem( SID_AUTOLOAD, true ) );
-        if ( !aUrl.isEmpty() )
-            aSet.Put(  SfxStringItem( SID_FILE_NAME, aUrl ) );
-        if (pObjSh->HasName()) {
+        if ( !sURL.isEmpty() )
+            aSet.Put(  SfxStringItem( SID_FILE_NAME, sURL ) );
+        if (pSh->HasName()) {
             aSet.Put(
-                SfxStringItem(SID_REFERER, pObjSh->GetMedium()->GetName()));
+                SfxStringItem(SID_REFERER, pSh->GetMedium()->GetName()));
         }
         SfxRequest aReq( SID_RELOAD, SfxCallMode::SLOT, aSet );
-        // this will delete this
-        pObjSh->Get_Impl()->pReloadTimer.reset();
         pFrame->ExecReload_Impl( aReq );
         return;
     }
@@ -1486,16 +1519,14 @@ ErrCode SfxObjectShell::CallBasic( std::u16string_view rMacro,
     std::u16string_view rBasic, SbxArray* pArgs,
     SbxValue* pRet )
 {
-    SfxApplication* pApp = SfxGetpApp();
-    if( pApp->GetName() != rBasic )
-    {
-        if ( !AdjustMacroMode() )
-            return ERRCODE_IO_ACCESSDENIED;
-    }
+    // The call is made for this document, so its macro mode applies to the application Basic too.
+    if ( !AdjustMacroMode() )
+        return ERRCODE_IO_ACCESSDENIED;
 
-    BasicManager *pMgr = GetBasicManager();
-    if( pApp->GetName() == rBasic )
-        pMgr = SfxApplication::GetBasicManager();
+    SfxApplication* pApp = SfxGetpApp();
+
+    BasicManager* pMgr = pApp->GetName() == rBasic ? SfxApplication::GetBasicManager()
+                                                   : GetBasicManager();
     ErrCode nRet = SfxApplication::CallBasic( OUString(rMacro), pMgr, pArgs, pRet );
     return nRet;
 }

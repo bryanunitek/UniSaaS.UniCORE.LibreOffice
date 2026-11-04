@@ -48,7 +48,6 @@ class Outliner;
 class EditView;
 class EditUndo;
 class EditUndoManager;
-class ParagraphList;
 class OutlinerParaObject;
 class SvStream;
 class SvxSearchItem;
@@ -456,7 +455,6 @@ private:
 
     std::unique_ptr<EditEngine> pEditEngine;
 
-    std::unique_ptr<ParagraphList>   pParaList;
     ViewList            aViewList;
 
     sal_Int32           mnFirstSelPage;
@@ -472,6 +470,8 @@ private:
     Link<PaintFirstLineInfo*,void> maPaintFirstLineHdl;
     Link<PasteOrDropInfos*,void>   maBeginPasteOrDropHdl;
     Link<PasteOrDropInfos*,void>   maEndPasteOrDropHdl;
+    Link<Outliner*,bool>           maSpellNextDocumentHdl;
+    Link<Outliner*,bool>           maConvertNextDocumentHdl;
 
     sal_Int32           nDepthChangedHdlPrevDepth;
     sal_Int16           nMaxDepth;
@@ -486,7 +486,6 @@ private:
     Link<EENotify&,void> aOutlinerNotifyHdl;
     NotifyList          aNotifyCache;
 
-    DECL_DLLPRIVATE_LINK(    ParaVisibleStateChangedHdl, sal_Int32, void );
     DECL_DLLPRIVATE_LINK(    BeginMovingParagraphsHdl, MoveParagraphsInfo&, void );
     DECL_DLLPRIVATE_LINK(    EndMovingParagraphsHdl, MoveParagraphsInfo&, void );
     DECL_DLLPRIVATE_LINK(    BeginPasteOrDropHdl, PasteOrDropInfos&, void );
@@ -598,6 +597,8 @@ public:
     bool            HasChildren( sal_Int32 nParagraphPos ) const;
     sal_Int32       GetChildCount( sal_Int32 nParentParaPos ) const;
     bool            IsExpanded( sal_Int32 nParagraphPos ) const;
+    bool            HasHiddenChildren( sal_Int32 nPara ) const;
+    bool            HasVisibleChildren( sal_Int32 nPara ) const;
     sal_Int32       GetParent( sal_Int32 nParagraphPos ) const;
 
     sal_Int16       GetDepth( sal_Int32 nPara ) const;
@@ -756,11 +757,13 @@ public:
 
     EESpellState    HasSpellErrors();
     bool            HasText( const SvxSearchItem& rSearchItem );
-    virtual bool    SpellNextDocument();
+    bool            SpellNextDocument(); // called from EditEngine, will forward to the Hdl
+    void            SetSpellNextDocumentHdl(const Link<Outliner*,bool>& rLnk) { maSpellNextDocumentHdl = rLnk; }
 
     // for text conversion
     bool            HasConvertibleTextPortion( LanguageType nLang );
-    virtual bool    ConvertNextDocument();
+    bool            ConvertNextDocument(); // called from EditEngine, will forward to the Hdl
+    void            SetConvertNextDocumentHdl(const Link<Outliner*,bool>& rLnk) { maConvertNextDocumentHdl = rLnk; }
 
     void            SetEditEnginePool( SfxItemPool* pPool );
     SfxItemPool*    GetEditEnginePool() const;

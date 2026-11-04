@@ -420,10 +420,7 @@ bridges/source/jni_uno/jni_uno2java.cxx
 bridges/source/jni_uno/jniunoenvironmentdata.hxx
 bridges/source/jni_uno/nativethreadpool.cxx
 canvas/inc/base/basemutexhelper.hxx
-canvas/inc/base/bitmapcanvasbase.hxx
-canvas/inc/base/bufferedgraphicdevicebase.hxx
 canvas/inc/base/cachedprimitivebase.hxx
-canvas/inc/base/canvasbase.hxx
 canvas/inc/base/canvascustomspritebase.hxx
 canvas/inc/base/canvascustomspritehelper.hxx
 canvas/inc/base/disambiguationhelper.hxx
@@ -444,17 +441,12 @@ canvas/inc/vclwrapper.hxx
 canvas/inc/verifyinput.hxx
 canvas/source/cairo/cairo_cachedbitmap.cxx
 canvas/source/cairo/cairo_cachedbitmap.hxx
-canvas/source/cairo/cairo_canvas.cxx
-canvas/source/cairo/cairo_canvas.hxx
 canvas/source/cairo/cairo_canvasbitmap.cxx
 canvas/source/cairo/cairo_canvasbitmap.hxx
 canvas/source/cairo/cairo_canvascustomsprite.cxx
 canvas/source/cairo/cairo_canvascustomsprite.hxx
 canvas/source/cairo/cairo_canvasfont.cxx
 canvas/source/cairo/cairo_canvasfont.hxx
-canvas/source/cairo/cairo_canvashelper.cxx
-canvas/source/cairo/cairo_canvashelper.hxx
-canvas/source/cairo/cairo_canvashelper_text.cxx
 canvas/source/cairo/cairo_devicehelper.cxx
 canvas/source/cairo/cairo_devicehelper.hxx
 canvas/source/cairo/cairo_repainttarget.hxx
@@ -2879,7 +2871,6 @@ desktop/inc/app.hxx
 desktop/inc/dp_misc.h
 desktop/inc/dp_shared.hxx
 desktop/inc/lib/init.hxx
-desktop/inc/splash/unxsplash.hxx
 desktop/qa/deployment_misc/test_dp_version.cxx
 desktop/qa/desktop_app/test_desktop_app.cxx
 desktop/qa/desktop_lib/test_desktop_lib.cxx
@@ -3001,7 +2992,6 @@ desktop/source/pkgchk/unopkg/unopkg_cmdenv.cxx
 desktop/source/pkgchk/unopkg/unopkg_misc.cxx
 desktop/source/pkgchk/unopkg/unopkg_shared.h
 desktop/source/splash/splash.cxx
-desktop/source/splash/unxsplash.cxx
 desktop/test/deployment/active/active_native.cxx
 desktop/test/deployment/passive/passive_native.cxx
 desktop/unx/source/args.cxx
@@ -5086,7 +5076,6 @@ include/oox/core/recordparser.hxx
 include/oox/core/relations.hxx
 include/oox/core/relationshandler.hxx
 include/oox/core/xmlfilterbase.hxx
-include/oox/crypto/AgileEngine.hxx
 include/oox/crypto/CryptoEngine.hxx
 include/oox/crypto/DocumentDecryption.hxx
 include/oox/crypto/DocumentEncryption.hxx
@@ -6723,7 +6712,6 @@ oox/source/core/recordparser.cxx
 oox/source/core/relations.cxx
 oox/source/core/relationshandler.cxx
 oox/source/core/xmlfilterbase.cxx
-oox/source/crypto/AgileEngine.cxx
 oox/source/crypto/DocumentEncryption.cxx
 oox/source/crypto/Standard2007Engine.cxx
 oox/source/docprop/docprophandler.cxx
@@ -9099,6 +9087,7 @@ sd/inc/sdpptwrp.hxx
 sd/inc/sdundo.hxx
 sd/inc/sdxmlwrp.hxx
 sd/inc/shapelist.hxx
+sd/inc/slideshow.hxx
 sd/inc/stlfamily.hxx
 sd/inc/stlpool.hxx
 sd/inc/stlsheet.hxx
@@ -9453,6 +9442,7 @@ sd/source/ui/inc/Ruler.hxx
 sd/source/ui/inc/SdUnoDrawView.hxx
 sd/source/ui/inc/SdUnoOutlineView.hxx
 sd/source/ui/inc/SdUnoSlideView.hxx
+sd/source/ui/inc/SlideShowController.hxx
 sd/source/ui/inc/SlideSorter.hxx
 sd/source/ui/inc/SlideSorterViewShell.hxx
 sd/source/ui/inc/SlideTransitionPane.hxx
@@ -9542,7 +9532,6 @@ sd/source/ui/inc/sdpreslt.hxx
 sd/source/ui/inc/sdtreelb.hxx
 sd/source/ui/inc/sdundogr.hxx
 sd/source/ui/inc/sdxfer.hxx
-sd/source/ui/inc/slideshow.hxx
 sd/source/ui/inc/tabtempl.hxx
 sd/source/ui/inc/tmplctrl.hxx
 sd/source/ui/inc/titledockwin.hxx
@@ -9625,8 +9614,7 @@ sd/source/ui/slideshow/SlideShowRestarter.cxx
 sd/source/ui/slideshow/showwin.cxx
 sd/source/ui/slideshow/showwindow.hxx
 sd/source/ui/slideshow/slideshow.cxx
-sd/source/ui/slideshow/slideshowimpl.cxx
-sd/source/ui/slideshow/slideshowimpl.hxx
+sd/source/ui/slideshow/SlideShowController.cxx
 sd/source/ui/slideshow/slideshowviewimpl.cxx
 sd/source/ui/slideshow/slideshowviewimpl.hxx
 sd/source/ui/slidesorter/cache/SlsBitmapCache.cxx
@@ -10035,7 +10023,6 @@ sfx2/source/doc/objcont.cxx
 sfx2/source/doc/objembed.cxx
 sfx2/source/doc/objitem.cxx
 sfx2/source/doc/objmisc.cxx
-sfx2/source/doc/objserv.cxx
 sfx2/source/doc/objstor.cxx
 sfx2/source/doc/objxtor.cxx
 sfx2/source/doc/oleprops.cxx

@@ -2972,7 +2972,6 @@ $(eval $(call gb_UnoApi_add_idlfiles,offapi,com/sun/star/rendering,\
 	XBitmap \
 	XBitmapCanvas \
 	XBitmapPalette \
-	XBufferController \
 	XCachedPrimitive \
 	XCanvas \
 	XCanvasFont \
@@ -3350,6 +3349,7 @@ $(eval $(call gb_UnoApi_add_idlfiles,offapi,com/sun/star/sheet,\
 	FilterFieldValue \
 	FilterOperator \
 	FilterOperator2 \
+	FormattedResult \
 	FormulaLanguage \
 	FormulaMapGroup \
 	FormulaMapGroupSpecialOffset \

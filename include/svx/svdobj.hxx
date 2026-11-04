@@ -228,8 +228,10 @@ public:
     // Basic DiagramHelper support
     virtual bool isDiagram() const;
     virtual const std::shared_ptr< svx::diagram::DiagramHelper_svx >& getDiagramHelper() const;
-    void setDiagramDataModelID(const OUString& rID) { m_aObjName = rID; }
-    const OUString& getDiagramDataModelID() const { return m_aObjName; }
+
+    // used at SdrObjCustomShape, else empty string
+    virtual void setDiagramDataModelID(const OUString& rID);
+    virtual const OUString& getDiagramDataModelID() const;
 
     // return DiagramSubSelection if exists. This will always return
     // a valid SdrObject* to allow to use this as a loop-through-call
@@ -242,13 +244,13 @@ public:
     // temporary check if to use AdvancedDiagramFeatures
     static bool useAdvancedDiagramFeatures();
 
+    // check if a ObjectName is set and it is in DiagramModelID syntax
+    static bool isDiagramModelID(const OUString& rStr);
+
 protected:
     void resetViewContact();
 
 private:
-    // check if an ObjectName is set and it is in DiagramModelID syntax
-    bool ObjectNameIsDiagramModelID();
-
     friend class                SdrObjListIter;
     friend class                SdrObjList;
     friend class                SdrVirtObj;
@@ -667,6 +669,9 @@ public:
     void SetOutlinerParaObject(std::optional<OutlinerParaObject> pTextObject);
     virtual void NbcSetOutlinerParaObject(std::optional<OutlinerParaObject> pTextObject, bool bAdjustTextFrameWidthAndHeight = true);
     virtual OutlinerParaObject* GetOutlinerParaObject() const;
+
+    // Multiplies the size of every letter of the text by fScale
+    void scaleText(double fScale, bool bUndo);
     virtual void NbcReformatText();
 
     void BurnInStyleSheetAttributes();

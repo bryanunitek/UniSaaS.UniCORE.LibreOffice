@@ -8,6 +8,7 @@
  */
 
 #include <tools/hostfilter.hxx>
+#include <tools/urlobj.hxx>
 #include <osl/file.hxx>
 #include <regex>
 #include <vector>
@@ -123,6 +124,15 @@ bool HostFilter::isFileUrlForbidden(const OUString& rFileUrl)
     }
 
     return true;
+}
+
+bool HostFilter::isUrlForbidden(const OUString& rUrl)
+{
+    INetURLObject aURLObject(rUrl);
+    // A file URL is decided by the allowed paths alone.
+    return aURLObject.IsExoticProtocol()
+           || (aURLObject.GetProtocol() != INetProtocol::File && isForbidden(aURLObject.GetHost()))
+           || isFileUrlForbidden(rUrl);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab cinoptions=b1,g0,N-s cinkeys+=0=break: */

@@ -141,18 +141,18 @@ void DiagramData_oox::writeDiagramData(DrawingML& rOriginalDrawingML, const sax_
 
     // write PointList
     rTarget->startElementNS(XML_dgm, XML_ptLst);
-    for (auto& rPoint : getPoints())
+    for (const rtl::Reference<svx::diagram::Point>& rPoint : getPoints())
     {
         rtl::Reference<sax_fastparser::FastAttributeList> pAttributeList(sax_fastparser::FastSerializerHelper::createAttrList());
 
-        pAttributeList->add(XML_modelId, rPoint.msModelId);
-        addTypeConstantToFastAttributeList(rPoint.mnXMLType, pAttributeList, true);
-        if (!rPoint.msCnxId.isEmpty())
-            pAttributeList->add(XML_cxnId, rPoint.msCnxId);
+        pAttributeList->add(XML_modelId, rPoint->msModelId);
+        addTypeConstantToFastAttributeList(rPoint->mnXMLType, pAttributeList, true);
+        if (!rPoint->msCnxId.isEmpty())
+            pAttributeList->add(XML_cxnId, rPoint->msCnxId);
         rTarget->startElementNS(XML_dgm, XML_pt, pAttributeList);
 
         // write basic Point infos
-        rPoint.writeDiagramData_data(rTarget);
+        rPoint->writeDiagramData_data(rTarget);
 
         if (!bReducedData)
         {
@@ -160,21 +160,32 @@ void DiagramData_oox::writeDiagramData(DrawingML& rOriginalDrawingML, const sax_
             // all Nodes have an associated XShape. First try direct find,
             // that will work e.g. for Objects in the Background (NOT our
             // own BGShape) that have no text, but might have a fill
-            uno::Reference<drawing::XShape> xAssociatedShape(getXShapeByModelID(rPoint.msModelId));
+            uno::Reference<drawing::XShape> xAssociatedShape(getXShapeByModelID(rPoint->msModelId));
             uno::Reference<beans::XPropertySet> xProps;
             bool bWriteFill(false);
+            bool bWriteLine(false);
             bool bWriteText(false);
 
-            if (xAssociatedShape)
+            if (rPoint->mnXMLType == TypeConstant::XML_doc)
+            {
+                // this is the root point (see DiagramData_svx::getRootPoint())
+                // for this MSO does not write fill or text at all, so suppress it.
+                // Only an empty <dgm:spPr/> will be written (see else in
+                // bWriteFill below)
+            }
+            else if (xAssociatedShape)
             {
                 // only for those mentioned BgShapes because for TextNodes
                 // (presName="textNode") the fill is written to the associated
                 // text node (phldrT="[Text]")
-                if (u"bgShp"_ustr == rPoint.msPresentationLayoutStyleLabel)
+                if (u"bgShp"_ustr == rPoint->msPresentationLayoutStyleLabel)
                 {
                     // check for fill
                     xProps = uno::Reference<beans::XPropertySet>(xAssociatedShape, uno::UNO_QUERY);
                     bWriteFill = xProps->getPropertyValue(u"FillStyle"_ustr) != drawing::FillStyle_NONE;
+
+                    // check for line, BGShapes can have that
+                    bWriteLine = xProps->getPropertyValue(u"LineStyle"_ustr) != drawing::LineStyle_NONE;
                 }
             }
             else
@@ -184,7 +195,7 @@ void DiagramData_oox::writeDiagramData(DrawingML& rOriginalDrawingML, const sax_
                 // with a Node that references this by using presAssocID. Use
                 // getMasterXShapeForPoint that uses that association and try
                 // to access the XShape containing the Text ModelData
-                xAssociatedShape = getMasterXShapeForPoint(rPoint);
+                xAssociatedShape = getMasterXShapeForPoint(*rPoint);
 
                 if (xAssociatedShape)
                 {
@@ -196,14 +207,22 @@ void DiagramData_oox::writeDiagramData(DrawingML& rOriginalDrawingML, const sax_
                     // and the fill is added here, *not* at the XShape/Model node
                     xProps = uno::Reference<beans::XPropertySet>(xAssociatedShape, uno::UNO_QUERY);
                     bWriteFill = xProps->getPropertyValue(u"FillStyle"_ustr) != drawing::FillStyle_NONE;
+
+                    // check for line.
+                    bWriteLine = xProps->getPropertyValue(u"LineStyle"_ustr) != drawing::LineStyle_NONE;
                 }
             }
 
-            // <spPr> element is before <t> element
-            if (bWriteFill)
+            // write <spPr> element if bWriteFill or bWriteLine, it's before <t> element
+            if (bWriteFill || bWriteLine)
             {
                 rTarget->startElementNS(XML_dgm, XML_spPr);
-                aShapeExport->WriteFill( xProps, xAssociatedShape->getSize());
+
+                if (bWriteFill)
+                    aShapeExport->WriteFill( xProps, xAssociatedShape->getSize());
+
+                if (bWriteLine)
+                    aShapeExport->WriteOutline( xProps );
 
                 rTarget->endElementNS(XML_dgm, XML_spPr);
             }
@@ -216,15 +235,17 @@ void DiagramData_oox::writeDiagramData(DrawingML& rOriginalDrawingML, const sax_
             if (bWriteText)
             {
                 rTarget->startElementNS(XML_dgm, XML_t);
+                aShapeExport->setDiagramModelTextExport(true);
                 aShapeExport->WriteText(xAssociatedShape, false, true, XML_a);
+                aShapeExport->setDiagramModelTextExport(false);
                 rTarget->endElementNS(XML_dgm, XML_t);
             }
             else
             {
                 const bool bWriteEmptyText(
-                    TypeConstant::XML_parTrans == rPoint.mnXMLType ||
-                    TypeConstant::XML_sibTrans == rPoint.mnXMLType ||
-                    "textNode" == rPoint.msPresentationLayoutName);
+                    TypeConstant::XML_parTrans == rPoint->mnXMLType ||
+                    TypeConstant::XML_sibTrans == rPoint->mnXMLType ||
+                    "textNode" == rPoint->msPresentationLayoutName);
 
                 // empty text is written by MSO, but may not be needed. For now, just do it
                 static bool bSuppressEmptyText(false);
@@ -249,8 +270,8 @@ void DiagramData_oox::writeDiagramData(DrawingML& rOriginalDrawingML, const sax_
 
     // write ConnectorList
     rTarget->startElementNS(XML_dgm, XML_cxnLst);
-    for (auto& rConnection : getConnections())
-        rConnection.writeDiagramData_connection(rTarget);
+    for (const rtl::Reference<svx::diagram::Connection>& rConnection : getConnections())
+        rConnection->writeDiagramData_connection(rTarget);
     rTarget->endElementNS(XML_dgm, XML_cxnLst);
 
     if (!bReducedData)
@@ -368,19 +389,19 @@ void DiagramData_oox::dump() const
     size_t a = maConnections.size();
     SAL_INFO("oox.drawingml", "Dgm: DiagramData_oox # of cnx: " << a );
     a = 0;
-    for (const auto& rConnection : maConnections)
+    for (const rtl::Reference<svx::diagram::Connection>& rConnection : maConnections)
     {
         SAL_INFO("oox.drawingml", "cnx #" << a++ << ":");
-        Connection_dump(rConnection);
+        Connection_dump(*rConnection);
     }
 
     a = maPoints.size();
     SAL_INFO("oox.drawingml", "Dgm: DiagramData_oox # of pt: " << a );
     a = 0;
-    for (const auto& rPoint : maPoints)
+    for (const rtl::Reference<svx::diagram::Point>& rPoint : maPoints)
     {
         SAL_INFO("oox.drawingml", "pt #" << a++ << ":");
-        Point_dump(rPoint, getXShapeByModelID(rPoint.msModelId));
+        Point_dump(*rPoint, getXShapeByModelID(rPoint->msModelId));
     }
 }
 #endif
@@ -401,11 +422,11 @@ void DiagramData_oox::buildDiagramDataModel(bool bClearOoxShapes)
         // re-create all existing oox::drawingml::Shape
         svx::diagram::Points& rPoints = getPoints();
 
-        for (auto & point : rPoints)
+        for (const rtl::Reference<svx::diagram::Point>& point : rPoints)
         {
             // Create/get shape. Re-create here, that may also set needed
             // and available data from the Diagram ModelData at the Shape
-            getOrCreateAssociatedShape(point, true);
+            getOrCreateAssociatedShape(*point, true);
         }
     }
 }

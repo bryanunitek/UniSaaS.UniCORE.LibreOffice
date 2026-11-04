@@ -138,6 +138,7 @@
 #include <sdmod.hxx>
 #include <sdresid.hxx>
 #include <sdpage.hxx>
+#include <slideshow.hxx>
 
 #include <strings.hrc>
 #include <strings.hxx>
@@ -2401,15 +2402,21 @@ uno::Reference< container::XNameContainer > SAL_CALL SdXImpressDocument::getCust
     return xCustomPres;
 }
 
-// XPresentationSupplier
-uno::Reference< presentation::XPresentation > SAL_CALL SdXImpressDocument::getPresentation()
+// XPresentationSupplier and getter for concrete SlideShow
+
+rtl::Reference<sd::SlideShow> SdXImpressDocument::getSlideShow()
 {
     ::SolarMutexGuard aGuard;
 
     if( nullptr == mpDoc )
         throw lang::DisposedException();
 
-    return mpDoc->getPresentation();
+    return mpDoc->getSlideShow();
+}
+
+uno::Reference<presentation::XPresentation> SAL_CALL SdXImpressDocument::getPresentation()
+{
+    return getSlideShow();
 }
 
 // XHandoutMasterSupplier

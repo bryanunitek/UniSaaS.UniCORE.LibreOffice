@@ -39,18 +39,19 @@
 #include <framework/ConfigurationChangeEvent.hxx>
 #include <comphelper/extract.hxx>
 
+#include "showwindow.hxx"
+#include "SlideShowRestarter.hxx"
+
 #include <FrameView.hxx>
-#include <createpresentation.hxx>
 #include <unomodel.hxx>
 #include <slideshow.hxx>
-#include "slideshowimpl.hxx"
 #include <sdattr.hrc>
 #include <sdmod.hxx>
 #include <FactoryIds.hxx>
 #include <DrawDocShell.hxx>
+#include <SlideShowController.hxx>
 #include <ViewShell.hxx>
 #include <ViewShellBase.hxx>
-#include "SlideShowRestarter.hxx"
 #include <DrawController.hxx>
 #include <PresentationViewShell.hxx>
 #include <customshowlist.hxx>
@@ -158,15 +159,9 @@ rtl::Reference< SlideShow > SlideShow::GetSlideShow( SdDrawDocument const * pDoc
     rtl::Reference< SlideShow > xRet;
 
     if( pDocument )
-        xRet = GetSlideShow( *pDocument );
+        xRet = pDocument->getSlideShow();
 
     return xRet;
-}
-
-rtl::Reference< SlideShow > SlideShow::GetSlideShow( SdDrawDocument const & rDocument )
-{
-    return rtl::Reference< SlideShow >(
-        dynamic_cast< SlideShow* >( rDocument.getPresentation().get() ) );
 }
 
 rtl::Reference< SlideShow > SlideShow::GetSlideShow( ViewShellBase const & rBase )
@@ -174,15 +169,14 @@ rtl::Reference< SlideShow > SlideShow::GetSlideShow( ViewShellBase const & rBase
     return GetSlideShow( rBase.GetDocument() );
 }
 
-css::uno::Reference< css::presentation::XSlideShowController > SlideShow::GetSlideShowController(ViewShellBase const & rBase )
+rtl::Reference<SlideShowController> SlideShow::GetSlideShowController(ViewShellBase const& rBase)
 {
     rtl::Reference< SlideShow > xSlideShow( GetSlideShow( rBase ) );
 
-    Reference< XSlideShowController > xRet;
     if( xSlideShow.is() )
-        xRet = xSlideShow->getController();
+        return xSlideShow->GetSlideShowController();
 
-    return xRet;
+    return {};
 }
 
 bool SlideShow::StartPreview( ViewShellBase const & rBase,
@@ -244,11 +238,10 @@ void SlideShow::CreateController(  ViewShell* pViewSh, ::sd::View* pView, vcl::W
 {
     SAL_INFO_IF( !mxController.is(), "sd.slideshow", "sd::SlideShow::CreateController(), clean up old controller first!" );
 
-    Reference< XPresentation2 > xThis( this );
-
     // Reset mbIsInStartup.  From here mxController.is() is used to prevent
     // multiple slide show instances for one document.
-    mxController.set(new SlideshowImpl(xThis, pViewSh, pView, mpDoc, pParentWindow));
+    assert(mpDoc);
+    mxController.set(new SlideShowController(this, pViewSh, pView, *mpDoc, pParentWindow));
 
     mbIsInStartup = false;
 
@@ -677,7 +670,7 @@ void SAL_CALL SlideShow::end()
     // gone wrong.
     assert(!mbIsInStartup);
 
-    rtl::Reference< SlideshowImpl > xController( mxController );
+    rtl::Reference<SlideShowController> xController(mxController);
     if( !xController.is() )
         return;
 
@@ -738,7 +731,7 @@ void SAL_CALL SlideShow::end()
             if( pFrameView && (pFrameView->GetPresentationViewShellId() != SID_VIEWSHELL0) )
             {
                 ViewShell::ShellType ePreviousType (pFrameView->GetPreviousViewShellType());
-                pFrameView->SetPreviousViewShellType(ViewShell::ST_NONE);
+                pFrameView->SetPreviousViewShellType(ViewShell::ShellType::None);
 
                 pFrameView->SetPresentationViewShellId(SID_VIEWSHELL0);
                 pFrameView->SetPreviousViewShellType(pViewShell->GetShellType());
@@ -760,7 +753,7 @@ void SAL_CALL SlideShow::end()
             // and the rehearsing will be updated
             pViewShell->Invalidate();
 
-            if( xController->meAnimationMode ==ANIMATIONMODE_SHOW )
+            if (xController->meAnimationMode == AnimationMode::Show)
             {
                 // switch to the previously visible Slide
                 DrawViewShell* pDrawViewShell = dynamic_cast<DrawViewShell*>( pViewShell );
@@ -909,6 +902,11 @@ sal_Bool SAL_CALL SlideShow::isRunning(  )
 
 Reference< XSlideShowController > SAL_CALL SlideShow::getController(  )
 {
+    return GetSlideShowController();
+}
+
+rtl::Reference<SlideShowController> SlideShow::GetSlideShowController() const
+{
     ThrowIfDisposed();
 
     return mxController;
@@ -976,9 +974,9 @@ OutputDevice* SlideShow::getShowWindow()
     return mxController.is() ? mxController->mpShowWindow->GetOutDev() : nullptr;
 }
 
-int SlideShow::getAnimationMode() const
+AnimationMode SlideShow::getAnimationMode() const
 {
-    return mxController.is() ? mxController->meAnimationMode : ANIMATIONMODE_SHOW;
+    return mxController.is() ? mxController->meAnimationMode : AnimationMode::Show;
 }
 
 void SlideShow::jumpToPageIndex( sal_Int32 nPageIndex )
@@ -1101,7 +1099,7 @@ void SlideShow::StartInPlacePresentation()
         // show has ended.  If there already is a saved shell type then that is
         // not overwritten.
 
-        ViewShell::ShellType eShell = ViewShell::ST_NONE;
+        ViewShell::ShellType eShell = ViewShell::ShellType::None;
 
         ::std::shared_ptr<FrameworkHelper> pHelper(FrameworkHelper::Instance(*mpCurrentViewShellBase));
         ::std::shared_ptr<ViewShell> pMainViewShell(pHelper->GetViewShell(FrameworkHelper::msCenterPaneURL));
@@ -1109,7 +1107,7 @@ void SlideShow::StartInPlacePresentation()
         if( pMainViewShell )
             eShell = pMainViewShell->GetShellType();
 
-        if( eShell != ViewShell::ST_IMPRESS )
+        if (eShell != ViewShell::ShellType::Impress)
         {
             // Switch temporary to a DrawViewShell which supports the in-place presentation.
 
@@ -1234,11 +1232,6 @@ sal_Int32 SlideShow::GetDisplay()
 bool SlideShow::dependsOn( ViewShellBase const * pViewShellBase )
 {
     return mxController.is() && (pViewShellBase == mpCurrentViewShellBase) && mpFullScreenViewShellBase;
-}
-
-Reference< presentation::XPresentation2 > CreatePresentation( const SdDrawDocument& rDocument )
-{
-    return Reference< presentation::XPresentation2 >( SlideShow::Create( const_cast< SdDrawDocument* >( &rDocument ) ) );
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

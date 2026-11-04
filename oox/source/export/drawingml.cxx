@@ -272,6 +272,7 @@ DrawingML::DrawingML(::sax_fastparser::FSHelperPtr pFS, ::oox::core::XmlFilterBa
     , mbPlaceholder(false)
     , mbDiagaramExport(false)
     , mbDiagaramReplacementExport(false)
+    , mbDiagramModelTextExport(false)
 {
     uno::Reference<beans::XPropertySet> xSettings(pFB->getModelFactory()->createInstance(u"com.sun.star.document.Settings"_ustr), uno::UNO_QUERY);
     if (xSettings.is())
@@ -2738,6 +2739,14 @@ void DrawingML::WriteRunProperties(const Reference<XPropertySet>& rRun, sal_Int3
 
     assert(nSize >= 100 && "Minimum accepted value for fontsize(ST_TextFontSize) is 100");
 
+    // The data model of a Diagram defines the language, also holds no paragraph properties
+    if (isDiagramModelTextExport())
+    {
+        mpFS->singleElementNS(XML_a, nElement, XML_lang,
+                              sax_fastparser::UseIf(usLanguage, !usLanguage.isEmpty()));
+        return;
+    }
+
     mpFS->startElementNS( XML_a, nElement,
                           XML_lang, sax_fastparser::UseIf(usLanguage, !usLanguage.isEmpty()),
                           XML_sz, OString::number(nSize),
@@ -3631,6 +3640,11 @@ void DrawingML::WriteLinespacing(const LineSpacing& rSpacing, float fFirstCharHe
 
 bool DrawingML::WriteParagraphProperties(const Reference<XTextContent>& rParagraph, float fFirstCharHeight, sal_Int32 nElement)
 {
+    // The data model of a Diagram holds the text only. Attributes come from the layout,
+    // the style and the colours that the Diagram, so do not write here
+    if (isDiagramModelTextExport())
+        return false;
+
     Reference< XPropertySet > rXPropSet( rParagraph, UNO_QUERY );
     Reference< XPropertyState > rXPropState( rParagraph, UNO_QUERY );
     PropertyState eState;
@@ -7115,7 +7129,15 @@ void DrawingML::WriteDiagram(const css::uno::Reference<css::drawing::XShape>& rX
     // but can be different from diagram's own id
     const sal_Int32 nExpShapeId = nShapeId != -1 ? nShapeId : nDiagramId;
     pDocPrAttrList->add(XML_id, OString::number(nExpShapeId));
+    // A diagram that was given a name keeps it. One that has none is named after its number,
+    // which is what a reader shows for it.
     OString sName = "Diagram" + OString::number(nDiagramId);
+    if (uno::Reference<css::container::XNamed> xNamed{ rXShape, uno::UNO_QUERY })
+    {
+        const OUString aShapeName = xNamed->getName();
+        if (!aShapeName.isEmpty())
+            sName = OUStringToOString(aShapeName, RTL_TEXTENCODING_UTF8);
+    }
     pDocPrAttrList->add(XML_name, sName);
 
     if (GetDocumentType() == DOCUMENT_DOCX)

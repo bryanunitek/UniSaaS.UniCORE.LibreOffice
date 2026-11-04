@@ -18,11 +18,10 @@
 #include <sal/types.h>
 #include <comphelper/crypto/Crypto.hxx>
 
-namespace oox::crypto {
-
-struct OOX_DLLPUBLIC AgileEncryptionInfo
+namespace oox::crypto
 {
-    sal_Int32 spinCount;
+struct OOX_DLLPUBLIC AgileEncryptionParameters
+{
     sal_Int32 saltSize;
     sal_Int32 keyBits;
     sal_Int32 hashSize;
@@ -31,6 +30,17 @@ struct OOX_DLLPUBLIC AgileEncryptionInfo
     OUString cipherAlgorithm;
     OUString cipherChaining;
     OUString hashAlgorithm;
+};
+
+struct OOX_DLLPUBLIC AgileEncryptionInfo
+{
+    sal_Int32 spinCount;
+
+    // Parameters for encrypting the package
+    AgileEncryptionParameters keyData;
+
+    // Parameters for the password key encryptor
+    AgileEncryptionParameters passwordKey;
 
     std::vector<sal_uInt8> keyDataSalt;
 
@@ -48,19 +58,6 @@ struct OOX_DLLPUBLIC AgileEncryptionInfo
     std::vector<sal_uInt8> hmacEncryptedValue; // encrypted Hash
 };
 
-struct OOX_DLLPUBLIC AgileEncryptionParameters
-{
-    sal_Int32 spinCount;
-    sal_Int32 saltSize;
-    sal_Int32 keyBits;
-    sal_Int32 hashSize;
-    sal_Int32 blockSize;
-
-    OUString cipherAlgorithm;
-    OUString cipherChaining;
-    OUString hashAlgorithm;
-};
-
 enum class AgileEncryptionPreset
 {
     AES_128_SHA384,
@@ -76,29 +73,26 @@ private:
 
     void calculateHashFinal(std::u16string_view rPassword, std::vector<sal_uInt8>& aHashFinal);
 
-    void calculateBlock(
-            std::vector<sal_uInt8> const & rBlock,
-            std::vector<sal_uInt8>& rHashFinal,
-            std::vector<sal_uInt8>& rInput,
-            std::vector<sal_uInt8>& rOutput);
+    static void calculateBlock(const AgileEncryptionParameters& rParams,
+                               std::vector<sal_uInt8> const& rSalt,
+                               std::vector<sal_uInt8> const& rBlock,
+                               std::vector<sal_uInt8>& rHashFinal, std::vector<sal_uInt8>& rInput,
+                               std::vector<sal_uInt8>& rOutput);
 
-    void encryptBlock(
-            std::vector<sal_uInt8> const & rBlock,
-            std::vector<sal_uInt8>& rHashFinal,
-            std::vector<sal_uInt8>& rInput,
-            std::vector<sal_uInt8>& rOutput);
+    static void encryptBlock(const AgileEncryptionParameters& rParams,
+                             const std::vector<sal_uInt8>& rSalt,
+                             std::vector<sal_uInt8> const& rBlock,
+                             std::vector<sal_uInt8>& rHashFinal, std::vector<sal_uInt8>& rInput,
+                             std::vector<sal_uInt8>& rOutput);
 
-    static comphelper::CryptoType cryptoType(const AgileEncryptionInfo& rInfo);
+    static comphelper::CryptoType cryptoType(const AgileEncryptionParameters& rParams);
 
 public:
     AgileEngine();
 
-    AgileEncryptionInfo& getInfo() { return mInfo;}
+    AgileEncryptionInfo& getInfo() { return mInfo; }
 
-    void setPreset(AgileEncryptionPreset ePreset)
-    {
-        meEncryptionPreset = ePreset;
-    }
+    void setPreset(AgileEncryptionPreset ePreset) { meEncryptionPreset = ePreset; }
 
     // Decryption
 
@@ -106,9 +100,8 @@ public:
     bool decryptAndCheckVerifierHash(std::u16string_view rPassword);
 
     bool generateEncryptionKey(std::u16string_view rPassword) override;
-    bool readEncryptionInfo(css::uno::Reference<css::io::XInputStream> & rxInputStream) override;
-    bool decrypt(BinaryXInputStream& aInputStream,
-                 BinaryXOutputStream& aOutputStream) override;
+    bool readEncryptionInfo(css::uno::Reference<css::io::XInputStream>& rxInputStream) override;
+    bool decrypt(BinaryXInputStream& aInputStream, BinaryXOutputStream& aOutputStream) override;
 
     bool checkDataIntegrity() override;
 
@@ -119,11 +112,11 @@ public:
 
     void writeEncryptionInfo(BinaryXOutputStream& rStream) override;
 
-    void encrypt(const css::uno::Reference<css::io::XInputStream>&  rxInputStream,
+    void encrypt(const css::uno::Reference<css::io::XInputStream>& rxInputStream,
                  css::uno::Reference<css::io::XOutputStream>& rxOutputStream,
                  sal_uInt32 nSize) override;
 
-    bool setupEncryption(OUString const & rPassword) override;
+    bool setupEncryption(OUString const& rPassword) override;
 
     bool generateAndEncryptVerifierHash(std::u16string_view rPassword);
 
@@ -131,7 +124,7 @@ public:
     bool encryptHmacValue();
 
     bool encryptEncryptionKey(std::u16string_view rPassword);
-    void setupEncryptionParameters(AgileEncryptionParameters const & rAgileEncryptionParameters);
+    void setupEncryptionParameters(AgileEncryptionParameters const& rAgileEncryptionParameters);
     bool setupEncryptionKey(std::u16string_view rPassword);
 };
 

@@ -1720,7 +1720,7 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest3, testTdf139627)
     int rehmim = 0, kasreh = 1, jehtatweel = 2;
 
     CPPUNIT_ASSERT_EQUAL(u"رم"_ustr, sText[rehmim].trim());
-    CPPUNIT_ASSERT_EQUAL(OUString::fromUtf8("\xD9\x90\xD8\xAC"), sText[kasreh].trim());
+    CPPUNIT_ASSERT_EQUAL(OUString::fromUtf8("\xD8\xAC\xD9\x90"), sText[kasreh].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, sText[jehtatweel].trim());
 
     // "Kasreh" should be within "jeh" character
@@ -2245,6 +2245,34 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest3, testTdf171869)
     CPPUNIT_ASSERT_EQUAL(u"世솅"_ustr, aActualText);
 }
 
+CPPUNIT_TEST_FIXTURE(PdfExportTest3, testTdf173919)
+{
+// The embedded font has a CBDT table and no glyf or CFF table. Windows and macOS reject such fonts.
+#if !defined MACOSX && !defined _WIN32
+    vcl::filter::PDFDocument aDocument;
+    loadFromFile(u"tdf173919-bitmap-font-space.fodt");
+    save(TestFilter::PDF);
+    SvFileStream aStream(maTempFile.GetURL(), StreamMode::READ);
+    CPPUNIT_ASSERT(aDocument.Read(aStream));
+
+    // The space has no bitmap, but it must still go into the Type 3 font with the emoji. Without
+    // the fix in place, the space would go into a TrueType font subset with no glyf table,
+    // which PDF readers fail to load.
+    int nFonts = 0;
+    for (auto* pObject : aDocument.GetObjects())
+    {
+        auto pType = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Type"_ostr));
+        if (!pType || pType->GetValue() != "Font")
+            continue;
+        nFonts++;
+        auto pSubtype = dynamic_cast<vcl::filter::PDFNameElement*>(pObject->Lookup("Subtype"_ostr));
+        CPPUNIT_ASSERT(pSubtype);
+        CPPUNIT_ASSERT_EQUAL("Type3"_ostr, pSubtype->GetValue());
+    }
+    CPPUNIT_ASSERT_EQUAL(1, nFonts);
+#endif
+}
+
 CPPUNIT_TEST_FIXTURE(PdfExportTest3, testTdf48707_1)
 {
     // Import the bugdoc and export as PDF.
@@ -2565,9 +2593,9 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest3, testTdf134226)
 
     CPPUNIT_ASSERT_EQUAL(u"ة"_ustr, aText[0].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[1].trim());
-    CPPUNIT_ASSERT_EQUAL(u"\u0651ق"_ustr, aText[2].trim());
+    CPPUNIT_ASSERT_EQUAL(u"ق\r\n\u0651"_ustr, aText[2].trim());
     CPPUNIT_ASSERT_EQUAL(u"ش"_ustr, aText[3].trim());
-    CPPUNIT_ASSERT_EQUAL(u"\u0651ق"_ustr, aText[4].trim());
+    CPPUNIT_ASSERT_EQUAL(u"ق\u0651"_ustr, aText[4].trim());
     CPPUNIT_ASSERT_EQUAL(u"ش"_ustr, aText[5].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[6].trim());
     CPPUNIT_ASSERT_EQUAL(u"ة"_ustr, aText[7].trim());
@@ -2599,13 +2627,13 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest3, testTdf71956)
     CPPUNIT_ASSERT_EQUAL(size_t(12), aText.size());
 
     CPPUNIT_ASSERT_EQUAL(u"ه"_ustr, aText[0].trim());
-    CPPUNIT_ASSERT_EQUAL(u"\u064e\u0651\u0670ل"_ustr, aText[1].trim());
+    CPPUNIT_ASSERT_EQUAL(u"ل\u0670\u0651\u064e"_ustr, aText[1].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[2].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[3].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[4].trim());
     CPPUNIT_ASSERT_EQUAL(u"ل"_ustr, aText[5].trim());
     CPPUNIT_ASSERT_EQUAL(u"ل"_ustr, aText[6].trim());
-    CPPUNIT_ASSERT_EQUAL(u"\u064e\u0651\u0670ل"_ustr, aText[7].trim());
+    CPPUNIT_ASSERT_EQUAL(u"ل\u0670\u0651\u064e"_ustr, aText[7].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[8].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[9].trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText[10].trim());
@@ -3023,16 +3051,16 @@ CPPUNIT_TEST_FIXTURE(PdfExportTest3, testTdf140767SyriacJustification)
     CPPUNIT_ASSERT_EQUAL(size_t(11), aText.size());
 
     CPPUNIT_ASSERT_EQUAL(u"ܝ"_ustr, aText.at(0).trim());
-    CPPUNIT_ASSERT_EQUAL(u"ܺܛ"_ustr, aText.at(1).trim());
+    CPPUNIT_ASSERT_EQUAL(u"ܛܺ"_ustr, aText.at(1).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(2).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(3).trim());
     CPPUNIT_ASSERT_EQUAL(u"ܰܚ"_ustr, aText.at(4).trim());
     CPPUNIT_ASSERT_EQUAL(u"ܕ"_ustr, aText.at(5).trim()); // This span is whitespace justified
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(6).trim());
-    CPPUNIT_ASSERT_EQUAL(u"ܰܓ"_ustr, aText.at(7).trim());
+    CPPUNIT_ASSERT_EQUAL(u"ܓܰ"_ustr, aText.at(7).trim());
     CPPUNIT_ASSERT_EQUAL(u"ܒ"_ustr, aText.at(8).trim());
     CPPUNIT_ASSERT_EQUAL(u""_ustr, aText.at(9).trim());
-    CPPUNIT_ASSERT_EQUAL(u"ܰܐ"_ustr, aText.at(10).trim());
+    CPPUNIT_ASSERT_EQUAL(u"ܐܰ"_ustr, aText.at(10).trim());
 
     // Without kashida justification, this space will be 224.328
     CPPUNIT_ASSERT_LESS(90.0, aRect.at(5).getWidth());
