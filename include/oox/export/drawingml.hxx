@@ -321,6 +321,8 @@ protected:
     /// True when DiagramReplacementVisualization is exported
     bool mbDiagaramExport;
     bool mbDiagaramReplacementExport;
+    bool mbDiagramModelTextExport;
+    sal_Int32 mnDiagramModelTextParagraph;
 
     bool mbEmbedFonts = false;
 
@@ -360,9 +362,17 @@ protected:
     static bool EqualGradients( const css::awt::Gradient2& rGradient1, const css::awt::Gradient2& rGradient2 );
     bool IsFontworkShape(const css::uno::Reference< css::beans::XPropertySet >& rXShapePropSet);
 
+    /** Writes the shadow of the shape. rStoredEffect is the outerShdw entry of the effects kept
+        from the imported document, or empty. */
+    void WriteShadowEffect(const css::uno::Reference<css::beans::XPropertySet>& rXPropSet,
+                           const css::uno::Sequence<css::beans::PropertyValue>& rStoredEffect);
     void WriteGlowEffect(const css::uno::Reference<css::beans::XPropertySet>& rXPropSet);
     void WriteTextGlowEffect(const css::uno::Reference<css::beans::XPropertySet>& rXPropSet);
     void WriteSoftEdgeEffect(const css::uno::Reference<css::beans::XPropertySet>& rXPropSet);
+    /** Writes the reflection of the shape. rStoredEffect is the reflection entry of the effects
+        kept from the imported document, or empty. */
+    void WriteReflectionEffect(const css::uno::Reference<css::beans::XPropertySet>& rXPropSet,
+                               const css::uno::Sequence<css::beans::PropertyValue>& rStoredEffect);
     void WriteCustomGeometryPoint(const css::drawing::EnhancedCustomShapeParameterPair& rParamPair,
                                   const EnhancedCustomShape2d& rCustomShape2d,
                                   const bool bReplaceGeoWidth, const bool bReplaceGeoHeight);
@@ -391,6 +401,16 @@ public:
     bool isDiagaramExport() const { return mbDiagaramExport;}
 
     void SetParent(const css::uno::Reference<css::drawing::XShape>& xShape) { m_xParent = xShape; }
+
+    // True while the text of the data model of a Diagram is written
+    // nParagraph gives which paragraph of the shape represents the Point being written, and -1
+    // that the shape represents the Point with all its paragraphs.
+    void setDiagramModelTextExport(bool bNew, sal_Int32 nParagraph = -1)
+    {
+        mbDiagramModelTextExport = bNew;
+        mnDiagramModelTextParagraph = nParagraph;
+    }
+    bool isDiagramModelTextExport() const { return mbDiagramModelTextExport; }
 
     void SetBackgroundDark(bool bIsDark) { mbIsBackgroundDark = bIsDark; }
 

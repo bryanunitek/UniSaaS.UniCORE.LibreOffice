@@ -368,11 +368,11 @@ dnl checks build and host OSes
 dnl do this before argument processing to allow for platform dependent defaults
 dnl ===================================================================
 
-# are we running in wsl but are called from git-bash/env with mingw64 or clangarm64 in path?
+# are we running in wsl but are called from git-bash/env with mingw64, ucrt64 or clangarm64 in path?
 # if so, we aim to run nearly everything in the Windows realm, and only run autogen/configure
 # in wsl and run a few tools via wsl
 WSL_ONLY_AS_HELPER=
-if test -n "$WSL_DISTRO_NAME" && $(echo $PATH |grep -q -e mingw64 -e clangarm64); then
+if test -n "$WSL_DISTRO_NAME" && $(echo $PATH |grep -q -e mingw64 -e ucrt64 -e clangarm64); then
     WSL_ONLY_AS_HELPER=TRUE
     shortpath_cmd=$(wslpath -m $srcdir/solenv/bin/shortpath.cmd)
     if test -n "$PKG_CONFIG"; then
@@ -826,6 +826,11 @@ AC_ARG_WITH(android-api-level,
         [Specify the API level when building for Android. Defaults to 16 for ARM and x86 and to 21 for ARM64 and x86-64]),
 ,)
 
+AC_ARG_WITH(android-version-code,
+    AS_HELP_STRING([--with-android-version-code],
+        [Specify the versionCode for the app when building for Android. Defaults to 1]),
+,)
+
 ANDROID_NDK_DIR=
 if test -z "$with_android_ndk" -a -e "$SRC_ROOT/external/android-ndk" -a "$build" != "$host"; then
     with_android_ndk="$SRC_ROOT/external/android-ndk"
@@ -836,6 +841,11 @@ if test -n "$with_android_ndk"; then
     ANDROID_API_LEVEL=21
     if test -n "$with_android_api_level" ; then
         ANDROID_API_LEVEL="$with_android_api_level"
+    fi
+
+    ANDROID_VERSION_CODE=1
+    if test -n "$with_android_version_code" ; then
+        ANDROID_VERSION_CODE="$with_android_version_code"
     fi
 
     if test $host_cpu = arm; then
@@ -941,6 +951,7 @@ AC_SUBST(ANDROID_API_LEVEL)
 AC_SUBST(ANDROID_APP_ABI)
 AC_SUBST(ANDROID_SYSROOT_PLATFORM)
 AC_SUBST(ANDROID_TOOLCHAIN)
+AC_SUBST(ANDROID_VERSION_CODE)
 
 dnl ===================================================================
 dnl --with-android-sdk
@@ -1038,6 +1049,7 @@ case "$host_os" in
 
 solaris*)
     using_freetype_fontconfig=yes
+    using_unix_desktop=yes
     using_x11=yes
     build_skia=yes
     _os=SunOS
@@ -1064,6 +1076,7 @@ solaris*)
 
 linux-gnu*|k*bsd*-gnu*|linux-musl*)
     using_freetype_fontconfig=yes
+    using_unix_desktop=yes
     using_x11=yes
     build_skia=yes
     test_gdb_index=yes
@@ -1076,6 +1089,7 @@ linux-gnu*|k*bsd*-gnu*|linux-musl*)
 
 gnu)
     using_freetype_fontconfig=yes
+    using_unix_desktop=no
     using_x11=no
     _os=GNU
      ;;
@@ -1097,6 +1111,7 @@ cygwin*|wsl*)
     else
         using_freetype_fontconfig=yes
     fi
+    using_unix_desktop=no
     using_x11=no
     test_unix_dlapi=no
     test_openldap=no
@@ -1123,6 +1138,7 @@ darwin*) # macOS
     else
         using_freetype_fontconfig=yes
     fi
+    using_unix_desktop=no
     using_x11=no
     build_skia=yes
     enable_pagein=no
@@ -1154,6 +1170,7 @@ darwin*) # macOS
 
 ios*) # iOS
     using_freetype_fontconfig=no
+    using_unix_desktop=no
     using_x11=no
     build_crypto=no
     test_libcmis=no
@@ -1197,6 +1214,7 @@ ios*) # iOS
 
 freebsd*)
     using_freetype_fontconfig=yes
+    using_unix_desktop=yes
     using_x11=yes
     build_skia=yes
     AC_MSG_CHECKING([the FreeBSD operating system release])
@@ -1223,6 +1241,7 @@ freebsd*)
 
 *netbsd*)
     using_freetype_fontconfig=yes
+    using_unix_desktop=yes
     using_x11=yes
     test_gtk3_kde5=no
     build_skia=yes
@@ -1232,6 +1251,7 @@ freebsd*)
 
 openbsd*)
     using_freetype_fontconfig=yes
+    using_unix_desktop=yes
     using_x11=yes
     PTHREAD_CFLAGS="-D_THREAD_SAFE"
     PTHREAD_LIBS="-pthread"
@@ -1240,6 +1260,7 @@ openbsd*)
 
 dragonfly*)
     using_freetype_fontconfig=yes
+    using_unix_desktop=yes
     using_x11=yes
     build_skia=yes
     PTHREAD_LIBS="-pthread"
@@ -1251,6 +1272,7 @@ linux-android*)
     usable_dlapi=no
     using_freetype_fontconfig=yes
     using_headless_plugin=no
+    using_unix_desktop=no
     using_x11=no
     build_crypto=no
     test_openldap=no
@@ -1270,6 +1292,7 @@ linux-android*)
 
 haiku*)
     using_freetype_fontconfig=yes
+    using_unix_desktop=no
     using_x11=no
     test_gtk3=no
     test_gtk3_kde5=no
@@ -1288,6 +1311,7 @@ emscripten)
     # API currently just exists in headers, not code
     usable_dlapi=no
     using_freetype_fontconfig=yes
+    using_unix_desktop=yes
     using_x11=yes
     test_openldap=no
     test_qt5=yes
@@ -1309,22 +1333,22 @@ esac
 
 AC_SUBST(HOST_PLATFORM)
 
-if test -z "$using_x11" -o -z "$using_freetype_fontconfig"; then
-    AC_MSG_ERROR([You must set \$using_freetype_fontconfig and \$using_x11 for your platform])
+if test -z "$using_unix_desktop" -o -z "$using_freetype_fontconfig"; then
+    AC_MSG_ERROR([You must set \$using_freetype_fontconfig and \$using_unix_desktop for your platform])
 fi
 
 # Set defaults, if not set by platform
-test "${test_cpdb+set}" = set || test_cpdb="$using_x11"
-test "${test_cups+set}" = set || test_cups="$using_x11"
-test "${test_dbus+set}" = set || test_dbus="$using_x11"
+test "${test_cpdb+set}" = set || test_cpdb="$using_unix_desktop"
+test "${test_cups+set}" = set || test_cups="$using_unix_desktop"
+test "${test_dbus+set}" = set || test_dbus="$using_unix_desktop"
 test "${test_gen+set}" = set || test_gen="$using_x11"
-test "${test_gstreamer_1_0+set}" = set || test_gstreamer_1_0="$using_x11"
-test "${test_gtk3+set}" = set || test_gtk3="$using_x11"
-test "${test_gtk4+set}" = set || test_gtk4="$using_x11"
-test "${test_kf5+set}" = set || test_kf5="$using_x11"
-test "${test_kf6+set}" = set || test_kf6="$using_x11"
+test "${test_gstreamer_1_0+set}" = set || test_gstreamer_1_0="$using_unix_desktop"
+test "${test_gtk3+set}" = set || test_gtk3="$using_unix_desktop"
+test "${test_gtk4+set}" = set || test_gtk4="$using_unix_desktop"
+test "${test_kf5+set}" = set || test_kf5="$using_unix_desktop"
+test "${test_kf6+set}" = set || test_kf6="$using_unix_desktop"
 # don't handle test_qt5, so it can disable test_kf5 later
-test "${test_qt6+set}" = set || test_qt6="$using_x11"
+test "${test_qt6+set}" = set || test_qt6="$using_unix_desktop"
 test "${test_randr+set}" = set || test_randr="$using_x11"
 test "${test_xrender+set}" = set || test_xrender="$using_x11"
 test "${using_headless_plugin+set}" = set || using_headless_plugin="$using_freetype_fontconfig"
@@ -1344,13 +1368,12 @@ test "$test_win" != yes && enable_win=no
 test "$using_freetype_fontconfig" = no && using_headless_plugin=no
 test "$using_freetype_fontconfig" = yes && test_cairo=yes
 
-# Keep in sync with the above $using_x11 depending test default list
-disable_x11_tests()
+# Keep in sync with the above $using_unix_desktop depending test default list
+disable_unix_desktop_tests()
 {
     test_cpdb=no
     test_cups=no
     test_dbus=no
-    test_gen=no
     test_gstreamer_1_0=no
     test_gtk3_kde5=no
     test_gtk3=no
@@ -1359,10 +1382,17 @@ disable_x11_tests()
     test_kf6=no
     test_qt5=no
     test_qt6=no
+}
+
+# Keep in sync with the above $using_x11 depending test default list
+disable_x11_tests()
+{
+    test_gen=no
     test_randr=no
     test_xrender=no
 }
 
+test "$using_unix_desktop" = yes && USING_UNIX_DESKTOP=TRUE
 test "$using_x11" = yes && USING_X11=TRUE
 
 if test "$using_freetype_fontconfig" = yes; then
@@ -1391,6 +1421,7 @@ AC_SUBST(USE_HEADLESS_CODE)
 AC_MSG_NOTICE([VCL platform has a usable dynamic loading API: $usable_dlapi])
 AC_MSG_NOTICE([VCL platform uses freetype+fontconfig: $using_freetype_fontconfig])
 AC_MSG_NOTICE([VCL platform uses headless plugin: $using_headless_plugin])
+AC_MSG_NOTICE([VCL platform uses a Unix desktop: $using_unix_desktop])
 AC_MSG_NOTICE([VCL platform uses X11: $using_x11])
 
 # ===================================================================
@@ -3880,10 +3911,10 @@ if test $_os = Darwin; then
     # we don't target the lower versions anymore, so it doesn't matter that we don't generate the
     # correct version in case such an old SDK is specified, it will be rejected later anyway
     MACOSX_SDK_VERSION=$(echo $macosx_sdk | $AWK -F. '{ print $1*10000+$2*100+$3 }')
-    # we require Xcode 14.2 or later, and thus macOS SDK 13.1 or later/older versions might work
+    # we require Xcode 16.2 or later, and thus macOS SDK 15.2 or later/older versions might work
     # but are untested
-    if test $MACOSX_SDK_VERSION -lt 130300; then
-        AC_MSG_ERROR([macOS SDK $macosx_sdk is not supported, lowest supported version is 13.3])
+    if test $MACOSX_SDK_VERSION -lt 150200; then
+        AC_MSG_ERROR([macOS SDK $macosx_sdk is not supported, lowest supported version is 15.2])
     fi
     AC_MSG_RESULT([macOS SDK $macosx_sdk at $MACOSX_SDK_PATH])
 
@@ -3916,19 +3947,10 @@ if test $_os = Darwin; then
     my_xcode_ver1=$(xcrun xcodebuild -version | head -n 1)
     my_xcode_ver2=${my_xcode_ver1#Xcode }
     my_xcode_ver3=$(printf %s "$my_xcode_ver2" | $AWK -F. '{ print $1*100+($2<100?$2:99) }')
-    if test "$my_xcode_ver3" -ge 1403; then
+    if test "$my_xcode_ver3" -ge 1602; then
         AC_MSG_RESULT([yes ($my_xcode_ver2)])
-        if test $MAC_OS_X_VERSION_MIN_REQUIRED -lt 120000; then
-            if test "$my_xcode_ver3" -eq 1500; then
-                dnl the bug was already fixed on 15.1 and 15.2 still has the same OS requirements as 15.0
-                dnl in other words all affected users could update to a working Xcode version
-                AC_MSG_WARN([Use a current version of XCode or bump the minimum deployment target])
-                AC_MSG_WARN([[see https://developer.apple.com/documentation/xcode-release-notes/xcode-15-release-notes#Linking]])
-                AC_MSG_ERROR([Xcode 15.0 has a bug in the new linker that causes runtime crashes on macOS 11 - aborting])
-            fi
-        fi
     else
-        AC_MSG_ERROR(["$my_xcode_ver1" is too old or unrecognized, must be at least Xcode 14.3])
+        AC_MSG_ERROR(["$my_xcode_ver1" is too old or unrecognized, must be at least Xcode 16.2])
     fi
 
     my_xcode_ver1=$(xcrun xcodebuild -version | tail -n 1)
@@ -4240,7 +4262,7 @@ reg_get_value()
         regvalue=$($WSL_LO_HELPER --read-registry $1 "$2/$3" 2>/dev/null)
         return
     elif test -n "$WSL_ONLY_AS_HELPER"; then
-        regvalue=$(reg.exe query "$(echo $2 | tr '/' '\\')" /v "$3" /reg:$1 |sed -ne "s|\s*$3.*REG_SZ\s*\(.*\)[\s\r]*$|\1|p")
+        regvalue=$(reg.exe query "$(echo $2 | tr '/' '\\')" /v "$3" /reg:$1 2>/dev/null |sed -ne "s|\s*$3.*REG_SZ\s*\(.*\)[\s\r]*$|\1|p")
         return
     fi
 
@@ -6042,9 +6064,10 @@ fi
 
 DISABLE_GUI=""
 if test "$enable_gui" = "no"; then
-    if test "$using_x11" != yes; then
+    if test "$using_unix_desktop" != yes; then
         AC_MSG_ERROR([$host_os operating system is not suitable to build LibreOffice with --disable-gui.])
     fi
+    USING_UNIX_DESKTOP=
     USING_X11=
     DISABLE_GUI=TRUE
     test_epoxy=no
@@ -6061,19 +6084,31 @@ if test -z "$USING_X11" -a "$enable_qt5" = "yes" -a "$enable_gen" = "yes"; then
     AC_MSG_ERROR([Can't select gen VCL plugin, if --without-x is used!])
 fi
 
+if test -z "$USING_UNIX_DESKTOP" -a "$USING_X11" = TRUE; then
+    AC_MSG_ERROR([Platform doesn't support a Unix desktop (\$using_unix_desktop), but \$USING_X11 is set!])
+fi
+
 if test "$using_x11" = yes; then
     if test "$USING_X11" = TRUE; then
         AC_DEFINE(USING_X11)
     else
         disable_x11_tests
-        if test "$DISABLE_DYNLOADING" = TRUE; then
-            test_qt5=yes
-            test_qt6=yes
-        fi
     fi
 else
     if test "$USING_X11" = TRUE; then
         AC_MSG_ERROR([Platform doesn't support X11 (\$using_x11), but \$USING_X11 is set!])
+    fi
+fi
+
+if test "$using_unix_desktop" = yes; then
+    if test "$USING_UNIX_DESKTOP" = TRUE; then
+        AC_DEFINE(USING_UNIX_DESKTOP)
+    else
+        disable_unix_desktop_tests
+        if test "$DISABLE_DYNLOADING" = TRUE; then
+            test_qt5=yes
+            test_qt6=yes
+        fi
     fi
 fi
 
@@ -6086,6 +6121,7 @@ AC_SUBST(CPUNAME)
 AC_SUBST(RTL_OS)
 AC_SUBST(RTL_ARCH)
 AC_SUBST(EPM_FLAGS)
+AC_SUBST(USING_UNIX_DESKTOP)
 AC_SUBST(USING_X11)
 AC_SUBST([INSTDIR])
 AC_SUBST([INSTROOT])
@@ -8326,18 +8362,24 @@ dnl C++11
 dnl ===================================================================
 
 if test -z "${CXXFLAGS_CXX11+x}"; then
-    AC_MSG_CHECKING([whether $CXX_BASE supports C++20])
+    AC_MSG_CHECKING([whether $CXX_BASE supports C++23])
     if test "$COM" = MSC -a "$COM_IS_CLANG" != TRUE; then
-        if test "$with_latest_c__" = yes; then
+        # /std:c++23 will only arrive in MSVC 14.52, so we have to
+        # use c++latest for older build tool versions
+        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+            #if _MSC_VER < 1952
+            #endif
+        ]])],[with_latest_c__=yes])
+        if test "$with_latest_c__" = "yes"; then
             CXXFLAGS_CXX11=-std:c++latest
         else
-            CXXFLAGS_CXX11=-std:c++20
+            CXXFLAGS_CXX11=-std:c++23
         fi
         CXXFLAGS_CXX11="$CXXFLAGS_CXX11 -permissive- -Zc:__cplusplus,preprocessor"
     elif test "$GCC" = "yes" -o "$COM_IS_CLANG" = TRUE; then
-        my_flags='-std=c++20 -std=c++2a'
-        if test "$with_latest_c__" = yes; then
-            my_flags="-std=c++29 -std=c++2d -std=c++26 -std=c++2c -std=c++23 -std=c++2b $my_flags"
+        my_flags='-std=c++23 -std=c++2b'
+        if test "$with_latest_c__" = "yes"; then
+            my_flags="-std=c++29 -std=c++2d -std=c++26 -std=c++2c $my_flags"
         fi
         for flag in $my_flags; do
             if test "$COM" = MSC; then
@@ -10141,6 +10183,8 @@ if test "x$with_system_md4c" = "xauto"; then
 fi
 
 AC_MSG_CHECKING([which md4c to use])
+MD4C_MAJOR=0
+MD4C_MINOR=6
 case "$with_system_md4c" in
   yes)
     AC_MSG_RESULT([system])
@@ -10160,6 +10204,10 @@ case "$with_system_md4c" in
     AC_CHECK_LIB([md4c-html], [md_html],
       [ MD4C_LIBS="$MD4C_LIBS -lmd4c-html" ],
       [ AC_MSG_ERROR([system md4c-html library not found or broken.]) ])
+
+    MD4C_VERSION=`$PKG_CONFIG --modversion md4c 2>/dev/null`
+    MD4C_MAJOR=`echo $MD4C_VERSION | cut -d"." -f1`
+    MD4C_MINOR=`echo $MD4C_VERSION | cut -d"." -f2`
     ;;
 
   ""|no)
@@ -10179,6 +10227,9 @@ AC_SUBST(SYSTEM_MD4C)
 AC_SUBST(MD4C_LIBS)
 AC_SUBST(MD4C_CFLAGS)
 AC_SUBST(BUILD_TYPE)
+
+AC_DEFINE_UNQUOTED(MD4C_MAJOR,$MD4C_MAJOR)
+AC_DEFINE_UNQUOTED(MD4C_MINOR,$MD4C_MINOR)
 
 dnl ===================================================================
 dnl Check for system jpeg
@@ -10834,7 +10885,7 @@ if test \( "$cross_compiling" = yes -a -z "$PYTHON_FOR_BUILD" \) -o "$enable_pyt
     SYSTEM_PYTHON=
     PYTHON_VERSION_MAJOR=3
     PYTHON_VERSION_MINOR=13
-    PYTHON_VERSION=${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}.15
+    PYTHON_VERSION=${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}.18
     if ! grep -q -i python.*${PYTHON_VERSION} ${SRC_ROOT}/download.lst; then
         AC_MSG_ERROR([PYTHON_VERSION ${PYTHON_VERSION} but no matching file in download.lst])
     fi
@@ -11729,8 +11780,8 @@ fi
 dnl ===================================================================
 dnl Check for system icu
 dnl ===================================================================
-ICU_MAJOR=78
-ICU_MINOR=3
+ICU_MAJOR=79
+ICU_MINOR=1
 ICU_CFLAGS_internal="-I${WORKDIR}/UnpackedTarball/icu/source/i18n -I${WORKDIR}/UnpackedTarball/icu/source/common"
 ICU_LIBS_internal="-L${WORKDIR}/UnpackedTarball/icu/source/lib -licuuc"
 libo_CHECK_SYSTEM_MODULE([icu],[ICU],[icu-i18n >= 66])
@@ -11857,7 +11908,7 @@ harfbuzz_required_version=14.3.0
 GRAPHITE_CFLAGS_internal="-I${WORKDIR}/UnpackedTarball/graphite/include -DGRAPHITE2_STATIC"
 HARFBUZZ_CFLAGS_internal="-I${WORKDIR}/UnpackedTarball/harfbuzz/src"
 case "$_os" in
-    Linux)
+    FreeBSD|Linux)
         GRAPHITE_LIBS_internal='$(gb_StaticLibrary_WORKDIR)/libgraphite.a'
         HARFBUZZ_LIBS_internal='$(gb_UnpackedTarball_workdir)/harfbuzz/builddir/src/libharfbuzz.a $(gb_UnpackedTarball_workdir)/harfbuzz/builddir/src/libharfbuzz-subset.a $(GRAPHITE_LIBS)'
         ;;
@@ -11928,7 +11979,7 @@ if test "$USING_X11" = TRUE; then
         [AC_MSG_ERROR(SM library not found)])
 fi
 
-if test "$USING_X11" = TRUE -a "$ENABLE_JAVA" != ""; then
+if test "$USING_UNIX_DESKTOP" = TRUE -a "$ENABLE_JAVA" != ""; then
     # bean/native/unix/com_sun_star_comp_beans_LocalOfficeWindow.c needs Xt
     AC_CHECK_HEADERS(X11/Intrinsic.h,[],[AC_MSG_ERROR([libXt headers not found])])
 fi
@@ -12277,7 +12328,7 @@ dnl Check for system box2d
 dnl ===================================================================
 AC_MSG_CHECKING([which box2d to use])
 BOX2D_MAJOR=3
-BOX2D_MINOR=1
+BOX2D_MINOR=2
 if test "$with_system_box2d" = "yes"; then
     AC_MSG_RESULT([external])
     SYSTEM_BOX2D=TRUE
@@ -12419,7 +12470,7 @@ AC_SUBST(COINMP_LIBS)
 dnl ===================================================================
 dnl Checking for libexttextcat
 dnl ===================================================================
-libo_CHECK_SYSTEM_MODULE([libexttextcat],[LIBEXTTEXTCAT],[libexttextcat >= 3.4.1])
+libo_CHECK_SYSTEM_MODULE([libexttextcat],[LIBEXTTEXTCAT],[libexttextcat >= 3.4.9])
 if test "$with_system_libexttextcat" = "yes"; then
     SYSTEM_LIBEXTTEXTCAT_DATA=file://`$PKG_CONFIG --variable=pkgdatadir libexttextcat`
 fi
@@ -12715,7 +12766,7 @@ if test "$test_gtk3" = yes -a "x$enable_gtk3" = "xyes" -o "x$enable_gtk3_kde5" =
         add_warning 'Non-system cairo combined with gtk3 is known to cause trouble (eg. broken image in the splashscreen). Use --with-system-cairo unless you know what you are doing.'
     fi
     : ${with_system_cairo:=yes}
-    PKG_CHECK_MODULES(GTK3, gtk+-3.0 >= 3.24 gmodule-no-export-2.0 glib-2.0 >= 2.38 atk >= 2.36 cairo)
+    PKG_CHECK_MODULES(GTK3, gtk+-3.0 >= 3.24 gmodule-no-export-2.0 glib-2.0 >= 2.68 atk >= 2.36 cairo)
     GTK3_CFLAGS=$(printf '%s' "$GTK3_CFLAGS" | sed -e "s/-I/${ISYSTEM?}/g")
     GTK3_CFLAGS="$GTK3_CFLAGS -DGDK_DISABLE_DEPRECATED -DGTK_DISABLE_DEPRECATED"
     FilterLibs "${GTK3_LIBS}"
@@ -12752,7 +12803,7 @@ if test "$test_gtk4" = yes -a "x$enable_gtk4" = "xyes"; then
         add_warning 'Non-system cairo combined with gtk4 is assumed to cause trouble; proceed at your own risk.'
     fi
     : ${with_system_cairo:=yes}
-    PKG_CHECK_MODULES(GTK4, gtk4 >= 4.10 gmodule-no-export-2.0 glib-2.0 >= 2.38 cairo)
+    PKG_CHECK_MODULES(GTK4, gtk4 >= 4.10 gmodule-no-export-2.0 glib-2.0 >= 2.68 cairo)
     GTK4_CFLAGS=$(printf '%s' "$GTK4_CFLAGS" | sed -e "s/-I/${ISYSTEM?}/g")
     GTK4_CFLAGS="$GTK4_CFLAGS -DGDK_DISABLE_DEPRECATED -DGTK_DISABLE_DEPRECATED"
     FilterLibs "${GTK4_LIBS}"
@@ -12856,7 +12907,7 @@ if test "$test_dbus" = "yes"; then
 
     # Glib is needed for BluetoothServer
     # Sets also DBUS_GLIB_CFLAGS/DBUS_GLIB_LIBS if successful.
-    PKG_CHECK_MODULES(DBUS_GLIB,[glib-2.0 >= 2.4],
+    PKG_CHECK_MODULES(DBUS_GLIB,[glib-2.0 >= 2.68],
         [
             DBUS_HAVE_GLIB="TRUE"
             AC_DEFINE(DBUS_HAVE_GLIB,1)
@@ -13032,8 +13083,10 @@ elif test $_os = WINNT; then
     AC_DEFINE(HAVE_FEATURE_OPENGL,1)
     ENABLE_OPENGL_CANVAS=TRUE
 else
-    if test "$USING_X11" = TRUE; then
-        AC_CHECK_LIB(GL, glBegin, [:], AC_MSG_ERROR([libGL required.]))
+    if test "$USING_UNIX_DESKTOP" = TRUE; then
+        if test -z "$ENABLE_EPOXY"; then
+            AC_MSG_ERROR([libepoxy is required for OpenGL support])
+        fi
         ENABLE_OPENGL_TRANSITIONS=TRUE
         AC_DEFINE(HAVE_FEATURE_OPENGL,1)
         ENABLE_OPENGL_CANVAS=TRUE
@@ -14972,7 +15025,7 @@ if test "$need_meson" = "yes"; then
                     # the internal meson if the external meson's version is
                     # too old
                     if test $_os = Darwin; then
-                        if $MACOSX_SDK_VERSION -ge 260000; then
+                        if test $MACOSX_SDK_VERSION -ge 260000; then
                           _meson_minver=1.8.3
                         fi
                     fi
@@ -14986,7 +15039,7 @@ if test "$need_meson" = "yes"; then
                     else
                         AC_MSG_RESULT([yes])
                         AC_MSG_CHECKING([min version of meson required])
-                        AC_MSG_RESULT([$meson_minver])
+                        AC_MSG_RESULT([$_meson_minver])
                     fi
                 else
                     AC_MSG_RESULT([no])
@@ -16562,6 +16615,7 @@ AC_CONFIG_HEADERS([config_host/config_lgpl.h])
 AC_CONFIG_HEADERS([config_host/config_libcxx.h])
 AC_CONFIG_HEADERS([config_host/config_liblangtag.h])
 AC_CONFIG_HEADERS([config_host/config_locales.h])
+AC_CONFIG_HEADERS([config_host/config_md4c.h])
 AC_CONFIG_HEADERS([config_host/config_mpl.h])
 AC_CONFIG_HEADERS([config_host/config_oox.h])
 AC_CONFIG_HEADERS([config_host/config_options.h])

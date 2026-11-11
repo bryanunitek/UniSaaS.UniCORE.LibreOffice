@@ -67,6 +67,12 @@ xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.
 
     <rng:define name="style-graphic-properties-attlist">
       <rng:interleave>
+        <!-- https://issues.oasis-open.org/browse/OFFICE-4142 -->
+        <rng:optional>
+          <rng:attribute name="draw:decorative">
+            <rng:ref name="boolean"/>
+          </rng:attribute>
+        </rng:optional>
         <rng:optional>
           <rng:attribute name="draw:stroke">
             <rng:choice>
@@ -1021,6 +1027,13 @@ xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.
         <rng:optional>
           <rng:attribute name="loext:parent-name">
             <rng:ref name="string"/>
+          </rng:attribute>
+        </rng:optional>
+        <!-- The moment the comment was written. dc:date carries the author's wall clock with
+             no zone, so this is what pins the comment to a point in time. -->
+        <rng:optional>
+          <rng:attribute name="loext:date-utc">
+            <rng:ref name="dateTime"/>
           </rng:attribute>
         </rng:optional>
       </rng:interleave>
@@ -2183,7 +2196,73 @@ xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.
     </rng:element>
   </rng:define>
 
-   </rng:include>
+    <rng:define name="draw-g">
+      <rng:element name="draw:g">
+        <rng:ref name="draw-g-attlist"/>
+        <rng:ref name="common-draw-z-index-attlist"/>
+        <rng:ref name="common-draw-name-attlist"/>
+        <rng:ref name="common-draw-id-attlist"/>
+        <rng:ref name="common-draw-style-name-attlist"/>
+        <rng:ref name="common-text-spreadsheet-shape-attlist"/>
+        <rng:ref name="common-draw-caption-id-attlist"/>
+        <!-- For SmartArt round-trip (Armin Le Grand) CO 26.04 -->
+        <rng:optional>
+          <rng:ref name="loext-diagram"/>
+        </rng:optional>
+        <!-- https://issues.oasis-open.org/browse/OFFICE-4132 -->
+        <rng:ref name="common-draw-shape-accessibility"/>
+        <rng:optional>
+          <rng:ref name="office-event-listeners"/>
+        </rng:optional>
+        <rng:zeroOrMore>
+          <rng:ref name="draw-glue-point"/>
+        </rng:zeroOrMore>
+        <rng:zeroOrMore>
+          <rng:ref name="shape"/>
+        </rng:zeroOrMore>
+      </rng:element>
+    </rng:define>
+
+    <rng:define name="anim-transition-filter-attlist">
+      <rng:interleave>
+        <rng:attribute name="smil:type">
+          <rng:ref name="string"/>
+        </rng:attribute>
+        <rng:optional>
+          <rng:attribute name="smil:subtype">
+            <rng:ref name="string"/>
+          </rng:attribute>
+        </rng:optional>
+        <!-- A subtype that has no SMIL name, e.g. airplane: smil:subtype has a fallback then. -->
+        <rng:optional>
+          <rng:attribute name="loext:subtype">
+            <rng:ref name="string"/>
+          </rng:attribute>
+        </rng:optional>
+        <rng:optional>
+          <rng:attribute name="smil:direction">
+            <rng:choice>
+              <rng:value>forward</rng:value>
+              <rng:value>reverse</rng:value>
+            </rng:choice>
+          </rng:attribute>
+        </rng:optional>
+        <rng:optional>
+          <rng:attribute name="smil:fadeColor">
+            <rng:ref name="color"/>
+          </rng:attribute>
+        </rng:optional>
+        <rng:optional>
+          <rng:attribute name="smil:mode">
+            <rng:choice>
+              <rng:value>in</rng:value>
+              <rng:value>out</rng:value>
+            </rng:choice>
+          </rng:attribute>
+        </rng:optional>
+      </rng:interleave>
+    </rng:define>
+  </rng:include>
 
     <!-- TODO no proposal -->
   <rng:define name="loext-threaded-comment">
@@ -3292,6 +3371,15 @@ xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.
     </rng:optional>
   </rng:define>
 
+  <!-- TODO no proposal -->
+  <rng:define name="style-paragraph-properties-attlist" combine="interleave">
+    <rng:optional>
+      <rng:attribute name="loext:hyphenation-split-compound-word">
+        <rng:ref name="boolean"/>
+      </rng:attribute>
+    </rng:optional>
+  </rng:define>
+
   <!-- https://issues.oasis-open.org/browse/OFFICE-4165 -->
   <rng:define name="cssLength">
     <rng:data type="string">
@@ -4350,6 +4438,45 @@ xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.
     </rng:optional>
   </rng:define>
 
+  <!-- TODO no proposal: a mirrored copy of the shape below it, fading out away from the shape -->
+  <rng:define name="style-graphic-properties-attlist" combine="interleave">
+    <rng:optional>
+      <rng:attribute name="loext:reflection">
+        <rng:ref name="boolean"/>
+      </rng:attribute>
+    </rng:optional>
+    <rng:optional>
+      <rng:attribute name="loext:reflection-distance">
+        <rng:ref name="nonNegativeLength"/>
+      </rng:attribute>
+    </rng:optional>
+    <rng:optional>
+      <rng:attribute name="loext:reflection-blur">
+        <rng:ref name="nonNegativeLength"/>
+      </rng:attribute>
+    </rng:optional>
+    <rng:optional>
+      <rng:attribute name="loext:reflection-start-transparency">
+        <rng:ref name="zeroToHundredPercent"/>
+      </rng:attribute>
+    </rng:optional>
+    <rng:optional>
+      <rng:attribute name="loext:reflection-start-position">
+        <rng:ref name="zeroToHundredPercent"/>
+      </rng:attribute>
+    </rng:optional>
+    <rng:optional>
+      <rng:attribute name="loext:reflection-end-transparency">
+        <rng:ref name="zeroToHundredPercent"/>
+      </rng:attribute>
+    </rng:optional>
+    <rng:optional>
+      <rng:attribute name="loext:reflection-end-position">
+        <rng:ref name="zeroToHundredPercent"/>
+      </rng:attribute>
+    </rng:optional>
+  </rng:define>
+
   <!-- TODO no proposal -->
   <rng:define name="paragraph-attrs" combine="interleave">
     <rng:optional>
@@ -4544,4 +4671,13 @@ xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.
     </rng:optional>
   </rng:define>
 
+  <!-- For SmartArt round-trip (Armin Le Grand) CO 26.04 -->
+  <rng:define name="loext-diagram">
+    <rng:element name="loext:diagram">
+      <rng:element name="loext:layout"><rng:ref name="string"/></rng:element>
+      <rng:element name="loext:data"><rng:ref name="string"/></rng:element>
+      <rng:element name="loext:colors"><rng:ref name="string"/></rng:element>
+      <rng:element name="loext:quickstyle"><rng:ref name="string"/></rng:element>
+    </rng:element>
+  </rng:define>
 </rng:grammar>

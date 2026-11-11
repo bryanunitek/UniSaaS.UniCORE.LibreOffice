@@ -204,7 +204,9 @@ bool SwGrfNode::ReRead(
                 else if ( bNewGrf )
                 {
                     //TODO refLink->setInputStream(getInputStream());
-                    mxLink->SwapIn();
+                    SwDocShell* pDocSh = GetDoc().GetDocShell();
+                    if (!pDocSh || pDocSh->getEmbeddedObjectContainer().getUserAllowsLinkUpdate())
+                        mxLink->SwapIn();
                 }
             }
             onGraphicChanged();
@@ -479,6 +481,11 @@ bool SwGrfNode::SwapIn(bool bWaitForData)
     }
     mbInSwapIn = false;
     return bRet;
+}
+
+bool SwGrfNode::IsLinkedFile() const
+{
+    return mxLink.is() && sfx2::SvBaseLinkObjectType::ClientGraphic == mxLink->GetObjType();
 }
 
 bool SwGrfNode::GetFileFilterNms( OUString* pFileNm, OUString* pFilterNm ) const

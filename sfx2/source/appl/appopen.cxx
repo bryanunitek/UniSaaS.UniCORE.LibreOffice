@@ -91,8 +91,8 @@
 #include <sfx2/filedlghelper.hxx>
 #include <sfx2/templatedlg.hxx>
 #include <sfx2/sfxsids.hrc>
-#include <o3tl/string_view.hxx>
 #include <openuriexternally.hxx>
+#include <tools/hostfilter.hxx>
 
 #include <officecfg/Office/ProtocolHandler.hxx>
 #include <officecfg/Office/Security.hxx>
@@ -596,18 +596,7 @@ void SfxApplication::OpenDocExec_Impl( SfxRequest& rReq )
         OUString aCommand( pFileNameItem->GetValue() );
         const SfxSlot* pSlot = GetInterface()->GetSlot( aCommand );
         if ( pSlot )
-        {
             pFileNameItem = nullptr;
-        }
-        else
-        {
-            if ( aCommand.startsWith("slot:") )
-            {
-                sal_uInt16 nSlotId = static_cast<sal_uInt16>(o3tl::toInt32(aCommand.subView(5)));
-                if ( nSlotId == SID_OPENDOC )
-                    pFileNameItem = nullptr;
-            }
-        }
     }
 
     if ( !pFileNameItem )
@@ -788,6 +777,12 @@ void SfxApplication::OpenDocExec_Impl( SfxRequest& rReq )
     const SfxStringItem* pFileName = rReq.GetArg(SID_FILE_NAME);
     assert(pFileName && "SID_FILE_NAME is required");
     OUString aFileName = pFileName->GetValue();
+
+    if (HostFilter::isFileUrlForbidden(aFileName))
+    {
+        SAL_WARN("sfx.appl", "SID_OPENDOC: blocked file path: \"" << aFileName << "\"");
+        return;
+    }
 
     OUString aReferer;
     const SfxStringItem* pRefererItem = rReq.GetArg(SID_REFERER);

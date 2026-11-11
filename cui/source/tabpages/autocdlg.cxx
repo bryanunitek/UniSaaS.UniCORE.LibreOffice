@@ -89,20 +89,20 @@ OfaAutoCorrDlg::OfaAutoCorrDlg(weld::Window* pParent, const SfxItemSet* _pSet )
             bActivateOptions = true;
     }
 
-    AddTabPage(u"replace"_ustr, TabResId(RID_TAB_OFA_REPLACE.aLabel), OfaAutocorrReplacePage::Create,
-               RID_L + RID_TAB_OFA_REPLACE.sIconName);
-    AddTabPage(u"exceptions"_ustr, TabResId(RID_TAB_OFA_EXCEPTIONS.aLabel), OfaAutocorrExceptPage::Create,
-               RID_L + RID_TAB_OFA_EXCEPTIONS.sIconName);
-    AddTabPage(u"options"_ustr, TabResId(RID_TAB_OFA_APPLY.aLabel), OfaAutocorrOptionsPage::Create,
-               RID_L + RID_TAB_OFA_APPLY.sIconName);
-    AddTabPage(u"applypage"_ustr, TabResId(RID_TAB_OFA_OPTIONS.aLabel),
-               OfaSwAutoFmtOptionsPage::Create, RID_L + RID_TAB_OFA_OPTIONS.sIconName);
-    AddTabPage(u"localized"_ustr, TabResId(RID_TAB_OFA_LOCALIZED.aLabel), OfaQuoteTabPage::Create,
-               RID_L + RID_TAB_OFA_LOCALIZED.sIconName);
-    AddTabPage(u"wordcompletion"_ustr, TabResId(RID_TAB_OFA_WORDCOMPL.aLabel),
-               OfaAutoCompleteTabPage::Create, RID_L + RID_TAB_OFA_WORDCOMPL.sIconName);
-    AddTabPage(u"smarttags"_ustr, TabResId(RID_TAB_OFA_SMARTTAG.aLabel),
-               OfaSmartTagOptionsTabPage::Create, RID_L + RID_TAB_OFA_SMARTTAG.sIconName);
+    AddTabPage(u"replace"_ustr, TabResId(RID_TAB_CUIOFA_REPLACE), OfaAutocorrReplacePage::Create,
+               RID_L + RID_TAB_OFAREPLACE_IMG);
+    AddTabPage(u"exceptions"_ustr, TabResId(RID_TAB_CUIOFA_EXCEPTIONS), OfaAutocorrExceptPage::Create,
+               RID_L + RID_TAB_OFAEXCEPTIONS_IMG);
+    AddTabPage(u"options"_ustr, TabResId(RID_TAB_CUIOFA_APPLY), OfaAutocorrOptionsPage::Create,
+               RID_L + RID_TAB_OFAAPPLY_IMG);
+    AddTabPage(u"applypage"_ustr, TabResId(RID_TAB_CUIOFA_OPTIONS),
+               OfaSwAutoFmtOptionsPage::Create, RID_L + RID_TAB_OFAOPTIONS_IMG);
+    AddTabPage(u"localized"_ustr, TabResId(RID_TAB_CUIOFA_LOCALIZED), OfaQuoteTabPage::Create,
+               RID_L + RID_TAB_OFALOCALIZED_IMG);
+    AddTabPage(u"wordcompletion"_ustr, TabResId(RID_TAB_CUIOFA_WORDCOMPL),
+               OfaAutoCompleteTabPage::Create, RID_L + RID_TAB_OFAWORDCOMPL_IMG);
+    AddTabPage(u"smarttags"_ustr, TabResId(RID_TAB_CUIOFA_SMARTTAG),
+               OfaSmartTagOptionsTabPage::Create, RID_L + RID_TAB_OFASMARTTAG_IMG);
 
     if (!bShowSWOptions)
     {
@@ -1826,30 +1826,36 @@ void OfaQuoteTabPage::Reset( const SfxItemSet* )
     m_xDblEndExFT->set_label(ChangeStringExt_Impl(cEndQuote));
 }
 
-#define SGL_START       0
-#define DBL_START       1
-#define SGL_END         2
-#define DBL_END         3
+namespace {
 
+enum QuoteMode
+{
+    SGL_START,
+    DBL_START,
+    SGL_END,
+    DBL_END
+};
+
+}
 
 IMPL_LINK(OfaQuoteTabPage, QuoteHdl, weld::Button&, rBtn, void)
 {
-    sal_uInt16 nMode = SGL_START;
+    QuoteMode eMode = SGL_START;
     if (&rBtn == m_xSglEndQuotePB.get())
-        nMode = SGL_END;
+        eMode = SGL_END;
     else if (&rBtn == m_xDblStartQuotePB.get())
-        nMode = DBL_START;
+        eMode = DBL_START;
     else if (&rBtn == m_xDblEndQuotePB.get())
-        nMode = DBL_END;
+        eMode = DBL_END;
     // start character selection dialog
     SvxCharacterMap aMap(GetFrameWeld(), nullptr, nullptr);
     aMap.SetCharFont( OutputDevice::GetDefaultFont(DefaultFontType::LATIN_TEXT,
                         LANGUAGE_ENGLISH_US, GetDefaultFontFlags::OnlyOne ));
-    aMap.set_title(nMode < SGL_END ? CuiResId(RID_CUISTR_STARTQUOTE)  : CuiResId(RID_CUISTR_ENDQUOTE));
+    aMap.set_title(eMode < SGL_END ? CuiResId(RID_CUISTR_STARTQUOTE)  : CuiResId(RID_CUISTR_ENDQUOTE));
     sal_UCS4 cDlg;
     SvxAutoCorrect* pAutoCorrect = SvxAutoCorrCfg::Get().GetAutoCorrect();
     LanguageType eLang = Application::GetSettings().GetLanguageTag().getLanguageType();
-    switch( nMode )
+    switch( eMode )
     {
         case SGL_START:
             cDlg = cSglStartQuote;
@@ -1883,7 +1889,7 @@ IMPL_LINK(OfaQuoteTabPage, QuoteHdl, weld::Button&, rBtn, void)
         return;
 
     sal_UCS4 cNewChar = aMap.GetChar();
-    switch( nMode )
+    switch( eMode )
     {
         case SGL_START:
             cSglStartQuote = cNewChar;

@@ -39,6 +39,7 @@
 #include <drawingml/ThemeOverrideFragmentHandler.hxx>
 #include <drawingml/table/tableproperties.hxx>
 #include <oox/drawingml/chart/chartconverter.hxx>
+#include <oox/drawingml/drawingmltypes.hxx>
 #include <drawingml/chart/chartspacefragment.hxx>
 #include <drawingml/chart/stylefragment.hxx>
 #include <drawingml/chart/stylemodel.hxx>
@@ -113,6 +114,8 @@
 #include <basegfx/polygon/b2dpolypolygoncutter.hxx>
 #include <basegfx/polygon/b2dpolypolygontools.hxx>
 #include <basegfx/matrix/b2dhommatrix.hxx>
+#include <basegfx/matrix/b2dhommatrixtools.hxx>
+#include <basegfx/range/b2drange.hxx>
 #include <com/sun/star/document/XActionLockable.hpp>
 #include <com/sun/star/chart2/data/XDataReceiver.hpp>
 #include <officecfg/Office/Common.hxx>
@@ -283,7 +286,7 @@ void Shape::propagateDiagramHelper()
     {
         if (mxShape)
         {
-            mpDiagramHelper->doAnchor(mxShape);
+            mpDiagramHelper->doAnchor(mxShape, maPosition, maSize);
             mpDiagramHelper = nullptr;
         }
     }
@@ -295,6 +298,21 @@ void Shape::propagateDiagramHelper()
     {
         delete mpDiagramHelper;
         mpDiagramHelper = nullptr;
+    }
+
+    // evtl. make DiagramNodes use FitSize in edit mode
+    if (FRAMETYPE_DIAGRAM == meFrameType && mxShape)
+    {
+        SdrObject* pRootObject(SdrObject::getSdrObjectFromXShape(mxShape));
+
+        if (nullptr != pRootObject)
+        {
+            DiagramHelper_oox* pHelper(
+                dynamic_cast<DiagramHelper_oox*>(pRootObject->getDiagramHelper().get()));
+
+            if (nullptr != pHelper)
+                pHelper->applyTextFitToSizeToDiagramNodes(mxShape, /*bKeepFontScale*/true);
+        }
     }
 }
 
@@ -417,6 +435,26 @@ void Shape::addShape(
             Reference< XShapes > xShapes( xShape, UNO_QUERY );
             if ( xShapes.is() )
                 addChildren( rFilterBase, *this, pTheme, xShapes, pShapeMap, aMatrix );
+            // A Diagram layout node that draws a shape of its own may hold layout nodes below
+            // it, the text of a callout below the callout's hidden frame; the children hang off
+            // a shape that is no group, and are made beside it, in the group it stands in, with
+            // that group's transformation and each moved by this shape's place, which their
+            // places are relative to. The shape's own transformation would scale them to its
+            // size and turn them as it is turned. A child the layout gave no size, the text of
+            // a connector whose text the connector itself carries, makes no shape.
+            else if (!maChildren.empty() && !msInternalName.isEmpty())
+            {
+                for (auto const& child : maChildren)
+                {
+                    if (child->getSize().Width <= 0 || child->getSize().Height <= 0)
+                        continue;
+                    const awt::Point aHeld(child->getPosition());
+                    child->setPosition(awt::Point(aHeld.X + maPosition.X, aHeld.Y + maPosition.Y));
+                    child->setMasterTextListStyle( mpMasterTextListStyle );
+                    child->addShape( rFilterBase, pTheme, rxShapes, aTransformation, rShapeOrParentShapeFillProps, pShapeMap, pParentGroupShape );
+                    child->setPosition(aHeld);
+                }
+            }
 
             if (isInWordprocessingCanvas() && !isWPGChild())
             {
@@ -623,6 +661,34 @@ private:
     Reference<document::XActionLockable> m_xLockable;
 };
 
+/// The outer shadow among the effects, or null when they have none.
+EffectPropertiesPtr lcl_getOuterShadow(const EffectProperties& rEffects)
+{
+    for (auto const& pEffect : rEffects.m_Effects)
+    {
+        if (pEffect->msName == "outerShdw")
+        {
+            auto pShadow = std::make_shared<EffectProperties>();
+            pShadow->maShadow.assignUsed(rEffects.maShadow);
+            pShadow->m_Effects.push_back(std::make_unique<Effect>(*pEffect));
+            return pShadow;
+        }
+    }
+    return nullptr;
+}
+
+/// Whether the shadow is scaled or skewed, so its size differs from the shape that casts it.
+bool lcl_isScaledOrSkewed(const Effect& rShadow)
+{
+    auto differs = [&rShadow](const OUString& rName, sal_Int32 nDefault) {
+        auto it = rShadow.maAttribs.find(rName);
+        sal_Int32 nValue = nDefault;
+        return it != rShadow.maAttribs.end() && (it->second >>= nValue) && nValue != nDefault;
+    };
+    return differs(u"sx"_ustr, 100000) || differs(u"sy"_ustr, 100000) || differs(u"kx"_ustr, 0)
+           || differs(u"ky"_ustr, 0);
+}
+
 }
 
 // for group shapes, the following method is also adding each child
@@ -634,8 +700,53 @@ void Shape::addChildren(
         ShapeIdMap* pShapeMap,
         const basegfx::B2DHomMatrix& aTransformation )
 {
+    // A group shape takes no properties, so the shadow set on a group goes to each shape in it.
+    // A group inside the group passes the shadow on to its own shapes, unless it has a shadow of
+    // its own, which then replaces the outer one. A scaled or skewed shadow takes its size and
+    // position from the bounds of the whole group, so a copy on each shape would be wrong.
+    EffectPropertiesPtr pGroupShadow
+        = lcl_getOuterShadow(rMaster.getActualEffectProperties(pTheme));
+    if (pGroupShadow && lcl_isScaledOrSkewed(*pGroupShadow->m_Effects.front()))
+        pGroupShadow = nullptr;
+    // The shadow of a group follows the outline of the whole group. A shape that lies within an
+    // opaque rectangle drawn before it in the group adds nothing to that outline, so it casts no
+    // shadow, and neither do the shapes of a group that lies within one.
+    std::vector<basegfx::B2DRange> aOpaqueRectangles;
     for (auto const& child : rMaster.maChildren)
     {
+        if (!pGroupShadow)
+        {
+            child->mpGroupShadowPtr = nullptr;
+        }
+        else
+        {
+            basegfx::B2DRange aBounds(child->maPosition.X, child->maPosition.Y,
+                                      child->maPosition.X + child->maSize.Width,
+                                      child->maPosition.Y + child->maSize.Height);
+            if (child->mnRotation != 0)
+                aBounds.transform(basegfx::utils::createRotateAroundPoint(
+                    aBounds.getCenter(), basegfx::deg2rad<60000>(child->mnRotation)));
+
+            const bool bCovered = std::any_of(
+                aOpaqueRectangles.begin(), aOpaqueRectangles.end(),
+                [&aBounds](const basegfx::B2DRange& rOpaque) { return rOpaque.isInside(aBounds); });
+            child->mpGroupShadowPtr = bCovered ? nullptr : pGroupShadow;
+
+            // A rectangle turned by a multiple of 90 degrees covers exactly its bounds. A fill
+            // color from the theme takes its transparency from the color of the fill reference.
+            const FillProperties aFill
+                = child->getActualFillProperties(pTheme, &getFillProperties());
+            const ShapeStyleRef* pFillRef = child->getShapeStyleRef(XML_fillRef);
+            const bool bOpaqueColor
+                = aFill.maFillColor.isUsed() && !aFill.maFillColor.hasTransparency()
+                  && (!aFill.maFillColor.isPlaceHolder() || !pFillRef
+                      || !pFillRef->maPhClr.hasTransparency());
+            if (!child->mbHidden && child->mnRotation % (90 * 60000) == 0
+                && child->mpCustomShapePropertiesPtr
+                && child->mpCustomShapePropertiesPtr->getShapePresetType() == XML_rect
+                && aFill.moFillType.value_or(XML_noFill) == XML_solidFill && bOpaqueColor)
+                aOpaqueRectangles.push_back(aBounds);
+        }
         child->setMasterTextListStyle( mpMasterTextListStyle );
         child->addShape( rFilterBase, pTheme, rxShapes, aTransformation, getFillProperties(), pShapeMap, rMaster.shared_from_this());
     }
@@ -1114,15 +1225,6 @@ lcl_getClipPolygon(CustomShapeProperties& rProperties, const awt::Rectangle& rSh
     return aCoords;
 }
 
-Degree100 lcl_MSORotateAngleToAPIAngle(const sal_Int32 nMSORotationAngle)
-{
-    // Converts a shape rotation angle from MSO to angle for API property RotateAngle
-    // from unit 1/60000 deg to unit 1/100 deg
-    Degree100 nAngle(nMSORotationAngle / 600);
-    // API RotateAngle has opposite direction than nMSORotationAngle, thus 'minus'.
-    return NormAngle36000(-nAngle);
-}
-
 void PushMasterTextListStyleToMasterShapeParagraphs(TextListStyle& rMasterTextListStyle, const uno::Reference<drawing::XShape>& xShape)
 {
     uno::Reference<text::XTextRange> xShapeText(xShape, UNO_QUERY);
@@ -1160,6 +1262,13 @@ void PushMasterTextListStyleToMasterShapeParagraphs(TextListStyle& rMasterTextLi
         rMasterTextListStyle.pushToNumberingRules(xNumberingRules, std::nullopt);
         xParagraph->setPropertyValue("NumberingRules", uno::Any(xNumberingRules));
     }
+}
+
+// DrawingML has 1/1000 of a percent, the shape property has whole percent from 0 to 100.
+sal_Int16 toWholePercent(sal_Int32 nThousandthsOfPercent)
+{
+    return static_cast<sal_Int16>(
+        std::clamp<double>(std::round(nThousandthsOfPercent / 1000.0), 0, 100));
 }
 }
 
@@ -1255,7 +1364,8 @@ Reference< XShape > const & Shape::createAndInsert(
         mp3DPropertiesPtr, getRotation(), getCustomShapeProperties()->getExtrusionPropertyMap(),
         fShapeRotateInclCamera, aExtrusionColor, bBlockExtrusion);
     // Currently the other places use unit 1/60000deg and MSO shape rotate orientation.
-    sal_Int32 nShapeRotateInclCamera = -basegfx::rad2deg<60000>(fShapeRotateInclCamera);
+    sal_Int32 nShapeRotateInclCamera
+        = -basegfx::fround(basegfx::rad2deg<60000>(fShapeRotateInclCamera));
     bool bIs3DGraphic = aServiceName == "com.sun.star.drawing.GraphicObjectShape" && bHas3DEffect;
     bIsCustomShape |= bIs3DGraphic;
 
@@ -1860,7 +1970,7 @@ Reference< XShape > const & Shape::createAndInsert(
         aShapeProps.assignUsed( maDefaultShapeProperties );
         if(nShapeRotateInclCamera != 0 && bIsCustomShape)
             aShapeProps.setProperty(PROP_RotateAngle,
-                                    sal_Int32(lcl_MSORotateAngleToAPIAngle(nShapeRotateInclCamera)));
+                                    sal_Int32(MSORotateAngleToAPIAngle(nShapeRotateInclCamera)));
         if( bIsEmbMedia ||
             bIsCustomShape ||
             aServiceName == "com.sun.star.drawing.GraphicObjectShape" ||
@@ -2349,9 +2459,10 @@ Reference< XShape > const & Shape::createAndInsert(
                 mpCustomShapePropertiesPtr->setTextCameraZRotateAngle( nTextCameraZRotation / 60000 );
 
                 // TextPreRotateAngle. Text rotates inside the text area. Might be used for diagram layout 'upr' and 'grav'.
-                sal_Int32 nTextPreRotateAngle = static_cast< sal_Int32 >( getTextBody()->getTextProperties().moTextPreRotation.value_or( 0 ) );
-
-                nTextPreRotateAngle -= getDiagramRotation(); // Use of mnDiagramRotation is unclear. It seems to be always 0 here.
+                // A Diagram laid out again has the turn on the shape, its text comes back from the shape it replaces.
+                // The turn of a Diagram's text already counts the turn of its layout node.
+                sal_Int32 nTextPreRotateAngle = static_cast< sal_Int32 >( getTextBody()->getTextProperties().moTextPreRotation.value_or(
+                    moDiagramTextPreRotation.value_or( 0 ) ) );
 
                 // TextRotateAngle. The text area rotates.
                 sal_Int32 nTextAreaRotateAngle = getTextBody()->getTextProperties().moTextAreaRotation.value_or(0);
@@ -2384,6 +2495,12 @@ Reference< XShape > const & Shape::createAndInsert(
                 if (XML_ellipsis == getTextBody()->getTextProperties().moVertOverflow)
                     putPropertyToGrabBag(u"vertOverflow"_ustr, uno::Any(u"ellipsis"_ustr));
             }
+            else if (moDiagramTextPreRotation)
+            {
+                // A shape laid out again has no text body yet, use the turn the layout decided.
+                mpCustomShapePropertiesPtr->setTextPreRotateAngle(-*moDiagramTextPreRotation
+                                                                  / 60000);
+            }
 
             // Note that the script oox/source/drawingml/customshapes/generatePresetsData.pl looks
             // for these ==cscode== and ==csdata== markers, so don't "clean up" these SAL_INFOs
@@ -2411,7 +2528,7 @@ Reference< XShape > const & Shape::createAndInsert(
         PropertySet aPropertySet(mxShape);
         if ( !bUseRotationTransform && (nShapeRotateInclCamera !=0) )
         {
-            Degree100 nAngle(lcl_MSORotateAngleToAPIAngle(nShapeRotateInclCamera));
+            Degree100 nAngle(MSORotateAngleToAPIAngle(nShapeRotateInclCamera));
             aPropertySet.setAnyProperty(PROP_RotateAngle, Any( sal_Int32(nAngle)));
             aPropertySet.setAnyProperty( PROP_HoriOrientPosition, Any( maPosition.X ) );
             aPropertySet.setAnyProperty( PROP_VertOrientPosition, Any( maPosition.Y ) );
@@ -2520,6 +2637,30 @@ Reference< XShape > const & Shape::createAndInsert(
             propertySet->setPropertyValue(u"GlowEffectRadius"_ustr, Any(convertEmuToHmm(aEffectProperties.maGlow.moGlowRad.value())));
             propertySet->setPropertyValue(u"GlowEffectColor"_ustr, Any(aEffectProperties.maGlow.moGlowColor.getColor(rGraphicHelper)));
             propertySet->setPropertyValue(u"GlowEffectTransparency"_ustr, Any(aEffectProperties.maGlow.moGlowColor.getTransparency()));
+        }
+
+        // Set reflection effect properties
+        if (aEffectProperties.maReflection.isUsed()
+            && aServiceName != "com.sun.star.drawing.GroupShape")
+        {
+            const EffectReflectionProperties& rReflection = aEffectProperties.maReflection;
+
+            uno::Reference<beans::XPropertySet> propertySet(mxShape, uno::UNO_QUERY);
+            propertySet->setPropertyValue(u"ReflectionEffect"_ustr, Any(true));
+            propertySet->setPropertyValue(u"ReflectionEffectDistance"_ustr,
+                                          Any(rReflection.moDistance->as_hmm<sal_Int32>()));
+            propertySet->setPropertyValue(u"ReflectionEffectBlurRadius"_ustr,
+                                          Any(rReflection.moBlurRadius->as_hmm<sal_Int32>()));
+            propertySet->setPropertyValue(
+                u"ReflectionEffectStartTransparency"_ustr,
+                Any(sal_Int16(100 - toWholePercent(*rReflection.moStartAlpha))));
+            propertySet->setPropertyValue(u"ReflectionEffectStartPosition"_ustr,
+                                          Any(toWholePercent(*rReflection.moStartPosition)));
+            propertySet->setPropertyValue(
+                u"ReflectionEffectEndTransparency"_ustr,
+                Any(sal_Int16(100 - toWholePercent(*rReflection.moEndAlpha))));
+            propertySet->setPropertyValue(u"ReflectionEffectEndPosition"_ustr,
+                                          Any(toWholePercent(*rReflection.moEndPosition)));
         }
 
         // Set soft edge effect properties
@@ -2844,6 +2985,11 @@ void Shape::finalizeXShape( XmlFilterBase& rFilter, const Reference< XShapes >& 
                         rFilter, mxChartShapeInfo->maFragmentPath, aModel );
                 rFilter.importFragment( pChartSpaceFragment );
 
+                // The DOCX import keeps the chart data parts in its own way, and a spreadsheet's
+                // chart data is in its sheets.
+                if (pPowerPointImport && !aModel.maSheetPath.isEmpty())
+                    rFilter.importChartEmbedding(aModel.maSheetPath);
+
                 // Import styles file.
                 // Create the styles path from the path to the chart*.xml file
                 sal_Int32 nLastSlash = mxChartShapeInfo->maFragmentPath.lastIndexOf('/');
@@ -3087,6 +3233,21 @@ EffectProperties Shape::getActualEffectProperties(const Theme* pTheme) const
 
     // Properties specified directly for this shape
     aEffectProperties.assignUsed ( getEffectProperties() );
+
+    // The shadow of the group the shape is in, when the shape casts none of its own. CT_EffectList
+    // orders its effects, and an outer shadow comes before a preset shadow, a reflection and a soft
+    // edge, so the stored effects keep that order.
+    if (mpGroupShadowPtr && !lcl_getOuterShadow(aEffectProperties))
+    {
+        aEffectProperties.maShadow.assignUsed(mpGroupShadowPtr->maShadow);
+        auto& rEffects = aEffectProperties.m_Effects;
+        auto itLater = std::find_if(rEffects.begin(), rEffects.end(), [](auto const& pEffect) {
+            return pEffect->msName == "prstShdw" || pEffect->msName == "reflection"
+                   || pEffect->msName == "softEdge";
+        });
+        for (auto const& pEffect : mpGroupShadowPtr->m_Effects)
+            itLater = std::next(rEffects.insert(itLater, std::make_unique<Effect>(*pEffect)));
+    }
 
     return aEffectProperties;
 }

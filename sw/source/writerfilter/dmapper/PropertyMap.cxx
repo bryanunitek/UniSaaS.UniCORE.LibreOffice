@@ -927,6 +927,7 @@ bool SectionPropertyMap::HasFooter() const
 }
 
 #define MIN_HEAD_FOOT_HEIGHT 100 // minimum header/footer height
+#define MIN_BODY_HEIGHT 100 // minimum body height, 1mm
 
 namespace
 {
@@ -1188,9 +1189,28 @@ void SectionPropertyMap::PrepareHeaderFooterProperties()
     Insert(PROP_FOOTER_BODY_DISTANCE, uno::Any(nFooterHeight - MIN_HEAD_FOOT_HEIGHT));
     Insert(PROP_FOOTER_HEIGHT, uno::Any(nFooterHeight));
 
+    nTopMargin = std::max<sal_Int32>(nTopMargin, 0);
+    nBottomMargin = std::max<sal_Int32>(nBottomMargin, 0);
+
+    // Margins that leave the body less than the minimum height shrink in proportion until it
+    // has that height, or until they reach zero on a page too short for it.
+    sal_Int32 nPageHeight = 0;
+    if (std::optional<PropertyMap::Property> pProp = getProperty(PROP_HEIGHT))
+        pProp->second >>= nPageHeight;
+    const sal_Int32 nHeaderFooterHeight
+        = (HasHeader() ? nHeaderHeight : 0) + (HasFooter() ? nFooterHeight : 0);
+    const sal_Int64 nMargins = sal_Int64(nTopMargin) + nBottomMargin;
+    const sal_Int64 nMaxMargins
+        = std::max<sal_Int64>(0, sal_Int64(nPageHeight) - nHeaderFooterHeight - MIN_BODY_HEIGHT);
+    if (nPageHeight > 0 && nMargins > nMaxMargins)
+    {
+        nTopMargin = sal_Int32(nTopMargin * nMaxMargins / nMargins);
+        nBottomMargin = sal_Int32(nMaxMargins - nTopMargin);
+    }
+
     //now set the top/bottom margin for the follow page style
-    Insert( PROP_TOP_MARGIN, uno::Any( std::max<sal_Int32>(nTopMargin, 0) ) );
-    Insert( PROP_BOTTOM_MARGIN, uno::Any( std::max<sal_Int32>(nBottomMargin, 0) ) );
+    Insert( PROP_TOP_MARGIN, uno::Any( nTopMargin ) );
+    Insert( PROP_BOTTOM_MARGIN, uno::Any( nBottomMargin ) );
 }
 
 static uno::Reference< beans::XPropertySet > lcl_GetRangeProperties( bool bIsFirstSection,
@@ -2282,9 +2302,7 @@ ParagraphProperties::ParagraphProperties()
     , m_nWrap( text::WrapTextMode::WrapTextMode_MAKE_FIXED_SIZE )
     , m_hAnchor( -1 )
     , m_vAnchor( -1 )
-    , m_x( -1 )
     , m_bxValid( false )
-    , m_y( -1 )
     , m_byValid( false )
     , m_hSpace( -1 )
     , m_vSpace( -1 )
@@ -2305,9 +2323,9 @@ void ParagraphProperties::ResetFrameProperties()
     m_nWrap          = text::WrapTextMode::WrapTextMode_MAKE_FIXED_SIZE;
     m_hAnchor        = -1;
     m_vAnchor        = -1;
-    m_x              = -1;
+    m_x              = 0_emu;
     m_bxValid        = false;
-    m_y              = -1;
+    m_y              = 0_emu;
     m_byValid        = false;
     m_hSpace         = -1;
     m_vSpace         = -1;

@@ -27,14 +27,6 @@
 
 #include "tilebuffer.hxx"
 
-#if !GLIB_CHECK_VERSION(2,32,0)
-#define G_SOURCE_REMOVE FALSE
-#define G_SOURCE_CONTINUE TRUE
-#endif
-#if !GLIB_CHECK_VERSION(2,40,0)
-#define g_info(...) g_log(G_LOG_DOMAIN, G_LOG_LEVEL_INFO, __VA_ARGS__)
-#endif
-
 // Cursor bitmaps from the installation set.
 #define CURSOR_HANDLE_DIR "/../share/libreofficekit/"
 // Number of handles around a graphic selection.
@@ -1720,7 +1712,7 @@ renderDocument(LOKDocView* pDocView, cairo_t* pCairo)
                 pLOEvent->m_nPaintTileX = nRow;
                 pLOEvent->m_nPaintTileY = nColumn;
                 pLOEvent->m_fPaintTileZoom = priv->m_fZoom;
-                pLOEvent->m_pTileBuffer = &*priv->m_pTileBuffer;
+                pLOEvent->m_pTileBuffer = priv->m_pTileBuffer.get();
                 GTask* task = g_task_new(pDocView, nullptr, paintTileCallback, pLOEvent);
                 g_task_set_task_data(task, pLOEvent, LOEvent::destroy);
 
@@ -2482,7 +2474,7 @@ paintTileInThread (gpointer data)
     gint nTileSizePixelsScaled = nTileSizePixels * nScaleFactor;
 
     // check if "source" tile buffer is different from "current" tile buffer
-    if (pLOEvent->m_pTileBuffer != &*priv->m_pTileBuffer)
+    if (pLOEvent->m_pTileBuffer != priv->m_pTileBuffer.get())
     {
         pLOEvent->m_pTileBuffer = nullptr;
         g_task_return_new_error(task,
@@ -2533,7 +2525,7 @@ paintTileInThread (gpointer data)
     // requests has passed the previous check at start of this function, and has
     // rendered the tile already. We want to stop such rendered tiles from being
     // stored in new tile buffer.
-    if (pLOEvent->m_pTileBuffer != &*priv->m_pTileBuffer)
+    if (pLOEvent->m_pTileBuffer != priv->m_pTileBuffer.get())
     {
         pLOEvent->m_pTileBuffer = nullptr;
         g_task_return_new_error(task,

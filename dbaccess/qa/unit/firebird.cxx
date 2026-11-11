@@ -12,21 +12,33 @@
 #include <com/sun/star/beans/PropertyValue.hpp>
 #include <com/sun/star/beans/XPropertySet.hpp>
 #include <com/sun/star/container/XNameAccess.hpp>
+#include <com/sun/star/document/XDocumentRecovery.hpp>
+#include <com/sun/star/embed/ElementModes.hpp>
+#include <com/sun/star/embed/XStorage.hpp>
+#include <com/sun/star/frame/XStorable.hpp>
 #include <com/sun/star/lang/XMultiServiceFactory.hpp>
+#include <com/sun/star/sdb/CommandType.hpp>
 #include <com/sun/star/sdb/SQLFilterOperator.hpp>
 #include <com/sun/star/sdb/XOfficeDatabaseDocument.hpp>
 #include <com/sun/star/sdb/XSingleSelectQueryComposer.hpp>
+#include <com/sun/star/sdbc/DataType.hpp>
 #include <com/sun/star/sdbc/XColumnLocate.hpp>
 #include <com/sun/star/sdbc/XConnection.hpp>
 #include <com/sun/star/sdbc/XParameters.hpp>
 #include <com/sun/star/sdbc/XPreparedStatement.hpp>
+#include <com/sun/star/sdbc/SQLException.hpp>
 #include <com/sun/star/sdbc/XResultSet.hpp>
+#include <com/sun/star/sdbc/XRowSet.hpp>
 #include <com/sun/star/sdbc/XRow.hpp>
 #include <com/sun/star/sdbc/XStatement.hpp>
 #include <com/sun/star/sdbcx/XColumnsSupplier.hpp>
 #include <com/sun/star/sdbcx/XTablesSupplier.hpp>
+#include <com/sun/star/util/XModifiable.hpp>
 #include <com/sun/star/util/XRefreshable.hpp>
+#include <comphelper/processfactory.hxx>
+#include <comphelper/storagehelper.hxx>
 #include <connectivity/predicateinput.hxx>
+#include <unotools/tempfile.hxx>
 
 using namespace ::com::sun::star;
 using namespace ::com::sun::star::sdb;
@@ -44,6 +56,19 @@ public:
     void testTdf153057_RangeFilter();
     void testTdf153057_FractionalFilter();
     void testTdf173589_TableStandardFilter();
+    void testTdf164328_AliasColumn();
+    void testTdf164328_SameRealName();
+    void testTdf164328_Aggregate();
+    void testTdf96372_DerivedTableColumns();
+    void testTdf96372_DerivedTableAutoFilter();
+    void testTdf58586_JoinWithDerivedTable();
+    void testRecoveryFileAfterSave();
+    void testRecoveryFileWithUnsavedData();
+    void testRecoveryFileKeepsOriginal();
+    void testSaveACopyWithUnsavedData();
+    void testSaveACopyKeepsOriginal();
+    void testUnsavedDataNeedsRecovery();
+    void testDataAfterRecoveryFileSavedOnClose();
 
     CPPUNIT_TEST_SUITE(FirebirdTest);
     CPPUNIT_TEST(testEmptyDBConnection);
@@ -53,7 +78,31 @@ public:
     CPPUNIT_TEST(testTdf153057_RangeFilter);
     CPPUNIT_TEST(testTdf153057_FractionalFilter);
     CPPUNIT_TEST(testTdf173589_TableStandardFilter);
+    CPPUNIT_TEST(testTdf164328_AliasColumn);
+    CPPUNIT_TEST(testTdf164328_SameRealName);
+    CPPUNIT_TEST(testTdf164328_Aggregate);
+    CPPUNIT_TEST(testTdf96372_DerivedTableColumns);
+    CPPUNIT_TEST(testTdf96372_DerivedTableAutoFilter);
+    CPPUNIT_TEST(testTdf58586_JoinWithDerivedTable);
+    CPPUNIT_TEST(testRecoveryFileAfterSave);
+    CPPUNIT_TEST(testRecoveryFileWithUnsavedData);
+    CPPUNIT_TEST(testRecoveryFileKeepsOriginal);
+    CPPUNIT_TEST(testSaveACopyWithUnsavedData);
+    CPPUNIT_TEST(testSaveACopyKeepsOriginal);
+    CPPUNIT_TEST(testUnsavedDataNeedsRecovery);
+    CPPUNIT_TEST(testDataAfterRecoveryFileSavedOnClose);
     CPPUNIT_TEST_SUITE_END();
+
+private:
+    enum class StoredCopy
+    {
+        RecoveryFile,
+        SaveACopy
+    };
+    static void storeCopy(const uno::Reference<XOfficeDatabaseDocument>& xDocument,
+                          const OUString& rURL, StoredCopy eCopy);
+    void checkStoredCopy(bool bSaveBefore, StoredCopy eCopy);
+    void checkCopyKeepsOriginal(StoredCopy eCopy);
 };
 
 /**
@@ -379,6 +428,484 @@ void FirebirdTest::testTdf173589_TableStandardFilter()
     CPPUNIT_ASSERT_MESSAGE("tdf173589: expected a row", xRS->next());
     CPPUNIT_ASSERT_EQUAL_MESSAGE("tdf173589: wrong row returned", sal_Int32(1), xRow->getInt(1));
     CPPUNIT_ASSERT_MESSAGE("tdf173589: expected exactly one row", !xRS->next());
+}
+
+namespace
+{
+void lcl_createAliasTestTables(const uno::Reference<XConnection>& xConnection)
+{
+    uno::Reference<XStatement> xStmt = xConnection->createStatement();
+    xStmt->execute(u"CREATE TABLE \"T1\" (\"ID\" INTEGER NOT NULL PRIMARY KEY,"
+                   " \"NAME\" VARCHAR(20))"_ustr);
+    xStmt->execute(u"INSERT INTO \"T1\" VALUES(1, 'Annemone')"_ustr);
+    xStmt->execute(u"INSERT INTO \"T1\" VALUES(2, 'Bert')"_ustr);
+    xStmt->execute(u"INSERT INTO \"T1\" VALUES(3, 'Clara')"_ustr);
+    // same column name as in "T1", but a different type
+    xStmt->execute(u"CREATE TABLE \"T2\" (\"ID\" INTEGER NOT NULL PRIMARY KEY,"
+                   " \"NAME\" INTEGER)"_ustr);
+    xStmt->execute(u"INSERT INTO \"T2\" VALUES(1, 10)"_ustr);
+    xStmt->execute(u"INSERT INTO \"T2\" VALUES(2, 20)"_ustr);
+    xStmt->execute(u"INSERT INTO \"T2\" VALUES(3, 30)"_ustr);
+    xConnection->commit();
+
+    uno::Reference<sdbcx::XTablesSupplier> xTablesSupplier(xConnection, UNO_QUERY_THROW);
+    uno::Reference<util::XRefreshable> xTablesRefresh(xTablesSupplier->getTables(),
+                                                      UNO_QUERY_THROW);
+    xTablesRefresh->refresh();
+}
+
+uno::Reference<XSingleSelectQueryComposer>
+lcl_createComposer(const uno::Reference<XConnection>& xConnection, const OUString& rQuery)
+{
+    uno::Reference<lang::XMultiServiceFactory> xFactory(xConnection, UNO_QUERY_THROW);
+    uno::Reference<XSingleSelectQueryComposer> xComposer(
+        xFactory->createInstance(u"com.sun.star.sdb.SingleSelectQueryComposer"_ustr),
+        UNO_QUERY_THROW);
+    xComposer->setElementaryQuery(rQuery);
+    return xComposer;
+}
+
+sal_Int32 lcl_countRows(const uno::Reference<XConnection>& xConnection, const OUString& rQuery)
+{
+    uno::Reference<XResultSet> xRS = xConnection->createStatement()->executeQuery(rQuery);
+    sal_Int32 nRows = 0;
+    while (xRS->next())
+        ++nRows;
+    return nRows;
+}
+
+Sequence<Sequence<beans::PropertyValue>> lcl_makeFilter(const OUString& rName, sal_Int32 nOperator,
+                                                        const OUString& rValue)
+{
+    beans::PropertyValue aCondition;
+    aCondition.Name = rName;
+    aCondition.Handle = nOperator;
+    aCondition.Value <<= rValue;
+    return { { aCondition } };
+}
+
+// "MASTER" has the rows 1, 2, 3; "DETAIL" has 2, 3 and 1 rows pointing to them via "Number"
+void lcl_createDerivedTableTestTables(const uno::Reference<XConnection>& xConnection)
+{
+    uno::Reference<XStatement> xStmt = xConnection->createStatement();
+    xStmt->execute(u"CREATE TABLE \"MASTER\" ("
+                   " \"ID\" INTEGER NOT NULL PRIMARY KEY,"
+                   " \"Title\" VARCHAR(20))"_ustr);
+    xStmt->execute(u"CREATE TABLE \"DETAIL\" ("
+                   " \"ID\" INTEGER NOT NULL PRIMARY KEY,"
+                   " \"Name\" VARCHAR(20),"
+                   " \"Number\" INTEGER)"_ustr);
+    xStmt->execute(u"INSERT INTO \"MASTER\" VALUES(1, 'One')"_ustr);
+    xStmt->execute(u"INSERT INTO \"MASTER\" VALUES(2, 'Two')"_ustr);
+    xStmt->execute(u"INSERT INTO \"MASTER\" VALUES(3, 'Three')"_ustr);
+    xStmt->execute(u"INSERT INTO \"DETAIL\" VALUES(1, 'a1', 1)"_ustr);
+    xStmt->execute(u"INSERT INTO \"DETAIL\" VALUES(2, 'a2', 1)"_ustr);
+    xStmt->execute(u"INSERT INTO \"DETAIL\" VALUES(3, 'b1', 2)"_ustr);
+    xStmt->execute(u"INSERT INTO \"DETAIL\" VALUES(4, 'b2', 2)"_ustr);
+    xStmt->execute(u"INSERT INTO \"DETAIL\" VALUES(5, 'b3', 2)"_ustr);
+    xStmt->execute(u"INSERT INTO \"DETAIL\" VALUES(6, 'c1', 3)"_ustr);
+    xConnection->commit();
+
+    uno::Reference<sdbcx::XTablesSupplier> xTablesSupplier(xConnection, UNO_QUERY_THROW);
+    uno::Reference<util::XRefreshable> xTablesRefresh(xTablesSupplier->getTables(), UNO_QUERY_THROW);
+    xTablesRefresh->refresh();
+}
+
+uno::Reference<beans::XPropertySet>
+lcl_getComposerColumn(const uno::Reference<XSingleSelectQueryComposer>& xComposer,
+                      const OUString& rColumnName)
+{
+    uno::Reference<container::XNameAccess> xColumns(
+        uno::Reference<sdbcx::XColumnsSupplier>(xComposer, UNO_QUERY_THROW)->getColumns());
+    return uno::Reference<beans::XPropertySet>(xColumns->getByName(rColumnName), UNO_QUERY_THROW);
+}
+
+// like the AutoFilter does: filter by the value of a column in the current row of a row set
+OUString lcl_autoFilter(const uno::Reference<XConnection>& xConnection, const OUString& rQuery,
+                        const OUString& rColumnName, sal_Int32 nValue)
+{
+    uno::Reference<XRowSet> xRowSet(
+        comphelper::getProcessServiceFactory()->createInstance(u"com.sun.star.sdb.RowSet"_ustr),
+        UNO_QUERY_THROW);
+    uno::Reference<beans::XPropertySet> xRowSetProps(xRowSet, UNO_QUERY_THROW);
+    xRowSetProps->setPropertyValue(u"ActiveConnection"_ustr, Any(xConnection));
+    xRowSetProps->setPropertyValue(u"CommandType"_ustr, Any(CommandType::COMMAND));
+    xRowSetProps->setPropertyValue(u"Command"_ustr, Any(rQuery));
+    xRowSet->execute();
+
+    uno::Reference<container::XNameAccess> xRowSetColumns(
+        uno::Reference<sdbcx::XColumnsSupplier>(xRowSet, UNO_QUERY_THROW)->getColumns());
+    uno::Reference<beans::XPropertySet> xRowSetColumn(xRowSetColumns->getByName(rColumnName),
+                                                      UNO_QUERY_THROW);
+    bool bFound = false;
+    while (!bFound && xRowSet->next())
+        bFound = xRowSetColumn->getPropertyValue(u"Value"_ustr) == Any(nValue);
+    CPPUNIT_ASSERT_MESSAGE("no row with the value to filter by", bFound);
+
+    uno::Reference<XSingleSelectQueryComposer> xComposer = lcl_createComposer(xConnection, rQuery);
+    xComposer->appendFilterByColumn(xRowSetColumn, true, SQLFilterOperator::EQUAL);
+    return xComposer->getQuery();
+}
+}
+
+/**
+ * tdf#164328: the Standard Filter on a query column with an alias passes the
+ * real column name, while the composer's select columns are named by alias.
+ */
+void FirebirdTest::testTdf164328_AliasColumn()
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createAliasTestTables(xConnection);
+
+    uno::Reference<XSingleSelectQueryComposer> xComposer
+        = lcl_createComposer(xConnection, u"SELECT \"ID\", \"NAME\" AS \"ALIAS\" FROM \"T1\""_ustr);
+    xComposer->setStructuredFilter(
+        lcl_makeFilter(u"\"T1\".\"NAME\""_ustr, SQLFilterOperator::EQUAL, u"Annemone"_ustr));
+
+    // Without the fix in place, the value was quoted as an identifier ("Annemone")
+    CPPUNIT_ASSERT_EQUAL(u"( \"T1\".\"NAME\" = 'Annemone' )"_ustr, xComposer->getFilter());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1), lcl_countRows(xConnection, xComposer->getQuery()));
+}
+
+/**
+ * tdf#164328: two select columns with the same real name from different
+ * tables; the value must be converted using the column of the filtered table.
+ */
+void FirebirdTest::testTdf164328_SameRealName()
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createAliasTestTables(xConnection);
+
+    // the INTEGER column comes first
+    uno::Reference<XSingleSelectQueryComposer> xComposer = lcl_createComposer(
+        xConnection, u"SELECT \"T2\".\"NAME\" AS \"B\", \"T1\".\"NAME\" AS \"A\" FROM \"T1\", "
+                     "\"T2\" WHERE \"T1\".\"ID\" = \"T2\".\"ID\""_ustr);
+    xComposer->setStructuredFilter(
+        lcl_makeFilter(u"\"T1\".\"NAME\""_ustr, SQLFilterOperator::EQUAL, u"Annemone"_ustr));
+
+    CPPUNIT_ASSERT_EQUAL(u"( \"T1\".\"NAME\" = 'Annemone' )"_ustr, xComposer->getFilter());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1), lcl_countRows(xConnection, xComposer->getQuery()));
+}
+
+/**
+ * tdf#164328: filtering on an aggregate function with an alias (COUNT AS "CNT"),
+ * which the Standard Filter adds as a HAVING condition; the function must still be
+ * handled as a function and not be matched by its real name.
+ */
+void FirebirdTest::testTdf164328_Aggregate()
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createAliasTestTables(xConnection);
+
+    uno::Reference<XSingleSelectQueryComposer> xComposer = lcl_createComposer(
+        xConnection,
+        u"SELECT \"NAME\", COUNT( \"ID\" ) AS \"CNT\" FROM \"T1\" GROUP BY \"NAME\""_ustr);
+    xComposer->setStructuredHavingClause(
+        lcl_makeFilter(u"COUNT( \"ID\" )"_ustr, SQLFilterOperator::GREATER, u"0"_ustr));
+
+    CPPUNIT_ASSERT_EQUAL(u"( COUNT( \"ID\" ) > 0 )"_ustr, xComposer->getHavingClause());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(3), lcl_countRows(xConnection, xComposer->getQuery()));
+}
+
+/**
+ * tdf#96372, tdf#158453: the columns of a sub query in the FROM clause belong to that sub query,
+ * known by its range variable. Before the fix, the table name came from the driver's result set
+ * metadata (the inner table for Firebird, SYSTEM_SUBQUERY for HSQLDB), so filters and subform
+ * links built from it referred to a table which does not exist in the outer query.
+ */
+void FirebirdTest::testTdf96372_DerivedTableColumns()
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createDerivedTableTestTables(xConnection);
+
+    const std::pair<OUString, OUString> aQueries[] = {
+        { u"SELECT * FROM ( SELECT \"ID\", \"Name\", \"Number\" FROM \"DETAIL\" ) AS \"a\""_ustr,
+          u"a"_ustr },
+        { u"SELECT \"a\".* FROM ( SELECT \"ID\", \"Name\", \"Number\" FROM \"DETAIL\" ) AS \"a\""_ustr,
+          u"a"_ustr },
+        { u"SELECT \"a\".\"Number\" FROM ( SELECT \"ID\", \"Number\" FROM \"DETAIL\" ) AS \"a\""_ustr,
+          u"a"_ustr },
+        // nested sub queries, like in tdf#158453
+        { u"SELECT \"b\".* FROM ( SELECT \"a\".* FROM ( SELECT \"ID\", \"Number\" FROM \"DETAIL\" ) AS \"a\" ) AS \"b\""_ustr,
+          u"b"_ustr },
+        // the column list after the range variable renames the columns
+        { u"SELECT * FROM ( SELECT \"ID\", \"Name\" FROM \"DETAIL\" ) AS \"a\" ( \"Number\", \"Label\" )"_ustr,
+          u"a"_ustr },
+        // no range variable, so no table name
+        { u"SELECT * FROM ( SELECT \"ID\", \"Name\", \"Number\" FROM \"DETAIL\" )"_ustr,
+          u""_ustr },
+    };
+    for (auto const & [ rQuery, rTableName ] : aQueries)
+    {
+        uno::Reference<XSingleSelectQueryComposer> xComposer = lcl_createComposer(xConnection, rQuery);
+        uno::Reference<beans::XPropertySet> xColumn = lcl_getComposerColumn(xComposer, u"Number"_ustr);
+
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(rQuery.toUtf8().getStr(), rTableName,
+                                     xColumn->getPropertyValue(u"TableName"_ustr).get<OUString>());
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(rQuery.toUtf8().getStr(), u"Number"_ustr,
+                                     xColumn->getPropertyValue(u"RealName"_ustr).get<OUString>());
+        CPPUNIT_ASSERT_MESSAGE(rQuery.toUtf8().getStr(),
+                               !xColumn->getPropertyValue(u"Function"_ustr).get<bool>());
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(rQuery.toUtf8().getStr(), DataType::INTEGER,
+                                     xColumn->getPropertyValue(u"Type"_ustr).get<sal_Int32>());
+
+        // a sub query is no table which could be updated
+        uno::Reference<container::XNameAccess> xTables(
+            uno::Reference<sdbcx::XTablesSupplier>(xComposer, UNO_QUERY_THROW)->getTables());
+        CPPUNIT_ASSERT_MESSAGE(rQuery.toUtf8().getStr(), !xTables->getElementNames().hasElements());
+    }
+}
+
+/**
+ * tdf#96372: AutoFilter on a query selecting from a sub query. Before the fix, Firebird rejected
+ * the generated condition on "DETAIL"."Number", or on ""."Number" without range variable.
+ */
+void FirebirdTest::testTdf96372_DerivedTableAutoFilter()
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createDerivedTableTestTables(xConnection);
+
+    const OUString aQueries[] = {
+        u"SELECT * FROM ( SELECT \"ID\", \"Name\", \"Number\" FROM \"DETAIL\" ) AS \"a\""_ustr,
+        u"SELECT \"a\".* FROM ( SELECT \"ID\", \"Name\", \"Number\" FROM \"DETAIL\" ) AS \"a\""_ustr,
+        u"SELECT * FROM ( SELECT \"ID\", \"Name\", \"Number\" FROM \"DETAIL\" )"_ustr,
+    };
+    for (auto const& rQuery : aQueries)
+    {
+        const OUString sFiltered = lcl_autoFilter(xConnection, rQuery, u"Number"_ustr, 2);
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(sFiltered.toUtf8().getStr(), sal_Int32(3),
+                                     lcl_countRows(xConnection, sFiltered));
+    }
+}
+
+/**
+ * tdf#58586: a table joined with a sub query. Before the fix, "*" was only expanded for the
+ * table, and the AutoFilter on the aggregate of the sub query generated an empty table name.
+ */
+void FirebirdTest::testTdf58586_JoinWithDerivedTable()
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createDerivedTableTestTables(xConnection);
+
+    const OUString sQuery = u"SELECT * FROM \"MASTER\" LEFT OUTER JOIN"
+                            " ( SELECT \"Number\", MAX( \"ID\" ) AS \"LastID\" FROM \"DETAIL\""
+                            " GROUP BY \"Number\" ) AS \"d\" ON \"MASTER\".\"ID\" = \"d\".\"Number\""_ustr;
+    uno::Reference<XSingleSelectQueryComposer> xComposer = lcl_createComposer(xConnection, sQuery);
+
+    uno::Reference<beans::XPropertySet> xColumn = lcl_getComposerColumn(xComposer, u"LastID"_ustr);
+    CPPUNIT_ASSERT_EQUAL(u"d"_ustr, xColumn->getPropertyValue(u"TableName"_ustr).get<OUString>());
+    CPPUNIT_ASSERT_EQUAL(u"LastID"_ustr, xColumn->getPropertyValue(u"RealName"_ustr).get<OUString>());
+    CPPUNIT_ASSERT(!xColumn->getPropertyValue(u"Function"_ustr).get<bool>());
+
+    // the columns of the table still belong to it, and it is the only table
+    xColumn = lcl_getComposerColumn(xComposer, u"Title"_ustr);
+    CPPUNIT_ASSERT_EQUAL(u"MASTER"_ustr, xColumn->getPropertyValue(u"TableName"_ustr).get<OUString>());
+    uno::Reference<container::XNameAccess> xTables(
+        uno::Reference<sdbcx::XTablesSupplier>(xComposer, UNO_QUERY_THROW)->getTables());
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1), xTables->getElementNames().getLength());
+
+    const OUString sFiltered = lcl_autoFilter(xConnection, sQuery, u"LastID"_ustr, 5);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE(sFiltered.toUtf8().getStr(), sal_Int32(1),
+                                 lcl_countRows(xConnection, sFiltered));
+}
+
+void FirebirdTest::storeCopy(const uno::Reference<XOfficeDatabaseDocument>& xDocument,
+                            const OUString& rURL, StoredCopy eCopy)
+{
+    if (eCopy == StoredCopy::RecoveryFile)
+    {
+        uno::Reference<document::XDocumentRecovery> xRecovery(xDocument, UNO_QUERY_THROW);
+        xRecovery->storeToRecoveryFile(rURL, {});
+    }
+    else
+    {
+        uno::Reference<frame::XStorable> xStorable(xDocument, UNO_QUERY_THROW);
+        xStorable->storeToURL(rURL, {});
+    }
+}
+
+namespace
+{
+/// Create the table RECOVERED with the rows 1 to nRows, and commit.
+void lcl_createRecoveredTable(const uno::Reference<XConnection>& xConnection, sal_Int32 nRows)
+{
+    uno::Reference<XStatement> xStmt = xConnection->createStatement();
+    xStmt->execute(u"CREATE TABLE \"RECOVERED\" (\"ID\" INTEGER NOT NULL PRIMARY KEY)"_ustr);
+    for (sal_Int32 i = 1; i <= nRows; ++i)
+        xStmt->execute("INSERT INTO \"RECOVERED\" VALUES(" + OUString::number(i) + ")");
+    xConnection->commit();
+}
+
+/// The number of rows in the table RECOVERED, or -1 if there is no such table.
+sal_Int32 lcl_countRecoveredRows(const uno::Reference<XConnection>& xConnection)
+{
+    try
+    {
+        uno::Reference<XStatement> xStmt = xConnection->createStatement();
+        uno::Reference<XResultSet> xRS
+            = xStmt->executeQuery(u"SELECT COUNT(*) FROM \"RECOVERED\""_ustr);
+        uno::Reference<XRow> xRow(xRS, UNO_QUERY_THROW);
+        CPPUNIT_ASSERT(xRS->next());
+        return xRow->getInt(1);
+    }
+    catch (const SQLException&)
+    {
+        return -1;
+    }
+}
+}
+
+/**
+ * Write rows into an embedded Firebird database, store a copy of the document
+ * (a recovery file, or Save a Copy), then load that copy and check that the
+ * rows are in it.
+ */
+void FirebirdTest::checkStoredCopy(bool bSaveBefore, StoredCopy eCopy)
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createRecoveredTable(xConnection, 2);
+
+    if (bSaveBefore)
+    {
+        uno::Reference<frame::XStorable> xStorable(xDocument, UNO_QUERY_THROW);
+        xStorable->store();
+    }
+
+    utl::TempFileNamed aCopyFile;
+    aCopyFile.EnableKillingFile();
+    storeCopy(xDocument, aCopyFile.GetURL(), eCopy);
+
+    // Close the original document, so that only the copy is left to read from
+    xConnection.clear();
+    xDocument.clear();
+    uno::Reference<util::XCloseable> xCloseable(mxComponent, UNO_QUERY_THROW);
+    xCloseable->close(false);
+    mxComponent.clear();
+
+    uno::Reference<XOfficeDatabaseDocument> xCopy = getDocumentForUrl(aCopyFile.GetURL());
+    uno::Reference<XConnection> xCopyConnection = getConnectionForDocument(xCopy);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("rows found in the stored copy", sal_Int32(2),
+                                 lcl_countRecoveredRows(xCopyConnection));
+}
+
+/**
+ * Control case: the data was saved before autorecovery ran, so the recovery
+ * file must contain it.
+ */
+void FirebirdTest::testRecoveryFileAfterSave() { checkStoredCopy(true, StoredCopy::RecoveryFile); }
+
+/**
+ * The data was not saved before autorecovery ran. The recovery file should
+ * still contain it, since recovering from a crash is what it is for.
+ */
+void FirebirdTest::testRecoveryFileWithUnsavedData()
+{
+    checkStoredCopy(false, StoredCopy::RecoveryFile);
+}
+
+/**
+ * Storing a copy (a recovery file, or Save a Copy) must not write the unsaved
+ * data into the document file itself: the user did not save.
+ */
+void FirebirdTest::checkCopyKeepsOriginal(StoredCopy eCopy)
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createRecoveredTable(xConnection, 1);
+
+    utl::TempFileNamed aCopyFile;
+    aCopyFile.EnableKillingFile();
+    storeCopy(xDocument, aCopyFile.GetURL(), eCopy);
+
+    // firebird_empty.odb has no database/firebird.fbk; it appears only if the data was written
+    uno::Reference<embed::XStorage> xOriginal = comphelper::OStorageHelper::GetStorageFromURL(
+        maTempFile.GetURL(), embed::ElementModes::READ);
+    bool bWritten = xOriginal->hasByName(u"database"_ustr)
+                    && xOriginal->openStorageElement(u"database"_ustr, embed::ElementModes::READ)
+                           ->hasByName(u"firebird.fbk"_ustr);
+    CPPUNIT_ASSERT_MESSAGE("unsaved data written into the document file", !bWritten);
+}
+
+void FirebirdTest::testRecoveryFileKeepsOriginal()
+{
+    checkCopyKeepsOriginal(StoredCopy::RecoveryFile);
+}
+
+/**
+ * File - Save a Copy writes the document as it is now to another file, so the
+ * copy should contain the data entered since the last save.
+ */
+void FirebirdTest::testSaveACopyWithUnsavedData() { checkStoredCopy(false, StoredCopy::SaveACopy); }
+
+void FirebirdTest::testSaveACopyKeepsOriginal() { checkCopyKeepsOriginal(StoredCopy::SaveACopy); }
+
+/**
+ * Autorecovery only saves documents which report changes. Entering data into
+ * an embedded Firebird database does not mark the document as modified (no
+ * Save prompt for data, which is written on close), but autorecovery must
+ * still save it.
+ */
+void FirebirdTest::testUnsavedDataNeedsRecovery()
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createRecoveredTable(xConnection, 1);
+
+    uno::Reference<util::XModifiable> xModifiable(xDocument, UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_MESSAGE("document marked as modified by data changes",
+                           !xModifiable->isModified());
+    uno::Reference<document::XDocumentRecovery> xRecovery(xDocument, UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_MESSAGE("autorecovery would skip the unsaved data",
+                           xRecovery->wasModifiedSinceLastSave());
+}
+
+/**
+ * A recovery save leaves the document file as it is (see
+ * testRecoveryFileKeepsOriginal). The data, including what was entered after
+ * the recovery save, must still be written when the document is closed.
+ */
+void FirebirdTest::testDataAfterRecoveryFileSavedOnClose()
+{
+    createTempCopy(u"firebird_empty.odb");
+    uno::Reference<XOfficeDatabaseDocument> xDocument = getDocumentForUrl(maTempFile.GetURL());
+    uno::Reference<XConnection> xConnection = getConnectionForDocument(xDocument);
+    lcl_createRecoveredTable(xConnection, 1);
+
+    utl::TempFileNamed aRecoveryFile;
+    aRecoveryFile.EnableKillingFile();
+    storeCopy(xDocument, aRecoveryFile.GetURL(), StoredCopy::RecoveryFile);
+
+    uno::Reference<XStatement> xStmt = xConnection->createStatement();
+    xStmt->execute(u"INSERT INTO \"RECOVERED\" VALUES(2)"_ustr);
+    xConnection->commit();
+
+    // Close without saving, as the user does (tdf#117118 writes the data on close)
+    xStmt.clear();
+    xConnection.clear();
+    xDocument.clear();
+    uno::Reference<util::XCloseable> xCloseable(mxComponent, UNO_QUERY_THROW);
+    xCloseable->close(false);
+    mxComponent.clear();
+
+    uno::Reference<XOfficeDatabaseDocument> xReopened = getDocumentForUrl(maTempFile.GetURL());
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("rows found in the document file after close", sal_Int32(2),
+                                 lcl_countRecoveredRows(getConnectionForDocument(xReopened)));
 }
 
 CPPUNIT_TEST_SUITE_REGISTRATION(FirebirdTest);

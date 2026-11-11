@@ -108,14 +108,12 @@ $(eval $(call gb_Library_add_exception_objects,editeng,\
     editeng/source/misc/txtrange \
     editeng/source/misc/unolingu \
     editeng/source/misc/urlfieldhelper \
-    editeng/source/outliner/outleeng \
     editeng/source/outliner/outlin2 \
     editeng/source/outliner/outliner \
     editeng/source/outliner/outlobj \
     editeng/source/outliner/outlundo \
     editeng/source/outliner/outlvw \
     editeng/source/outliner/overflowingtxt \
-    editeng/source/outliner/paralist \
     editeng/source/rtf/rtfitem \
     editeng/source/rtf/svxrtf \
     editeng/source/uno/unoedhlp \

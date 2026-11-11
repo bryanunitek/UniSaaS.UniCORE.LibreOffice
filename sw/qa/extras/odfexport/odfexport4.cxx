@@ -23,6 +23,7 @@
 #include <com/sun/star/text/XTextSectionsSupplier.hpp>
 #include <com/sun/star/text/XTextTable.hpp>
 #include <com/sun/star/text/XTextTablesSupplier.hpp>
+#include <com/sun/star/util/DateTime.hpp>
 #include <com/sun/star/util/XRefreshable.hpp>
 #include <unotools/localedatawrapper.hxx>
 #include <comphelper/configuration.hxx>
@@ -1825,6 +1826,83 @@ CPPUNIT_TEST_FIXTURE(Test, testFlyInDeleteRedline)
     auto pXmlDoc = parseExport(u"content.xml"_ustr);
     assertXPath(pXmlDoc, "//draw:frame", 1);
     CPPUNIT_ASSERT_EQUAL(1, getShapes());
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf173931)
+{
+    // Given a 4x4 table where the header row and its cells have a background, and the other rows
+    // and cells share one row style and one cell style:
+    createSwDoc("tdf173931.fodt");
+
+    // When exporting to ODT:
+    save(TestFilter::ODT);
+
+    // Then make sure identical rows and cells share one automatic style:
+    xmlDocUniquePtr pXmlDoc = parseExport(u"content.xml"_ustr);
+    // Without the fix in place, this test would have failed with:
+    // - Expected: 2
+    // - Actual  : 13
+    // i.e. every body cell got its own style: a new format was inserted after, not before, the
+    // first entry that sorts after it, so the sorted list lost its order and later identical
+    // formats were no longer found.
+    assertXPath(pXmlDoc, "//office:automatic-styles/style:style[@style:family='table-cell']", 2);
+    // Same for rows: 4 instead of 2.
+    assertXPath(pXmlDoc, "//office:automatic-styles/style:style[@style:family='table-row']", 2);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testDecorativeODF14)
+{
+    // a text frame whose graphic style has the ODF 1.4 draw:decorative="true"
+    createSwDoc("decorative-odf14.fodt");
+    CPPUNIT_ASSERT(getProperty<bool>(getShape(1), u"Decorative"_ustr));
+
+    saveAndReload(TestFilter::ODT);
+    CPPUNIT_ASSERT(getProperty<bool>(getShape(1), u"Decorative"_ustr));
+    // Without the fix only loext:decorative was written for a text frame
+    auto pXmlDoc = parseExport(u"content.xml"_ustr);
+    assertXPath(pXmlDoc, "//style:graphic-properties[@draw:decorative='true']", 1);
+    assertXPath(pXmlDoc, "//style:graphic-properties[@loext:decorative='true']", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testCommentDateUTC)
+{
+    // A comment records the moment it was written beside the author's wall clock, and that
+    // moment survives a save and reload.
+    createSwDoc();
+    dispatchCommand(mxComponent, u".uno:InsertAnnotation"_ustr, {});
+
+    uno::Reference<text::XTextFieldsSupplier> xTextFieldsSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<container::XEnumeration> xFields(
+        xTextFieldsSupplier->getTextFields()->createEnumeration());
+    uno::Reference<beans::XPropertySet> xField(xFields->nextElement(), uno::UNO_QUERY);
+
+    // Inserting a comment records a moment, so the year is a real one rather than the zero that
+    // stands for "nothing recorded".
+    CPPUNIT_ASSERT(getProperty<util::DateTime>(xField, u"DateTimeUTC"_ustr).Year != 0);
+
+    // A known moment, so the exported attribute can be compared against it.
+    util::DateTime aDateTimeUTC(0, 3, 2, 1, 15, 6, 2026, true);
+    xField->setPropertyValue(u"DateTimeUTC"_ustr, uno::Any(aDateTimeUTC));
+
+    save(TestFilter::ODT);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"content.xml"_ustr);
+    // Without the accompanying fix in place, this test would have failed: nothing carried the
+    // moment, so ODF kept only the wall clock and the zone it was read in was lost.
+    assertXPath(pXmlDoc, "//office:annotation", "date-utc", u"2026-06-15T01:02:03Z");
+
+    saveAndReload(TestFilter::ODT);
+    uno::Reference<text::XTextFieldsSupplier> xReloadedSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<container::XEnumeration> xReloadedFields(
+        xReloadedSupplier->getTextFields()->createEnumeration());
+    uno::Reference<beans::XPropertySet> xReloadedField(xReloadedFields->nextElement(),
+                                                       uno::UNO_QUERY);
+    util::DateTime aReloaded = getProperty<util::DateTime>(xReloadedField, u"DateTimeUTC"_ustr);
+    CPPUNIT_ASSERT_EQUAL(sal_Int16(2026), aReloaded.Year);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(6), aReloaded.Month);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(15), aReloaded.Day);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(1), aReloaded.Hours);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(2), aReloaded.Minutes);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(3), aReloaded.Seconds);
 }
 
 } // end of anonymous namespace

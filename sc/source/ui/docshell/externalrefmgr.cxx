@@ -2579,11 +2579,9 @@ SfxObjectShellRef ScExternalRefManager::loadSrcDocument(sal_uInt16 nFileId, OUSt
     if (!isFileLoadable(aFile))
         return nullptr;
 
-    INetURLObject aURLObject(aFile);
-    const OUString sHost = aURLObject.GetHost();
-    if (HostFilter::isForbidden(sHost))
+    if (HostFilter::isUrlForbidden(aFile))
     {
-        SAL_WARN( "sc.ui", "ScExternalRefManager::loadSrcDocument: blocked access to external file: \"" << aFile << "\"");
+        SAL_WARN( "sc.ui", "ScExternalRefManager::loadSrcDocument: blocked url: \"" << aFile << "\"");
         return nullptr;
     }
 

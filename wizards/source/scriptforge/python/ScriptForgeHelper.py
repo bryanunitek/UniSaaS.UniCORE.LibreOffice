@@ -22,26 +22,29 @@
 #    distributed with this file, see http://www.gnu.org/licenses/ .
 
 """
-Collection of Python helper functions called from the ScriptForge Basic libraries
-to execute specific services that are not or not easily available from Basic directly.
-When relevant, the methods present in the ScriptForge Python module (scriptforge.py) might call the
-functions below for compatibility reasons.
-"""
+    Collection of Python helper functions called from the ScriptForge Basic libraries
+    to execute specific services that are not or not easily available from Basic directly.
+    When relevant, the methods present in the ScriptForge Python module (scriptforge.py) may call the
+    functions below directly to bypass the Python-Basic bridge.
+    """
 
 import getpass
 import os
 import platform
 import hashlib
 import filecmp
+import pathlib
+import zipfile
 import webbrowser
 import json
+import traceback
 
 
 class _Singleton(type):
     """
-    A Singleton design pattern
-    Credits: « Python in a Nutshell » by Alex Martelli, O'Reilly
-    """
+        A Singleton design pattern
+        Credits: « Python in a Nutshell » by Alex Martelli, O'Reilly
+        """
     instances = {}
 
     def __call__(cls, *args, **kwargs):
@@ -57,8 +60,8 @@ class _Singleton(type):
 def _SF_Dictionary__ConvertToJson(propval, indent = None) -> str:
     # used by Dictionary.ConvertToJson() Basic method
     """
-    Given an array of PropertyValues as argument, convert it to a JSON string
-    """
+        Given an array of PropertyValues as argument, convert it to a JSON string
+        """
     #   Array of property values => Dict(ionary) => JSON
     pvDict = {}
     for pv in propval:
@@ -66,11 +69,12 @@ def _SF_Dictionary__ConvertToJson(propval, indent = None) -> str:
     return json.dumps(pvDict, indent=indent, skipkeys=True)
 
 
-def _SF_Dictionary__ImportFromJson(jsonstr: str):  # used by Dictionary.ImportFromJson() Basic method
+def _SF_Dictionary__ImportFromJson(jsonstr: str) -> list:
+    # used by Dictionary.ImportFromJson() Basic method
     """
-    Given a JSON string as argument, convert it to a list of tuples (name, value)
-    The value must not be a (sub)dict. This doesn't pass the python-basic bridge.
-    """
+        Given a JSON string as argument, convert it to a list of tuples (name, value)
+        The value must not be a (sub)dict. This doesn't pass the python-basic bridge.
+        """
     #   JSON => Dictionary => Array of tuples/lists
     dico = json.loads(jsonstr)
     result = []
@@ -94,9 +98,9 @@ def _SF_Dictionary__ImportFromJson(jsonstr: str):  # used by Dictionary.ImportFr
 def _SF_Exception__PythonPrint(string: str) -> bool:
     # used by SF_Exception.PythonPrint() Basic method
     """
-    Write the argument to stdout.
-    If the APSO shell console is active, the argument will be displayed in the console window
-    """
+        Write the argument to stdout.
+        If the APSO shell console is active, the argument will be displayed in the console window
+        """
     print(string)
     return True
 
@@ -108,27 +112,84 @@ def _SF_Exception__PythonPrint(string: str) -> bool:
 def _SF_FileSystem__CompareFiles(filename1: str, filename2: str, comparecontents=True) -> bool:
     # used by SF_FileSystem.CompareFiles() Basic method
     """
-    Compare the 2 files, returning True if they seem equal, False otherwise.
-    By default, only their signatures (modification time, ...) are compared.
-    When comparecontents == True, their contents are compared.
-    """
+        Compare the 2 files, returning True if they seem equal, False otherwise.
+        By default, only their signatures (modification time, ...) are compared.
+        When comparecontents == True, their contents are compared.
+        """
     try:
         return filecmp.cmp(filename1, filename2, not comparecontents)
     except Exception:
         return False
 
 
-def _SF_FileSystem__GetFilelen(systemfilepath: str) -> str:  # used by SF_FileSystem.GetFilelen() Basic method
+def _SF_FileSystem__CompressToZip(filename: str, mode: str, folder: str, rootfolder: str | None = None) -> tuple[bool, str]:
+    # used by SF_FileSystem.CompressToZip() Basic method
+    """
+        Stores the content of folder, including its subfolders, into a zip archive.
+        The mode argument determines if the zip file is created (e'x'clusive create) or not ('a'ppend).
+        The compressed files are stored optionally under a root folder.
+        """
+    try:
+        if mode == 'a':     # existence of filename is checked in the calling routine
+            if not zipfile.is_zipfile(filename):
+                return False, "File is not a zip archive: '%s'" % filename
+        directory = pathlib.Path(folder)
+        # Write compressed files under root or under the given root folder. Normal slashes are required, also in Windows.
+        topfolder = (None if rootfolder is None else pathlib.PurePosixPath(rootfolder + '/'))
+        with zipfile.ZipFile(filename, mode, strict_timestamps = False) as archive:
+            for filepath in directory.rglob('*'):
+                name = (filepath.relative_to(directory) if topfolder is None
+                            else topfolder.joinpath(filepath.relative_to(directory)))
+                archive.write(filepath, arcname = name, compress_type = zipfile.ZIP_DEFLATED)
+        return True, ''
+    except Exception as e:
+        return False, str(e)
+
+
+def _SF_FileSystem__ExtractFromZip(filename: str, destination: str, source: tuple = ()) -> tuple[bool, str]:
+    # used by SF_FileSystem.ExtractFromZip() Basic method
+    """
+        Stores the source file(s) found in the given ZIP file into a destination folder.
+        """
+    try:
+        if not zipfile.is_zipfile(filename):
+            return False, "File is not a zip archive: '%s'" % filename
+        with zipfile.ZipFile(filename, mode = 'r') as archive:
+            archive.extractall(destination, members = (None if len(source) == 0 else source))
+        return True, ''
+    except Exception as e:
+        return False, str(e)
+
+
+def _SF_FileSystem__FilesInZip(filename: str) -> list:
+    # used by SF_FileSystem.FilesInZip() Basic method
+    """
+        Returns a list of archive members by name. The objects are in the same order as their entries
+        in the given ZIP file.
+        """
+    try:
+        if not zipfile.is_zipfile(filename):
+            return []
+        with zipfile.ZipFile(filename, mode = 'r') as archive:
+            namelist = archive.namelist()
+        return namelist
+    except Exception:
+        return []
+
+
+def _SF_FileSystem__GetFilelen(systemfilepath: str) -> str:
+    # used by SF_FileSystem.GetFilelen() Basic method
     return str(os.path.getsize(systemfilepath))
 
 
-def _SF_FileSystem__HashFile(filename: str, algorithm: str) -> str:  # used by SF_FileSystem.HashFile() Basic method
+def _SF_FileSystem__HashFile(filename: str, algorithm: str) -> str:
+    # used by SF_FileSystem.HashFile() Basic method
     """
-    Hash a given file with the given hashing algorithm
-    cfr. https://www.pythoncentral.io/hashing-files-with-python/
-    Example
-        hash = _SF_FileSystem__HashFile('myfile.txt','MD5')
-    """
+        Hash a given file with the given hashing algorithm
+        cfr. https://www.pythoncentral.io/hashing-files-with-python/
+        Example
+            hash = _SF_FileSystem__HashFile('myfile.txt','MD5')
+        """
     algo = algorithm.lower()
     try:
         if algo in hashlib.algorithms_guaranteed:
@@ -159,13 +220,21 @@ def _SF_FileSystem__HashFile(filename: str, algorithm: str) -> str:  # used by S
         return ''
 
 
+def _SF_FileSystem__IsZipFile(filename: str) -> bool:
+    # used by SF_FileSystem.IsZipFile() Basic method
+    """
+        Returns True if filename is a valid ZIP file based on its magic number, otherwise returns False.
+        """
+    return zipfile.is_zipfile(filename)
+
+
 def _SF_FileSystem__Normalize(systemfilepath: str) -> str:
     # used by SF_FileSystem.Normalize() Basic method
     """
-    Normalize a pathname by collapsing redundant separators and up-level references so that
-    A//B, A/B/, A/./B and A/foo/../B all become A/B.
-    On Windows, it converts forward slashes to backward slashes.
-    """
+        Normalize a pathname by collapsing redundant separators and up-level references so that
+        A//B, A/B/, A/./B and A/foo/../B all become A/B.
+        On Windows, it converts forward slashes to backward slashes.
+        """
     return os.path.normpath(systemfilepath)
 
 
@@ -175,8 +244,8 @@ def _SF_FileSystem__Normalize(systemfilepath: str) -> str:
 
 def _SF_Platform(propertyname: str):       # used by SF_Platform Basic module
     """
-    Switch between SF_Platform properties (read the documentation about the ScriptForge.Platform service)
-    """
+        Switch between SF_Platform properties (read the documentation about the ScriptForge.Platform service)
+        """
     pf = Platform()
     if propertyname == 'Architecture':
         return pf.Architecture
@@ -244,13 +313,110 @@ class Platform(object, metaclass = _Singleton):
 
 
 # #################################################################
+# Python service
+# #################################################################
+
+def _SF_Python__ExecuteUDF(mode: str,                    # expression, formula or function
+                           expression: str,              # python code
+                           preload: str = '',            # preloaded assignments and/or imports
+                           function: str = '',           # function to execute (mode = function)
+                           result: str = '',             # name of var holding the returned value (mode = formula)
+                           secure: bool = True,          # block malicious code ?
+                           verboseerror: bool = False,   # verbose error tracking ?
+                           args: tuple = (),             # arguments: only (tuples of) strings and numbers
+                                  ):
+    # Used by SF_Python.ExecuteExpression(), ExecuteFormula() and ExecuteFunction() Basic methods
+    """
+        Execute the python expression given as a string
+        Assign preliminary constants, import modules and force security checks
+        Modes = expression | formula | function
+        """
+    try:
+        builtins, tempbuiltins, globalvars = globals()['__builtins__'], {}, {}
+
+        def SecureExec():
+            # Strip out unsecure statements to prevent malicious code
+            # Return - a new __builtins__ without the stripped out functions
+            #        - a dictionary of stripped out functions to restore later in __builtins__
+            nonlocal builtins, tempbuiltins
+            stripped = '__import__', 'open', 'breakpoint', 'input',    # eval() and exec() cannot be deleted
+            for statement in stripped:
+                tempbuiltins[statement] = builtins[statement]
+                del builtins[statement]
+            # When eval, remove exec or vice-versa
+            evalexec = ('exec' if mode == 'expression' else 'eval')
+            tempbuiltins[evalexec] = builtins[evalexec]
+            builtins[evalexec] = None
+
+        if len(preload) > 0:
+            # Homogenize line breaks
+            preload = '\n'.join(preload.splitlines()).rstrip()
+            # Store in globalvars the list of preloaded identifiers
+            exec(preload, {}, globalvars)
+
+        if secure:
+            SecureExec()
+        localvars = {'__builtins__': builtins}
+
+        # Homogenize line breaks
+        expression = '\n'.join(expression.splitlines()).rstrip()
+
+        if mode == 'expression':
+            # Evaluate the expression - no arguments are passed
+            returnvalue = eval(expression, globalvars, localvars)
+
+        elif mode == 'formula':
+            # Evaluate multiple statements - arguments and returned value are passed as a dictionary
+            # The code is precompiled and executed for each row passed in args[1]. Keys are in args[0]
+            if len(args[0]) == 0:      # No names, no values
+                localvars[result] = None
+                exec(expression, globalvars, localvars)
+                returnvalue = localvars[result]
+            else:
+                array = isinstance(args[1][0], (tuple, list))
+                objexpr = compile(expression, '<string>', 'exec')
+                arguments = (args[1] if array else (args[1],))
+                formularesult = []
+                for arg in arguments:
+                    params = dict(zip(args[0], arg))
+                    localvars.update(params)
+                    localvars[result] = None
+                    exec(objexpr, globalvars, localvars)
+                    formularesult.append(localvars[result])
+                returnvalue = (tuple(formularesult) if array else formularesult[0])
+
+        elif mode == 'function':
+            # expression contains only a def - inner defs are allowed, outer defs are ignored
+            # args are passed to the def as usual.
+            returned = 'SFRESULT'
+            localvars[returned] = None
+            expr = expression + '\n' + returned + ' = ' + function + '('
+            for arg in args:
+                expr += repr(arg) + ',\n'
+            expr += ')'
+            exec(expr, globalvars, localvars)
+            returnvalue = localvars[returned]
+
+        else:
+            pass
+
+    except Exception as e:
+        returnvalue = 'ERROR ' + (str(e) if verboseerror is False else traceback.format_exc())
+
+    finally:
+        # Restore stripped out builtins
+        builtins.update(tempbuiltins)
+        return returnvalue
+
+
+# #################################################################
 # Session service
 # #################################################################
 
 def _SF_Session__OpenURLInBrowser(url: str):    # Used by SF_Session.OpenURLInBrowser() Basic method
     """
-    Display url using the default browser
-    """
+        Display url using the default browser
+        """
     try:
         webbrowser.open(url, new = 2)
     except Exception:   # whatever happened, continue the execution ...
@@ -264,10 +430,10 @@ def _SF_Session__OpenURLInBrowser(url: str):    # Used by SF_Session.OpenURLInBr
 
 def _SF_String__HashStr(string: str, algorithm: str) -> str:  # used by SF_String.HashStr() Basic method
     """
-    Hash a given UTF-8 string with the given hashing algorithm
-    Example
-        hash = _SF_String__HashStr('This is a UTF-8 encoded string.','MD5')
-    """
+        Hash a given UTF-8 string with the given hashing algorithm
+        Example
+            hash = _SF_String__HashStr('This is a UTF-8 encoded string.','MD5')
+        """
     algo = algorithm.lower()
     try:
         if algo in hashlib.algorithms_guaranteed:
@@ -330,3 +496,6 @@ if __name__ == "__main__":
     """
     arr = _SF_Dictionary__ImportFromJson(js)
     print(arr)
+    a = "/tmp/SF_YYY/zipped.odt"
+    b = _SF_FileSystem__CompressToZip(a, "a", "/tmp/SF_XXX", "New")
+    print(b)

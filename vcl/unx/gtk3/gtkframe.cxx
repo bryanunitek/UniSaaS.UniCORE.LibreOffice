@@ -42,8 +42,10 @@
 
 #include <gtk/gtk.h>
 
+#if defined(GDK_WINDOWING_X11) && USING_X11
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#endif
 #include <unx/gtk/gtkbackend.hxx>
 
 #include <strings.hrc>
@@ -74,8 +76,12 @@
 #   define GDK_ALT_MASK GDK_MOD1_MASK
 #   define GDK_TOPLEVEL_STATE_MAXIMIZED GDK_WINDOW_STATE_MAXIMIZED
 #   define GDK_TOPLEVEL_STATE_MINIMIZED GDK_WINDOW_STATE_ICONIFIED
+#if defined(GDK_WINDOWING_WAYLAND)
 #   define gdk_wayland_surface_get_wl_surface gdk_wayland_window_get_wl_surface
+#endif
+#if defined(GDK_WINDOWING_X11) && USING_X11
 #   define gdk_x11_surface_get_xid gdk_x11_window_get_xid
+#endif
 #endif
 
 using namespace com::sun::star;
@@ -457,7 +463,7 @@ bool GtkSalFrame::doKeyCallback( guint state,
     if( aEvent.mnCode == 0 )
     {
         // Try and find Latin layout
-        GdkKeymap* keymap = gdk_keymap_get_default();
+        GdkKeymap* keymap = gdk_keymap_get_for_display(gdk_display_get_default());
         guint8 best_group = GetBestAccelKeyGroup(keymap, group);
         guint updated_keyval = GetKeyValFor(keymap, hardware_keycode, best_group);
         aEvent.mnCode = GetKeyCode(updated_keyval);
@@ -506,8 +512,7 @@ bool GtkSalFrame::doKeyCallback( guint state,
 }
 
 GtkSalFrame::GtkSalFrame( SalFrame* pParent, SalFrameStyleFlags nStyle )
-    : m_nXScreen( getDisplay()->GetDefaultXScreen() )
-    , m_pHeaderBar(nullptr)
+    : m_pHeaderBar(nullptr)
     , m_bGraphics(false)
     , m_nSetFocusSignalId(0)
 #if !GTK_CHECK_VERSION(4, 0, 0)
@@ -521,8 +526,7 @@ GtkSalFrame::GtkSalFrame( SalFrame* pParent, SalFrameStyleFlags nStyle )
 }
 
 GtkSalFrame::GtkSalFrame( SystemParentData* pSysData )
-    : m_nXScreen( getDisplay()->GetDefaultXScreen() )
-    , m_pHeaderBar(nullptr)
+    : m_pHeaderBar(nullptr)
     , m_bGraphics(false)
     , m_nSetFocusSignalId(0)
 #if !GTK_CHECK_VERSION(4, 0, 0)
@@ -589,7 +593,7 @@ static void attach_menu_model(GtkSalFrame* pSalFrame)
     gchar* aDBusMenubarPath = g_strdup_printf( "/org/libreoffice/window/%lu/menus/menubar", windowId );
 
     GdkDisplay *pDisplay = GtkSalFrame::getGdkDisplay();
-#if defined(GDK_WINDOWING_X11)
+#if defined(GDK_WINDOWING_X11) && USING_X11
     if (DLSYM_GDK_IS_X11_DISPLAY(pDisplay))
     {
         gdk_x11_window_set_utf8_property( gdkWindow, "_GTK_APPLICATION_ID", "org.libreoffice" );
@@ -791,7 +795,7 @@ GtkSalFrame::~GtkSalFrame()
         }
     }
 
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4,0,0) && defined(GDK_WINDOWING_X11) && USING_X11
     if( m_pForeignParent )
         g_object_unref( G_OBJECT( m_pForeignParent ) );
     if( m_pForeignTopLevel )
@@ -939,7 +943,13 @@ void GtkSalFrame::updateScreenNumber()
     int nScreen = 0;
     GdkScreen *pScreen = gtk_widget_get_screen( m_pWindow );
     if( pScreen )
-        nScreen = getDisplay()->getSystem()->getScreenMonitorIdx( pScreen, maGeometry.x(), maGeometry.y() );
+    {
+        // TODO: this will fail horribly for exotic combinations like two
+        // monitors in mirror mode and one extra. Hopefully such
+        // abominations are not used (or, even better, not possible) in
+        // practice .-)
+        nScreen = gdk_screen_get_monitor_at_point(pScreen, maGeometry.x(), maGeometry.y());
+    }
     maGeometry.setScreen(nScreen);
 #endif
 }
@@ -1249,19 +1259,11 @@ void GtkSalFrame::InitCommon()
     m_aSystemData.SetWindowHandle(GetNativeWindowHandle(m_pWindow));
     m_aSystemData.pSalFrame     = this;
     m_aSystemData.pWidget       = m_pWindow;
-    m_aSystemData.nScreen       = m_nXScreen.getXScreen();
 
-#if defined(GDK_WINDOWING_X11)
     GdkDisplay *pDisplay = getGdkDisplay();
+#if defined(GDK_WINDOWING_X11) && USING_X11
     if (DLSYM_GDK_IS_X11_DISPLAY(pDisplay))
-    {
         m_aSystemData.pDisplay = gdk_x11_display_get_xdisplay(pDisplay);
-#if !GTK_CHECK_VERSION(4,0,0)
-        GdkScreen* pScreen = gtk_widget_get_screen(m_pWindow);
-        GdkVisual* pVisual = gdk_screen_get_system_visual(pScreen);
-        m_aSystemData.pVisual = gdk_x11_visual_get_xvisual(pVisual);
-#endif
-    }
 #endif
 #if defined(GDK_WINDOWING_WAYLAND)
     if (DLSYM_GDK_IS_WAYLAND_DISPLAY(pDisplay))
@@ -1630,7 +1632,7 @@ void GtkSalFrame::Init( SalFrame* pParent, SalFrameStyleFlags nStyle )
     }
 
     m_pParent = static_cast<GtkSalFrame*>(pParent);
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4,0,0) && defined(GDK_WINDOWING_X11) && USING_X11
     m_pForeignParent = nullptr;
     m_aForeignParentWindow = None;
     m_pForeignTopLevel = nullptr;
@@ -1687,7 +1689,9 @@ void GtkSalFrame::Init( SalFrame* pParent, SalFrameStyleFlags nStyle )
     {
         if (m_pParent)
             m_sWMClass = m_pParent->m_sWMClass;
+#if defined(GDK_WINDOWING_X11) && USING_X11
         updateWMClass();
+#endif
     }
 
     if (GTK_IS_WINDOW(m_pWindow))
@@ -1732,6 +1736,7 @@ void GtkSalFrame::Init( SalFrame* pParent, SalFrameStyleFlags nStyle )
 #endif
         if( nStyle & SalFrameStyleFlags::INTRO )
         {
+            gtk_window_set_decorated(GTK_WINDOW(m_pWindow), false);
 #if !GTK_CHECK_VERSION(4,0,0)
             gtk_window_set_role( GTK_WINDOW(m_pWindow), "splashscreen" );
             eType = GDK_WINDOW_TYPE_HINT_SPLASHSCREEN;
@@ -1801,7 +1806,7 @@ void GtkSalFrame::Init( SalFrame* pParent, SalFrameStyleFlags nStyle )
     }
 }
 
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4,0,0) && defined(GDK_WINDOWING_X11) && USING_X11
 GdkNativeWindow GtkSalFrame::findTopLevelSystemWindow( GdkNativeWindow )
 {
     //FIXME: no findToplevelSystemWindow
@@ -1813,6 +1818,7 @@ void GtkSalFrame::Init( SystemParentData* pSysData )
 {
     m_pParent = nullptr;
 #if !GTK_CHECK_VERSION(4,0,0)
+#if defined(GDK_WINDOWING_X11) && USING_X11
     m_aForeignParentWindow = pSysData->aWindow;
     m_pForeignParent = nullptr;
     m_aForeignTopLevelWindow = findTopLevelSystemWindow(pSysData->aWindow);
@@ -1827,6 +1833,7 @@ void GtkSalFrame::Init( SystemParentData* pSysData )
         gtk_widget_set_sensitive(m_pWindow, true);
     }
     else
+#endif
     {
         m_pWindow = gtk_window_new( GTK_WINDOW_POPUP );
     }
@@ -1834,7 +1841,7 @@ void GtkSalFrame::Init( SystemParentData* pSysData )
     m_nStyle = SalFrameStyleFlags::PLUG;
     InitCommon();
 
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4,0,0) && defined(GDK_WINDOWING_X11) && USING_X11
     m_pForeignParent = gdk_x11_window_foreign_new_for_display( getGdkDisplay(), m_aForeignParentWindow );
     gdk_window_set_events( m_pForeignParent, GDK_STRUCTURE_MASK );
 #else
@@ -2224,19 +2231,18 @@ Size GtkSalFrame::GetClientSize()
 void GtkSalFrame::GetWorkArea( AbsoluteScreenPixelRectangle& rRect )
 {
     GdkRectangle aRect;
+    GdkDisplay* pDisplay = gtk_widget_get_display(m_pWindow);
 #if !GTK_CHECK_VERSION(4, 0, 0)
-    GdkScreen  *pScreen = gtk_widget_get_screen(m_pWindow);
     AbsoluteScreenPixelRectangle aRetRect;
-    int max = gdk_screen_get_n_monitors (pScreen);
+    int max = gdk_display_get_n_monitors(pDisplay);
     for (int i = 0; i < max; ++i)
     {
-        gdk_screen_get_monitor_workarea(pScreen, i, &aRect);
+        gdk_monitor_get_workarea(gdk_display_get_monitor(pDisplay, i), &aRect);
         AbsoluteScreenPixelRectangle aMonitorRect(aRect.x, aRect.y, aRect.x+aRect.width, aRect.y+aRect.height);
         aRetRect.Union(aMonitorRect);
     }
     rRect = aRetRect;
 #else
-    GdkDisplay* pDisplay = gtk_widget_get_display(m_pWindow);
     GdkSurface* gdkWindow = widget_get_surface(m_pWindow);
     GdkMonitor* pMonitor = gdk_display_get_monitor_at_surface(pDisplay, gdkWindow);
     gdk_monitor_get_geometry(pMonitor, &aRect);
@@ -2601,6 +2607,7 @@ void GtkSalFrame::SetScreenNumber( unsigned int nNewScreen )
     SetScreen( nNewScreen, SetType::RetainSize );
 }
 
+#if defined(GDK_WINDOWING_X11) && USING_X11
 void GtkSalFrame::updateWMClass()
 {
     if (!DLSYM_GDK_IS_X11_DISPLAY(getGdkDisplay()))
@@ -2622,14 +2629,16 @@ void GtkSalFrame::updateWMClass()
                    pClass );
     XFree( pClass );
 }
+#endif
 
 void GtkSalFrame::SetApplicationID( const OUString &rWMClass )
 {
     if( rWMClass != m_sWMClass && ! isChild() )
     {
         m_sWMClass = rWMClass;
+#if defined(GDK_WINDOWING_X11) && USING_X11
         updateWMClass();
-
+#endif
         for (auto const& child : m_aChildren)
             child->SetApplicationID(rWMClass);
     }
@@ -2657,12 +2666,16 @@ void GtkSalFrame::ShowFullScreen( bool bFullScreen, sal_Int32 nScreen )
 
 void GtkSalFrame::SessionManagerInhibit(bool bStart, ApplicationInhibitFlags eType, std::u16string_view sReason, const char* application_id)
 {
+#if defined(GDK_WINDOWING_X11) && USING_X11
     std::optional<Display*> aDisplay;
 
     if (DLSYM_GDK_IS_X11_DISPLAY(getGdkDisplay()))
         aDisplay = gdk_x11_display_get_xdisplay(getGdkDisplay());
 
     m_SessionManagerInhibitor.inhibit(bStart, sReason, eType, aDisplay, application_id);
+#else
+    m_SessionManagerInhibitor.inhibit(bStart, sReason, eType, application_id);
+#endif
 }
 
 void GtkSalFrame::StartPresentation( bool bStart )
@@ -2707,7 +2720,7 @@ void GtkSalFrame::ToTop( SalFrameToTop nFlags )
     else if( gtk_widget_get_mapped( m_pWindow ) )
     {
         auto nTimestamp = GetLastInputEventTime();
-#ifdef GDK_WINDOWING_X11
+#if defined(GDK_WINDOWING_X11) && USING_X11
         GdkDisplay *pDisplay = GtkSalFrame::getGdkDisplay();
         if (DLSYM_GDK_IS_X11_DISPLAY(pDisplay))
             nTimestamp = gdk_x11_display_get_user_time(pDisplay);
@@ -6128,7 +6141,7 @@ sal_uIntPtr GtkSalFrame::GetNativeWindowHandle(GtkWidget *pWidget)
     GdkSurface* pSurface = widget_get_surface(pWidget);
     GdkDisplay *pDisplay = getGdkDisplay();
 
-#if defined(GDK_WINDOWING_X11)
+#if defined(GDK_WINDOWING_X11) && USING_X11
     if (DLSYM_GDK_IS_X11_DISPLAY(pDisplay))
     {
         return gdk_x11_surface_get_xid(pSurface);
@@ -6237,20 +6250,12 @@ void GtkSalFrame::startDrag(const css::datatransfer::dnd::DragGestureEvent& rEve
     // appropriate device to use.
     if (!aFakeEvent.button.device || !gdk_device_get_window_at_position(aFakeEvent.button.device, nullptr, nullptr))
     {
-        GdkDeviceManager* pDeviceManager = gdk_display_get_device_manager(getGdkDisplay());
-        GList* pDevices = gdk_device_manager_list_devices(pDeviceManager, GDK_DEVICE_TYPE_MASTER);
-        for (GList* pEntry = pDevices; pEntry; pEntry = pEntry->next)
+        GdkSeat* pSeat = gdk_display_get_default_seat(getGdkDisplay());
+        GdkDevice* pPointerDevice = gdk_seat_get_pointer(pSeat);
+        if (gdk_device_get_window_at_position(pPointerDevice, nullptr, nullptr))
         {
-            GdkDevice* pDevice = static_cast<GdkDevice*>(pEntry->data);
-            if (gdk_device_get_source(pDevice) == GDK_SOURCE_KEYBOARD)
-                continue;
-            if (gdk_device_get_window_at_position(pDevice, nullptr, nullptr))
-            {
-                aFakeEvent.button.device = pDevice;
-                break;
-            }
+            aFakeEvent.button.device = pPointerDevice;
         }
-        g_list_free(pDevices);
     }
 
     GdkDragContext *pDrag;

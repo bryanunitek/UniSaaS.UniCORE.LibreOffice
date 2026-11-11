@@ -26,8 +26,11 @@
 #include <vcl/scheduler.hxx>
 #include <editeng/fhgtitem.hxx>
 
+#include <doc.hxx>
 #include <docsh.hxx>
+#include <fmtanchr.hxx>
 #include <frameformats.hxx>
+#include <ndgrf.hxx>
 #include <ndtxt.hxx>
 #include <swtable.hxx>
 #include <txatbase.hxx>
@@ -168,6 +171,51 @@ CPPUNIT_TEST_FIXTURE(Test, testAltChunkHtml)
     CPPUNIT_ASSERT_EQUAL(u"HTML AltChunk"_ustr, xPara->getString());
     xPara.set(xParaEnum->nextElement(), uno::UNO_QUERY_THROW);
     CPPUNIT_ASSERT_EQUAL(u"outer para 2"_ustr, xPara->getString());
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testAltChunkHtmlImageLink)
+{
+    // An image in an HTML altChunk is a link relative to the DOCX file, like an image in a loaded
+    // HTML file.
+    loadFromFile(u"alt-chunk-html-image.docx");
+    SwDoc* pDoc = getSwDoc();
+    SwNodeOffset nNodes = pDoc->GetNodes().Count();
+    for (SwNodeOffset i(0); i < nNodes; ++i)
+    {
+        if (SwGrfNode* pGrfNode = pDoc->GetNodes()[i]->GetGrfNode())
+        {
+            CPPUNIT_ASSERT(pGrfNode->IsLinkedFile());
+            OUString aFileName;
+            pGrfNode->GetFileFilterNms(&aFileName, nullptr);
+            CPPUNIT_ASSERT_EQUAL(createFileURL(u"alt-chunk-html-image.png"), aFileName);
+            return;
+        }
+    }
+    CPPUNIT_FAIL("no graphic node in the document");
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf174049AltChunkPageBreak)
+{
+    // A paragraph with only a page break, then a w:altChunk, whose first paragraph has a direct
+    // w:pageBreakBefore="0". The break paragraph stays as an empty paragraph, like in Word.
+    loadFromFile(u"alt-chunk-page-break.docx");
+    CPPUNIT_ASSERT_EQUAL(OUString(), getParagraph(2)->getString());
+
+    // Without the fix in place, this test would have failed with:
+    // - Expected: 5
+    // - Actual  : 0
+    // i.e. the page break was not before the chunk, but after it, or the chunk removed it.
+    CPPUNIT_ASSERT_EQUAL(style::BreakType_PAGE_AFTER,
+                         getProperty<style::BreakType>(getParagraph(2), u"BreakType"_ustr));
+    CPPUNIT_ASSERT_EQUAL(u"inner, first para"_ustr, getParagraph(3)->getString());
+    CPPUNIT_ASSERT_EQUAL(style::BreakType_NONE,
+                         getProperty<style::BreakType>(getParagraph(3), u"BreakType"_ustr));
+    CPPUNIT_ASSERT_EQUAL(u"inner, second para"_ustr, getParagraph(4)->getString());
+    CPPUNIT_ASSERT_EQUAL(style::BreakType_NONE,
+                         getProperty<style::BreakType>(getParagraph(4), u"BreakType"_ustr));
+    CPPUNIT_ASSERT_EQUAL(u"outer, after chunk"_ustr, getParagraph(5)->getString());
+    CPPUNIT_ASSERT_EQUAL(style::BreakType_NONE,
+                         getProperty<style::BreakType>(getParagraph(5), u"BreakType"_ustr));
 }
 
 CPPUNIT_TEST_FIXTURE(Test, testFieldIfInsideIf)
@@ -576,6 +624,28 @@ CPPUNIT_TEST_FIXTURE(Test, testAnnotationMarkRedline)
     // Without the accompanying fix in place, this test would have failed, the anchor point was not
     // inside a redline.
     CPPUNIT_ASSERT(pRedline);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testGroupTextBoxesInTOC)
+{
+    // Given a document with a group of two text boxes inside the result of a TOC field:
+    // When importing that document:
+    createSwDoc("toc-group-textbox.docx");
+
+    // Then make sure each text box frame is anchored in the body text, not inside another frame:
+    int nTextFrames = 0;
+    for (const auto pFormat : *getSwDoc()->GetSpzFrameFormats())
+    {
+        if (pFormat->Which() != RES_FLYFRMFMT)
+            continue;
+        ++nTextFrames;
+        const SwNode* pAnchorNode = pFormat->GetAnchor().GetAnchorNode();
+        CPPUNIT_ASSERT(pAnchorNode);
+        // Without the accompanying fix in place, this test would have failed, the second text box
+        // was anchored inside the first one.
+        CPPUNIT_ASSERT(!pAnchorNode->FindFlyStartNode());
+    }
+    CPPUNIT_ASSERT_EQUAL(2, nTextFrames);
 }
 }
 

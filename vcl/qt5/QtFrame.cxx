@@ -95,7 +95,7 @@ QtFrame::QtFrame(QtFrame* pParent, SalFrameStyleFlags nStyle)
     if (!(nStyle & SalFrameStyleFlags::SYSTEMCHILD))
     {
         if (nStyle & SalFrameStyleFlags::INTRO)
-            aWinFlags = Qt::SplashScreen;
+            aWinFlags = Qt::SplashScreen | Qt::FramelessWindowHint;
         // floating toolbars are frameless tool windows
         // + they must be able to receive keyboard focus
         else if ((nStyle & SalFrameStyleFlags::FLOAT)
@@ -493,6 +493,18 @@ void QtFrame::SetPosSize(tools::Long nX, tools::Long nY, tools::Long nWidth, too
 
     m_bDefaultPos = false;
     asChild()->move(round(nX / devicePixelRatioF()), round(nY / devicePixelRatioF()));
+}
+
+bool QtFrame::StartSystemMove()
+{
+    SolarMutexGuard g;
+
+    bool bRet = false;
+    GetQtInstance().RunInMainThread([&] {
+        if (QWindow* pWindow = windowHandle())
+            bRet = pWindow->startSystemMove();
+    });
+    return bRet;
 }
 
 Size QtFrame::GetClientSize()
@@ -987,8 +999,9 @@ void QtFrame::UpdateSettings(AllSettings& rSettings)
         style.SetTabRolloverTextColor(aButn);
         style.SetTabHighlightTextColor(aButn);
 
-        // Disable color
+        // Disable colors
         style.SetDisableColor(toColor(pal.color(QPalette::Disabled, QPalette::WindowText)));
+        style.SetDisableTextColor(toColor(pal.color(QPalette::Disabled, QPalette::WindowText)));
 
         // Background
         style.BatchSetBackgrounds(aBack);
@@ -1177,7 +1190,7 @@ void QtFrame::SetScreenNumber(unsigned int nScreen)
 
 void QtFrame::SetApplicationID(const OUString& rWMClass)
 {
-#if CHECK_QT5_USING_X11
+#if CHECK_ANY_QT_USING_X11
     if (GetQtInstance().GetPlatform() != Platform::Xcb || !m_pTopLevel)
         return;
 

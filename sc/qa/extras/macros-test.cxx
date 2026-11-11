@@ -20,6 +20,7 @@
 
 #include <conditio.hxx>
 #include <document.hxx>
+#include <formulacell.hxx>
 #include <scitems.hxx>
 
 #include <algorithm>
@@ -28,16 +29,26 @@
 
 #include <com/sun/star/sheet/XCellRangeAddressable.hpp>
 #include <com/sun/star/sheet/XCellRangeMovement.hpp>
+#include <com/sun/star/sheet/ConditionOperator.hpp>
 #include <com/sun/star/sheet/XFunctionAccess.hpp>
+#include <com/sun/star/sheet/XSheetCondition.hpp>
 #include <com/sun/star/sheet/XSpreadsheet.hpp>
+#include <com/sun/star/sheet/XSpreadsheetDocument.hpp>
+#include <com/sun/star/sheet/ValidationAlertStyle.hpp>
+#include <com/sun/star/sheet/ValidationType.hpp>
 #include <com/sun/star/table/XColumnRowRange.hpp>
 
 #include <com/sun/star/container/XNameContainer.hpp>
+#include <com/sun/star/document/MacroExecMode.hpp>
 #include <com/sun/star/document/XEmbeddedScripts.hpp>
 #include <com/sun/star/drawing/XDrawPageSupplier.hpp>
 #include <com/sun/star/script/XLibraryContainer.hpp>
 #include <com/sun/star/script/XLibraryContainerPassword.hpp>
 #include <editeng/brushitem.hxx>
+#include <basic/sbmod.hxx>
+#include <basic/sbstar.hxx>
+#include <formula/errorcodes.hxx>
+#include <sfx2/app.hxx>
 
 using namespace ::com::sun::star;
 using namespace ::com::sun::star::uno;
@@ -1226,6 +1237,80 @@ CPPUNIT_TEST_FIXTURE(ScMacrosTest, testMissingCallFunctionArgument)
     // The call to REGEX should return the matched string because the “replacement” parameter is
     // missing
     CPPUNIT_ASSERT_EQUAL(Any(u"d§"_ustr), aRet);
+}
+
+CPPUNIT_TEST_FIXTURE(ScMacrosTest, testFormulaCallingApplicationBasicIsMacroUse)
+{
+    // a function the user keeps in application Basic
+    StarBASIC* pAppBasic = SfxApplication::GetBasic();
+    CPPUNIT_ASSERT(pAppBasic);
+    SbModule* pModule = pAppBasic->MakeModule(u"ScMacrosTestModule"_ustr,
+                                              u"Function SCMACROSTESTAPPFUNCTION()\n"
+                                              "    SCMACROSTESTAPPFUNCTION = 42\n"
+                                              "End Function\n"_ustr);
+    CPPUNIT_ASSERT(pModule);
+    CPPUNIT_ASSERT(pModule->Compile());
+
+    // a document with no Basic of its own calls it from a formula, opened at the default macro
+    // security level, where unsigned macros are refused
+    mxComponent = mxDesktop->loadComponentFromURL(
+        createFileURL(u"application-basic-function.fods"), u"_default"_ustr, 0,
+        { comphelper::makePropertyValue(u"MacroExecutionMode"_ustr,
+                                        document::MacroExecMode::FROM_LIST_AND_SIGNED_WARN) });
+    CPPUNIT_ASSERT(mxComponent.is());
+
+    // the formula counts as macro use, so the document got the macro decision on load and the
+    // call is refused the way a document macro would be
+    CPPUNIT_ASSERT(getScDocShell()->GetMacroCallsSeenWhileLoading());
+    ScFormulaCell* pCell = getScDoc()->GetFormulaCell(ScAddress(0, 0, 0));
+    CPPUNIT_ASSERT(pCell);
+    CPPUNIT_ASSERT_EQUAL(int(FormulaError::NoMacro), int(pCell->GetErrCode()));
+}
+
+CPPUNIT_TEST_FIXTURE(ScMacrosTest, testTdf172202ValidationMacroResult)
+{
+    createScDoc();
+
+    css::uno::Reference<css::document::XEmbeddedScripts> xDocScr(mxComponent, UNO_QUERY_THROW);
+    auto xLibs = xDocScr->getBasicLibraries();
+    auto xLibrary = xLibs->createLibrary(u"TestLibrary"_ustr);
+    xLibrary->insertByName(u"TestModule"_ustr, uno::Any(u"Function ValidateInput(sValue, sPos)\n"
+                                                        "  ValidateInput = sValue = \"11\"\n"
+                                                        "End Function\n"_ustr));
+
+    // Allow only whole numbers between 1 and 10 in A1 and call the macro on invalid input
+    uno::Reference<sheet::XSpreadsheetDocument> xDoc(mxComponent, UNO_QUERY_THROW);
+    uno::Reference<container::XIndexAccess> xSheets(xDoc->getSheets(), UNO_QUERY_THROW);
+    uno::Reference<table::XCellRange> xSheet(xSheets->getByIndex(0), UNO_QUERY_THROW);
+    uno::Reference<beans::XPropertySet> xCell(xSheet->getCellByPosition(0, 0), UNO_QUERY_THROW);
+    uno::Reference<beans::XPropertySet> xValidation(xCell->getPropertyValue(u"Validation"_ustr),
+                                                    UNO_QUERY_THROW);
+    xValidation->setPropertyValue(u"Type"_ustr, uno::Any(sheet::ValidationType_WHOLE));
+    xValidation->setPropertyValue(u"ShowErrorMessage"_ustr, uno::Any(true));
+    xValidation->setPropertyValue(u"ErrorAlertStyle"_ustr,
+                                  uno::Any(sheet::ValidationAlertStyle_MACRO));
+    xValidation->setPropertyValue(
+        u"ErrorTitle"_ustr, uno::Any(u"vnd.sun.star.script:TestLibrary.TestModule.ValidateInput?"
+                                     "language=Basic&location=document"_ustr));
+    uno::Reference<sheet::XSheetCondition> xCondition(xValidation, UNO_QUERY_THROW);
+    xCondition->setOperator(sheet::ConditionOperator_BETWEEN);
+    xCondition->setFormula1(u"1"_ustr);
+    xCondition->setFormula2(u"10"_ustr);
+    xCell->setPropertyValue(u"Validation"_ustr, uno::Any(xValidation));
+
+    ScDocument* pDoc = getScDoc();
+
+    // An invalid entry accepted by the macro must be kept
+    insertStringToCell(u"A1"_ustr, u"11");
+    // Without the fix in place, this test would have failed with
+    // - Expected: 11
+    // - Actual  : 0
+    // i.e. the entered value was discarded despite the macro accepted it
+    CPPUNIT_ASSERT_EQUAL(11.0, pDoc->GetValue(ScAddress(0, 0, 0)));
+
+    // An invalid entry rejected by the macro must be discarded
+    insertStringToCell(u"A1"_ustr, u"12");
+    CPPUNIT_ASSERT_EQUAL(11.0, pDoc->GetValue(ScAddress(0, 0, 0)));
 }
 
 ScMacrosTest::ScMacrosTest()

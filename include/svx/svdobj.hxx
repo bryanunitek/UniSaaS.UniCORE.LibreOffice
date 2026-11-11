@@ -59,7 +59,7 @@ class SfxGrabBagItem;
 class SfxStyleSheet;
 class SfxItemPool;
 class SdrVirtObj;
-class SdrObjPlusData;
+class SdrObjUserDataList;
 class SdrGluePoint;
 class SdrGluePointList;
 class SdrLayerIDSet;
@@ -228,8 +228,10 @@ public:
     // Basic DiagramHelper support
     virtual bool isDiagram() const;
     virtual const std::shared_ptr< svx::diagram::DiagramHelper_svx >& getDiagramHelper() const;
-    void setDiagramDataModelID(const OUString& rID);
-    const OUString& getDiagramDataModelID() const;
+
+    // used at SdrObjCustomShape, else empty string
+    virtual void setDiagramDataModelID(const OUString& rID);
+    virtual const OUString& getDiagramDataModelID() const;
 
     // return DiagramSubSelection if exists. This will always return
     // a valid SdrObject* to allow to use this as a loop-through-call
@@ -242,17 +244,20 @@ public:
     // temporary check if to use AdvancedDiagramFeatures
     static bool useAdvancedDiagramFeatures();
 
+    // check if a ObjectName is set and it is in DiagramModelID syntax
+    static bool isDiagramModelID(const OUString& rStr);
+
 protected:
     void resetViewContact();
 
 private:
-    // check if an ObjectName is set and it is in DiagramModelID syntax
-    bool ObjectNameIsDiagramModelID();
-
     friend class                SdrObjListIter;
     friend class                SdrObjList;
     friend class                SdrVirtObj;
     friend class                SdrRectObj;
+
+    // Returns a copy of the object. Every inherited class must reimplement this.
+    virtual rtl::Reference<SdrObject> implCloneSdrObject(SdrModel& rTargetModel) const = 0;
 
     // OperationSmiley: Allow at each SdrObject to set a FillGeometryDefiningShape,
     // so that for SdrObjects where this is set, the definition of a defined FillStyle
@@ -360,15 +365,16 @@ public:
     // or SdrOle2Obj.
     // It may also have a Title and a Description for accessibility purposes.
     virtual void SetName(const OUString& rStr, const bool bSetChanged = true);
-    virtual const OUString & GetName() const;
+    virtual const OUString & GetName() const { return m_aObjName; }
+
     void MakeNameUnique();
     void MakeNameUnique(std::unordered_set<OUString>& rNameSet);
     virtual void SetTitle(const OUString& rStr);
-    virtual OUString GetTitle() const;
+    virtual OUString GetTitle() const { return m_aObjTitle; }
     virtual void SetDescription(const OUString& rStr);
-    virtual OUString GetDescription() const;
+    virtual OUString GetDescription() const { return m_aObjDescription; }
     virtual void SetDecorative(bool isDecorative);
-    virtual bool IsDecorative() const;
+    virtual bool IsDecorative() const { return m_bDecorative; }
     // tdf#167714 a "standard horizontal rule", which is laid out and cropped its own way.
     // This says which kind of object this is, not how it looks: it belongs to creating a rule and
     // is read-only afterwards, never toggled on an existing shape, so no undo action reverses it.
@@ -452,8 +458,12 @@ public:
     // means no change of the rotation point (only centered) and no shear allowed
     virtual bool HasLimitedRotation() const;
 
-    // Returns a copy of the object. Every inherited class must reimplement this.
-    virtual rtl::Reference<SdrObject> CloneSdrObject(SdrModel& rTargetModel) const = 0;
+    // Returns a copy of the object. Internally uses the virtual and
+    // overridden method implCloneSdrObject that is implemented for each
+    // derivation. If cloned to another SdrModel it will support calling
+    // postProcessAfterCloneToDifferentModel
+    rtl::Reference<SdrObject> CloneSdrObject(SdrModel& rTargetModel) const;
+
     // helper, since Clone always return the type of the current subclass
     template<class T>
     static rtl::Reference<T> Clone(T const & rObj, SdrModel& rTargetModel)
@@ -659,6 +669,9 @@ public:
     void SetOutlinerParaObject(std::optional<OutlinerParaObject> pTextObject);
     virtual void NbcSetOutlinerParaObject(std::optional<OutlinerParaObject> pTextObject, bool bAdjustTextFrameWidthAndHeight = true);
     virtual OutlinerParaObject* GetOutlinerParaObject() const;
+
+    // Multiplies the size of every letter of the text by fScale
+    void scaleText(double fScale, bool bUndo);
     virtual void NbcReformatText();
 
     void BurnInStyleSheetAttributes();
@@ -695,7 +708,7 @@ public:
     virtual SdrGluePoint GetCornerGluePoint(sal_uInt16 nNum) const;
 
     // list of all gluepoints, can be NULL
-    virtual const SdrGluePointList* GetGluePointList() const;
+    virtual const SdrGluePointList* GetGluePointList() const { return m_pGluePoints.get(); }
 
     // after changing the GluePointList, one has to call the object's SendRepaintBroadcast!
     virtual SdrGluePointList* ForceGluePointList();
@@ -916,8 +929,21 @@ protected:
     mutable tools::Rectangle m_aOutRect;     // surrounding rectangle for Paint (incl. LineWidth, ...)
     Point                       m_aAnchor;      // anchor position (Writer)
     SdrObjUserCall*             m_pUserCall;
-    std::unique_ptr<SdrObjPlusData>
-                                m_pPlusData;    // Broadcaster, UserData, connectors, ... (this is the Bitsack)
+
+    // set when the object is referenced or has connectors
+    std::unique_ptr<SfxBroadcaster>     m_pBroadcaster;
+
+    // user-defined data
+    std::unique_ptr<SdrObjUserDataList> m_pUserDataList;
+
+    // glue points for connecting object connectors
+    std::unique_ptr<SdrGluePointList>   m_pGluePoints;
+
+    // object name, title and description
+    OUString                    m_aObjName;
+    OUString                    m_aObjTitle;
+    OUString                    m_aObjDescription;
+
     // object is only pointing to another one
     bool                        m_bVirtObj : 1;
     bool                        m_bSnapRectDirty : 1;
@@ -945,6 +971,8 @@ protected:
 
     bool                        m_bHorizontalRule = false;
 
+    bool                        m_bDecorative = false;
+
     // custom prompt text for empty presentation object
     OUString                    m_aCustomPromptText;
 
@@ -961,8 +989,6 @@ protected:
 
     // for GetDragComment
     OUString ImpGetDescriptionStr(TranslateId pStrCacheID) const;
-
-    void ImpForcePlusData();
 
     OUString GetMetrStr(tools::Long nVal) const;
 

@@ -102,6 +102,7 @@
 #include <svtools/sfxecode.hxx>
 #include <sal/log.hxx>
 #include <framework/configimporter.hxx>
+#include <framework/documentmacrocalls.hxx>
 #include <framework/titlehelper.hxx>
 #include <comphelper/numberedcollection.hxx>
 #include <unotools/ucbhelper.hxx>
@@ -1911,7 +1912,12 @@ void SAL_CALL SfxBaseModel::initNew()
     if( m_pData->m_pObjectShell->GetMedium() )
         throw frame::DoubleInitializationException();
 
-    bool bRes = m_pData->m_pObjectShell->DoInitNew();
+    // An embedded object starts with macros disallowed, the same as one loaded from its own storage.
+    const SfxNewDocumentMacros eMacros
+        = m_pData->m_pObjectShell->GetCreateMode() == SfxObjectCreateMode::EMBEDDED
+              ? SfxNewDocumentMacros::Disallow
+              : SfxNewDocumentMacros::Allow;
+    bool bRes = m_pData->m_pObjectShell->DoInitNew(eMacros);
     ErrCodeMsg nErrCode = m_pData->m_pObjectShell->GetErrorIgnoreWarning() ?
                        m_pData->m_pObjectShell->GetErrorIgnoreWarning() : ERRCODE_IO_CANTCREATE;
     m_pData->m_pObjectShell->ResetError();
@@ -3654,6 +3660,9 @@ static void GetCommandFromSequence( OUString& rCommand, sal_Int32& nIndex, const
     }
 }
 
+// Toolbars stored in OOo 1.x documents name their commands as "slot:N" URLs. N is the numeric id
+// of the command, the SID_ value that the module's .sdi file maps to a ".uno:" name. The numeric
+// form is no longer dispatched, so each one becomes the ".uno:" command of the same id.
 static void ConvertSlotsToCommands( SfxObjectShell const * pDoc, Reference< container::XIndexContainer > const & rToolbarDefinition )
 {
     if ( !pDoc )
@@ -3673,7 +3682,6 @@ static void ConvertSlotsToCommands( SfxObjectShell const * pDoc, Reference< cont
             {
                 const sal_uInt16 nSlot = o3tl::toInt32(aCommand.subView( 5 ));
 
-                // We have to replace the old "slot-Command" with our new ".uno:-Command"
                 const SfxSlot* pSlot = pModule->GetSlotPool()->GetSlot( nSlot );
                 if ( pSlot )
                 {
@@ -3691,6 +3699,12 @@ Reference< ui::XUIConfigurationManager > SAL_CALL SfxBaseModel::getUIConfigurati
     return Reference< ui::XUIConfigurationManager >( getUIConfigurationManager2(), UNO_QUERY_THROW );
 }
 
+void SfxBaseModel::SetUIConfigurationMacroCallsAllowed_Impl( bool bAllowed )
+{
+    if ( m_pData )
+        framework::setDocumentMacroCallsAllowed( m_pData->m_xUIConfigurationManager, bAllowed );
+}
+
 Reference< ui::XUIConfigurationManager2 > SfxBaseModel::getUIConfigurationManager2()
 {
     SfxModelGuard aGuard( *this );
@@ -3699,6 +3713,9 @@ Reference< ui::XUIConfigurationManager2 > SfxBaseModel::getUIConfigurationManage
     {
         Reference< ui::XUIConfigurationManager2 > xNewUIConfMan =
             ui::UIConfigurationManager::create( comphelper::getProcessComponentContext() );
+
+        framework::setDocumentMacroCallsAllowed(
+            xNewUIConfMan, m_pData->m_pObjectShell->Get_Impl()->m_bMacroCallsAllowed );
 
         Reference< embed::XStorage > xConfigStorage;
 

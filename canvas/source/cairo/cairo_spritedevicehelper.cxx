@@ -59,31 +59,9 @@ namespace cairocanvas
         mpSpriteCanvas = nullptr;
     }
 
-    bool SpriteDeviceHelper::showBuffer( bool, bool )
-    {
-        SAL_WARN("canvas.cairo", "showBuffer Not supposed to be called, handled by SpriteCanvas");
-        return false;
-    }
-
-    bool SpriteDeviceHelper::switchBuffer( bool, bool )
-    {
-        SAL_WARN("canvas.cairo", "showBuffer Not supposed to be called, handled by SpriteCanvas");
-        return false;
-    }
-
     uno::Any SpriteDeviceHelper::isAccelerated() const
     {
         return css::uno::Any(true);
-    }
-
-    uno::Any SpriteDeviceHelper::getDeviceHandle() const
-    {
-        return DeviceHelper::getDeviceHandle();
-    }
-
-    uno::Any SpriteDeviceHelper::getSurfaceHandle() const
-    {
-        return DeviceHelper::getSurfaceHandle();
     }
 
     void SpriteDeviceHelper::setSize( const ::basegfx::B2ISize& rSize )

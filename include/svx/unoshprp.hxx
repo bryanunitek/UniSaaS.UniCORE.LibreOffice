@@ -200,7 +200,9 @@
 #define OWN_ATTR_HYPERLINK                      (OWN_ATTR_VALUE_START+108)
 #define OWN_ATTR_MISC_OBJ_DECORATIVE            (OWN_ATTR_VALUE_START+109)
 #define OWN_ATTR_OBJ_ISEMPTYPRESOBJ             (OWN_ATTR_VALUE_START+110)
-#define OWN_ATTR_MISC_OBJ_HORIZONTAL_RULE       (OWN_ATTR_VALUE_START+111)
+#define OWN_ATTR_IS_DIAGRAM                     (OWN_ATTR_VALUE_START+111)
+#define OWN_ATTR_DIAGRAM_DATA                   (OWN_ATTR_VALUE_START+112)
+#define OWN_ATTR_MISC_OBJ_HORIZONTAL_RULE       (OWN_ATTR_VALUE_START+113)
 // ATTENTION: current maximum is OWN_ATTR_VALUE_START+120 svx; when adding values, update
 // OWN_ATTR_VALUE_END in include/svl/solar.hrc accordingly
 
@@ -226,6 +228,15 @@
 
 #define SOFTEDGE_PROPERTIES \
     { u"SoftEdgeRadius"_ustr,      SDRATTR_SOFTEDGE_RADIUS,       cppu::UnoType<sal_Int32>::get(),      0,      0, PropertyMoreFlags::METRIC_ITEM},
+
+#define REFLECTION_PROPERTIES \
+    { u"ReflectionEffect"_ustr,                  SDRATTR_REFLECTION,                    cppu::UnoType<bool>::get(),         0, 0}, \
+    { u"ReflectionEffectDistance"_ustr,          SDRATTR_REFLECTION_DISTANCE,           ::cppu::UnoType<sal_Int32>::get(),  0, 0, PropertyMoreFlags::METRIC_ITEM}, \
+    { u"ReflectionEffectBlurRadius"_ustr,        SDRATTR_REFLECTION_BLUR_RADIUS,        ::cppu::UnoType<sal_Int32>::get(),  0, 0, PropertyMoreFlags::METRIC_ITEM}, \
+    { u"ReflectionEffectStartTransparency"_ustr, SDRATTR_REFLECTION_START_TRANSPARENCY, ::cppu::UnoType<sal_Int16>::get(),  0, 0}, \
+    { u"ReflectionEffectStartPosition"_ustr,     SDRATTR_REFLECTION_START_POSITION,     ::cppu::UnoType<sal_Int16>::get(),  0, 0}, \
+    { u"ReflectionEffectEndTransparency"_ustr,   SDRATTR_REFLECTION_END_TRANSPARENCY,   ::cppu::UnoType<sal_Int16>::get(),  0, 0}, \
+    { u"ReflectionEffectEndPosition"_ustr,       SDRATTR_REFLECTION_END_POSITION,       ::cppu::UnoType<sal_Int16>::get(),  0, 0},
 
 #define GLOW_TEXT_PROPERTIES \
     { u"GlowTextEffectRadius"_ustr,      SDRATTR_GLOW_TEXT_RADIUS,         ::cppu::UnoType<sal_Int32>::get(),    0,      0, PropertyMoreFlags::METRIC_ITEM}, \

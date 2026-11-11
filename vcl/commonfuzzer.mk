@@ -86,6 +86,7 @@ fuzzer_core_libraries = \
     file \
     filterconfig \
     fsstorage \
+    frm \
     fwk \
     i18npool \
     i18nutil \
@@ -148,7 +149,6 @@ fuzzer_core_libraries = \
     srtrs1 \
     storagefd \
     mtfrenderer \
-    canvasfactory \
     vclcanvas \
     pdfimport \
     xof \

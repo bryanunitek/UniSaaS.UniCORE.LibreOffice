@@ -37,6 +37,7 @@
 #include <com/sun/star/util/XCloneable.hpp>
 #include <com/sun/star/util/Duration.hpp>
 #include <com/sun/star/form/FormComponentType.hpp>
+#include <com/sun/star/form/XFormComponent.hpp>
 #include <com/sun/star/awt/ImagePosition.hpp>
 #include <com/sun/star/beans/XMultiPropertySet.hpp>
 #include <com/sun/star/beans/XPropertyContainer.hpp>
@@ -51,6 +52,7 @@
 #include <comphelper/types.hxx>
 #include <comphelper/sequence.hxx>
 #include <comphelper/documentinfo.hxx>
+#include <sfx2/objsh.hxx>
 #include <o3tl/string_view.hxx>
 
 #include <algorithm>
@@ -581,12 +583,28 @@ namespace xmloff
         Reference< XPropertySet > xReturn;
         if (!m_sServiceName.isEmpty())
         {
+            // a form component is named by a service in the form namespace, or in the StarOffice
+            // one older documents use
+            if (!m_sServiceName.startsWith(u"com.sun.star.form.")
+                && !m_sServiceName.startsWith(u"stardiv.one.form."))
+            {
+                SAL_WARN("xmloff.forms", "OElementImport::createElement: " << m_sServiceName
+                            << " is not a form component service");
+                return xReturn;
+            }
             Reference< XComponentContext > xContext = m_rFormImport.getGlobalContext().GetComponentContext();
             Reference< XInterface > xPure = xContext->getServiceManager()->createInstanceWithContext(m_sServiceName, xContext);
             OSL_ENSURE(xPure.is(),
                         OStringBuffer("OElementImport::createElement: service factory gave me no object (service name: " +
                             OUStringToOString(m_sServiceName, RTL_TEXTENCODING_ASCII_US) +
                             ")!").getStr());
+            // only use the created object when it is a form component
+            if (!Reference< XFormComponent >(xPure, UNO_QUERY).is())
+            {
+                SAL_WARN("xmloff.forms", "OElementImport::createElement: " << m_sServiceName
+                            << " is not a form component");
+                return xReturn;
+            }
             xReturn.set(xPure, UNO_QUERY);
             if (auto const props = Reference<css::beans::XPropertySet>(xPure, css::uno::UNO_QUERY))
             {
@@ -1961,6 +1979,15 @@ namespace xmloff
     void OFormImport::endFastElement(sal_Int32 nElement)
     {
         OElementImport::endFastElement(nElement);
+
+        // A form that names a database is an external link of its document.
+        if (SfxObjectShell* pShell
+            = SfxObjectShell::GetShellFromComponent(m_rFormImport.getGlobalContext().GetModel()))
+        {
+            if (!pShell->HasExternalDatabaseForms()
+                && SfxObjectShell::IsExternalDatabaseForm(m_xElement))
+                pShell->SetHasExternalDatabaseForms();
+        }
 
         // now that we have all children, attach the events
         css::uno::Reference< css::container::XIndexAccess > xIndexContainer(m_xMeAsContainer, css::uno::UNO_QUERY);

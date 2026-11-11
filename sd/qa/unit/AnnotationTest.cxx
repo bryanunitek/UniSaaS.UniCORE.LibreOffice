@@ -380,6 +380,10 @@ CPPUNIT_TEST_FIXTURE(AnnotationTest, testAnnotationDuplicatePage)
         CPPUNIT_ASSERT_EQUAL(u"Comment"_ustr, xAnnotation->GetText());
     }
 
+    // The moment the comment was written has to travel with the copy as well.
+    const util::DateTime aDateTimeUTC(0, 3, 2, 1, 15, 6, 2026, true);
+    pPage1->getAnnotations().at(0)->setDateTimeUTC(aDateTimeUTC);
+
     // Let's duplicate the page
     dispatchCommand(mxComponent, u".uno:DuplicatePage"_ustr, {});
 
@@ -417,6 +421,11 @@ CPPUNIT_TEST_FIXTURE(AnnotationTest, testAnnotationDuplicatePage)
 
         // Check text of the annotation
         CPPUNIT_ASSERT_EQUAL(u"Comment"_ustr, xAnnotation->GetText());
+
+        // The copy carries the same moment as the original
+        CPPUNIT_ASSERT_EQUAL(aDateTimeUTC.Year, xAnnotation->getDateTimeUTC().Year);
+        CPPUNIT_ASSERT_EQUAL(aDateTimeUTC.Hours, xAnnotation->getDateTimeUTC().Hours);
+        CPPUNIT_ASSERT_EQUAL(aDateTimeUTC.Minutes, xAnnotation->getDateTimeUTC().Minutes);
 
         // Annotation in page 1 is not the same instance as annotation in page 2
         // We verify the annotation was copied
@@ -663,6 +672,96 @@ CPPUNIT_TEST_FIXTURE(AnnotationTest, testAnnotationThreadedFields)
         }
     }
     CPPUNIT_ASSERT_EQUAL(3, nVerified);
+}
+
+CPPUNIT_TEST_FIXTURE(AnnotationTest, testModernCommentImport)
+{
+    // A presentation whose comments are held in the newer comment part keeps them on load, as
+    // one thread with the replies hanging off its root.
+    createSdImpressDoc("pptx/modern-comments.pptx");
+
+    auto pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    CPPUNIT_ASSERT(pXImpressDocument);
+    SdPage* pPage = pXImpressDocument->GetDoc()->GetSdPage(0, PageKind::Standard);
+    CPPUNIT_ASSERT(pPage);
+
+    // Without the accompanying fix in place, this test would have failed with an expected 3 but
+    // an actual 0: the part was not read at all, so every comment was dropped on load.
+    auto const& rAnnotations = pPage->getAnnotations();
+    CPPUNIT_ASSERT_EQUAL(size_t(3), rAnnotations.size());
+
+    // The author comes from the separate author list the entries refer to by id.
+    for (auto const& xAnnotation : rAnnotations)
+    {
+        CPPUNIT_ASSERT_EQUAL(u"Comment Author"_ustr, xAnnotation->getAuthor());
+        CPPUNIT_ASSERT_EQUAL(u"CA"_ustr, xAnnotation->getInitials());
+        CPPUNIT_ASSERT(xAnnotation->IsThreaded());
+    }
+
+    // The thread root comes first, then its two replies in the order the file lists them.
+    CPPUNIT_ASSERT_EQUAL(u"Make this colorful"_ustr, rAnnotations[0]->GetText());
+    CPPUNIT_ASSERT_EQUAL(u"Nice and big"_ustr, rAnnotations[1]->GetText());
+    CPPUNIT_ASSERT_EQUAL(u"Faster"_ustr, rAnnotations[2]->GetText());
+
+    CPPUNIT_ASSERT_EQUAL(sal_uInt64(0), rAnnotations[0]->GetParentId());
+    CPPUNIT_ASSERT_EQUAL(rAnnotations[0]->GetId(), rAnnotations[1]->GetParentId());
+    CPPUNIT_ASSERT_EQUAL(rAnnotations[0]->GetId(), rAnnotations[2]->GetParentId());
+
+    // The created value is a moment in UTC, so it is recorded as one and not only as a wall
+    // clock. Without that a reader in another zone is shown the author's clock as their own.
+    for (auto const& xAnnotation : rAnnotations)
+        CPPUNIT_ASSERT_EQUAL(xAnnotation->getDateTime().Year, xAnnotation->getDateTimeUTC().Year);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(22), rAnnotations[0]->getDateTimeUTC().Minutes);
+
+    // The time each entry carries is kept as the file has it.
+    util::DateTime aDateTime = rAnnotations[0]->getDateTime();
+    CPPUNIT_ASSERT_EQUAL(sal_Int16(2026), aDateTime.Year);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(8), aDateTime.Month);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(21), aDateTime.Day);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(16), aDateTime.Hours);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(22), aDateTime.Minutes);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(22), aDateTime.Seconds);
+}
+
+CPPUNIT_TEST_FIXTURE(AnnotationTest, testAnnotationDateUtcOdfRoundtrip)
+{
+    // An annotation records the moment it was written beside the author's wall clock, and that
+    // moment survives a save and reload.
+    createSdImpressDoc();
+    dispatchCommand(mxComponent, u".uno:InsertAnnotation"_ustr, {});
+
+    auto pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    CPPUNIT_ASSERT(pXImpressDocument);
+    SdPage* pPage = pXImpressDocument->GetDoc()->GetSdPage(0, PageKind::Standard);
+    CPPUNIT_ASSERT_EQUAL(size_t(1), pPage->getAnnotations().size());
+
+    // Inserting an annotation records a moment, so the year is a real one rather than the zero
+    // that stands for "nothing recorded".
+    CPPUNIT_ASSERT(pPage->getAnnotations()[0]->getDateTimeUTC().Year != 0);
+
+    // A known moment, so what lands in the file can be compared against it.
+    util::DateTime aDateTimeUTC(0, 3, 2, 1, 15, 6, 2026, true);
+    pPage->getAnnotations()[0]->setDateTimeUTC(aDateTimeUTC);
+
+    // Saving a presentation that has an annotation does not pass export validation, because the
+    // element is written in the officeooo namespace rather than the office one. That predates
+    // this and is why nothing here round-trips a presentation with a comment.
+    skipValidation();
+    saveAndReload(TestFilter::ODP);
+    auto pReloaded = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    CPPUNIT_ASSERT(pReloaded);
+    SdPage* pReloadedPage = pReloaded->GetDoc()->GetSdPage(0, PageKind::Standard);
+    CPPUNIT_ASSERT_EQUAL(size_t(1), pReloadedPage->getAnnotations().size());
+
+    // Without the accompanying fix in place, this test would have failed: ODF kept the wall
+    // clock alone, so the zone it was read in was lost.
+    util::DateTime aReloaded = pReloadedPage->getAnnotations()[0]->getDateTimeUTC();
+    CPPUNIT_ASSERT_EQUAL(sal_Int16(2026), aReloaded.Year);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(6), aReloaded.Month);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(15), aReloaded.Day);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(1), aReloaded.Hours);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(2), aReloaded.Minutes);
+    CPPUNIT_ASSERT_EQUAL(sal_uInt16(3), aReloaded.Seconds);
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

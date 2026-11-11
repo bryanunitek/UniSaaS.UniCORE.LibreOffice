@@ -32,6 +32,7 @@
 #include <ooxml/resourceids.hxx>
 #include <oox/token/tokens.hxx>
 #include <oox/drawingml/drawingmltypes.hxx>
+#include <basegfx/units/Length.hxx>
 
 #include <com/sun/star/awt/Gradient2.hpp>
 #include <com/sun/star/document/XDocumentPropertiesSupplier.hpp>
@@ -1073,9 +1074,15 @@ void DomainMapper::lcl_attribute(Id nName, const Value & val)
                         pParaProperties->props().SetvAnchor( nIntValue );
                     break;
                     case NS_ooxml::LN_CT_FramePr_x:
-                        pParaProperties->props().Setx(
-                            ConversionHelper::convertTwipToMm100_Limited(nIntValue));
+                    {
+                        // The format ignores large twip position values (legacy 16bit handling),
+                        // so anything at or above 32768 twips is stored as unset.
+                        gfx::Length nX = gfx::Length::twip(nIntValue);
+                        if (nX >= 0x8000_twip)
+                            nX = 0_emu;
+                        pParaProperties->props().Setx(nX);
                         pParaProperties->props().SetxAlign( text::HoriOrientation::NONE );
+                    }
                     break;
                     case NS_ooxml::LN_CT_FramePr_xAlign:
                         switch( nIntValue )
@@ -1090,9 +1097,15 @@ void DomainMapper::lcl_attribute(Id nName, const Value & val)
                         pParaProperties->props().SetxAlign( nIntValue );
                     break;
                     case NS_ooxml::LN_CT_FramePr_y:
-                        pParaProperties->props().Sety(
-                            ConversionHelper::convertTwipToMm100_Limited(nIntValue));
+                    {
+                        // The format ignores large twip position values (legacy 16bit handling),
+                        // so anything at or above 32768 twips is stored as unset.
+                        gfx::Length nY = gfx::Length::twip(nIntValue);
+                        if (nY >= 0x8000_twip)
+                            nY = 0_emu;
+                        pParaProperties->props().Sety(nY);
                         pParaProperties->props().SetyAlign( text::VertOrientation::NONE );
+                    }
                     break;
                     case NS_ooxml::LN_CT_FramePr_yAlign:
                         switch( nIntValue )
@@ -4650,7 +4663,7 @@ void DomainMapper::lcl_utext(const sal_Unicode *const data_, size_t len)
         // SDT's ending right before a field start are handled as well.
         PropertyMapPtr pContext = m_pImpl->GetTopContext();
         if (m_pImpl->IsOpenField())
-            pContext = m_pImpl->GetTopFieldContext()->getProperties();
+            pContext = m_pImpl->GetTopFieldContext()->getFieldProperties();
         pContext->Insert(PROP_SDT_END_BEFORE, uno::Any(true), true, CHAR_GRAB_BAG);
         m_pImpl->setSdtEndDeferred(false);
     }
@@ -4722,7 +4735,7 @@ void DomainMapper::lcl_utext(const sal_Unicode *const data_, size_t len)
 
             if (m_pImpl->IsOpenField())
                 // We have a field, insert the SDT properties to the field's grab-bag, so they won't be lost.
-                pContext = m_pImpl->GetTopFieldContext()->getProperties();
+                pContext = m_pImpl->GetTopFieldContext()->getFieldProperties();
 
             uno::Sequence<beans::PropertyValue> aGrabBag = m_pImpl->GetSdtHelper().getInteropGrabBagAndClear();
             pContext->Insert(PROP_SDTPR, uno::Any(aGrabBag), true, CHAR_GRAB_BAG);
@@ -5469,6 +5482,16 @@ void DomainMapper::finishParagraph(const bool bRemove, const bool bNoNumbering)
 void DomainMapper::commentProps(const OUString& sId, const CommentProperties& rProps)
 {
     m_pImpl->commentProps(sId, rProps);
+}
+
+void DomainMapper::commentDurableId(const OUString& sParaId, const OUString& sDurableId)
+{
+    m_pImpl->commentDurableId(sParaId, sDurableId);
+}
+
+void DomainMapper::commentDateUtc(const OUString& sDurableId, const OUString& sDateUtc)
+{
+    m_pImpl->commentDateUtc(sDurableId, sDateUtc);
 }
 
 rtl::Reference<SwXStyleFamily> const & DomainMapper::GetCharacterStyles()

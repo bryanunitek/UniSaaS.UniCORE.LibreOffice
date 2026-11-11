@@ -20,7 +20,6 @@ $(eval $(call gb_Module_add_targets,desktop,\
     $(if $(ENABLE_BREAKPAD), \
         Library_crashreport \
         ) \
-    $(if $(or $(DISABLE_GUI),$(ENABLE_WASM_STRIP_SPLASH)),,Library_spl) \
     Package_branding \
     $(if $(CUSTOM_BRAND_DIR),Package_branding_custom) \
     UIConfig_deployment \
@@ -55,7 +54,7 @@ $(eval $(call gb_Module_add_targets,desktop,\
 ))
 endif
 
-ifeq ($(USING_X11), TRUE)
+ifeq ($(USING_UNIX_DESKTOP), TRUE)
 $(eval $(call gb_Module_add_targets,desktop,\
     Package_sbase_sh \
     Package_scalc_sh \

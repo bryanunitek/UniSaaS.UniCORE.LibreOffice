@@ -18,6 +18,7 @@
  */
 
 #include <svx/svddef.hxx>
+#include <vcl/ptrstyle.hxx>
 #include <svx/svdoutl.hxx>
 #include <editeng/outlobj.hxx>
 #include <svx/sdtaaitm.hxx>
@@ -33,7 +34,6 @@
 #include <editeng/eeitem.hxx>
 #include <svl/itemset.hxx>
 #include <osl/diagnose.h>
-#include <vcl/ptrstyle.hxx>
 
 #include <futext.hxx>
 #include <drwlayer.hxx>

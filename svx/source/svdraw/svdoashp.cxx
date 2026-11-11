@@ -83,7 +83,7 @@
 #include <basegfx/polygon/b2dpolygon.hxx>
 #include <basegfx/polygon/b2dpolygontools.hxx>
 #include <basegfx/range/b2drange.hxx>
-#include <svdobjplusdata.hxx>
+#include <svx/svdglue.hxx>
 #include <sal/log.hxx>
 #include <tools/debug.hxx>
 #include <o3tl/string_view.hxx>
@@ -782,10 +782,22 @@ std::unique_ptr<sdr::properties::BaseProperties> SdrObjCustomShape::CreateObject
     return std::make_unique<sdr::properties::CustomShapeProperties>(*this);
 }
 
+void SdrObjCustomShape::setDiagramDataModelID(const OUString& rID)
+{
+    m_aDiagramModelID = rID;
+}
+
+const OUString& SdrObjCustomShape::getDiagramDataModelID() const
+{
+    return m_aDiagramModelID;
+}
+
 SdrObjCustomShape::SdrObjCustomShape(SdrModel& rSdrModel)
 :   SdrTextObj(rSdrModel)
     , m_fObjectRotation(0.0)
-    , mbAdjustingTextFrameWidthAndHeight(false)
+    , m_aDiagramModelID()
+    , m_bAdjustingTextFrameWidthAndHeight(false)
+    , m_bImportingSmartArtMember(false)
 {
     m_bClosedObj = true; // custom shapes may be filled
     mbTextFrame = true;
@@ -793,15 +805,15 @@ SdrObjCustomShape::SdrObjCustomShape(SdrModel& rSdrModel)
 
 SdrObjCustomShape::SdrObjCustomShape(SdrModel& rSdrModel, SdrObjCustomShape const & rSource)
 :   SdrTextObj(rSdrModel, rSource)
-    , m_fObjectRotation(0.0)
-    , mbAdjustingTextFrameWidthAndHeight(false)
+    , m_fObjectRotation(rSource.m_fObjectRotation)
+    , m_aDiagramModelID(rSource.getDiagramDataModelID())
+    , m_bAdjustingTextFrameWidthAndHeight(rSource.m_bAdjustingTextFrameWidthAndHeight)
+    , m_bImportingSmartArtMember(false)
 {
     m_bClosedObj = true; // custom shapes may be filled
     mbTextFrame = true;
 
-    m_fObjectRotation = rSource.m_fObjectRotation;
-    mbAdjustingTextFrameWidthAndHeight = rSource.mbAdjustingTextFrameWidthAndHeight;
-    assert(!mbAdjustingTextFrameWidthAndHeight);
+    assert(!m_bAdjustingTextFrameWidthAndHeight);
     InvalidateRenderGeometry();
 }
 
@@ -1810,10 +1822,9 @@ void SdrObjCustomShape::ImpCheckCustomGluePointsAreAdded()
     // GluePointList should not be set, but we delivered by using GetGluePointList(),
     // maybe on demand. Since the local object is changed here, this is assumed to
     // be a result of GetGluePointList and thus the list is copied
-    if(m_pPlusData)
-    {
-        m_pPlusData->SetGluePoints(aNewList);
-    }
+    if (!m_pGluePoints)
+        m_pGluePoints = std::make_unique<SdrGluePointList>();
+    *m_pGluePoints = aNewList;
 }
 
 // #i38892#
@@ -2457,9 +2468,9 @@ bool SdrObjCustomShape::NbcAdjustTextFrameWidthAndHeight(bool bHgt, bool bWdt)
 {
     tools::Rectangle aNewTextRect = ImpCalculateTextFrame(bHgt, bWdt);
     const bool bRet = !aNewTextRect.IsEmpty() && aNewTextRect != getRectangle();
-    if (bRet && !mbAdjustingTextFrameWidthAndHeight)
+    if (bRet && !m_bAdjustingTextFrameWidthAndHeight)
     {
-        mbAdjustingTextFrameWidthAndHeight = true;
+        m_bAdjustingTextFrameWidthAndHeight = true;
 
         // taking care of handles that should not been changed
         std::vector< SdrCustomShapeInteraction > aInteractionHandles( GetInteractionHandles() );
@@ -2481,7 +2492,7 @@ bool SdrObjCustomShape::NbcAdjustTextFrameWidthAndHeight(bool bHgt, bool bWdt)
         }
         InvalidateRenderGeometry();
 
-        mbAdjustingTextFrameWidthAndHeight = false;
+        m_bAdjustingTextFrameWidthAndHeight = false;
     }
     return bRet;
 }
@@ -2788,7 +2799,7 @@ void SdrObjCustomShape::NbcSetOutlinerParaObject(std::optional<OutlinerParaObjec
     InvalidateRenderGeometry();
 }
 
-rtl::Reference<SdrObject> SdrObjCustomShape::CloneSdrObject(SdrModel& rTargetModel) const
+rtl::Reference<SdrObject> SdrObjCustomShape::implCloneSdrObject(SdrModel& rTargetModel) const
 {
     return new SdrObjCustomShape(rTargetModel, *this);
 }
@@ -2847,6 +2858,14 @@ rtl::Reference<SdrObject> SdrObjCustomShape::DoConvertToPolyObj(bool bBezier, bo
             {
                 pRetval->SetMergedItem(makeSdrShadowItem(true));
             }
+
+            // The geometry of the custom shape has no glow, soft edge or reflection, so the
+            // converted objects get them from the custom shape, like the shadow.
+            SfxItemSet aEffects(SfxItemSet::makeFixedSfxItemSet<SDRATTR_GLOW_FIRST, SDRATTR_SOFTEDGE_LAST,
+                    SDRATTR_REFLECTION_FIRST, SDRATTR_REFLECTION_LAST>
+                (GetObjectItemPool()));
+            aEffects.Put(GetMergedItemSet());
+            pRetval->SetMergedItemSet(aEffects);
         }
 
         if(bAddText && HasText() && !IsTextPath())

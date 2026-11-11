@@ -263,7 +263,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf90626)
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf107608)
 {
     createSdImpressDoc("pptx/tdf107608.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     uno::Reference<beans::XPropertySet> xShape(getShapeFromPage(0, 0));
     uno::Reference<beans::XPropertySet> xPropSet(xShape, uno::UNO_SET_THROW);
@@ -286,7 +286,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf111786)
     // Export line transparency with the color
 
     createSdImpressDoc("pptx/tdf111786.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     uno::Reference<beans::XPropertySet> xShape(getShapeFromPage(0, 0));
     uno::Reference<beans::XPropertySet> xPropSet(xShape, uno::UNO_SET_THROW);
@@ -343,7 +343,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testLegacyShapeAutofitPPTX)
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf115394)
 {
     createSdImpressDoc("pptx/tdf115394.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     SdXImpressDocument* pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
     CPPUNIT_ASSERT(pXImpressDocument);
@@ -379,7 +379,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf115394)
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf115394Zero)
 {
     createSdImpressDoc("pptx/tdf115394-zero.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
     double fTransitionDuration;
 
     SdXImpressDocument* pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
@@ -388,6 +388,31 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf115394Zero)
     SdPage* pPage = pDoc->GetSdPage(0, PageKind::Standard);
     fTransitionDuration = pPage->getTransitionDuration();
     CPPUNIT_ASSERT_EQUAL(0.01, fTransitionDuration);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testNoTransitionWithoutEffect)
+{
+    createSdImpressDoc();
+    save(TestFilter::PPTX);
+
+    // A slide of an empty presentation has no transition effect.
+    xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/slides/slide1.xml"_ustr);
+    assertXPath(pXmlDoc, "//p:transition", 0);
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testAutoAdvanceWithoutEffect)
+{
+    createSdImpressDoc();
+    uno::Reference<beans::XPropertySet> xPage(getPage(0), uno::UNO_QUERY_THROW);
+    // Advance to the next slide automatically after 3 seconds, without a transition effect
+    xPage->setPropertyValue(u"Change"_ustr, uno::Any(sal_Int32(1)));
+    xPage->setPropertyValue(u"Duration"_ustr, uno::Any(sal_Int32(3)));
+    save(TestFilter::PPTX);
+
+    // PP always seems to write mc:AlternateContent
+    xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/slides/slide1.xml"_ustr);
+    assertXPath(pXmlDoc, "/p:sld/mc:AlternateContent/mc:Choice/p:transition", "advTm", u"3000");
+    assertXPath(pXmlDoc, "/p:sld/mc:AlternateContent/mc:Choice/p:transition", "spd", u"slow");
 }
 
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf115005)
@@ -531,7 +556,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf118806)
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf130058)
 {
     createSdImpressDoc("pptx/tdf130058.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     uno::Reference<beans::XPropertySet> xShape(getShapeFromPage(0, 0));
     bool bHasShadow = false;
@@ -561,7 +586,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf111789)
     // Shadow properties were not exported for text shapes.
 
     createSdImpressDoc("pptx/tdf111789.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     // First text shape has some shadow
     {
@@ -570,10 +595,11 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf111789)
         xShape->getPropertyValue(u"Shadow"_ustr) >>= bHasShadow;
         CPPUNIT_ASSERT(bHasShadow);
         double fShadowDist = 0.0;
+        // Difference of 1 because of rounding
         xShape->getPropertyValue(u"ShadowXDistance"_ustr) >>= fShadowDist;
-        CPPUNIT_ASSERT_EQUAL(static_cast<double>(274), fShadowDist);
+        CPPUNIT_ASSERT_EQUAL(static_cast<double>(273), fShadowDist);
         xShape->getPropertyValue(u"ShadowYDistance"_ustr) >>= fShadowDist;
-        CPPUNIT_ASSERT_EQUAL(static_cast<double>(274), fShadowDist);
+        CPPUNIT_ASSERT_EQUAL(static_cast<double>(273), fShadowDist);
         Color nColor;
         xShape->getPropertyValue(u"ShadowColor"_ustr) >>= nColor;
         CPPUNIT_ASSERT_EQUAL(COL_LIGHTRED, nColor);
@@ -643,7 +669,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testZeroIndentExport)
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf100348_convert_Fontwork2TextWarp)
 {
     createSdImpressDoc("odp/tdf100348_Fontwork2TextWarp.odp");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     // Resulting pptx has to contain the TextWarp shape
     xmlDocUniquePtr pXmlDocContent = parseExport(u"ppt/slides/slide1.xml"_ustr);
@@ -696,7 +722,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf100348_convert_Fontwork2TextWarp
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testTdf125573_FontWorkScaleX)
 {
     createSdImpressDoc("pptx/tdf125573_FontWorkScaleX.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     // Error was, that attribute 'fromWordArt' was ignored
     // ensure, resulting pptx has fromWordArt="1" on textArchDown shape
@@ -830,7 +856,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest3, testOpenDocumentAsReadOnly)
     CPPUNIT_ASSERT(pXImpressDocument);
     sd::DrawDocShell* pDocShell = pXImpressDocument->GetDocShell();
     CPPUNIT_ASSERT(pDocShell->IsSecurityOptOpenReadOnly());
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
     pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
     CPPUNIT_ASSERT(pXImpressDocument);
     pDocShell = pXImpressDocument->GetDocShell();

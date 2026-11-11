@@ -18,6 +18,7 @@
  */
 
 #include <fuconarc.hxx>
+#include <vcl/ptrstyle.hxx>
 #include <tabvwsh.hxx>
 #include <drawview.hxx>
 
@@ -26,7 +27,6 @@
 #include <svx/svxids.hrc>
 #include <svx/sxciaitm.hxx>
 #include <osl/diagnose.h>
-#include <vcl/ptrstyle.hxx>
 
 FuConstArc::FuConstArc(ScTabViewShell& rViewSh, vcl::Window* pWin, ScDrawView* pViewP,
                        SdrModel& rDoc, const SfxRequest& rReq)

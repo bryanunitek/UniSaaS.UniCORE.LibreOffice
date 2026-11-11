@@ -9,10 +9,12 @@
 
 #include <oox/export/ThemeExport.hxx>
 
+#include <oox/drawingml/drawingmltypes.hxx>
 #include <oox/token/namespaces.hxx>
 #include <oox/token/properties.hxx>
 #include <oox/token/tokens.hxx>
 #include <oox/export/utils.hxx>
+#include <oox/helper/helper.hxx>
 #include <docmodel/theme/Theme.hxx>
 #include <docmodel/theme/FormatScheme.hxx>
 #include <sax/fshelper.hxx>
@@ -30,10 +32,19 @@ namespace
 void writeRelativeRectangle(sax_fastparser::FSHelperPtr pFS, sal_Int32 nToken,
                             model::RelativeRectangle const& rRelativeRectangle)
 {
-    pFS->singleElementNS(XML_a, nToken, XML_l, OString::number(rRelativeRectangle.mnLeft), XML_t,
-                         OString::number(rRelativeRectangle.mnTop), XML_r,
-                         OString::number(rRelativeRectangle.mnRight), XML_b,
-                         OString::number(rRelativeRectangle.mnBottom));
+    // Only write non-0 offsets, 0 is the default in CT_RelativeRect
+    pFS->singleElementNS(XML_a, nToken, XML_l,
+                         sax_fastparser::UseIf(OString::number(rRelativeRectangle.mnLeft),
+                                               rRelativeRectangle.mnLeft != 0),
+                         XML_t,
+                         sax_fastparser::UseIf(OString::number(rRelativeRectangle.mnTop),
+                                               rRelativeRectangle.mnTop != 0),
+                         XML_r,
+                         sax_fastparser::UseIf(OString::number(rRelativeRectangle.mnRight),
+                                               rRelativeRectangle.mnRight != 0),
+                         XML_b,
+                         sax_fastparser::UseIf(OString::number(rRelativeRectangle.mnBottom),
+                                               rRelativeRectangle.mnBottom != 0));
 }
 } // end anonymous namespace
 
@@ -98,8 +109,12 @@ void fillAttrList(rtl::Reference<sax_fastparser::FastAttributeList> const& pAttr
     if (!rThemeFont.maPanose.isEmpty())
         pAttrList->add(XML_panose, rThemeFont.maPanose);
 
-    pAttrList->add(XML_pitchFamily, OString::number(rThemeFont.getPitchFamily()));
-    pAttrList->add(XML_charset, OString::number(rThemeFont.maCharset));
+    // CT_TextFont gives pitchFamily a default of 0 and
+    // charset a default of 1 (=WINDOWS_CHARSET_DEFAULT), skip writing the defaults
+    if (rThemeFont.getPitchFamily() != 0)
+        pAttrList->add(XML_pitchFamily, OString::number(rThemeFont.getPitchFamily()));
+    if (rThemeFont.maCharset != WINDOWS_CHARSET_DEFAULT)
+        pAttrList->add(XML_charset, OString::number(rThemeFont.maCharset));
 }
 
 } // end anonymous ns
@@ -387,11 +402,16 @@ void ThemeExport::writeGradientFill(model::GradientFill const& rGradientFill)
         if (!sPathType.isEmpty())
         {
             mpFS->startElementNS(XML_a, XML_path, XML_path, sPathType);
+            // The fillToRect element is always written, because a missing one defaults to offsets
+            // of 50%, not 0 ([MS-OI29500] Part 1 Section 20.1.8)
             writeRelativeRectangle(mpFS, XML_fillToRect, rGradientFill.maFillToRectangle);
             mpFS->endElementNS(XML_a, XML_path);
         }
     }
-    writeRelativeRectangle(mpFS, XML_tileRect, rGradientFill.maTileRectangle);
+    // A missing tileRect means offsets of 0 ([MS-OI29500] Part 1 Section 20.1.8),
+    // so an all-zero one can be omitted
+    if (!rGradientFill.maTileRectangle.isZero())
+        writeRelativeRectangle(mpFS, XML_tileRect, rGradientFill.maTileRectangle);
     mpFS->endElementNS(XML_a, XML_gradFill);
 }
 
@@ -599,34 +619,6 @@ OString convertFlipMode(model::FlipMode eFlipMode)
     }
     return "none"_ostr;
 }
-
-OString convertRectangleAlignment(model::RectangleAlignment eFlipMode)
-{
-    switch (eFlipMode)
-    {
-        case model::RectangleAlignment::TopLeft:
-            return "tl"_ostr;
-        case model::RectangleAlignment::Top:
-            return "t"_ostr;
-        case model::RectangleAlignment::TopRight:
-            return "tr"_ostr;
-        case model::RectangleAlignment::Left:
-            return "l"_ostr;
-        case model::RectangleAlignment::Center:
-            return "ctr"_ostr;
-        case model::RectangleAlignment::Right:
-            return "r"_ostr;
-        case model::RectangleAlignment::BottomLeft:
-            return "bl"_ostr;
-        case model::RectangleAlignment::Bottom:
-            return "b"_ostr;
-        case model::RectangleAlignment::BottomRight:
-            return "br"_ostr;
-        case model::RectangleAlignment::Unset:
-            break;
-    }
-    return {};
-}
 } // end anonymous ns
 
 void ThemeExport::writeBlip(model::BlipFill const& rBlipFill)
@@ -646,12 +638,14 @@ void ThemeExport::writeBlipFill(model::BlipFill const& rBlipFill)
 
     writeBlip(rBlipFill);
 
-    writeRelativeRectangle(mpFS, XML_srcRect, rBlipFill.maClipRectangle);
+    // A missing srcRect means no cropping, so an all-zero one can be omitted
+    if (!rBlipFill.maClipRectangle.isZero())
+        writeRelativeRectangle(mpFS, XML_srcRect, rBlipFill.maClipRectangle);
 
     if (rBlipFill.meMode == model::BitmapMode::Tile)
     {
         OString aFlipMode = convertFlipMode(rBlipFill.meTileFlipMode);
-        OString aAlignment = convertRectangleAlignment(rBlipFill.meTileAlignment);
+        OString aAlignment = drawingml::convertRectangleAlignment(rBlipFill.meTileAlignment);
 
         mpFS->startElementNS(XML_a, XML_tile, XML_tx, OString::number(rBlipFill.mnTileOffsetX),
                              XML_ty, OString::number(rBlipFill.mnTileOffsetY), XML_sx,
@@ -662,9 +656,18 @@ void ThemeExport::writeBlipFill(model::BlipFill const& rBlipFill)
     }
     else if (rBlipFill.meMode == model::BitmapMode::Stretch)
     {
-        mpFS->startElementNS(XML_a, XML_stretch);
-        writeRelativeRectangle(mpFS, XML_fillRect, rBlipFill.maFillRectangle);
-        mpFS->endElementNS(XML_a, XML_stretch);
+        // A missing fillRect means offsets of 0 ([MS-OI29500] Part 1 Section 20.1.8),
+        // so an all-zero one can be omitted
+        if (rBlipFill.maFillRectangle.isZero())
+        {
+            mpFS->singleElementNS(XML_a, XML_stretch);
+        }
+        else
+        {
+            mpFS->startElementNS(XML_a, XML_stretch);
+            writeRelativeRectangle(mpFS, XML_fillRect, rBlipFill.maFillRectangle);
+            mpFS->endElementNS(XML_a, XML_stretch);
+        }
     }
 
     mpFS->endElementNS(XML_a, XML_blipFill);

@@ -8,8 +8,10 @@
  */
 
 #include "helper/qahelper.hxx"
+#include <addincol.hxx>
 #include <clipparam.hxx>
 #include <compiler.hxx>
+#include <interpre.hxx>
 #include <tokenarray.hxx>
 #include <scopetools.hxx>
 #include <formulacell.hxx>
@@ -23,9 +25,15 @@
 #include <undomanager.hxx>
 #include <broadcast.hxx>
 #include <kahan.hxx>
+#include <stringutil.hxx>
 
 #include <svl/broadcast.hxx>
+#include <svl/numformat.hxx>
+#include <svl/zformat.hxx>
+#include <svl/zforlist.hxx>
 #include <sfx2/docfile.hxx>
+#include <com/sun/star/sheet/FormattedResult.hpp>
+#include <com/sun/star/util/NumberFormat.hpp>
 #include <unotools/saveopt.hxx>
 #include <unotools/syslocaleoptions.hxx>
 #include <comphelper/scopeguard.hxx>
@@ -161,6 +169,89 @@ protected:
     void testExtRefEmptySearch(ScDocument* pDoc, ScDocument& rExtDoc);
     void testExtRefConcat(ScDocument* pDoc, ScDocument& rExtDoc);
 };
+
+CPPUNIT_TEST_FIXTURE(TestFormula2, testNumericPairTraversal)
+{
+    ScMatrixRef x = new ScMatrix(3, 4, 0.0);
+    ScMatrixRef y = new ScMatrix(3, 4, 0.0);
+    for (SCSIZE i = 0; i < 12; ++i)
+    {
+        x->PutDouble(i + 1, i);
+        y->PutDouble(100 + i, i);
+    }
+    auto& pool = m_pDoc->GetSharedStringPool();
+    x->PutString(pool.intern(u"skip"_ustr), 1);
+    y->PutEmpty(2);
+    x->PutEmptyPath(0, 3);
+    y->PutEmptyResultVector(1, 1, 0);
+    x->PutBoolean(true, 1, 1);
+    y->PutBoolean(false, 1, 1);
+    x->PutString(pool.intern(u""_ustr), 6);
+    x->PutError(FormulaError::DivisionByZero, 1, 3);
+    y->PutError(FormulaError::NoValue, 2, 0);
+    x->PutDouble(0.0, 9);
+    x->PutDouble(-3.0, 10);
+
+    std::vector<std::pair<double, double>> pairs;
+    x->IterateNumericPairs(*y, [&](double a, double b) { pairs.emplace_back(a, b); });
+    CPPUNIT_ASSERT_EQUAL(size_t(7), pairs.size());
+    CPPUNIT_ASSERT_EQUAL(1.0, pairs[0].first);
+    CPPUNIT_ASSERT_EQUAL(100.0, pairs[0].second);
+    CPPUNIT_ASSERT_EQUAL(1.0, pairs[1].first);
+    CPPUNIT_ASSERT_EQUAL(0.0, pairs[1].second);
+    CPPUNIT_ASSERT_EQUAL(FormulaError::DivisionByZero, GetDoubleErrorValue(pairs[2].first));
+    CPPUNIT_ASSERT_EQUAL(107.0, pairs[2].second);
+    CPPUNIT_ASSERT_EQUAL(9.0, pairs[3].first);
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NoValue, GetDoubleErrorValue(pairs[3].second));
+    CPPUNIT_ASSERT_EQUAL(0.0, pairs[4].first);
+    CPPUNIT_ASSERT_EQUAL(109.0, pairs[4].second);
+    CPPUNIT_ASSERT_EQUAL(-3.0, pairs[5].first);
+    CPPUNIT_ASSERT_EQUAL(110.0, pairs[5].second);
+    CPPUNIT_ASSERT_EQUAL(12.0, pairs[6].first);
+    CPPUNIT_ASSERT_EQUAL(111.0, pairs[6].second);
+
+    // Empty matrices must not attempt to initialize a storage position.
+    x = new ScMatrix(0, 0);
+    y = new ScMatrix(0, 0);
+    x->IterateNumericPairs(*y, [](double, double) { CPPUNIT_FAIL("unexpected pair"); });
+}
+
+CPPUNIT_TEST_FIXTURE(TestFormula2, testPearsonOperandErrorPrecedence)
+{
+    m_pDoc->InsertTab(0, u"Formula"_ustr);
+
+    auto checkOperandErrorPrecedence = [&](FormulaError xError, FormulaError yError) {
+        ScMatrixRef x = new ScMatrix(2, 2, 0.0);
+        ScMatrixRef y = new ScMatrix(2, 2, 0.0);
+        x->PutError(xError, 0, 0);
+        y->PutError(yError, 0, 0);
+        for (SCSIZE i = 1; i < 4; ++i)
+        {
+            x->PutDouble(i + 1, i);
+            y->PutDouble(i + 3, i);
+        }
+
+        ScTokenArray code(*m_pDoc);
+        code.AddOpCode(ocPearson);
+        code.AddOpCode(ocOpen);
+        code.AddMatrix(y);
+        code.AddOpCode(ocSep);
+        code.AddMatrix(x);
+        code.AddOpCode(ocClose);
+        ScCompiler compiler(*m_pDoc, ScAddress(0, 0, 0), code,
+                            formula::FormulaGrammar::GRAM_ENGLISH);
+        compiler.CompileTokenArray();
+        CPPUNIT_ASSERT_EQUAL(FormulaError::NONE, code.GetCodeError());
+
+        ScInterpreter interpreter(nullptr, *m_pDoc, m_pDoc->GetNonThreadedContext(),
+                                  ScAddress(0, 0, 0), code);
+        CPPUNIT_ASSERT_EQUAL(formula::svError, interpreter.Interpret());
+        CPPUNIT_ASSERT_EQUAL(xError, interpreter.GetError());
+    };
+
+    checkOperandErrorPrecedence(FormulaError::DivisionByZero, FormulaError::NoValue);
+    checkOperandErrorPrecedence(FormulaError::NoValue, FormulaError::DivisionByZero);
+}
 
 CPPUNIT_TEST_FIXTURE(TestFormula2, testFuncIF)
 {
@@ -308,6 +399,45 @@ CPPUNIT_TEST_FIXTURE(TestFormula2, testLambdaBuiltInValueFromOOXML)
         u"=_xlfn.LAMBDA(_xlpm.f, _xlpm.n, _xlpm.f(_xlpm.n))(_xleta.COUNT, {1,2,3,4})"_ustr,
         formula::FormulaGrammar::GRAM_OOXML);
     CPPUNIT_ASSERT_EQUAL(4.0, m_pDoc->GetValue(ScAddress(0, 0, 0)));
+
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestFormula2, testOOXMLFunctionWithoutPrefix)
+{
+    // Some producers write newer functions such as IFS without the _xlfn. prefix. Called as a
+    // function, the bare name works like the prefixed one.
+    sc::AutoCalcSwitch aACSwitch(*m_pDoc, true);
+    m_pDoc->InsertTab(0, u"Sheet1"_ustr);
+
+    m_pDoc->SetFormula(ScAddress(0, 0, 0), u"=IFS(1>2,\"a\",2>1,\"b\")"_ustr,
+                       formula::FormulaGrammar::GRAM_OOXML);
+    CPPUNIT_ASSERT_EQUAL(u"b"_ustr, m_pDoc->GetString(ScAddress(0, 0, 0)));
+
+    m_pDoc->SetFormula(ScAddress(0, 1, 0), u"=ifs(1>2,\"a\",2>1,\"b\")"_ustr,
+                       formula::FormulaGrammar::GRAM_OOXML);
+    CPPUNIT_ASSERT_EQUAL(u"b"_ustr, m_pDoc->GetString(ScAddress(0, 1, 0)));
+
+    // A prefixed function with a special mapping keeps it when written bare.
+    m_pDoc->SetFormula(ScAddress(0, 2, 0), u"=CEILING.MATH(-4.5)"_ustr,
+                       formula::FormulaGrammar::GRAM_OOXML);
+    CPPUNIT_ASSERT_EQUAL(-4.0, m_pDoc->GetValue(ScAddress(0, 2, 0)));
+
+    // FILTER and SORT carry _xlfn._xlws. and resolve when written bare too.
+    m_pDoc->SetFormula(ScAddress(2, 0, 0), u"=SORT({3;1;2})"_ustr,
+                       formula::FormulaGrammar::GRAM_OOXML);
+    CPPUNIT_ASSERT_EQUAL(1.0, m_pDoc->GetValue(ScAddress(2, 0, 0)));
+    m_pDoc->SetFormula(ScAddress(3, 0, 0), u"=FILTER({1;2;3},{1;2;3}>2)"_ustr,
+                       formula::FormulaGrammar::GRAM_OOXML);
+    CPPUNIT_ASSERT_EQUAL(3.0, m_pDoc->GetValue(ScAddress(3, 0, 0)));
+
+    // A defined name that matches a function name, used without a call, still resolves to the
+    // name.
+    m_pDoc->SetString(ScAddress(1, 0, 0), u"7"_ustr);
+    ScRangeData* pName = new ScRangeData(*m_pDoc, u"IFS"_ustr, u"$B$1"_ustr);
+    m_pDoc->GetRangeName().insert(std::unique_ptr<ScRangeData>(pName));
+    m_pDoc->SetFormula(ScAddress(0, 3, 0), u"=IFS+1"_ustr, formula::FormulaGrammar::GRAM_OOXML);
+    CPPUNIT_ASSERT_EQUAL(8.0, m_pDoc->GetValue(ScAddress(0, 3, 0)));
 
     m_pDoc->DeleteTab(0);
 }
@@ -642,6 +772,106 @@ CPPUNIT_TEST_FIXTURE(TestFormula2, testFuncLEN)
     CPPUNIT_ASSERT_EQUAL(0.0, m_pDoc->GetValue(ScAddress(1, 2, 0)));
 
     m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestFormula2, testTdf161592)
+{
+    sc::AutoCalcSwitch aACSwitch(*m_pDoc, true);
+    m_pDoc->InsertTab(0, u"Test"_ustr);
+    ScSetStringParam aParam;
+    aParam.meStartListening = sc::NoListening;
+
+    // The search visits the middle of a long chain of dependent formulas before
+    // its predecessors have been recalculated.
+    for (SCROW nLastRow : { 812, 813, 1013, 1613 })
+    {
+        {
+            sc::AutoCalcSwitch aDisableCalc(*m_pDoc, false);
+            m_pDoc->SetValue(1, 0, 0, 50000);
+            m_pDoc->SetValue(1, 1, 0, 2000);
+            m_pDoc->SetString(1, 10, 0, u"=$B$1"_ustr, &aParam);
+            for (SCROW nRow = 11; nRow < nLastRow; ++nRow)
+                m_pDoc->SetString(1, nRow, 0, u"=B"_ustr + OUString::number(nRow) + u"*1.03-$B$2",
+                                  &aParam);
+            OUString aFormula = u"=MATCH(0;B11:B"_ustr + OUString::number(nLastRow) + u";-1)";
+            m_pDoc->SetString(1, 2, 0, aFormula, &aParam);
+            m_pDoc->SetString(1, 3, 0, aFormula, &aParam);
+            m_pDoc->StartAllListeners(ScRange(1, 2, 0, 1, nLastRow - 1, 0));
+        }
+        m_pDoc->CalcAll();
+
+        struct Check
+        {
+            double nPayment;
+            double nMatch;
+        };
+        for (const auto& rCheck :
+             { Check{ 15000, 4 }, Check{ 7000, 9 }, Check{ 19000, 3 }, Check{ 17000, 4 } })
+        {
+            m_pDoc->SetValue(1, 1, 0, rCheck.nPayment);
+            CPPUNIT_ASSERT_EQUAL(rCheck.nMatch, m_pDoc->GetValue(1, 2, 0));
+            CPPUNIT_ASSERT_EQUAL(rCheck.nMatch, m_pDoc->GetValue(1, 3, 0));
+        }
+    }
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestFormula2, testLookupRecursionCache)
+{
+    sc::AutoCalcSwitch aACSwitch(*m_pDoc, true);
+    ScSetStringParam aParam;
+    aParam.meStartListening = sc::NoListening;
+    const OUString aFormulas[] = {
+        u"=MATCH(50000;A11:A1613;1)"_ustr,
+        u"=LOOKUP(50000;A11:A1613;B11:B1613)"_ustr,
+        u"=VLOOKUP(50000;A11:B1613;2;1)"_ustr,
+    };
+    for (const auto& rFormula : aFormulas)
+    {
+        m_pDoc->InsertTab(0, u"Test"_ustr);
+        {
+            sc::AutoCalcSwitch aDisableCalc(*m_pDoc, false);
+            m_pDoc->SetValue(0, 0, 0, 60000);
+            m_pDoc->SetValue(0, 1, 0, 100);
+            m_pDoc->SetString(0, 10, 0, u"=$A$1"_ustr, &aParam);
+            m_pDoc->SetValue(1, 10, 0, 1);
+            for (SCROW nRow = 11; nRow < 1613; ++nRow)
+            {
+                m_pDoc->SetString(0, nRow, 0, u"=A"_ustr + OUString::number(nRow) + u"+$A$2",
+                                  &aParam);
+                m_pDoc->SetValue(1, nRow, 0, nRow - 9);
+            }
+            // Register the complete chain once, as insertRangeData() does.
+            // Growing the shared group one cell at a time otherwise repeatedly
+            // unregisters and registers all its listeners (costly with debug STL).
+            m_pDoc->StartAllListeners(ScRange(0, 10, 0, 0, 1612, 0));
+        }
+        m_pDoc->CalcAll();
+        m_pDoc->SetString(2, 2, 0, rFormula);
+        m_pDoc->SetString(2, 3, 0, rFormula);
+        CPPUNIT_ASSERT_EQUAL(FormulaError::NotAvailable, m_pDoc->GetErrCode(ScAddress(2, 2, 0)));
+
+        // A provisional "not found" must not remain cached after the chain is
+        // recalculated. Also exercise repeated found/not-found transitions.
+        for (double nPrincipal : { 10000, 60000, 20000, 60000, 10000 })
+        {
+            m_pDoc->SetValue(0, 0, 0, nPrincipal);
+            for (SCROW nRow : { 2, 3 })
+            {
+                if (nPrincipal > 50000)
+                    CPPUNIT_ASSERT_EQUAL(FormulaError::NotAvailable,
+                                         m_pDoc->GetErrCode(ScAddress(2, nRow, 0)));
+                else
+                {
+                    CPPUNIT_ASSERT_EQUAL(FormulaError::NONE,
+                                         m_pDoc->GetErrCode(ScAddress(2, nRow, 0)));
+                    CPPUNIT_ASSERT_EQUAL((50000 - nPrincipal) / 100 + 1,
+                                         m_pDoc->GetValue(2, nRow, 0));
+                }
+            }
+        }
+        m_pDoc->DeleteTab(0);
+    }
 }
 
 CPPUNIT_TEST_FIXTURE(TestFormula2, testFuncLOOKUP)
@@ -6922,6 +7152,34 @@ CPPUNIT_TEST_FIXTURE(TestFormula2, testDynamicArrayIsFormula)
     m_pDoc->DeleteTab(0);
 }
 
+namespace
+{
+// Sets the native formula separators while the object lives, and puts
+// the previous separators back when it is destroyed.
+class FormulaSeparatorsSwitch
+{
+    OUString maPreviousSeparator;
+    OUString maPreviousColumnSeparator;
+    OUString maPreviousRowSeparator;
+
+public:
+    FormulaSeparatorsSwitch(const OUString& rSeparator, const OUString& rColumnSeparator,
+                            const OUString& rRowSeparator)
+        : maPreviousSeparator(ScCompiler::GetNativeSymbol(ocSep))
+        , maPreviousColumnSeparator(ScCompiler::GetNativeSymbol(ocArrayColSep))
+        , maPreviousRowSeparator(ScCompiler::GetNativeSymbol(ocArrayRowSep))
+    {
+        ScCompiler::UpdateSeparatorsNative(rSeparator, rColumnSeparator, rRowSeparator);
+    }
+
+    ~FormulaSeparatorsSwitch()
+    {
+        ScCompiler::UpdateSeparatorsNative(maPreviousSeparator, maPreviousColumnSeparator,
+                                           maPreviousRowSeparator);
+    }
+};
+}
+
 CPPUNIT_TEST_FIXTURE(TestFormula2, testFuncARRAYTOTEXTBooleanLocale)
 {
     // A boolean lists as TRUE or FALSE in the current locale, so under a
@@ -6934,6 +7192,7 @@ CPPUNIT_TEST_FIXTURE(TestFormula2, testFuncARRAYTOTEXTBooleanLocale)
         aLocaleOptions.SetLocaleConfigString(aPreviousLocale);
         aLocaleOptions.Commit();
     });
+    FormulaSeparatorsSwitch aSeparatorsSwitch(u";"_ustr, u"."_ustr, u";"_ustr);
 
     sc::AutoCalcSwitch aACSwitch(*m_pDoc, true);
     m_pDoc->InsertTab(0, u"Sheet1"_ustr);
@@ -6948,9 +7207,47 @@ CPPUNIT_TEST_FIXTURE(TestFormula2, testFuncARRAYTOTEXTBooleanLocale)
     CPPUNIT_ASSERT_EQUAL(u"WAHR"_ustr, m_pDoc->GetString(ScAddress(1, 0, 0)));
     CPPUNIT_ASSERT_EQUAL(u"FALSCH"_ustr, m_pDoc->GetString(ScAddress(1, 1, 0)));
 
-    // A range lists each boolean, joined in row order with ", ".
+    // A range lists each boolean, joined in row order with "; ".
     m_pDoc->SetString(ScAddress(1, 2, 0), u"=ARRAYTOTEXT(A1:A2)"_ustr);
-    CPPUNIT_ASSERT_EQUAL(u"WAHR, FALSCH"_ustr, m_pDoc->GetString(ScAddress(1, 2, 0)));
+    CPPUNIT_ASSERT_EQUAL(u"WAHR; FALSCH"_ustr, m_pDoc->GetString(ScAddress(1, 2, 0)));
+
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestFormula2, testFuncARRAYTOTEXTFormulaSeparators)
+{
+    // Under a German locale the decimal separator is a comma. ARRAYTOTEXT
+    // separates the values with the formula separators, here the German
+    // defaults: ";" between function arguments, "." between array columns
+    // and ";" between array rows.
+    SvtSysLocaleOptions aLocaleOptions;
+    const OUString aPreviousLocale = aLocaleOptions.GetLanguageTag().getBcp47();
+    aLocaleOptions.SetLocaleConfigString(u"de-DE"_ustr);
+    aLocaleOptions.Commit();
+    comphelper::ScopeGuard aLocaleGuard([&aLocaleOptions, &aPreviousLocale] {
+        aLocaleOptions.SetLocaleConfigString(aPreviousLocale);
+        aLocaleOptions.Commit();
+    });
+    FormulaSeparatorsSwitch aSeparatorsSwitch(u";"_ustr, u"."_ustr, u";"_ustr);
+
+    sc::AutoCalcSwitch aACSwitch(*m_pDoc, true);
+    m_pDoc->InsertTab(0, u"Sheet1"_ustr);
+
+    // A1:B2 holds a decimal number, a text, an integer and a boolean.
+    m_pDoc->SetValue(ScAddress(0, 0, 0), 1.5);
+    m_pDoc->SetString(ScAddress(1, 0, 0), u"x"_ustr);
+    m_pDoc->SetValue(ScAddress(0, 1, 0), 2.0);
+    m_pDoc->SetString(ScAddress(1, 1, 0), u"=TRUE()"_ustr);
+
+    // The concise format joins the values in row order with the function
+    // separator and a space.
+    m_pDoc->SetString(ScAddress(3, 0, 0), u"=ARRAYTOTEXT(A1:B2)"_ustr);
+    CPPUNIT_ASSERT_EQUAL(u"1,5; x; 2; WAHR"_ustr, m_pDoc->GetString(ScAddress(3, 0, 0)));
+
+    // The strict format writes an array constant with the array column and
+    // row separators.
+    m_pDoc->SetString(ScAddress(3, 1, 0), u"=ARRAYTOTEXT(A1:B2;1)"_ustr);
+    CPPUNIT_ASSERT_EQUAL(u"{1,5.\"x\";2.WAHR}"_ustr, m_pDoc->GetString(ScAddress(3, 1, 0)));
 
     m_pDoc->DeleteTab(0);
 }
@@ -7943,6 +8240,86 @@ CPPUNIT_TEST_FIXTURE(TestFormula2, testTdf43003AutoCalcMatrix)
     CPPUNIT_ASSERT_EQUAL(10.0, m_pDoc->GetValue(ScAddress(1, 0, 0))); // B1
     CPPUNIT_ASSERT_EQUAL(20.0, m_pDoc->GetValue(ScAddress(1, 1, 0))); // B2
     CPPUNIT_ASSERT_EQUAL(10.0, m_pDoc->GetValue(ScAddress(2, 0, 0))); // C1
+
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(TestFormula2, testAddInFormattedResult)
+{
+    m_pDoc->InsertTab(0, u"Sheet1"_ustr);
+    SvNumberFormatter* pFormatter = m_pDoc->GetFormatTable();
+    const sal_uInt32 nDateKey
+        = pFormatter->GetStandardFormat(SvNumFormatType::DATE, ScGlobal::eLnge);
+
+    // SetResult() only converts a result, so no Add-In of this name is needed.
+    ScUnoAddInCall aCall(*m_pDoc, *ScGlobal::GetAddInCollection(), u"FormattedResultTest"_ustr, 0);
+
+    // A single value with a type
+    css::sheet::FormattedResult aRes;
+    aRes.Value <<= 46290.0;
+    aRes.NumberFormatTypes = { { css::util::NumberFormat::DATE } };
+    aCall.SetResult(css::uno::Any(aRes));
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NONE, aCall.GetErrCode());
+    CPPUNIT_ASSERT_EQUAL(46290.0, aCall.GetValue());
+    CPPUNIT_ASSERT_EQUAL(nDateKey, aCall.GetNumberFormat());
+
+    // A code takes precedence over the type
+    aRes.NumberFormatCodes = { { u"0.0000"_ustr } };
+    aCall.SetResult(css::uno::Any(aRes));
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NONE, aCall.GetErrCode());
+    const SvNumberformat* pEntry = pFormatter->GetEntry(aCall.GetNumberFormat());
+    CPPUNIT_ASSERT(pEntry);
+    CPPUNIT_ASSERT_EQUAL(u"0.0000"_ustr, pEntry->GetFormatstring());
+
+    // A plain result after a formatted one has no format
+    aCall.SetResult(css::uno::Any(46290.0));
+    CPPUNIT_ASSERT_EQUAL(NUMBERFORMAT_ENTRY_NOT_FOUND, aCall.GetNumberFormat());
+
+    // Text keeps no format
+    aRes.Value <<= u"text"_ustr;
+    aCall.SetResult(css::uno::Any(aRes));
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NONE, aCall.GetErrCode());
+    CPPUNIT_ASSERT(aCall.HasString());
+    CPPUNIT_ASSERT_EQUAL(NUMBERFORMAT_ENTRY_NOT_FOUND, aCall.GetNumberFormat());
+
+    // An array with a format for each value, none for the second
+    aRes.Value <<= css::uno::Sequence<css::uno::Sequence<double>>{ { 46290.0, 0.5 } };
+    aRes.NumberFormatTypes = { { css::util::NumberFormat::DATE, css::util::NumberFormat::ALL } };
+    aRes.NumberFormatCodes = {};
+    aCall.SetResult(css::uno::Any(aRes));
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NONE, aCall.GetErrCode());
+    CPPUNIT_ASSERT(aCall.HasMatrix());
+    CPPUNIT_ASSERT_EQUAL(nDateKey, aCall.GetMatrix()->GetNumberFormat(0, 0));
+    CPPUNIT_ASSERT_EQUAL(NUMBERFORMAT_ENTRY_NOT_FOUND, aCall.GetMatrix()->GetNumberFormat(1, 0));
+
+    // A single format applies to every value
+    aRes.NumberFormatTypes = { { css::util::NumberFormat::DATE } };
+    aCall.SetResult(css::uno::Any(aRes));
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NONE, aCall.GetErrCode());
+    CPPUNIT_ASSERT_EQUAL(nDateKey, aCall.GetMatrix()->GetNumberFormat(1, 0));
+
+    // A size that is neither one element nor the result's
+    aRes.NumberFormatTypes = { { css::util::NumberFormat::DATE, css::util::NumberFormat::DATE,
+                                 css::util::NumberFormat::DATE } };
+    aCall.SetResult(css::uno::Any(aRes));
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NoValue, aCall.GetErrCode());
+
+    // An unknown type
+    aRes.NumberFormatTypes = { { css::util::NumberFormat::UNDEFINED } };
+    aCall.SetResult(css::uno::Any(aRes));
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NoValue, aCall.GetErrCode());
+
+    // A code that cannot be read
+    aRes.NumberFormatTypes = {};
+    aRes.NumberFormatCodes = { { u"[ZZZ]0"_ustr } };
+    aCall.SetResult(css::uno::Any(aRes));
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NoValue, aCall.GetErrCode());
+
+    // A formatted result inside another
+    css::sheet::FormattedResult aOuter;
+    aOuter.Value <<= aRes;
+    aCall.SetResult(css::uno::Any(aOuter));
+    CPPUNIT_ASSERT_EQUAL(FormulaError::NoValue, aCall.GetErrCode());
 
     m_pDoc->DeleteTab(0);
 }

@@ -347,16 +347,16 @@ struct FontSubset
 struct FontSubsetKey
 {
     const vcl::font::PhysicalFontFace* m_pFace;
-    const std::vector<vcl::font::Variation>& m_rVariations;
+    std::vector<vcl::font::Variation> m_aVariations;
     size_t m_nHash;
 
     FontSubsetKey(const vcl::font::PhysicalFontFace* pFace, const LogicalFontInstance* pFont)
         : m_pFace(pFace)
-        , m_rVariations(pFont->GetVariations())
+        , m_aVariations(pFont->GetVariations())
         , m_nHash(0)
     {
-        o3tl::hash_combine(m_nHash, m_rVariations.size());
-        for (const auto& rVar : m_rVariations)
+        o3tl::hash_combine(m_nHash, m_aVariations.size());
+        for (const auto& rVar : m_aVariations)
         {
             o3tl::hash_combine(m_nHash, rVar.nTag);
             o3tl::hash_combine(m_nHash, rVar.fValue);
@@ -857,7 +857,7 @@ private:
         AlphaMask m_aAlphaMask;
     };
 
-    /// Cache some most recent bitmaps we've exported, in case we encounter them again..
+    /// Cache some most recent bitmaps we've exported, in case we encounter them again.
     o3tl::lru_map<BitmapChecksum, std::optional<PDFBmpCacheEntry>> m_aPDFBmpCache;
 
     sal_Int32                           m_nCurrentPage;
@@ -924,6 +924,9 @@ private:
     /// The name the element carries: the alias, or the first indexed name beside it that
     /// no standard type and no other alias has taken.
     [[nodiscard]] OString claimRoleName(const OString& rAlias, vcl::pdf::StructElement eType);
+
+    void appendStringObject(OStringBuffer& rLine, std::string_view aBytes,
+                            sal_Int32 nObject) override;
 
     void checkAndEnableStreamEncryption( sal_Int32 nObject ) override;
 
@@ -1094,7 +1097,14 @@ private:
     bool emitTrailer();
     /// whether this file may carry object streams and a cross-reference stream
     bool useObjectStreams() const;
-    /// writes a whole object, into an object stream where the file may have one
+    /// what encrypts a string as an object is built, and nothing for an object bound for a stream
+    std::shared_ptr<pdf::IPDFEncryptor> getStringEncryptor(sal_Int32 nObject);
+#ifndef NDEBUG
+    /// objects whose strings went in plain, checked once the last object stream is flushed
+    std::unordered_set<sal_Int32> m_aPlainStringObjects;
+#endif
+    /// writes a whole object, into an object stream where the file may have one; a body
+    /// holding strings takes its encryptor from getStringEncryptor
     bool writeObject(sal_Int32 nObject, std::string_view aBody);
     /// writes an object's body into the pending object stream rather than into the file
     bool writeCompressedObject(sal_Int32 nObject, std::string_view aBody);

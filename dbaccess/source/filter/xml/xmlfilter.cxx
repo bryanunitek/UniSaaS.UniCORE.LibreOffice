@@ -589,7 +589,14 @@ void ODBFilter::setPropertyInfo()
     Sequence<PropertyValue> aInfo;
     if ( !m_aInfoSequence.empty() )
         aInfo = comphelper::containerToSequence(m_aInfoSequence);
-    aDataSourceSettings.merge( ::comphelper::NamedValueCollection( aInfo ), true );
+    ::comphelper::NamedValueCollection aDocumentSettings( aInfo );
+    // The Java class path of a driver and the Java system properties come from the driver
+    // configuration, not the document.
+    aDocumentSettings.remove( u"JavaDriverClassPath"_ustr );
+    aDocumentSettings.remove( u"SystemProperties"_ustr );
+    // CreateDatabase asks the driver for a new database, which only the user does from the UI.
+    aDocumentSettings.remove( u"CreateDatabase"_ustr );
+    aDataSourceSettings.merge( aDocumentSettings, true );
 
     aDataSourceSettings >>= aInfo;
     if ( aInfo.hasElements() )

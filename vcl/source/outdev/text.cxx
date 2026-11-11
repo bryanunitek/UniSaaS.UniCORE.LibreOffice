@@ -690,6 +690,21 @@ float OutputDevice::approximate_digit_width() const
     return GetTextWidth(u"0123456789"_ustr) / 10.0;
 }
 
+static std::unique_ptr<SalLayout>
+ImplPartialLayout(const OutputDevice& rDevice, const OUString& rStr, sal_Int32 nIndex,
+                  sal_Int32 nLen, sal_Int32 nPartIndex, sal_Int32 nPartLen, const Point& rLogicPos,
+                  KernArraySpan aKernArray, std::span<const sal_Bool> pKashidaArray,
+                  SalLayoutFlags flags, vcl::text::TextLayoutCache const* pLayoutCache,
+                  const SalLayoutGlyphs* pGlyphs)
+{
+    // Adding the UnclusteredGlyphs flag during layout enables per-glyph styling.
+    return rDevice.ImplLayout(rStr, nIndex, nLen, rLogicPos, 0, aKernArray, pKashidaArray,
+                              flags | SalLayoutFlags::UnclusteredGlyphs, pLayoutCache, pGlyphs,
+                              /*pivot cluster*/ nPartIndex,
+                              /*min cluster*/ nPartIndex,
+                              /*end cluster*/ nPartIndex + nPartLen);
+}
+
 void OutputDevice::DrawPartialTextArray(const Point& rStartPt, const OUString& rStr,
                                         KernArraySpan pDXArray,
                                         std::span<const sal_Bool> pKashidaArray, sal_Int32 nIndex,
@@ -727,13 +742,9 @@ void OutputDevice::DrawPartialTextArray(const Point& rStartPt, const OUString& r
     if (mbOutputClipped)
         return;
 
-    // Adding the UnclusteredGlyphs flag during layout enables per-glyph styling.
     std::unique_ptr<SalLayout> pSalLayout
-        = ImplLayout(rStr, nIndex, nLen, rStartPt, 0, pDXArray, pKashidaArray,
-                     flags | SalLayoutFlags::UnclusteredGlyphs, nullptr, pLayoutCache,
-                     /*pivot cluster*/ nPartIndex,
-                     /*min cluster*/ nPartIndex,
-                     /*end cluster*/ nPartIndex + nPartLen);
+        = ImplPartialLayout(*this, rStr, nIndex, nLen, nPartIndex, nPartLen, rStartPt, pDXArray,
+                            pKashidaArray, flags, nullptr, pLayoutCache);
 
     if (pSalLayout)
     {
@@ -815,11 +826,9 @@ OutputDevice::GetPartialTextArray(const OUString& rStr, KernArray* pKernArray, s
     }
     else
     {
-        pSalLayout = ImplLayout(rStr, nIndex, nLen, Point{ 0, 0 }, 0, {}, {}, eDefaultLayout,
-                                pLayoutCache, pSalLayoutCache,
-                                /*pivot cluster*/ nPartIndex,
-                                /*min cluster*/ nPartIndex,
-                                /*end cluster*/ nPartIndex + nPartLen);
+        pSalLayout = ImplPartialLayout(*this, rStr, nIndex, nLen, nPartIndex, nPartLen,
+                                       Point{ 0, 0 }, {}, {}, eDefaultLayout, pLayoutCache,
+                                       pSalLayoutCache);
     }
 
     if( !pSalLayout )
@@ -1152,6 +1161,10 @@ std::unique_ptr<SalLayout> OutputDevice::ImplLayout(
             // fallback from the base layout, but then GenericSalLayout::LayoutText()
             // would not know to call SetNeedFallback()).
             assert(glyphsImpl->GetFlags() & SalLayoutFlags::GlyphItemsOnly);
+            // Only glyphs from nDrawMinCharPos to nDrawEndCharPos may be reused
+            for (const GlyphItem& rGlyph : *glyphsImpl)
+                assert(rGlyph.origCharPos() >= nDrawMinCharPos.value_or(SAL_MIN_INT32)
+                       && rGlyph.origCharPos() < nDrawEndCharPos.value_or(SAL_MAX_INT32));
         }
     }
 #endif
@@ -1487,7 +1500,7 @@ void OutputDevice::ImplDrawText( OutputDevice& rTargetDevice, const tools::Recta
         {
             // draw disabled text always without shadow
             // as it fits better with native look
-            rTargetDevice.SetTextColor( rTargetDevice.GetSettings().GetStyleSettings().GetDisableColor() );
+            rTargetDevice.SetTextColor( rTargetDevice.GetSettings().GetStyleSettings().GetDisableTextColor() );
         }
     }
 
@@ -2018,7 +2031,7 @@ void OutputDevice::DrawCtrlText( const Point& rPos, const OUString& rStr,
         else if( bHighContrastWhite )
             SetTextColor( COL_LIGHTGREEN );
         else
-            SetTextColor( GetSettings().GetStyleSettings().GetDisableColor() );
+            SetTextColor( GetSettings().GetStyleSettings().GetDisableTextColor() );
     }
 
     DrawText(rPos, aStr, nCorrectedIndex, nCorrectedLen, pVector, pDisplayText, pGlyphs);
@@ -2288,7 +2301,7 @@ void OutputDevice::SetSystemTextColor(SystemTextColorFlags nFlags, bool bEnabled
         if (!bEnabled)
         {
             const StyleSettings& rStyleSettings = GetSettings().GetStyleSettings();
-            SetTextColor(rStyleSettings.GetDisableColor());
+            SetTextColor(rStyleSettings.GetDisableTextColor());
         }
     }
 }

@@ -133,11 +133,11 @@ case $MAILER_TYPE in
                     shift
                     ;;
                 --subject)
-                    SUBJECT=$2
+                    SUBJECT=$(printf %s "$2" | "${URI_ENCODE}")
                     shift
                     ;;
                 --body)
-                    BODY=$2
+                    BODY=$(printf %s "$2" | "${URI_ENCODE}")
                     shift
                     ;;
                 --attach)
@@ -159,11 +159,12 @@ case $MAILER_TYPE in
         if [ "$BCC" != "" ]; then
             COMMAND=${COMMAND:+${COMMAND},}bcc=\'${BCC}\'
         fi
+        # The mail client percent-decodes an unquoted value and takes a quoted one as it is.
         if [ "$SUBJECT" != "" ]; then
-            COMMAND=${COMMAND:+${COMMAND},}subject=\'${SUBJECT}\'
+            COMMAND=${COMMAND:+${COMMAND},}subject=${SUBJECT}
         fi
         if [ "$BODY" != "" ]; then
-            COMMAND=${COMMAND:+${COMMAND},}body=\'${BODY}\'
+            COMMAND=${COMMAND:+${COMMAND},}body=${BODY}
         fi
         if [ "$ATTACH" != "" ]; then
             COMMAND=${COMMAND:+${COMMAND},}attachment=\'${ATTACH}\'
@@ -277,7 +278,11 @@ case $MAILER_TYPE in
 
     generic-mailto | xdg-email)
 
-        while [ "$1" != "" ]; do
+        # The loop shifts options off the front of "$@" while the mail client's arguments are
+        # appended to the back. The marker separates the two.
+        set -- "$@" "--end-of-arguments"
+
+        while [ "$1" != "--end-of-arguments" ]; do
             case $1 in
                 --to)
                     if [ "${TO}" != "" ]; then
@@ -304,12 +309,9 @@ case $MAILER_TYPE in
                     shift
                     ;;
                 --attach)
-                    # Just add both attach and attachment "headers" - some apps use one, some the other
-                    ATTACH_URL=$(printf file://%s "$2" | "${URI_ENCODE}")
-                    MAILTO="${MAILTO:+${MAILTO}&}attach=${ATTACH_URL}&attachment=${ATTACH_URL}"
                     if [ "$MAILER_TYPE" = "xdg-email" ]; then
                         # Also add the argument: see https://gitlab.freedesktop.org/xdg/xdg-utils/-/issues/177
-                        ATTACH="${ATTACH:+${ATTACH} }--attach \"$2\""
+                        set -- "$@" --attach "$2"
                     fi
                     shift
                     ;;
@@ -318,9 +320,10 @@ case $MAILER_TYPE in
             esac
             shift;
         done
+        shift
 
         MAILTO="mailto:${TO}?${MAILTO}"
-        eval "${MAILER} ${ATTACH} \"${MAILTO}\"" &
+        ${MAILER} "$@" "${MAILTO}" &
         ;;
 
     dtmail)

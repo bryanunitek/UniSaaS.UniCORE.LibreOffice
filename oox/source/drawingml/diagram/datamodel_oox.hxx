@@ -43,7 +43,6 @@ public:
 
     DiagramData_oox();
     explicit DiagramData_oox(DiagramData_oox const& rSource);
-    explicit DiagramData_oox(const boost::property_tree::ptree& rDiagramModel);
     virtual ~DiagramData_oox();
 
     // creates temporary processing data from model data
@@ -59,7 +58,7 @@ public:
 
     // helpers to write some specific DiagramDoms
     void writeDiagramReplacement(DrawingML& rOriginalDrawingML, const sax_fastparser::FSHelperPtr& rTarget);
-    void writeDiagramData(DrawingML& rOriginalDrawingML, const sax_fastparser::FSHelperPtr& rTarget, std::u16string_view rDrawingRelId);
+    void writeDiagramData(DrawingML& rOriginalDrawingML, const sax_fastparser::FSHelperPtr& rTarget, std::u16string_view rDrawingRelId, bool bReducedData);
 
 private:
     // The model definition, the parts *only* available in oox. Also look for already

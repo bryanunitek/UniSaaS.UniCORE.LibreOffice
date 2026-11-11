@@ -23,6 +23,7 @@
 #include <editeng/numitem.hxx>
 #include <editeng/lrspitem.hxx>
 
+#include <svx/svdograf.hxx>
 #include <svx/svdotable.hxx>
 #include <svx/xfillit0.hxx>
 #include <svx/xfilluseslidebackgrounditem.hxx>
@@ -30,6 +31,10 @@
 #include <svx/xlineit0.hxx>
 #include <svx/xlnclit.hxx>
 #include <svx/sdooitm.hxx>
+#include <sfx2/linkmgr.hxx>
+#include <vcl/vectorgraphicdata.hxx>
+#include <drawinglayer/tools/primitive2dxmldump.hxx>
+#include <comphelper/embeddedobjectcontainer.hxx>
 #include <svx/svdobj.hxx>
 #include <svx/svdpagv.hxx>
 #include <editeng/editeng.hxx>
@@ -1393,6 +1398,73 @@ CPPUNIT_TEST_FIXTURE(SdImportTest2, testTdf115394PPT)
     CPPUNIT_ASSERT_EQUAL(1.0, fTransitionDuration);
 }
 
+CPPUNIT_TEST_FIXTURE(SdImportTest2, testGroupShadowPPTXImport)
+{
+    // The shadow of a group shows on the shapes in the group, also in a group inside it.
+    createSdImpressDoc("pptx/group-shadow.pptx");
+
+    uno::Reference<drawing::XShapes> xGroup(getShapeFromPage(0, 0), uno::UNO_QUERY_THROW);
+    uno::Reference<drawing::XShapes> xInnerGroup(xGroup->getByIndex(1), uno::UNO_QUERY_THROW);
+    const std::pair<const char*, uno::Reference<beans::XPropertySet>> aInGroup[] = {
+        { "In group", uno::Reference<beans::XPropertySet>(xGroup->getByIndex(0), uno::UNO_QUERY) },
+        { "In inner group",
+          uno::Reference<beans::XPropertySet>(xInnerGroup->getByIndex(0), uno::UNO_QUERY) },
+    };
+    auto getShadowColor = [](const uno::Reference<beans::XPropertySet>& xShape) {
+        Color aColor;
+        xShape->getPropertyValue(u"ShadowColor"_ustr) >>= aColor;
+        return aColor;
+    };
+    for (auto const & [ pName, xShape ] : aInGroup)
+    {
+        CPPUNIT_ASSERT_MESSAGE(pName, xShape->getPropertyValue(u"Shadow"_ustr).get<bool>());
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(pName, COL_BLACK, getShadowColor(xShape));
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(
+            pName, sal_Int16(60),
+            xShape->getPropertyValue(u"ShadowTransparence"_ustr).get<sal_Int16>());
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(pName, sal_Int32(141),
+                                     xShape->getPropertyValue(u"ShadowBlur"_ustr).get<sal_Int32>());
+    }
+
+    // A shape in the group with a shadow of its own keeps that shadow.
+    uno::Reference<beans::XPropertySet> xOwnShadow(xGroup->getByIndex(2), uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT(xOwnShadow->getPropertyValue(u"Shadow"_ustr).get<bool>());
+    CPPUNIT_ASSERT_EQUAL(Color(0xFF0000), getShadowColor(xOwnShadow));
+
+    // The group shadow follows the outline of the group, so a shape on an opaque rectangle of the
+    // group casts none, but a shape on a half transparent rectangle does.
+    auto hasShadow = [](const uno::Any& rShape) {
+        uno::Reference<beans::XPropertySet> xShape(rShape, uno::UNO_QUERY_THROW);
+        return xShape->getPropertyValue(u"Shadow"_ustr).get<bool>();
+    };
+    CPPUNIT_ASSERT(!hasShadow(xGroup->getByIndex(3)));
+    CPPUNIT_ASSERT(hasShadow(xGroup->getByIndex(5)));
+    uno::Reference<drawing::XShapes> xGroupOnOpaque(xGroup->getByIndex(6), uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT(!hasShadow(xGroupOnOpaque->getByIndex(0)));
+    // The rectangle takes its fill from the theme, and the fill reference makes it half
+    // transparent.
+    CPPUNIT_ASSERT(hasShadow(xGroup->getByIndex(9)));
+
+    // A scaled group shadow has the size of the whole group, so the shapes in it get no copy.
+    uno::Reference<drawing::XShapes> xScaledGroup(getShapeFromPage(1, 0), uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT(!hasShadow(xScaledGroup->getByIndex(0)));
+
+    uno::Reference<beans::XPropertySet> xOutside(getShapeFromPage(2, 0));
+    CPPUNIT_ASSERT(!xOutside->getPropertyValue(u"Shadow"_ustr).get<bool>());
+
+    // A shape with a reflection of its own also gets the group shadow, and the export writes the
+    // shadow before the reflection, in the order of CT_EffectList.
+    CPPUNIT_ASSERT(hasShadow(xGroup->getByIndex(7)));
+    save(TestFilter::PPTX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/slides/slide1.xml"_ustr);
+    assertXPathNodeName(pXmlDoc,
+                        "//p:sp[p:nvSpPr/p:cNvPr/@name='Own reflection']/p:spPr/a:effectLst/*[1]",
+                        "outerShdw");
+    assertXPathNodeName(pXmlDoc,
+                        "//p:sp[p:nvSpPr/p:cNvPr/@name='Own reflection']/p:spPr/a:effectLst/*[2]",
+                        "reflection");
+}
+
 CPPUNIT_TEST_FIXTURE(SdImportTest2, testBulletMarginIndentMapping)
 {
     createSdImpressDoc("pptx/bullet-indent.pptx");
@@ -1826,6 +1898,36 @@ CPPUNIT_TEST_FIXTURE(SdImportTest2, testCool16080_masterPageOrder)
     }
 }
 
+CPPUNIT_TEST_FIXTURE(SdImportTest2, testMasterOutlineLevelIndents)
+{
+    // The slide master's bodyStyle indents each level 0.5 inch further than the one above it,
+    // starting at 0.25 inch, and includes a hanging indent of 0.25 inch
+    createSdImpressDoc("pptx/master-and-eleven-layouts.pptx");
+
+    uno::Reference<container::XNameAccess> xStyles(
+        mxComponent.queryThrow<style::XStyleFamiliesSupplier>()->getStyleFamilies()->getByName(
+            u"Title and Content"_ustr),
+        uno::UNO_QUERY_THROW);
+    uno::Reference<beans::XPropertySet> xOutline1(xStyles->getByName(u"outline1"_ustr),
+                                                  uno::UNO_QUERY_THROW);
+    uno::Reference<container::XIndexAccess> xNumRules(
+        xOutline1->getPropertyValue(u"NumberingRules"_ustr), uno::UNO_QUERY_THROW);
+
+    for (sal_Int32 nLevel = 0; nLevel < 9; ++nLevel)
+    {
+        comphelper::SequenceAsHashMap aRule(xNumRules->getByIndex(nLevel));
+        const OString aMessage = "level " + OString::number(nLevel + 1);
+        // Without the fix in place, this test would have failed for level 2 with:
+        // - Expected: 1905
+        // - Actual  : 2400
+        // i.e. the levels below the first kept the indents of the Impress default.
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(aMessage.getStr(), sal_Int32(635 + 1270 * nLevel),
+                                     aRule[u"LeftMargin"_ustr].get<sal_Int32>());
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(aMessage.getStr(), sal_Int32(-635),
+                                     aRule[u"FirstLineOffset"_ustr].get<sal_Int32>());
+    }
+}
+
 CPPUNIT_TEST_FIXTURE(SdImportTest2, testCool16083_contentPlaceholderStaysEmpty)
 {
     // Given four slides, each with one content placeholder, differing only in what the slide says
@@ -1879,6 +1981,115 @@ CPPUNIT_TEST_FIXTURE(SdImportTest2, testCool16083_contentPlaceholderStaysEmpty)
             CPPUNIT_ASSERT_EQUAL_MESSAGE(aMessage.getStr(), rCase.aPrompt,
                                          pParagraphs->GetTextObject().GetText(0));
     }
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTest2, testCool16279_LayoutPlaceholderKeepsMasterAutofit)
+{
+    // The slide master autofits the text of its title and body, and the Title and Content
+    // layout's placeholders have an empty bodyPr, so they inherit that
+    createSdImpressDoc("pptx/master-and-eleven-layouts.pptx");
+
+    uno::Reference<drawing::XMasterPagesSupplier> xDoc(mxComponent, uno::UNO_QUERY);
+    CPPUNIT_ASSERT(xDoc.is());
+    uno::Reference<drawing::XShapes> xLayout(xDoc->getMasterPages()->getByIndex(1),
+                                             uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_EQUAL(u"Title and Content"_ustr,
+                         xLayout.queryThrow<container::XNamed>()->getName());
+
+    static constexpr std::u16string_view aPlaceholders[] = { u"Title 1", u"Content Placeholder 2" };
+    for (const std::u16string_view& aName : aPlaceholders)
+    {
+        uno::Reference<beans::XPropertySet> xShape;
+        for (sal_Int32 i = 0; i < xLayout->getCount() && !xShape; i++)
+        {
+            if (xLayout->getByIndex(i).queryThrow<container::XNamed>()->getName() == aName)
+                xShape.set(xLayout->getByIndex(i), uno::UNO_QUERY_THROW);
+        }
+        CPPUNIT_ASSERT(xShape);
+
+        // Without the fix in place, this test would have failed with:
+        // - Expected: 3 (TextFitToSizeType_AUTOFIT)
+        // - Actual  : 0 (TextFitToSizeType_NONE)
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(
+            OUString(aName).toUtf8().getStr(), drawing::TextFitToSizeType_AUTOFIT,
+            xShape->getPropertyValue(u"TextFitToSize"_ustr).get<drawing::TextFitToSizeType>());
+    }
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTest2, testPlaceholderInheritsNoWrapFromLayout)
+{
+    // The layout's narrow body placeholder has wrap="none", and the slide's placeholder that
+    // refers to it has an empty bodyPr.
+    createSdImpressDoc("pptx/narrow-placeholder-no-wrap.pptx");
+
+    // The slide's text stays on one line, wider than the box.
+    uno::Reference<beans::XPropertySet> xShape(getShapeFromPage(0, 0));
+    CPPUNIT_ASSERT_EQUAL(u"First contact"_ustr, xShape.queryThrow<text::XTextRange>()->getString());
+    CPPUNIT_ASSERT(!xShape->getPropertyValue(u"TextWordWrap"_ustr).get<bool>());
+}
+
+namespace
+{
+SdrGrafObj* getSvgShape(SdDrawDocument& rDoc)
+{
+    SdrGrafObj* pGraphic
+        = dynamic_cast<SdrGrafObj*>(rDoc.GetSdPage(0, PageKind::Standard)->GetObj(0));
+    CPPUNIT_ASSERT(pGraphic);
+    return pGraphic;
+}
+
+xmlDocUniquePtr dumpSvgShape(const SdrGrafObj& rGraphic)
+{
+    const std::shared_ptr<VectorGraphicData>& rData = rGraphic.GetGraphic().getVectorGraphicData();
+    CPPUNIT_ASSERT(rData);
+    drawinglayer::Primitive2dXmlDump aDumper;
+    xmlDocUniquePtr pXml = aDumper.dumpAndParse(
+        drawinglayer::primitive2d::Primitive2DContainer(rData->getPrimitive2DSequence()));
+    CPPUNIT_ASSERT(pXml);
+    return pXml;
+}
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTest2, testSvgLinkedPictureWaitsForLinkUpdates)
+{
+    createSdDrawDoc("svg/linked-picture.svg");
+    SdDrawDocument* pDoc = getSdDocShell()->GetDoc();
+
+    // The picture beside the SVG is not shown yet, and is offered as one link.
+    SdrGrafObj* pGraphic = getSvgShape(*pDoc);
+    assertXPath(dumpSvgShape(*pGraphic), "//bitmap", 0);
+    sfx2::LinkManager* pLinkManager = pDoc->GetLinkManager();
+    CPPUNIT_ASSERT_EQUAL(size_t(1), pLinkManager->GetLinks().size());
+
+    // A copy of the shape is an SVG inside the document, so it adds no link.
+    rtl::Reference<SdrObject> xCopy = pGraphic->CloneSdrObject(*pDoc);
+    pDoc->GetSdPage(0, PageKind::Standard)->InsertObject(xCopy.get());
+    CPPUNIT_ASSERT_EQUAL(size_t(1), pLinkManager->GetLinks().size());
+
+    // Once link updates are allowed, the picture is shown.
+    getSdDocShell()->getEmbeddedObjectContainer().setUserAllowsLinkUpdate(true);
+    pLinkManager->UpdateAllLinks(false, OUString());
+    assertXPath(dumpSvgShape(*getSvgShape(*pDoc)), "//bitmap", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTest2, testSvgWithDataPictureHasNoLink)
+{
+    createSdDrawDoc("svg/data-picture.svg");
+    SdDrawDocument* pDoc = getSdDocShell()->GetDoc();
+
+    // A picture held in the SVG is shown straight away, and nothing is offered as a link.
+    assertXPath(dumpSvgShape(*getSvgShape(*pDoc)), "//bitmap", 1);
+    CPPUNIT_ASSERT(pDoc->GetLinkManager()->GetLinks().empty());
+}
+
+// A PPTX video that repeats without end and is muted in the slideshow timing loops and is muted
+// as a shape too.
+CPPUNIT_TEST_FIXTURE(SdImportTest2, testPptxVideoLoopMute)
+{
+    createSdImpressDoc("pptx/video-loop-mute.pptx");
+    uno::Reference<beans::XPropertySet> xVideo(getShapeFromPage(0, 0));
+    CPPUNIT_ASSERT(xVideo->getPropertyValue(u"Loop"_ustr).get<bool>());
+    CPPUNIT_ASSERT(xVideo->getPropertyValue(u"Mute"_ustr).get<bool>());
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

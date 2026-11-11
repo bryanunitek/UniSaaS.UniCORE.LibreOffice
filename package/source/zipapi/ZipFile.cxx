@@ -148,6 +148,16 @@ uno::Reference< xml::crypto::XDigestContext > ZipFile::StaticGetDigestContextFor
     return xDigestContext;
 }
 
+namespace
+{
+// The export writes at most 600000 PBKDF2 iterations, and Argon2id with 3 passes, 64 MiB and 4
+// lanes. These limits are far above that.
+constexpr sal_Int32 MAX_PBKDF2_ITERATIONS = 10000000;
+constexpr sal_Int32 MAX_ARGON2_PASSES = 32;
+constexpr sal_Int32 MAX_ARGON2_MEMORY_KIB = 512 * 1024;
+constexpr sal_Int32 MAX_ARGON2_LANES = 32;
+}
+
 uno::Reference< xml::crypto::XCipherContext > ZipFile::StaticGetCipher( const uno::Reference< uno::XComponentContext >& xArgContext, const ::rtl::Reference< EncryptionData >& xEncryptionData, bool bEncrypt )
 {
     uno::Reference< xml::crypto::XCipherContext > xResult;
@@ -167,6 +177,12 @@ uno::Reference< xml::crypto::XCipherContext > ZipFile::StaticGetCipher( const un
     }
     else if (xEncryptionData->m_oArgon2Args)
     {
+        auto const& [nPasses, nMemoryKiB, nLanes] = *xEncryptionData->m_oArgon2Args;
+        if (nPasses < 1 || nPasses > MAX_ARGON2_PASSES || nMemoryKiB < 1
+            || nMemoryKiB > MAX_ARGON2_MEMORY_KIB || nLanes < 1 || nLanes > MAX_ARGON2_LANES)
+        {
+            throw ZipIOException(u"Argon2 arguments out of range!"_ustr);
+        }
         // apparently multiple lanes cannot be processed in parallel (the
         // implementation will clamp), but it doesn't make sense to have more
         // threads than CPUs
@@ -196,6 +212,12 @@ uno::Reference< xml::crypto::XCipherContext > ZipFile::StaticGetCipher( const un
             SAL_WARN("package", "argon2id_ctx failed to derive key: " << argon2_error_message(rc));
             throw ZipIOException(u"argon2id_ctx failed to derive key"_ustr);
         }
+    }
+    else if (!xEncryptionData->m_oPBKDFIterationCount
+             || *xEncryptionData->m_oPBKDFIterationCount < 1
+             || *xEncryptionData->m_oPBKDFIterationCount > MAX_PBKDF2_ITERATIONS)
+    {
+        throw ZipIOException(u"PBKDF2 iteration count out of range!"_ustr);
     }
     else if ( rtl_Digest_E_None != rtl_digest_PBKDF2( reinterpret_cast< sal_uInt8* >( aDerivedKey.getArray() ),
                         aDerivedKey.getLength(),
@@ -1200,8 +1222,11 @@ std::tuple<sal_Int64, sal_Int64, sal_Int64> ZipFile::findCentralDirectory()
         {
             throw ZipException(u"invalid end (entries)"_ustr );
         }
-        sal_Int32 const nEndDirSize = aGrabber.ReadInt32();
-        sal_Int32 const nEndDirOffset = aGrabber.ReadInt32();
+
+        // These fields are unsigned 32-bit values in the ZIP format.
+        // Keep them in 64-bit signed variables for subsequent arithmetic.
+        sal_Int64 const nEndDirSize = aGrabber.ReadUInt32();
+        sal_Int64 const nEndDirOffset = aGrabber.ReadUInt32();
 
         // Zip64 end of central directory locator must immediately precede
         // end of central directory record
@@ -1273,12 +1298,12 @@ std::tuple<sal_Int64, sal_Int64, sal_Int64> ZipFile::findCentralDirectory()
                 {
                     throw ZipException(u"inconsistent Zip/Zip64 end (entries)"_ustr);
                 }
-                if (nEndDirSize != -1
+                if (nEndDirSize != 0xFFFFFFFF
                     && nEnd64DirSize != nEndDirSize)
                 {
                     throw ZipException(u"inconsistent Zip/Zip64 end (size)"_ustr);
                 }
-                if (nEndDirOffset != -1
+                if (nEndDirOffset != 0xFFFFFFFF
                     && nEnd64DirOffset != nEndDirOffset)
                 {
                     throw ZipException(u"inconsistent Zip/Zip64 end (offset)"_ustr);
@@ -1298,10 +1323,9 @@ std::tuple<sal_Int64, sal_Int64, sal_Int64> ZipFile::findCentralDirectory()
             }
         }
 
-        sal_Int32 end;
-        if (o3tl::checked_add<sal_Int32>(nEndDirOffset, nEndDirSize, end)
+        sal_Int64 end;
+        if (o3tl::checked_add<sal_Int64>(nEndDirOffset, nEndDirSize, end)
             || nEndPos < end
-            || nEndDirOffset < 0
             || nEndPos - nEndDirSize != nEndDirOffset)
         {
             throw ZipException(u"Invalid END header (bad central directory size)"_ustr);
@@ -1323,10 +1347,10 @@ std::tuple<sal_Int64, sal_Int64, sal_Int64> ZipFile::findCentralDirectory()
     }
 }
 
-sal_Int32 ZipFile::readCEN()
+sal_Int64 ZipFile::readCEN()
 {
     // this method is called in constructor only, no need for mutex
-    sal_Int32 nCenPos = -1;
+    sal_Int64 nCenPos = -1;
 
     try
     {

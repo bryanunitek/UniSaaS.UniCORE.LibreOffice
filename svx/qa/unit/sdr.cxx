@@ -21,6 +21,7 @@
 #include <com/sun/star/lang/XMultiServiceFactory.hpp>
 
 #include <comphelper/embeddedobjectcontainer.hxx>
+#include <comphelper/propertysequence.hxx>
 #include <extendedprimitive2dxmldump.hxx>
 #include <rtl/ustring.hxx>
 #include <sfx2/linkmgr.hxx>
@@ -32,8 +33,11 @@
 #include <svx/svdoashp.hxx>
 #include <svx/svdomedia.hxx>
 #include <svx/svdpage.hxx>
+#include <svx/svdview.hxx>
 #include <svx/unopage.hxx>
+#include <vcl/scheduler.hxx>
 #include <vcl/virdev.hxx>
+#include <vcl/wrkwin.hxx>
 #include <sdr/contact/objectcontactofobjlistpainter.hxx>
 
 using namespace ::com::sun::star;
@@ -68,6 +72,44 @@ SdrTest::renderPageToPrimitives(const uno::Reference<drawing::XDrawPage>& xDrawP
     drawinglayer::primitive2d::Primitive2DContainer aContainer;
     rDrawPageVOContact.getPrimitive2DSequenceHierarchy(aDisplayInfo, aContainer);
     return aContainer;
+}
+
+/// A filled shape of the given service on a new drawing, with a reflection that fades out over
+/// its first quarter. The percentages are chosen so that their fractions print exactly.
+uno::Reference<drawing::XShape>
+insertReflectedShape(const uno::Reference<lang::XComponent>& xComponent,
+                     const OUString& rServiceName)
+{
+    auto xFactory = xComponent.queryThrow<lang::XMultiServiceFactory>();
+    auto xShape = xFactory->createInstance(rServiceName).queryThrow<drawing::XShape>();
+    xShape->setPosition(awt::Point(1000, 2000));
+    xShape->setSize(awt::Size(5000, 4000));
+    xComponent.queryThrow<drawing::XDrawPagesSupplier>()
+        ->getDrawPages()
+        ->getByIndex(0)
+        .queryThrow<drawing::XShapes>()
+        ->add(xShape);
+
+    auto xProperties = xShape.queryThrow<beans::XPropertySet>();
+    xProperties->setPropertyValue(u"ReflectionEffect"_ustr, uno::Any(true));
+    xProperties->setPropertyValue(u"ReflectionEffectDistance"_ustr, uno::Any(sal_Int32(100)));
+    xProperties->setPropertyValue(u"ReflectionEffectBlurRadius"_ustr, uno::Any(sal_Int32(50)));
+    xProperties->setPropertyValue(u"ReflectionEffectStartTransparency"_ustr,
+                                  uno::Any(sal_Int16(50)));
+    xProperties->setPropertyValue(u"ReflectionEffectEndPosition"_ustr, uno::Any(sal_Int16(25)));
+    return xShape;
+}
+
+/// A reflected rectangle that is a custom shape, like the shapes of a PPTX import.
+uno::Reference<drawing::XShape>
+insertReflectedRectangle(const uno::Reference<lang::XComponent>& xComponent)
+{
+    uno::Reference<drawing::XShape> xShape
+        = insertReflectedShape(xComponent, u"com.sun.star.drawing.CustomShape"_ustr);
+    xShape.queryThrow<beans::XPropertySet>()->setPropertyValue(
+        u"CustomShapeGeometry"_ustr, uno::Any(comphelper::InitPropertySequence(
+                                         { { u"Type"_ustr, uno::Any(u"rectangle"_ustr) } })));
+    return xShape;
 }
 
 /// The mask a shape is clipped with, wherever it sits in the primitives of a page.
@@ -291,6 +333,40 @@ CPPUNIT_TEST_FIXTURE(SdrTest, testMediaLinkPickedByUserIsFetched)
 }
 #endif
 
+CPPUNIT_TEST_FIXTURE(SdrTest, testMediaSettingsKeptWithoutPlayer)
+{
+    // The media file does not exist, so no player can play it.
+    loadFromFile(u"media-link.fodp");
+    uno::Reference<drawing::XDrawPagesSupplier> xDrawPagesSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawPage> xDrawPage(xDrawPagesSupplier->getDrawPages()->getByIndex(0),
+                                                 uno::UNO_QUERY);
+    auto* pSvxDrawPage = dynamic_cast<SvxDrawPage*>(xDrawPage.get());
+    CPPUNIT_ASSERT(pSvxDrawPage);
+    SdrPage* pSdrPage = pSvxDrawPage->GetSdrPage();
+    auto* pMedia = dynamic_cast<SdrMediaObj*>(pSdrPage->GetObj(0));
+    CPPUNIT_ASSERT(pMedia);
+    pMedia->setLinkAllowed(true);
+    uno::Reference<beans::XPropertySet> xShape(xDrawPage->getByIndex(0), uno::UNO_QUERY);
+    xShape->setPropertyValue(u"Loop"_ustr, uno::Any(true));
+    xShape->setPropertyValue(u"Mute"_ustr, uno::Any(true));
+
+    // Painting the page into a window gives the shape a media window.
+    VclPtrInstance<WorkWindow> pWindow(nullptr, WB_STDWORK);
+    pWindow->SetOutputSizePixel(Size(500, 500));
+    pWindow->Show();
+    SdrView aView(pSdrPage->getSdrModelFromSdrPage(), pWindow->GetOutDev());
+    aView.ShowSdrPage(pSdrPage);
+    aView.CompleteRedraw(pWindow->GetOutDev(), vcl::Region(pMedia->GetCurrentBoundRect()));
+    Scheduler::ProcessEventsToIdle();
+
+    // Without the fix in place, this test would have failed, as the media window without a
+    // player reported loop and mute as off, and the shape took that over.
+    CPPUNIT_ASSERT(xShape->getPropertyValue(u"Loop"_ustr).get<bool>());
+    CPPUNIT_ASSERT(xShape->getPropertyValue(u"Mute"_ustr).get<bool>());
+    aView.HideSdrPage();
+    pWindow.disposeAndClear();
+}
+
 CPPUNIT_TEST_FIXTURE(SdrTest, test3DRotatedText)
 {
     // The document contains a shape with text "Vertical" and a 3D scene camera rotation of 90 deg.
@@ -425,6 +501,168 @@ CPPUNIT_TEST_FIXTURE(SdrTest, testGraphicClipPolyPolygonFollowsAFlip)
     CPPUNIT_ASSERT_DOUBLES_EQUAL(2000.0, aRange.getMinY(), 1.0);
     CPPUNIT_ASSERT_DOUBLES_EQUAL(6000.0, aRange.getMaxY(), 1.0);
 }
+
+CPPUNIT_TEST_FIXTURE(SdrTest, testReflectionOfShape)
+{
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    uno::Reference<drawing::XShape> xShape = insertReflectedRectangle(mxComponent);
+    auto xDrawPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                         ->getDrawPages()
+                         ->getByIndex(0)
+                         .queryThrow<drawing::XDrawPage>();
+
+    svx::ExtendedPrimitive2dXmlDump aDumper;
+    xmlDocUniquePtr pDocument = aDumper.dumpAndParse(renderPageToPrimitives(xDrawPage));
+
+    // The item values arrive in the reflection, and the percentages become fractions.
+    assertXPath(pDocument, "//reflection", 1);
+    assertXPath(pDocument, "//reflection", "distance", u"100");
+    assertXPath(pDocument, "//reflection", "blurradius", u"50");
+    assertXPath(pDocument, "//reflection", "starttransparency", u"0.5");
+    assertXPath(pDocument, "//reflection", "startposition", u"0");
+    assertXPath(pDocument, "//reflection", "endtransparency", u"1");
+    assertXPath(pDocument, "//reflection", "endposition", u"0.25");
+
+    // Turning the reflection off keeps the other values but removes the reflection.
+    xShape.queryThrow<beans::XPropertySet>()->setPropertyValue(u"ReflectionEffect"_ustr,
+                                                               uno::Any(false));
+    pDocument = aDumper.dumpAndParse(renderPageToPrimitives(xDrawPage));
+    assertXPath(pDocument, "//reflection", 0);
 }
+
+CPPUNIT_TEST_FIXTURE(SdrTest, testReflectionOfShapeHasNoShadow)
+{
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    uno::Reference<drawing::XShape> xShape = insertReflectedRectangle(mxComponent);
+    xShape.queryThrow<beans::XPropertySet>()->setPropertyValue(u"Shadow"_ustr, uno::Any(true));
+    auto xDrawPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                         ->getDrawPages()
+                         ->getByIndex(0)
+                         .queryThrow<drawing::XDrawPage>();
+
+    svx::ExtendedPrimitive2dXmlDump aDumper;
+    xmlDocUniquePtr pDocument = aDumper.dumpAndParse(renderPageToPrimitives(xDrawPage));
+
+    // The shape casts a shadow, but its reflection shows the shape without it.
+    assertXPath(pDocument, "//shadow", 1);
+    assertXPath(pDocument, "//reflection", 1);
+    assertXPath(pDocument, "//reflection//shadow", 0);
+}
+
+CPPUNIT_TEST_FIXTURE(SdrTest, testReflectionOfLegacyRectangle)
+{
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    insertReflectedShape(mxComponent, u"com.sun.star.drawing.RectangleShape"_ustr);
+    auto xDrawPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                         ->getDrawPages()
+                         ->getByIndex(0)
+                         .queryThrow<drawing::XDrawPage>();
+
+    svx::ExtendedPrimitive2dXmlDump aDumper;
+    xmlDocUniquePtr pDocument = aDumper.dumpAndParse(renderPageToPrimitives(xDrawPage));
+
+    // A rectangle that is not a custom shape shows its reflection too.
+    assertXPath(pDocument, "//reflection", 1);
+    assertXPath(pDocument, "//reflection", "endposition", u"0.25");
+}
+
+CPPUNIT_TEST_FIXTURE(SdrTest, testReflectionOfLegacyEllipse)
+{
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    insertReflectedShape(mxComponent, u"com.sun.star.drawing.EllipseShape"_ustr);
+    auto xDrawPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                         ->getDrawPages()
+                         ->getByIndex(0)
+                         .queryThrow<drawing::XDrawPage>();
+
+    svx::ExtendedPrimitive2dXmlDump aDumper;
+    xmlDocUniquePtr pDocument = aDumper.dumpAndParse(renderPageToPrimitives(xDrawPage));
+
+    // An ellipse that is not a custom shape shows its reflection too.
+    assertXPath(pDocument, "//reflection", 1);
+    assertXPath(pDocument, "//reflection", "endposition", u"0.25");
+}
+
+CPPUNIT_TEST_FIXTURE(SdrTest, testReflectionOfCopiedLegacyRectangle)
+{
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    insertReflectedShape(mxComponent, u"com.sun.star.drawing.RectangleShape"_ustr);
+    auto xDrawPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                         ->getDrawPages()
+                         ->getByIndex(0)
+                         .queryThrow<drawing::XDrawPage>();
+    auto pDrawPage = dynamic_cast<SvxDrawPage*>(xDrawPage.get());
+    CPPUNIT_ASSERT(pDrawPage);
+    SdrPage* pSdrPage = pDrawPage->GetSdrPage();
+
+    // The copy replaces the original, so the page holds only the copy.
+    rtl::Reference<SdrObject> pCopy
+        = pSdrPage->GetObj(0)->CloneSdrObject(pSdrPage->getSdrModelFromSdrPage());
+    pSdrPage->InsertObject(pCopy.get());
+    pSdrPage->RemoveObject(0);
+
+    svx::ExtendedPrimitive2dXmlDump aDumper;
+    xmlDocUniquePtr pDocument = aDumper.dumpAndParse(renderPageToPrimitives(xDrawPage));
+
+    // The copy of the rectangle shows the reflection like the original.
+    assertXPath(pDocument, "//reflection", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(SdrTest, testGlowAndSoftEdgeOfCustomShapeAreDrawnOnce)
+{
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    auto xFactory = mxComponent.queryThrow<lang::XMultiServiceFactory>();
+    auto xShape = xFactory->createInstance(u"com.sun.star.drawing.CustomShape"_ustr)
+                      .queryThrow<drawing::XShape>();
+    xShape->setPosition(awt::Point(1000, 2000));
+    xShape->setSize(awt::Size(5000, 4000));
+    auto xDrawPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                         ->getDrawPages()
+                         ->getByIndex(0)
+                         .queryThrow<drawing::XDrawPage>();
+    xDrawPage->add(xShape);
+
+    // The smiley is made of several parts: the face, the eyes and the mouth.
+    auto xProperties = xShape.queryThrow<beans::XPropertySet>();
+    xProperties->setPropertyValue(
+        u"CustomShapeGeometry"_ustr,
+        uno::Any(comphelper::InitPropertySequence({ { u"Type"_ustr, uno::Any(u"smiley"_ustr) } })));
+    xProperties->setPropertyValue(u"GlowEffectRadius"_ustr, uno::Any(sal_Int32(200)));
+    xProperties->setPropertyValue(u"SoftEdgeRadius"_ustr, uno::Any(sal_Int32(100)));
+
+    svx::ExtendedPrimitive2dXmlDump aDumper;
+    xmlDocUniquePtr pDocument = aDumper.dumpAndParse(renderPageToPrimitives(xDrawPage));
+
+    // The glow and the soft edge go around the whole smiley, and not around each part again.
+    // The glow holds a copy of the softened smiley, which is drawn again on top of the glow.
+    assertXPath(pDocument, "//glow", 1);
+    assertXPath(pDocument, "//glow//glow", 0);
+    assertXPath(pDocument, "//glow//softedge", 1);
+    assertXPath(pDocument, "//softedge", 2);
+    assertXPath(pDocument, "//softedge//softedge", 0);
+}
+
+CPPUNIT_TEST_FIXTURE(SdrTest, testReflectionOfCustomShapeIsDrawnOnce)
+{
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    uno::Reference<drawing::XShape> xShape
+        = insertReflectedShape(mxComponent, u"com.sun.star.drawing.CustomShape"_ustr);
+    xShape.queryThrow<beans::XPropertySet>()->setPropertyValue(
+        u"CustomShapeGeometry"_ustr,
+        uno::Any(comphelper::InitPropertySequence({ { u"Type"_ustr, uno::Any(u"smiley"_ustr) } })));
+    auto xDrawPage = mxComponent.queryThrow<drawing::XDrawPagesSupplier>()
+                         ->getDrawPages()
+                         ->getByIndex(0)
+                         .queryThrow<drawing::XDrawPage>();
+
+    svx::ExtendedPrimitive2dXmlDump aDumper;
+    xmlDocUniquePtr pDocument = aDumper.dumpAndParse(renderPageToPrimitives(xDrawPage));
+
+    // The smiley has one reflection, and its parts have none of their own.
+    assertXPath(pDocument, "//reflection", 1);
+}
+}
+
+CPPUNIT_PLUGIN_IMPLEMENT();
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

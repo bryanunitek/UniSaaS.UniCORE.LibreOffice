@@ -44,6 +44,10 @@
 #include <sfx2/sfxbasemodel.hxx>
 #include <svx/signaturelinehelper.hxx>
 #include <sfx2/objsh.hxx>
+#include <sfx2/sfxuno.hxx>
+#include <svl/itemset.hxx>
+#include <svx/sdangitm.hxx>
+#include <svx/svxids.hrc>
 
 #include <sdr/contact/objectcontactofobjlistpainter.hxx>
 #include <tools/XPath.hxx>
@@ -657,7 +661,7 @@ CPPUNIT_TEST_FIXTURE(SvdrawTest, testPageViewDrawLayerClip)
     loadFromFile(u"page-view-draw-layer-clip.docx");
 
     // When saving that document to PDF:
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     // Then make sure that line shape gets clipped:
     std::unique_ptr<vcl::pdf::PDFiumDocument> pDoc = parsePDFExport(pPDFium);
@@ -689,6 +693,56 @@ CPPUNIT_TEST_FIXTURE(SvdrawTest, testRectangleObjectMove)
                          pRectangleObject->GetLogicRect());
 
     pPage->RemoveObject(0);
+}
+
+CPPUNIT_TEST_FIXTURE(SvdrawTest, testTransformRotationArguments)
+{
+    loadFromURL(u"private:factory/sdraw"_ustr);
+    SfxViewShell* pViewShell = SfxViewShell::Current();
+    CPPUNIT_ASSERT(pViewShell);
+    SfxItemPool& rPool = pViewShell->GetPool();
+
+    auto checkAngle = [&](const SfxItemSet& rSet, sal_uInt16 nSlot, sal_Int32 nExpected) {
+        const SfxPoolItem* pItem = nullptr;
+        CPPUNIT_ASSERT_EQUAL(SfxItemState::SET,
+                             rSet.GetItemState(rPool.GetWhichIDFromSlotID(nSlot), false, &pItem));
+        // The inherited integer factory used to create SfxInt32Item here, causing
+        // an assertion when the transform code requested an SdrAngleItem.
+        const auto* pAngle = dynamic_cast<const SdrAngleItem*>(pItem);
+        CPPUNIT_ASSERT(pAngle);
+        CPPUNIT_ASSERT_EQUAL(nExpected, pAngle->GetValue().get());
+    };
+
+    for (sal_Int32 nAngle : { 0, 4500, -4500 })
+    {
+        // Method arguments cover absolute and relative rotations, with an ordinary
+        // integer position argument as a control for the shared conversion path.
+        SfxAllItemSet aSet(rPool);
+        TransformParameters(
+            SID_ATTR_TRANSFORM,
+            { comphelper::makePropertyValue(u"TransformRotationAngle"_ustr, nAngle),
+              comphelper::makePropertyValue(u"TransformRotationDeltaAngle"_ustr, nAngle),
+              comphelper::makePropertyValue(u"TransformPosX"_ustr, sal_Int32(1234)) },
+            aSet);
+        checkAngle(aSet, SID_ATTR_TRANSFORM_ANGLE, nAngle);
+        checkAngle(aSet, SID_ATTR_TRANSFORM_DELTA_ANGLE, nAngle);
+        const auto aArguments = TransformItems(SID_ATTR_TRANSFORM, aSet);
+        CPPUNIT_ASSERT_EQUAL(nAngle,
+                             aArguments.getValue(u"TransformRotationAngle"_ustr).get<sal_Int32>());
+        CPPUNIT_ASSERT_EQUAL(
+            nAngle, aArguments.getValue(u"TransformRotationDeltaAngle"_ustr).get<sal_Int32>());
+        CPPUNIT_ASSERT_EQUAL(sal_Int32(1234),
+                             aArguments.getValue(u"TransformPosX"_ustr).get<sal_Int32>());
+
+        // The rotation property uses the same factory without the method's
+        // formal-argument table.
+        SfxAllItemSet aPropertySet(rPool);
+        TransformParameters(
+            SID_ATTR_TRANSFORM_ANGLE,
+            { comphelper::makePropertyValue(u"TransformRotationAngle"_ustr, nAngle) },
+            aPropertySet);
+        checkAngle(aPropertySet, SID_ATTR_TRANSFORM_ANGLE, nAngle);
+    }
 }
 
 CPPUNIT_TEST_FIXTURE(SvdrawTest, testRectangleObjectRotate)
@@ -1051,6 +1105,40 @@ CPPUNIT_TEST_FIXTURE(SvdrawTest, testGraphicClipPolyPolygonODFRoundTrip)
     CPPUNIT_ASSERT_EQUAL(sal_Int32(4000), aReloaded.Coordinates[1][2].X);
     CPPUNIT_ASSERT_EQUAL(sal_Int32(3000), aReloaded.Coordinates[1][2].Y);
 }
+
+CPPUNIT_TEST_FIXTURE(SvdrawTest, testValidOrganizationChartExport)
+{
+    // The document contains a smartart diagram based on template "Horizontal Organization Chart".
+    // When the document was saved with our own version of data.xml, the exported file was invalid
+    // in regard to OOXML.
+
+    // load document
+    loadFromFile(u"cool16158_Horizontal_Organization_Chart.pptx");
+
+    // We need to make a change to the diagram to force creating an own data.xml file instead of
+    // using the GrabBag. When the implementation is changed to always write our own data.xml,
+    // this part can be removed from the test.
+    uno::Reference<drawing::XDrawPagesSupplier> xDrawPagesSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<drawing::XDrawPage> xDrawPage(xDrawPagesSupplier->getDrawPages()->getByIndex(0),
+                                                 uno::UNO_QUERY);
+    uno::Reference<drawing::XShapes> xSmartArt(xDrawPage->getByIndex(0), uno::UNO_QUERY);
+    // Get the 1st text shape. There is a BGShape in indices before.
+    uno::Reference<drawing::XShape> xShape(xSmartArt->getByIndex(1), uno::UNO_QUERY);
+    // TextEdit: Insert a char at the start
+    SfxViewShell* pViewShell = SfxViewShell::Current();
+    CPPUNIT_ASSERT(pViewShell);
+    SdrView* pSdrView = pViewShell->GetDrawView();
+    SdrObject* pObject = SdrObject::getSdrObjectFromXShape(xShape);
+    pSdrView->SdrBeginTextEdit(pObject);
+    EditView& rEditView = pSdrView->GetTextEditOutlinerView()->GetEditView();
+    rEditView.InsertText(u"A"_ustr);
+    pSdrView->SdrEndTextEdit();
+
+    // Save the file. That will run validate(). Without fix validation failed.
+    save(TestFilter::PPTX);
 }
+}
+
+CPPUNIT_PLUGIN_IMPLEMENT();
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

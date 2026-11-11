@@ -20,6 +20,7 @@
 #include <config_feature_opencl.h>
 
 #include <scitems.hxx>
+#include <drawview.hxx>
 
 #include <comphelper/dispatchcommand.hxx>
 #include <comphelper/propertysequence.hxx>
@@ -32,6 +33,7 @@
 #include <editeng/lrspitem.hxx>
 #include <editeng/ulspitem.hxx>
 #include <editeng/sizeitem.hxx>
+#include <i18nlangtag/languagetag.hxx>
 #include <o3tl/any.hxx>
 #include <o3tl/safeint.hxx>
 #include <svx/fmview.hxx>
@@ -315,10 +317,12 @@ ScPrintUIOptions::ScPrintUIOptions()
 
     // create a choice for the range to print
     OUString aPrintRangeName( u"PrintRange"_ustr );
-    aChoices = { ScResId( SCSTR_PRINTOPT_PRINTALLPAGES ), ScResId( SCSTR_PRINTOPT_PRINTPAGES ) };
+    aChoices = { ScResId( SCSTR_PRINTOPT_PRINTALLPAGES ), ScResId( SCSTR_PRINTOPT_PRINTPAGES ), ScResId( SCSTR_PRINTOPT_PRINTCURRENTPAGE ) };
     aHelpIds = { u".HelpID:vcl:PrintDialog:PrintRange:RadioButton:0"_ustr,
-                 u".HelpID:vcl:PrintDialog:PrintRange:RadioButton:1"_ustr };
-    uno::Sequence< OUString > aWidgetIds{ u"rbAllPages"_ustr, u"rbRangePages"_ustr };
+                 u".HelpID:vcl:PrintDialog:PrintRange:RadioButton:1"_ustr,
+                 u".HelpID:vcl:PrintDialog:PrintRange:RadioButton:2"_ustr
+               };
+    uno::Sequence< OUString > aWidgetIds{ u"rbAllPages"_ustr, u"rbRangePages"_ustr, u"rbCurrentPage"_ustr };
     m_aUIProperties[nIdx++].Value = setChoiceRadiosControlOpt(aWidgetIds, OUString(),
                                                     aHelpIds,
                                                     aPrintRangeName,
@@ -1280,6 +1284,10 @@ void ScModelObj::getPostIts(tools::JsonWriter& rJsonWriter)
         rJsonWriter.put("tab", aNote.maPos.Tab());
         rJsonWriter.put("author", aNote.mpNote->GetAuthor());
         rJsonWriter.put("dateTime", aNote.mpNote->GetDate());
+        // The moment the note was written in UTC, when it is known. dateTime beside it is the
+        // author's wall clock with no zone.
+        if (!aNote.mpNote->GetDateUTC().isEmpty())
+            rJsonWriter.put("dateTimeUtc", aNote.mpNote->GetDateUTC());
         if (const auto* pData = aNote.mpNote->GetThreadedCommentData())
         {
             rJsonWriter.put("text", pData->maRoot.maText);
@@ -1902,6 +1910,15 @@ bool ScModelObj::FillRenderMarkData( const uno::Any& aSelection,
     // "PrintRange" enables (1) or disables (0) the "PageRange" edit
     if ( nPrintRange == 1 )
         rPagesStr = aPageRange;
+    else if (nPrintRange == 2)
+    {
+        SfxViewShell* pViewShell = SfxViewShell::Get(xView);
+        ScTabViewShell* pScViewShell = dynamic_cast<ScTabViewShell*>(pViewShell);
+        if (pScViewShell)
+            rPagesStr = OUString::number(pScViewShell->GetCurrentPage());
+        else
+            rPagesStr.clear();
+    }
     else
         rPagesStr.clear();
 
@@ -2302,13 +2319,15 @@ uno::Sequence<beans::PropertyValue> SAL_CALL ScModelObj::getRenderer( sal_Int32 
     return aSequence;
 }
 
-static void lcl_PDFExportHelper(const OutputDevice* pDev, const OUString& rTabName, SCTAB nTab,
-                                bool bIsFirstPage)
+static void lcl_PDFExportHelper(const OutputDevice* pDev, const ScDocument& rDoc,
+                                const OUString& rTabName, SCTAB nTab, bool bIsFirstPage)
 {
     vcl::PDFExtOutDevData* pPDF = dynamic_cast<vcl::PDFExtOutDevData*>(pDev->GetExtOutDevData());
     if (pPDF)
     {
-        css::lang::Locale const docLocale(Application::GetSettings().GetLanguageTag().getLocale());
+        LanguageType eLatin, eCjk, eCtl;
+        rDoc.GetLanguage(eLatin, eCjk, eCtl);
+        css::lang::Locale const docLocale(LanguageTag(eLatin).getLocale());
         pPDF->SetDocumentLocale(docLocale);
 
         // first page of a sheet: add outline item for the sheet name
@@ -2790,7 +2809,7 @@ void SAL_CALL ScModelObj::render( sal_Int32 nSelRenderer, const uno::Any& aSelec
 
         OUString aTabName;
         rDoc.GetName(nVisTab, aTabName);
-        lcl_PDFExportHelper(pDev, aTabName, nVisTab, bIsFirstPage);
+        lcl_PDFExportHelper(pDev, rDoc, aTabName, nVisTab, bIsFirstPage);
         mnPreviousRenderTab = nVisTab;
 
         pDocShell->DoDraw(pDev, Point(0, 0), aMMRect.GetSize(), JobSetup());
@@ -2922,7 +2941,7 @@ void SAL_CALL ScModelObj::render( sal_Int32 nSelRenderer, const uno::Any& aSelec
     {
         OUString aTabName;
         rDoc.GetName(nTab, aTabName);
-        lcl_PDFExportHelper(pDev, aTabName, nTab, bIsFirstPage);
+        lcl_PDFExportHelper(pDev, rDoc, aTabName, nTab, bIsFirstPage);
     }
     mnPreviousRenderTab = nTab;
 
@@ -2948,7 +2967,7 @@ void SAL_CALL ScModelObj::render( sal_Int32 nSelRenderer, const uno::Any& aSelec
     // job. A last count after the final page puts back the page size and the page breaks that
     // the page style describes.
     if (pPrinter && pPrinter->IsUsePrintDialogSetting() && bIsLastPage)
-        pPrintFuncCache.reset(new ScPrintFuncCache(*pDocShell, aMark, aStatus));
+        pPrintFuncCache.reset(new ScPrintFuncCache(*pDocShell, aMark, std::move(aStatus)));
 }
 
 // XLinkTargetSupplier

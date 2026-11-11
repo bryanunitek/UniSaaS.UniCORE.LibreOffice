@@ -94,6 +94,7 @@
 #include <IDocumentLayoutAccess.hxx>
 #include <IDocumentMarkAccess.hxx>
 #include <IDocumentStylePoolAccess.hxx>
+#include <istyleaccess.hxx>
 #include <IDocumentExternalData.hxx>
 #include <DocumentRedlineManager.hxx>
 #include <docufld.hxx>
@@ -738,8 +739,7 @@ rtl::Reference<SdrObject> SwMSDffManager::ProcessObj(SvStream& rSt,
             bool bVerticalText = false;
             if ( IsProperty( DFF_Prop_txflTextFlow ) )
             {
-                MSO_TextFlow eTextFlow = static_cast<MSO_TextFlow>(GetPropertyValue(
-                    DFF_Prop_txflTextFlow, 0) & 0xFFFF);
+                auto eTextFlow = GetPropertyValue(DFF_Prop_txflTextFlow, 0) & 0xFFFF;
                 switch( eTextFlow )
                 {
                     case mso_txflBtoT:
@@ -842,7 +842,7 @@ rtl::Reference<SdrObject> SwMSDffManager::ProcessObj(SvStream& rSt,
                 aSet.Put( makeSdrTextAutoGrowWidthItem( false ) );
             }
 
-            switch ( static_cast<MSO_WrapMode>(GetPropertyValue( DFF_Prop_WrapText, mso_wrapSquare )) )
+            switch ( GetPropertyValue( DFF_Prop_WrapText, mso_wrapSquare ) )
             {
                 case mso_wrapNone :
                     aSet.Put( makeSdrTextAutoGrowWidthItem( true ) );
@@ -2620,7 +2620,8 @@ void SwWW8ImplReader::FinalizeTextNode(SwPosition& rPos, bool bAddNew)
                 items.Put(*pItem);
         }
         SwFormatAutoFormat item(RES_PARATR_LIST_AUTOFMT);
-        item.SetStyleHandle(std::make_shared<SfxItemSet>(items));
+        item.SetStyleHandle(
+            m_rDoc.GetIStyleAccess().getAutomaticStyle(items, IStyleAccess::AUTO_STYLE_CHAR));
         pText->SetAttr(item);
     }
 
@@ -6219,7 +6220,7 @@ bool TestImportDOC(SvStream &rStream, const OUString &rFltName)
     SwGlobals::ensure();
 
     SfxObjectShellLock xDocSh(new SwDocShell(SfxObjectCreateMode::INTERNAL));
-    xDocSh->DoInitNew();
+    xDocSh->DoInitNew(SfxNewDocumentMacros::Disallow);
     SwDoc *pD =  static_cast<SwDocShell*>((&xDocSh))->GetDoc();
 
     SwPaM aPaM(pD->GetNodes().GetEndOfContent(), SwNodeOffset(-1));

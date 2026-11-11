@@ -18,9 +18,11 @@
 
 #include <swmodeltestbase.hxx>
 
+#include <com/sun/star/document/UpdateDocMode.hpp>
 #include <com/sun/star/document/XEmbeddedObjectSupplier2.hpp>
 #include <com/sun/star/embed/Aspects.hpp>
 #include <com/sun/star/frame/XModel.hpp>
+#include <com/sun/star/graphic/XGraphic.hpp>
 #include <com/sun/star/task/XInteractionApprove.hpp>
 #include <com/sun/star/task/XInteractionHandler.hpp>
 #include <com/sun/star/task/XInteractionRequest.hpp>
@@ -39,6 +41,7 @@
 #include <officecfg/Office/Common.hxx>
 #include <svl/documentlockfile.hxx>
 #include <vcl/BitmapReadAccess.hxx>
+#include <vcl/graph.hxx>
 #include <vcl/graphicfilter.hxx>
 #include <xmloff/odffields.hxx>
 
@@ -721,14 +724,15 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf113946)
 {
     createSwDoc("tdf113946.docx");
     xmlDocUniquePtr pXmlDoc = parseLayoutDump();
+    // The document has a single short horizontal line anchored at the doc start.
+    // Verify the imported position matches the source posOffset (899795 EMU) exactly.
+    CPPUNIT_ASSERT_EQUAL(sal_Int64(899795),
+                         getProperty<sal_Int64>(getShape(1), u"VertOrientPositionEMU"_ustr));
+
+    xmlDocUniquePtr pXmlDoc2 = parseLayoutDump();
     OUString aTop
-        = getXPath(pXmlDoc, "/root/page/body/txt/anchored/SwAnchoredDrawObject/bounds", "top");
-    // tdf#106792 Checked loading of tdf113946.docx. Before the change, the expected
-    // value of this test was "1696". Opening the file shows a single short line anchored
-    // at the doc start. Only diff is that in 'old' version it is slightly rotated, in 'new'
-    // version line is strict horizontal. Checked against MSWord2013, there the line
-    // is also not rotated -> the change is to the better, correct the expected result here.
-    CPPUNIT_ASSERT_EQUAL(u"1695"_ustr, aTop);
+        = getXPath(pXmlDoc2, "/root/page/body/txt/anchored/SwAnchoredDrawObject/bounds", "top");
+    CPPUNIT_ASSERT_EQUAL(u"1696"_ustr, aTop);
 }
 
 CPPUNIT_TEST_FIXTURE(Test, testTdf121804)
@@ -1509,6 +1513,21 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf165348_lockFileOnRepair)
     // DocumentLockFile::GetLockData succeeded.
     CPPUNIT_ASSERT_THROW(svt::DocumentLockFile(aTempURL).GetLockData(),
                          ucb::InteractiveAugmentedIOException);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testLinkedPictureNotReadOnLoad)
+{
+    // Given a document whose picture is only a link to a file next to it, loaded with link
+    // updates off:
+    loadFromFile(u"linked-picture.docx",
+                 { comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                                 sal_Int16(document::UpdateDocMode::NO_UPDATE)) });
+
+    // Then the linked file is not read, so the picture has no pixels:
+    auto xGraphic = getProperty<uno::Reference<graphic::XGraphic>>(getShape(1), u"Graphic"_ustr);
+    // Without the accompanying fix in place, this test would have failed, the import read the
+    // linked file and the picture was a bitmap.
+    CPPUNIT_ASSERT(Graphic(xGraphic).GetType() != GraphicType::Bitmap);
 }
 
 // tests should only be added to ooxmlIMPORT *if* they fail round-tripping in ooxmlEXPORT

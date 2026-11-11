@@ -1106,6 +1106,7 @@ namespace xmloff::token {
         TOKEN( "hyphenation-compound-remain-char-count", XML_HYPHENATION_COMPOUND_REMAIN_CHAR_COUNT ),
         TOKEN( "hyphenation-compound-push-char-count", XML_HYPHENATION_COMPOUND_PUSH_CHAR_COUNT ),
         TOKEN( "hyphenation-level",               XML_HYPHENATION_LEVEL ),
+        TOKEN( "hyphenation-split-compound-word", XML_HYPHENATION_SPLIT_COMPOUND_WORD ),
         TOKEN( "i",                               XML_I ),
         TOKEN( "icon",                            XML_ICON ),
         TOKEN( "icon-set",                        XML_ICON_SET ),
@@ -3633,7 +3634,24 @@ namespace xmloff::token {
         TOKEN("asian", XML_ASIAN),
         TOKEN("complex", XML_COMPLEX),
 
+        TOKEN( "diagram",                         XML_DIAGRAM ),
+        TOKEN( "layout",                          XML_DIAGRAM_LAYOUT ),
+        TOKEN( "colors",                          XML_DIAGRAM_COLORS ),
+        TOKEN( "quickstyle",                      XML_DIAGRAM_QUICKSTYLE ),
+
         TOKEN( "horizontal-rule",                 XML_HORIZONTAL_RULE ),
+
+        TOKEN( "reflection",                      XML_REFLECTION ),
+        TOKEN( "reflection-distance",             XML_REFLECTION_DISTANCE ),
+        TOKEN( "reflection-blur",                 XML_REFLECTION_BLUR ),
+        TOKEN( "reflection-start-transparency",   XML_REFLECTION_START_TRANSPARENCY ),
+        TOKEN( "reflection-start-position",       XML_REFLECTION_START_POSITION ),
+        TOKEN( "reflection-end-transparency",     XML_REFLECTION_END_TRANSPARENCY ),
+        TOKEN( "reflection-end-position",         XML_REFLECTION_END_POSITION ),
+
+        TOKEN( "airplane",                        XML_AIRPLANE ),
+
+        TOKEN("date-utc", XML_DATE_UTC),
 
 #if OSL_DEBUG_LEVEL > 0
         { 0, nullptr, std::nullopt,               XML_TOKEN_END }

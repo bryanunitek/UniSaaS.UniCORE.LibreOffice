@@ -19,6 +19,10 @@
 
 #include "scripthandler.hxx"
 
+#include <cstdlib>
+
+#include <comphelper/configuration.hxx>
+
 #include <com/sun/star/frame/DispatchResultEvent.hpp>
 #include <com/sun/star/frame/DispatchResultState.hpp>
 #include <com/sun/star/frame/XController.hpp>
@@ -202,16 +206,19 @@ void SAL_CALL ScriptProtocolHandler::dispatchWithNotification(
                 urifac->parse(aURL.Complete), css::uno::UNO_QUERY_THROW);
             auto const loc = uri->getParameter(u"location"_ustr);
             bool bIsDocumentScript = loc == "document";
+            // A document's scripts are addressed as location=document, so a vnd.sun.star.tdoc
+            // location is refused.
+            bool bIsTDocLocation = loc.startsWithIgnoreAsciiCase("vnd.sun.star.tdoc");
 
-            if ( bIsDocumentScript )
+            if ( bIsDocumentScript || bIsTDocLocation )
             {
                 // obtain the component for our security check
                 Reference< XEmbeddedScripts > xDocumentScripts;
-                if ( getScriptInvocation() )
+                if ( bIsDocumentScript && getScriptInvocation() )
                     xDocumentScripts.set( m_xScriptInvocation->getScriptContainer(), UNO_SET_THROW );
 
-                OSL_ENSURE( xDocumentScripts.is(), "ScriptProtocolHandler::dispatchWithNotification: can't do the security check!" );
-                if ( !xDocumentScripts.is() || !xDocumentScripts->getAllowMacroExecution() )
+                OSL_ENSURE( !bIsDocumentScript || xDocumentScripts.is(), "ScriptProtocolHandler::dispatchWithNotification: can't do the security check!" );
+                if ( bIsTDocLocation || !xDocumentScripts.is() || !xDocumentScripts->getAllowMacroExecution() )
                 {
                     if ( xListener.is() )
                     {
@@ -257,6 +264,8 @@ void SAL_CALL ScriptProtocolHandler::dispatchWithNotification(
                 std::exception_ptr aFirstCaughtException;
                 try
                 {
+                    if (comphelper::IsFuzzing())
+                        std::abort();
                     invokeResult = xFunc->invoke( inArgs, outIndex, outArgs );
                     aState = css::frame::DispatchResultState::SUCCESS;
                     break;

@@ -119,7 +119,6 @@ namespace sdr::properties
 //   SdrTextObj
 class SVXCORE_DLLPUBLIC SdrTextObj : public SdrAttrObj, public svx::ITextProvider
 {
-private:
     // Cell needs access to ImpGetDrawOutliner();
     friend class sdr::table::Cell;
     friend class sdr::table::SdrTableRtfExporter;
@@ -131,6 +130,8 @@ private:
 
     // CustomShapeproperties need to access the "mbTextFrame" member:
     friend class sdr::properties::CustomShapeProperties;
+
+    virtual rtl::Reference<SdrObject> implCloneSdrObject(SdrModel& rTargetModel) const override;
 
 protected:
     virtual std::unique_ptr<sdr::properties::BaseProperties> CreateObjectSpecificProperties() override;
@@ -336,7 +337,7 @@ public:
     // Setting attributes can only be done on the text frame.
     void SetTextLink(const OUString& rFileName, const OUString& rFilterName);
     void ReleaseTextLink();
-    bool IsLinkedText() const { return m_pPlusData != nullptr && GetLinkUserData() != nullptr; }
+    bool IsLinkedText() const { return m_pUserDataList != nullptr && GetLinkUserData() != nullptr; }
     bool ReloadLinkedText(bool bForceLoad);
     bool LoadText(const OUString& rFileName, rtl_TextEncoding eCharSet);
 
@@ -463,7 +464,6 @@ public:
     virtual void TakeUnrotatedSnapRect(tools::Rectangle& rRect) const;
     virtual OUString TakeObjNameSingul() const override;
     virtual OUString TakeObjNamePlural() const override;
-    virtual rtl::Reference<SdrObject> CloneSdrObject(SdrModel& rTargetModel) const override;
     virtual basegfx::B2DPolyPolygon TakeXorPoly() const override;
     virtual basegfx::B2DPolyPolygon TakeContour() const override;
     virtual void RecalcSnapRect() override;

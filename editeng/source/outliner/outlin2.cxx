@@ -29,8 +29,6 @@
 #include <editeng/forbiddencharacterstable.hxx>
 
 #include <editeng/outliner.hxx>
-#include "paralist.hxx"
-#include <outleeng.hxx>
 #include <editeng/editstat.hxx>
 
 
@@ -223,19 +221,51 @@ void Outliner::SetMinColumnWrapHeight(tools::Long nVal)
     pEditEngine->SetMinColumnWrapHeight(nVal);
 }
 
-bool Outliner::IsExpanded( Paragraph const * pPara ) const
+bool Outliner::IsExpanded( sal_Int32 nPara ) const
 {
-    return pParaList->HasVisibleChildren( pPara );
+    return HasVisibleChildren( nPara );
 }
 
-Paragraph* Outliner::GetParent( Paragraph const * pParagraph ) const
+sal_Int32 Outliner::GetParent( sal_Int32 nPara ) const
 {
-    return pParaList->GetParent( pParagraph );
+    sal_Int32 nParaPrev = nPara-1;
+    while ( nParaPrev >= 0 && ( pEditEngine->GetNumberingDepth(nParaPrev) >= pEditEngine->GetNumberingDepth(nPara) ) )
+    {
+        --nParaPrev;
+    }
+
+    return nParaPrev;
 }
 
-sal_Int32 Outliner::GetChildCount( Paragraph const * pParent ) const
+bool Outliner::HasHiddenChildren( sal_Int32 nPara ) const
 {
-    return pParaList->GetChildCount( pParent );
+    sal_Int32 nParaNext = nPara+1;
+    if (nParaNext >= pEditEngine->GetParagraphCount())
+        return false;
+    return ( pEditEngine->GetNumberingDepth(nParaNext) > pEditEngine->GetNumberingDepth(nPara) )
+        && !pEditEngine->IsBulletVisible(nParaNext);
+}
+
+bool Outliner::HasVisibleChildren( sal_Int32 nPara ) const
+{
+    sal_Int32 nParaNext = nPara+1;
+    if (nParaNext >= pEditEngine->GetParagraphCount())
+        return false;
+    return ( pEditEngine->GetNumberingDepth(nParaNext) > pEditEngine->GetNumberingDepth(nPara) )
+        && pEditEngine->IsBulletVisible(nParaNext);
+}
+
+sal_Int32 Outliner::GetChildCount( sal_Int32 nPara ) const
+{
+    sal_Int32 nChildCount = 0;
+    sal_Int32 nParaNext = nPara+1;
+    while ( nParaNext < pEditEngine->GetParagraphCount()
+            && ( pEditEngine->GetNumberingDepth(nParaNext) > pEditEngine->GetNumberingDepth(nPara) ) )
+    {
+        nChildCount++;
+        ++nParaNext;
+    }
+    return nChildCount;
 }
 
 Size Outliner::CalcTextSize()
@@ -340,6 +370,8 @@ bool Outliner::HasConvertibleTextPortion( LanguageType nLang )
 
 bool Outliner::ConvertNextDocument()
 {
+    if (maConvertNextDocumentHdl.IsSet())
+        return maConvertNextDocumentHdl.Call(this);
     return false;
 }
 
@@ -370,6 +402,8 @@ SfxItemPool* Outliner::GetEditEnginePool() const
 
 bool Outliner::SpellNextDocument()
 {
+    if (maSpellNextDocumentHdl.IsSet())
+        return maSpellNextDocumentHdl.Call(this);
     return false;
 }
 
@@ -495,11 +529,6 @@ void Outliner::EraseVirtualDevice()
 bool Outliner::ShouldCreateBigTextObject() const
 {
     return pEditEngine->ShouldCreateBigTextObject();
-}
-
-const EditEngine& Outliner::GetEditEngine() const
-{
-    return *pEditEngine;
 }
 
 void Outliner::SetVertical(bool bVertical)

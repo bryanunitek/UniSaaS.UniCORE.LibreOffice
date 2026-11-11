@@ -23,6 +23,7 @@
 
 #include <editeng/eeitem.hxx>
 #include <editeng/colritem.hxx>
+#include <vcl/ptrstyle.hxx>
 
 #include <sfx2/app.hxx>
 #include <sfx2/chalign.hxx>
@@ -43,7 +44,6 @@
 #include <vcl/cursor.hxx>
 #include <vcl/help.hxx>
 #include <vcl/image.hxx>
-#include <vcl/ptrstyle.hxx>
 #include <vcl/settings.hxx>
 #include <svl/stritem.hxx>
 #include <vcl/svapp.hxx>
@@ -1317,7 +1317,7 @@ void ScTextWnd::Paint( vcl::RenderContext& rRenderContext, const tools::Rectangl
     if (m_xEditEngine)
     {
         // tdf#97354 - use disabled text color while a modeless ref dialog owns reference input
-        Color aTxtColor = ScModule::get()->IsRefDialogOpen() ? rStyleSettings.GetDisableColor()
+        Color aTxtColor = ScModule::get()->IsRefDialogOpen() ? rStyleSettings.GetDisableTextColor()
                                                              : rStyleSettings.GetWindowTextColor();
         if (aTextFont.GetColor() != aTxtColor)
         {
@@ -2291,6 +2291,9 @@ ScPosWnd::ScPosWnd(vcl::Window* pParent)
     Size aSize(LogicToPixel(Size(POSITION_COMBOBOX_WIDTH * 4, 0), MapMode(MapUnit::MapAppFont)));
     m_xWidget->set_size_request(aSize.Width(), -1);
     SetSizePixel(m_xContainer->get_preferred_size());
+
+    // tdf#142472 - use case-sensitive autocompletion to keep the case of the typed text
+    m_xWidget->set_entry_completion(true, true);
 
     FillRangeNames(true);
 

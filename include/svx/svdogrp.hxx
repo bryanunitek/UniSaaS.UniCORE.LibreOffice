@@ -37,6 +37,13 @@ public:
     // a valid SdrObject* to allow to use this as a loop-through-call
     virtual SdrObject* getDiagramSubSelection() override;
 
+    // DiagramData access
+    OUString GetDiagramLayout() const;
+    OUString GetDiagramData() const;
+    OUString GetDiagramColors() const;
+    OUString GetDiagramQuickstyle() const;
+    void SetDiagramData(std::u16string_view rLayout, std::u16string_view rData, std::u16string_view rColors, std::u16string_view rQuickstyle);
+
 private:
     virtual std::unique_ptr<sdr::contact::ViewContact> CreateObjectSpecificViewContact() override;
     virtual std::unique_ptr<sdr::properties::BaseProperties>
@@ -46,6 +53,8 @@ private:
 
     // the DiagramHelper if this SdrObjGroup host a Diagram
     std::shared_ptr< svx::diagram::DiagramHelper_svx > mp_DiagramHelper;
+
+    virtual rtl::Reference<SdrObject> implCloneSdrObject(SdrModel& rTargetModel) const override;
 
 public:
     SdrObjGroup(SdrModel& rSdrModel);
@@ -73,8 +82,6 @@ public:
 
     virtual const tools::Rectangle& GetCurrentBoundRect() const override;
     virtual const tools::Rectangle& GetSnapRect() const override;
-
-    virtual rtl::Reference<SdrObject> CloneSdrObject(SdrModel& rTargetModel) const override;
 
     virtual OUString TakeObjNameSingul() const override;
     virtual OUString TakeObjNamePlural() const override;
@@ -115,9 +122,6 @@ public:
 
     virtual rtl::Reference<SdrObject> DoConvertToPolyObj(bool bBezier,
                                                          bool bAddText) const override;
-
-    virtual void SetDescription(const OUString& rStr) override;
-    virtual OUString GetDescription() const override;
 
     virtual void dumpAsXml(xmlTextWriterPtr pWriter) const override;
     virtual void AddToHdlList(SdrHdlList& rHdlList) const override;

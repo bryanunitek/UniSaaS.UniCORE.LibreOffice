@@ -7939,7 +7939,7 @@
                     <property name="vexpand">True</property>
                     <child>
                       <!-- n-columns=2 n-rows=3 -->
-                      <object class="GtkGrid" id="gdViewFreeze">
+                      <object class="GtkGrid" id="gdViewPanes">
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
                         <property name="margin-start">6</property>
@@ -7949,16 +7949,16 @@
                         <property name="row-spacing">3</property>
                         <property name="column-spacing">3</property>
                         <child>
-                          <object class="GtkLabel" id="lbViewFreeze">
+                          <object class="GtkLabel" id="lbViewPanes">
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
-                            <property name="label" translatable="yes" context="TabbedCalc|labelViewFreeze">Freeze</property>
+                            <property name="label" translatable="yes" context="TabbedCalc|labelViewPanes">Panes</property>
                             <attributes>
                               <attribute name="style" value="italic"/>
                               <attribute name="scale" value="0.9"/>
                             </attributes>
                             <accessibility>
-                              <relation type="label-for" target="gdViewFreeze"/>
+                              <relation type="label-for" target="gdViewPanes"/>
                             </accessibility>
                           </object>
                           <packing>
@@ -8016,7 +8016,7 @@
                           </packing>
                         </child>
                         <accessibility>
-                          <relation type="labelled-by" target="lbViewFreeze"/>
+                          <relation type="labelled-by" target="lbViewPanes"/>
                         </accessibility>
                       </object>
                       <packing>
@@ -8174,33 +8174,33 @@
                       </packing>
                     </child>
                     <child>
-                      <!-- n-columns=7 n-rows=3 -->
-                      <object class="GtkGrid" id="gdViewOptions">
+                      <!-- n-columns=5 n-rows=3 -->
+                      <object class="GtkGrid" id="gdViewView">
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
                         <property name="margin-start">3</property>
-                        <property name="margin-end">6</property>
+                        <property name="margin-end">3</property>
                         <property name="margin-top">6</property>
                         <property name="margin-bottom">6</property>
                         <property name="row-spacing">3</property>
                         <property name="column-spacing">3</property>
                         <child>
-                          <object class="GtkLabel" id="lbViewOptions">
+                          <object class="GtkLabel" id="lbViewView">
                             <property name="visible">True</property>
                             <property name="can-focus">False</property>
-                            <property name="label" translatable="yes" context="TabbedCalc|labelViewOptions">Options</property>
+                            <property name="label" translatable="yes" context="TabbedCalc|labelViewView">View</property>
                             <attributes>
                               <attribute name="style" value="italic"/>
                               <attribute name="scale" value="0.9"/>
                             </attributes>
                             <accessibility>
-                              <relation type="label-for" target="gdViewOptions"/>
+                              <relation type="label-for" target="gdViewView"/>
                             </accessibility>
                           </object>
                           <packing>
                             <property name="left-attach">0</property>
                             <property name="top-attach">2</property>
-                            <property name="width">6</property>
+                            <property name="width">4</property>
                           </packing>
                         </child>
                         <child>
@@ -8210,33 +8210,9 @@
                             <property name="orientation">vertical</property>
                           </object>
                           <packing>
-                            <property name="left-attach">6</property>
+                            <property name="left-attach">4</property>
                             <property name="top-attach">0</property>
                             <property name="height">3</property>
-                          </packing>
-                        </child>
-                        <child>
-                          <object class="sfxlo-NotebookbarToolBox" id="bxViewSidebar">
-                            <property name="visible">True</property>
-                            <property name="can-focus">True</property>
-                            <property name="valign">center</property>
-                            <property name="vexpand">True</property>
-                            <property name="toolbar-style">both-horiz</property>
-                            <property name="show-arrow">False</property>
-                            <child>
-                              <object class="GtkToolButton" id="btnViewSidebar">
-                                <property name="visible">True</property>
-                                <property name="action-name">.uno:Sidebar</property>
-                              </object>
-                              <packing>
-                                <property name="expand">False</property>
-                                <property name="homogeneous">True</property>
-                              </packing>
-                            </child>
-                          </object>
-                          <packing>
-                            <property name="left-attach">1</property>
-                            <property name="top-attach">0</property>
                           </packing>
                         </child>
                         <child>
@@ -8259,7 +8235,7 @@
                             </child>
                           </object>
                           <packing>
-                            <property name="left-attach">2</property>
+                            <property name="left-attach">1</property>
                             <property name="top-attach">0</property>
                           </packing>
                         </child>
@@ -8283,7 +8259,7 @@
                             </child>
                           </object>
                           <packing>
-                            <property name="left-attach">2</property>
+                            <property name="left-attach">1</property>
                             <property name="top-attach">1</property>
                           </packing>
                         </child>
@@ -8307,7 +8283,7 @@
                             </child>
                           </object>
                           <packing>
-                            <property name="left-attach">3</property>
+                            <property name="left-attach">2</property>
                             <property name="top-attach">0</property>
                           </packing>
                         </child>
@@ -8331,7 +8307,7 @@
                             </child>
                           </object>
                           <packing>
-                            <property name="left-attach">3</property>
+                            <property name="left-attach">2</property>
                             <property name="top-attach">1</property>
                           </packing>
                         </child>
@@ -8353,7 +8329,7 @@
                             </child>
                           </object>
                           <packing>
-                            <property name="left-attach">4</property>
+                            <property name="left-attach">3</property>
                             <property name="top-attach">0</property>
                           </packing>
                         </child>
@@ -8375,73 +8351,7 @@
                             </child>
                           </object>
                           <packing>
-                            <property name="left-attach">4</property>
-                            <property name="top-attach">1</property>
-                          </packing>
-                        </child>
-                        <child>
-                          <object class="sfxlo-NotebookbarToolBox" id="bxViewViewColumnRowHighlighting">
-                            <property name="visible">True</property>
-                            <property name="can-focus">False</property>
-                            <property name="toolbar-style">both-horiz</property>
-                            <property name="show-arrow">False</property>
-                            <child>
-                              <object class="GtkToolButton" id="btnViewViewColumnRowHighlighting">
-                                <property name="visible">True</property>
-                                <property name="action-name">.uno:ViewColumnRowHighlighting</property>
-                              </object>
-                              <packing>
-                                <property name="expand">False</property>
-                                <property name="homogeneous">True</property>
-                              </packing>
-                            </child>
-                          </object>
-                          <packing>
-                            <property name="left-attach">5</property>
-                            <property name="top-attach">0</property>
-                          </packing>
-                        </child>
-                        <child>
-                          <object class="sfxlo-NotebookbarToolBox" id="bxViewViewHiddenColRow">
-                            <property name="visible">True</property>
-                            <property name="can-focus">False</property>
-                            <property name="toolbar-style">both-horiz</property>
-                            <property name="show-arrow">False</property>
-                            <child>
-                              <object class="GtkToolButton" id="btnViewViewHiddenColRow">
-                                <property name="visible">True</property>
-                                <property name="action-name">.uno:ViewHiddenColRow</property>
-                              </object>
-                              <packing>
-                                <property name="expand">False</property>
-                                <property name="homogeneous">True</property>
-                              </packing>
-                            </child>
-                          </object>
-                          <packing>
-                            <property name="left-attach">5</property>
-                            <property name="top-attach">1</property>
-                          </packing>
-                        </child>
-                        <child>
-                          <object class="sfxlo-NotebookbarToolBox" id="bxInsertFunctionBox">
-                            <property name="visible">True</property>
-                            <property name="can-focus">False</property>
-                            <property name="toolbar-style">both-horiz</property>
-                            <property name="show-arrow">False</property>
-                            <child>
-                              <object class="GtkToolButton" id="btnInsertFunctionBox1">
-                                <property name="visible">True</property>
-                                <property name="action-name">.uno:FunctionBox</property>
-                              </object>
-                              <packing>
-                                <property name="expand">False</property>
-                                <property name="homogeneous">True</property>
-                              </packing>
-                            </child>
-                          </object>
-                          <packing>
-                            <property name="left-attach">1</property>
+                            <property name="left-attach">3</property>
                             <property name="top-attach">1</property>
                           </packing>
                         </child>
@@ -8469,6 +8379,148 @@
                             <property name="left-attach">0</property>
                             <property name="top-attach">0</property>
                             <property name="height">2</property>
+                          </packing>
+                        </child>
+                        <accessibility>
+                          <relation type="labelled-by" target="lbViewView"/>
+                        </accessibility>
+                      </object>
+                      <packing>
+                        <property name="expand">False</property>
+                        <property name="fill">True</property>
+                        <property name="position">2</property>
+                      </packing>
+                    </child>
+                    <child>
+                      <!-- n-columns=3 n-rows=3 -->
+                      <object class="GtkGrid" id="gdViewOptions">
+                        <property name="visible">True</property>
+                        <property name="can-focus">False</property>
+                        <property name="margin-start">3</property>
+                        <property name="margin-end">6</property>
+                        <property name="margin-top">6</property>
+                        <property name="margin-bottom">6</property>
+                        <property name="row-spacing">3</property>
+                        <property name="column-spacing">3</property>
+                        <child>
+                          <object class="GtkLabel" id="lbViewOptions">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="label" translatable="yes" context="TabbedCalc|labelViewOptions">Options</property>
+                            <attributes>
+                              <attribute name="style" value="italic"/>
+                              <attribute name="scale" value="0.9"/>
+                            </attributes>
+                            <accessibility>
+                              <relation type="label-for" target="gdViewOptions"/>
+                            </accessibility>
+                          </object>
+                          <packing>
+                            <property name="left-attach">0</property>
+                            <property name="top-attach">2</property>
+                            <property name="width">2</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkSeparator">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="orientation">vertical</property>
+                          </object>
+                          <packing>
+                            <property name="left-attach">2</property>
+                            <property name="top-attach">0</property>
+                            <property name="height">3</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="sfxlo-NotebookbarToolBox" id="bxViewViewColumnRowHighlighting">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="toolbar-style">both-horiz</property>
+                            <property name="show-arrow">False</property>
+                            <child>
+                              <object class="GtkToolButton" id="btnViewViewColumnRowHighlighting">
+                                <property name="visible">True</property>
+                                <property name="action-name">.uno:ViewColumnRowHighlighting</property>
+                              </object>
+                              <packing>
+                                <property name="expand">False</property>
+                                <property name="homogeneous">True</property>
+                              </packing>
+                            </child>
+                          </object>
+                          <packing>
+                            <property name="left-attach">1</property>
+                            <property name="top-attach">0</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="sfxlo-NotebookbarToolBox" id="bxViewViewHiddenColRow">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="toolbar-style">both-horiz</property>
+                            <property name="show-arrow">False</property>
+                            <child>
+                              <object class="GtkToolButton" id="btnViewViewHiddenColRow">
+                                <property name="visible">True</property>
+                                <property name="action-name">.uno:ViewHiddenColRow</property>
+                              </object>
+                              <packing>
+                                <property name="expand">False</property>
+                                <property name="homogeneous">True</property>
+                              </packing>
+                            </child>
+                          </object>
+                          <packing>
+                            <property name="left-attach">1</property>
+                            <property name="top-attach">1</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="sfxlo-NotebookbarToolBox" id="bxInsertDesignerDialog">
+                            <property name="visible">True</property>
+                            <property name="can-focus">False</property>
+                            <property name="toolbar-style">both-horiz</property>
+                            <property name="show-arrow">False</property>
+                            <child>
+                              <object class="GtkToolButton" id="btnInsertDesignerDialog">
+                                <property name="visible">True</property>
+                                <property name="action-name">.uno:DesignerDialog</property>
+                              </object>
+                              <packing>
+                                <property name="expand">False</property>
+                                <property name="homogeneous">True</property>
+                              </packing>
+                            </child>
+                          </object>
+                          <packing>
+                            <property name="left-attach">0</property>
+                            <property name="top-attach">1</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="sfxlo-NotebookbarToolBox" id="bxViewSidebar">
+                            <property name="visible">True</property>
+                            <property name="can-focus">True</property>
+                            <property name="valign">center</property>
+                            <property name="vexpand">True</property>
+                            <property name="toolbar-style">both-horiz</property>
+                            <property name="show-arrow">False</property>
+                            <child>
+                              <object class="GtkToolButton" id="btnViewSidebar">
+                                <property name="visible">True</property>
+                                <property name="action-name">.uno:Sidebar</property>
+                              </object>
+                              <packing>
+                                <property name="expand">False</property>
+                                <property name="homogeneous">True</property>
+                              </packing>
+                            </child>
+                          </object>
+                          <packing>
+                            <property name="left-attach">0</property>
+                            <property name="top-attach">0</property>
                           </packing>
                         </child>
                         <accessibility>

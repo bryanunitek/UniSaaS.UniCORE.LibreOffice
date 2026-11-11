@@ -81,6 +81,7 @@
 #include <fmtftn.hxx>
 // FOOTNOTES
 #include <doc.hxx>
+#include <FillBitmapNotify.hxx>
 #include <IDocumentSettingAccess.hxx>
 #include <IDocumentLayoutAccess.hxx>
 #include <swerror.h>
@@ -1903,12 +1904,12 @@ void SwHTMLWriter::OutCSS1_FrameFormatOptions( const SwFrameFormat& rFrameFormat
                 {
                     bOutXPos = text::RelOrientation::CHAR != rHoriOri.GetRelationOrient();
                     nXPos = text::HoriOrientation::NONE == rHoriOri.GetHoriOrient()
-                                ? rHoriOri.GetPos() : 0;
+                                ? rHoriOri.getPosition().as_twip<SwTwips>() : 0;
 
                     const SwFormatVertOrient& rVertOri = rFrameFormat.GetVertOrient();
                     bOutYPos = text::RelOrientation::CHAR != rVertOri.GetRelationOrient();
                     nYPos = text::VertOrientation::NONE == rVertOri.GetVertOrient()
-                                 ? rVertOri.GetPos() : 0;
+                                 ? rVertOri.getPosition().as_twip<SwTwips>() : 0;
                 }
 
                 if( bOutYPos )
@@ -3096,6 +3097,12 @@ static SwHTMLWriter& OutCSS1_SvxBrush( SwHTMLWriter& rWrt, const SfxPoolItem& rH
     const Color & rColor = static_cast<const SvxBrushItem &>(rHt).GetColor();
     OUString aLink = pGraphicName ? *pGraphicName
                             : static_cast<const SvxBrushItem &>(rHt).GetGraphicLink();
+    // A picture still waiting for the document's link update is written as its link.
+    const OUString aDeferredLink
+        = pGraphicName ? OUString()
+                       : sw::getDeferredBrushURL(static_cast<const SvxBrushItem&>(rHt));
+    if (!aDeferredLink.isEmpty())
+        aLink = aDeferredLink;
     bool bOwn = false;
     SvxGraphicPosition ePos = static_cast<const SvxBrushItem &>(rHt).GetGraphicPos();
     if( sw::Css1Background::Page == nMode && !rWrt.mbEmbedImages )
@@ -3121,7 +3128,7 @@ static SwHTMLWriter& OutCSS1_SvxBrush( SwHTMLWriter& rWrt, const SfxPoolItem& rH
 
     // Embedded Graphic -> export WriteEmbedded
     const Graphic* pGrf = nullptr;
-    if( rWrt.mbEmbedImages || aLink.isEmpty())
+    if( (rWrt.mbEmbedImages || aLink.isEmpty()) && aDeferredLink.isEmpty() )
     {
         pGrf = static_cast<const SvxBrushItem &>(rHt).GetGraphic();
         if( pGrf )

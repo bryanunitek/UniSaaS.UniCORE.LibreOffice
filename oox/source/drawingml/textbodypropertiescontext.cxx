@@ -61,8 +61,14 @@ TextBodyPropertiesContext::TextBodyPropertiesContext( ContextHandler2Helper cons
 , mrTextBodyProp( rTextBodyProp )
 {
     // ST_TextWrappingType
-    sal_Int32 nWrappingType = rAttribs.getToken( XML_wrap, XML_square );
-    mrTextBodyProp.maPropertyMap.setProperty( PROP_TextWordWrap, nWrappingType == XML_square );
+    // A placeholder starts with the text body properties of the placeholder it refers to, so a
+    // missing wrap attribute keeps the inherited wrapping type.
+    if (rAttribs.hasAttribute(XML_wrap)
+        || !mrTextBodyProp.maPropertyMap.hasProperty(PROP_TextWordWrap))
+    {
+        sal_Int32 nWrappingType = rAttribs.getToken( XML_wrap, XML_square );
+        mrTextBodyProp.maPropertyMap.setProperty( PROP_TextWordWrap, nWrappingType == XML_square );
+    }
 
     // ST_Coordinate
     OUString sValue;
@@ -204,7 +210,8 @@ TextBodyPropertiesContext::TextBodyPropertiesContext( ContextHandler2Helper cons
 
     // Push defaults
     mrTextBodyProp.maPropertyMap.setProperty( PROP_TextAutoGrowHeight, false);
-    mrTextBodyProp.maPropertyMap.setProperty( PROP_TextFitToSize, drawing::TextFitToSizeType_NONE);
+    if (!mrTextBodyProp.maPropertyMap.hasProperty(PROP_TextFitToSize))
+        mrTextBodyProp.maPropertyMap.setProperty(PROP_TextFitToSize, TextFitToSizeType_NONE);
 }
 
 ContextHandlerRef TextBodyPropertiesContext::onCreateContext( sal_Int32 aElementToken, const AttributeList& rAttribs )
@@ -232,6 +239,8 @@ ContextHandlerRef TextBodyPropertiesContext::onCreateContext( sal_Int32 aElement
             // EG_TextAutofit
             case A_TOKEN( noAutofit ):
                 mrTextBodyProp.maPropertyMap.setProperty( PROP_TextAutoGrowHeight, false);   // CT_TextNoAutofit
+                mrTextBodyProp.maPropertyMap.setProperty(PROP_TextFitToSize,
+                                                         TextFitToSizeType_NONE);
                 break;
             case A_TOKEN( normAutofit ):    // CT_TextNormalAutofit
             {
@@ -249,6 +258,8 @@ ContextHandlerRef TextBodyPropertiesContext::onCreateContext( sal_Int32 aElement
                     const sal_Int32 tVert = mrTextBodyProp.moVert.value_or( XML_horz );
                     if( tVert != XML_vert && tVert != XML_eaVert && tVert != XML_vert270 && tVert != XML_mongolianVert )
                         mrTextBodyProp.maPropertyMap.setProperty( PROP_TextAutoGrowHeight, true);
+                    mrTextBodyProp.maPropertyMap.setProperty(PROP_TextFitToSize,
+                                                             TextFitToSizeType_NONE);
                 }
                 break;
 

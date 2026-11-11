@@ -43,7 +43,6 @@
 #include <svx/xfillit0.hxx>
 #include <svx/xlineit0.hxx>
 #include <basegfx/polygon/b2dpolypolygontools.hxx>
-#include <com/sun/star/document/XActionLockable.hpp>
 #include <cppuhelper/implbase.hxx>
 #include <cppuhelper/supportsservice.hxx>
 
@@ -165,6 +164,7 @@ rtl::Reference<SdrObject> EnhancedCustomShapeEngine::ImplForceGroupWithText(
             // clear fill and line style
             aTargetItemSet.Put(XLineStyleItem(drawing::LineStyle_NONE));
             aTargetItemSet.Put(XFillStyleItem(drawing::FillStyle_NONE));
+            EnhancedCustomShape2d::ClearEffects(aTargetItemSet);
 
             // get the text bounds and set at text object
             tools::Rectangle aTextBounds(rSdrObjCustomShape.GetSnapRect());
@@ -318,10 +318,6 @@ rtl::Reference<SdrObject> EnhancedCustomShapeEngine::render2() const
 tools::Rectangle EnhancedCustomShapeEngine::getTextBounds() const
 {
     if (!mpCustomShape)
-        return tools::Rectangle();
-
-    uno::Reference< document::XActionLockable > xLockable( mpCustomShape->getUnoShape(), uno::UNO_QUERY );
-    if(!xLockable.is() || xLockable->isActionLocked())
         return tools::Rectangle();
 
     EnhancedCustomShape2d aCustomShape2d(*mpCustomShape);

@@ -132,6 +132,10 @@ $(eval $(call gb_Library_add_exception_objects,sofficeapp,\
         desktop/source/app/updater )\
     desktop/source/app/userinstall \
     desktop/source/migration/migration \
+    $(if $(or $(DISABLE_GUI),$(ENABLE_WASM_STRIP_SPLASH)),, \
+        desktop/source/splash/SplashScreenWindow \
+        desktop/source/splash/splash \
+    ) \
 ))
 
 # LibreOfficeKit bits
@@ -145,7 +149,7 @@ $(eval $(call gb_Library_add_exception_objects,sofficeapp,\
 ))
 $(eval $(call gb_Library_set_componentfile,sofficeapp,desktop/lokclipboard,services))
 else
-ifneq ($(filter TRUE,$(USING_X11) $(DISABLE_GUI))($filter EMSCRIPTEN,$(OS)),)
+ifneq ($(filter TRUE,$(USING_UNIX_DESKTOP) $(DISABLE_GUI))($filter EMSCRIPTEN,$(OS)),)
 $(eval $(call gb_Library_add_exception_objects,sofficeapp,\
 	desktop/source/lib/init \
 	desktop/source/lib/lokinteractionhandler \

@@ -15,6 +15,8 @@
 #include <vector>
 #include <optional>
 
+#include <basegfx/units/Length.hxx>
+#include <com/sun/star/graphic/XGraphic.hpp>
 #include <com/sun/star/text/WrapTextMode.hpp>
 #include <com/sun/star/io/WrongFormatException.hpp>
 #include <oox/mathml/importutils.hxx>
@@ -85,7 +87,7 @@ enum class RTFBufferTypes
     /// Imports a shape.
     ResolveShape,
     EndShape,
-    /// Inserts an already built shape, see RTFDocumentImpl::bufferShapeInsertion().
+    /// Starts an already built shape.
     InsertShape,
     ResolveSubstream,
     /// Restores RTFParserState::aPicture.
@@ -199,13 +201,17 @@ public:
 
     std::vector<std::pair<OUString, OUString>>& getGroupProperties() { return m_aGroupProperties; }
 
-    void setLeft(sal_Int32 nLeft) { m_nLeft = nLeft; }
+    void setLeft(sal_Int32 nLeft) { m_nLeft = gfx::Length::hmm(nLeft); }
+    void setLeftTwip(sal_Int32 nTwip) { m_nLeft = gfx::Length::twip(nTwip); }
 
-    sal_Int32 getLeft() const { return m_nLeft; }
+    sal_Int32 getLeft() const { return std::round(m_nLeft.as_hmm()); }
+    gfx::Length getLeftLength() const { return m_nLeft; }
 
-    void setTop(sal_Int32 nTop) { m_nTop = nTop; }
+    void setTop(sal_Int32 nTop) { m_nTop = gfx::Length::hmm(nTop); }
+    void setTopTwip(sal_Int32 nTwip) { m_nTop = gfx::Length::twip(nTwip); }
 
-    sal_Int32 getTop() const { return m_nTop; }
+    sal_Int32 getTop() const { return std::round(m_nTop.as_hmm()); }
+    gfx::Length getTopLength() const { return m_nTop; }
 
     void setRight(sal_Int32 nRight) { m_nRight = nRight; }
 
@@ -267,8 +273,8 @@ private:
     std::vector<std::pair<OUString, OUString>> m_aProperties; ///< Properties of a single shape.
     std::vector<std::pair<OUString, OUString>>
         m_aGroupProperties; ///< Properties applied on the groupshape.
-    sal_Int32 m_nLeft = 0;
-    sal_Int32 m_nTop = 0;
+    gfx::Length m_nLeft;
+    gfx::Length m_nTop;
     sal_Int32 m_nRight = 0;
     sal_Int32 m_nBottom = 0;
     std::optional<sal_Int32> m_oZ; ///< Z-Order of the shape.
@@ -738,6 +744,8 @@ public:
     const rtl::Reference<SwXTextDocument>& getTextDocument() const { return m_xDstDoc; }
     bool isInBackground();
     void setDestinationText(std::u16string_view rString);
+    /// Import the picture data of the current state, false if there is none yet.
+    bool importPict(css::uno::Reference<css::graphic::XGraphic>& rxGraphic);
     /// Resolve a picture: If not inline, then anchored.
     void resolvePict(bool bInline, css::uno::Reference<css::drawing::XShape> const& rShape);
     /** tdf#167713 defer inserting a built shape into the text, if content is being buffered
@@ -746,7 +754,8 @@ public:
         shape has to wait for the cell it belongs to. Returns false when nothing is being buffered
         and the caller should insert the shape itself.
     */
-    bool bufferShapeInsertion(css::uno::Reference<css::drawing::XShape> const& rShape, bool bClose);
+    /// Starts an already built shape in the dmapper, and ends it too when bClose is set.
+    void insertShape(css::uno::Reference<css::drawing::XShape> const& rShape, bool bClose);
 
     /// If this is the first run of the document, starts the initial paragraph.
     void checkFirstRun();
@@ -821,6 +830,17 @@ private:
     /// Appends the entry to the current buffer, or sends it to the dmapper when there is none.
     void bufferOrSend(RTFBufferTypes eType,
                       RTFValue::Pointer_t const& pValue = RTFValue::Pointer_t());
+    /// Resolves a footnote, endnote or annotation substream, or buffers that until the buffer is
+    /// replayed.
+    void bufferOrResolveSubstream(std::size_t nPos, Id nId, OUString const& rCustomMark);
+    /// Adds the row in the innermost table buffer to rOuterBuffer, to be replayed with it.
+    void bufferTableRow(RTFBuffer_t& rOuterBuffer, std::deque<RTFSprms> const& rCellsSprms,
+                        std::deque<RTFSprms> const& rCellsAttributes, int nCells, int nCurrentCellX,
+                        int nTRLeft);
+    /// Gives shape text that starts inside a table buffer a table state of its own.
+    void startShapeTextTableState();
+    /// Brings back the table state around the shape when its shape text group ends.
+    void endShapeTextTableState();
     /// If we have some unicode or hex characters to send.
     void checkUnicode(bool bUnicode, bool bHex);
     /// If we need a final section break at the end of the document.
@@ -971,6 +991,31 @@ private:
     /// Buffered table cells, till cell definitions are not reached.
     /// for nested table, one buffer per table level
     std::deque<RTFBuffer_t> m_aTableBufferStack;
+
+    /// The table state around a shape whose text is read into a table buffer. The shape text has
+    /// a table state of its own while it lasts.
+    struct ShapeTextTableState
+    {
+        std::deque<RTFBuffer_t> aTableBufferStack{ 1 };
+        TableRowDef aTopLevelTableRow;
+        TableRowDef aPreviousTopLevelTableRow;
+        TableRowDef aBackupTopLevelTableRow;
+        RTFSprms aBackupTableRowSprms;
+        RTFSprms aBackupTableRowAttributes;
+        RTFSprms aDefaultTableCellSprms;
+        int nNestedCells{ 0 };
+        std::deque<RTFSprms> aNestedTableCellsSprms;
+        std::deque<RTFSprms> aNestedTableCellsAttributes;
+        int nNestedTRLeft{ 0 };
+        int nNestedCurrentCellX{ 0 };
+        /// The buffer the shape text started in. The rows of the shape text's tables go there.
+        RTFBuffer_t* pOuterBuffer{ nullptr };
+        /// The number of parser states while the group that started the shape text is open.
+        std::size_t nStateDepth{ 0 };
+    };
+    std::deque<ShapeTextTableState> m_aShapeTextTableStates;
+    void swapShapeTextTableState(ShapeTextTableState& rState);
+
     /// Buffered superscript, till footnote is reached (or not).
     RTFBuffer_t m_aSuperBuffer;
 
@@ -1018,6 +1063,8 @@ private:
     bool m_bFormField;
     /// For the INCLUDEPICTURE field's argument.
     OUString m_aPicturePath;
+    /// The absolute URL of the INCLUDEPICTURE file, inserted as a linked picture.
+    OUString m_aPictureLinkURL;
     // Unicode characters are collected here so we don't have to send them one by one.
     OUStringBuffer m_aUnicodeBuffer{ 512 };
     /// Same for hex characters.

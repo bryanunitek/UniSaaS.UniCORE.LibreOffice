@@ -9,12 +9,15 @@
 
 #include "rtfdocumentimpl.hxx"
 
+#include <algorithm>
+
 #include <com/sun/star/io/WrongFormatException.hpp>
 #include <svl/lngmisc.hxx>
 
 #include <ooxml/resourceids.hxx>
 
 #include <sal/log.hxx>
+#include <swtypes.hxx>
 
 #include "rtfreferenceproperties.hxx"
 #include "rtfskipdestination.hxx"
@@ -293,18 +296,14 @@ RTFError RTFDocumentImpl::dispatchSymbol(RTFKeyword nKeyword)
         break;
         case RTFKeyword::NESTROW:
         {
-            tools::SvRef<TableRowBuffer> const pBuffer(
-                new TableRowBuffer(m_aTableBufferStack.back(), m_aNestedTableCellsSprms,
-                                   m_aNestedTableCellsAttributes, m_nNestedCells));
-            prepareProperties(m_aStates.top(), pBuffer->GetParaProperties(),
-                              pBuffer->GetFrameProperties(), pBuffer->GetRowProperties(),
-                              m_nNestedCells, m_nNestedCurrentCellX, m_nNestedTRLeft);
-
             if (m_aTableBufferStack.size() == 1 || !m_aStates.top().getCurrentBuffer())
             {
                 throw io::WrongFormatException(
                     u"mismatch between \\itap and number of \\nestrow"_ustr, nullptr);
             }
+            bufferTableRow(m_aTableBufferStack[m_aTableBufferStack.size() - 2],
+                           m_aNestedTableCellsSprms, m_aNestedTableCellsAttributes, m_nNestedCells,
+                           m_nNestedCurrentCellX, m_nNestedTRLeft);
             assert(m_aStates.top().getCurrentBuffer() == &m_aTableBufferStack.back());
             // note: there may be several states pointing to table buffer!
             for (std::size_t i = 0; i < m_aStates.size(); ++i)
@@ -316,8 +315,6 @@ RTFError RTFDocumentImpl::dispatchSymbol(RTFKeyword nKeyword)
                 }
             }
             m_aTableBufferStack.pop_back();
-            m_aTableBufferStack.back().emplace_back(
-                Buf_t(RTFBufferTypes::NestRow, RTFValue::Pointer_t(), pBuffer));
 
             m_aNestedTableCellsSprms.clear();
             m_aNestedTableCellsAttributes.clear();
@@ -430,14 +427,15 @@ RTFError RTFDocumentImpl::dispatchSymbol(RTFKeyword nKeyword)
             if (m_TopLevelTableRow.getCells() != 0)
             {
                 // If the right edge of the last cell (row width) is smaller than the width of some other row, mimic WW8TabDesc::CalcDefaults(): resize the last cell
-                const int MINLAY = 23; // sw/inc/swtypes.hxx, minimal possible size of frames.
-                if ((m_TopLevelTableRow.nCellXMax - m_TopLevelTableRow.nCurrentCellX) >= MINLAY)
+                const sal_Int64 nMissingWidth
+                    = sal_Int64(m_TopLevelTableRow.nCellXMax) - m_TopLevelTableRow.nCurrentCellX;
+                if (nMissingWidth >= MINLAY)
                 {
                     auto pXValueLast = m_aStates.top().getTableRowSprms().find(
                         NS_ooxml::LN_CT_TblGridBase_gridCol, false);
                     const int nXValueLast = pXValueLast ? pXValueLast->getInt() : 0;
-                    auto pXValue = new RTFValue(nXValueLast + m_TopLevelTableRow.nCellXMax
-                                                - m_TopLevelTableRow.nCurrentCellX);
+                    auto pXValue = new RTFValue(static_cast<int>(std::clamp<sal_Int64>(
+                        nXValueLast + nMissingWidth, SAL_MIN_INT32, SAL_MAX_INT32)));
                     m_aStates.top().getTableRowSprms().eraseLast(
                         NS_ooxml::LN_CT_TblGridBase_gridCol);
                     m_aStates.top().getTableRowSprms().set(NS_ooxml::LN_CT_TblGridBase_gridCol,
@@ -469,20 +467,34 @@ RTFError RTFDocumentImpl::dispatchSymbol(RTFKeyword nKeyword)
             }
 
             auto const nCells{ m_TopLevelTableRow.getCells() }; // replayRowBuffer clears it!
-            replayRowBuffer(m_aTableBufferStack.back(), m_TopLevelTableRow.cellSprms,
-                            m_TopLevelTableRow.cellAttributes, nCells);
+            // A row in shape text that started inside a table buffer waits in that buffer, so it
+            // is replayed after the start of its shape.
+            RTFBuffer_t* const pOuterBuffer = m_aShapeTextTableStates.empty()
+                                                  ? nullptr
+                                                  : m_aShapeTextTableStates.back().pOuterBuffer;
+            if (pOuterBuffer)
+                bufferTableRow(*pOuterBuffer, m_TopLevelTableRow.cellSprms,
+                               m_TopLevelTableRow.cellAttributes, nCells,
+                               m_TopLevelTableRow.nCurrentCellX, m_TopLevelTableRow.nTRLeft);
+            else
+                replayRowBuffer(m_aTableBufferStack.back(), m_TopLevelTableRow.cellSprms,
+                                m_TopLevelTableRow.cellAttributes, nCells);
 
             // The scope of the table cell defaults is one row.
             m_aDefaultState.getTableCellSprms().clear();
             m_aStates.top().getTableCellSprms() = m_aDefaultState.getTableCellSprms();
             m_aStates.top().getTableCellAttributes() = m_aDefaultState.getTableCellAttributes();
 
-            writerfilter::Reference<Properties>::Pointer_t paraProperties;
-            writerfilter::Reference<Properties>::Pointer_t frameProperties;
-            writerfilter::Reference<Properties>::Pointer_t rowProperties;
-            prepareProperties(m_aStates.top(), paraProperties, frameProperties, rowProperties,
-                              nCells, m_TopLevelTableRow.nCurrentCellX, m_TopLevelTableRow.nTRLeft);
-            sendProperties(paraProperties, frameProperties, rowProperties);
+            if (!pOuterBuffer)
+            {
+                writerfilter::Reference<Properties>::Pointer_t paraProperties;
+                writerfilter::Reference<Properties>::Pointer_t frameProperties;
+                writerfilter::Reference<Properties>::Pointer_t rowProperties;
+                prepareProperties(m_aStates.top(), paraProperties, frameProperties, rowProperties,
+                                  nCells, m_TopLevelTableRow.nCurrentCellX,
+                                  m_TopLevelTableRow.nTRLeft);
+                sendProperties(paraProperties, frameProperties, rowProperties);
+            }
 
             m_bNeedPap = true;
             m_bNeedFinalPar = true;
@@ -495,7 +507,7 @@ RTFError RTFDocumentImpl::dispatchSymbol(RTFKeyword nKeyword)
             {
                 if (m_aStates[i].getCurrentBuffer() == &m_aTableBufferStack.back())
                 {
-                    m_aStates[i].setCurrentBuffer(nullptr);
+                    m_aStates[i].setCurrentBuffer(pOuterBuffer);
                 }
             }
 

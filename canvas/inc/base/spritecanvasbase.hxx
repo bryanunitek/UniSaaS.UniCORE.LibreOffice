@@ -21,13 +21,12 @@
 
 #include <rtl/ref.hxx>
 #include <com/sun/star/rendering/InterpolationMode.hpp>
+#include <cppuhelper/weak.hxx>
 #include <base/integerbitmapbase.hxx>
 #include <base/bitmapcanvasbase.hxx>
 #include <sal/log.hxx>
 #include <spriteredrawmanager.hxx>
 
-namespace com::sun::star::rendering { class XAnimation; }
-namespace com::sun::star::rendering { class XAnimatedSprite; }
 namespace com::sun::star::rendering { class XCustomSprite; }
 namespace com::sun::star::rendering { class XSprite; }
 
@@ -58,23 +57,16 @@ namespace canvas
         the sole parameter, and destroyed again when the method scope
         is left.
 
-        @tpl UnambiguousBase
-        Optional unambiguous base class for XInterface of Base. It's
-        sometimes necessary to specify this parameter, e.g. if Base
-        derives from multiple UNO interface (were each provides its
-        own version of XInterface, making the conversion ambiguous)
-
         @see CanvasBase for further contractual requirements towards
         the CanvasHelper type, and some examples.
      */
     template< class Base,
               class CanvasHelper,
-              class Mutex=::osl::MutexGuard,
-              class UnambiguousBase = css::uno::XInterface > class SpriteCanvasBase :
-        public IntegerBitmapBase< BitmapCanvasBase<Base, CanvasHelper, Mutex, UnambiguousBase> >
+              class Mutex=::osl::MutexGuard> class SpriteCanvasBase :
+        public IntegerBitmapBase<BitmapCanvasBase<Base, CanvasHelper, Mutex>>
     {
     public:
-        typedef IntegerBitmapBase< BitmapCanvasBase<Base, CanvasHelper, Mutex, UnambiguousBase> > BaseType;
+        typedef IntegerBitmapBase<BitmapCanvasBase<Base, CanvasHelper, Mutex>> BaseType;
         typedef ::rtl::Reference< SpriteCanvasBase >                            Reference;
 
         SpriteCanvasBase() :
@@ -93,37 +85,10 @@ namespace canvas
         }
 
         // XSpriteCanvas
-        virtual css::uno::Reference< css::rendering::XAnimatedSprite > SAL_CALL createSpriteFromAnimation( const css::uno::Reference< css::rendering::XAnimation >& animation ) override
-        {
-            canvastools::verifyArgs(animation,
-                              __func__,
-                              static_cast< typename BaseType::UnambiguousBaseType* >(this));
-
-            typename BaseType::MutexType aGuard( BaseType::m_aMutex );
-
-            return BaseType::maCanvasHelper.createSpriteFromAnimation(animation);
-        }
-
-        virtual css::uno::Reference< css::rendering::XAnimatedSprite > SAL_CALL createSpriteFromBitmaps( const css::uno::Sequence< css::uno::Reference< css::rendering::XBitmap > >& animationBitmaps,
-                                                                                                                                   sal_Int8                                                                                                           interpolationMode ) override
-        {
-            canvastools::verifyArgs(animationBitmaps,
-                              __func__,
-                              static_cast< typename BaseType::UnambiguousBaseType* >(this));
-            canvastools::verifyRange( interpolationMode,
-                                css::rendering::InterpolationMode::NEAREST_NEIGHBOR,
-                                css::rendering::InterpolationMode::BEZIERSPLINE4 );
-
-            typename BaseType::MutexType aGuard( BaseType::m_aMutex );
-
-            return BaseType::maCanvasHelper.createSpriteFromBitmaps(animationBitmaps, interpolationMode);
-        }
-
         virtual css::uno::Reference< css::rendering::XCustomSprite > SAL_CALL createCustomSprite( const css::geometry::RealSize2D& spriteSize ) override
         {
-            canvastools::verifySpriteSize(spriteSize,
-                                    __func__,
-                                    static_cast< typename BaseType::UnambiguousBaseType* >(this));
+            canvastools::verifySpriteSize(spriteSize, __func__,
+                                          static_cast<cppu::OWeakObject*>(this));
 
             typename BaseType::MutexType aGuard( BaseType::m_aMutex );
 
@@ -132,9 +97,7 @@ namespace canvas
 
         virtual css::uno::Reference< css::rendering::XSprite > SAL_CALL createClonedSprite( const css::uno::Reference< css::rendering::XSprite >& original ) override
         {
-            canvastools::verifyArgs(original,
-                              __func__,
-                              static_cast< typename BaseType::UnambiguousBaseType* >(this));
+            canvastools::verifyArgs(original, __func__, static_cast<cppu::OWeakObject*>(this));
 
             typename BaseType::MutexType aGuard( BaseType::m_aMutex );
 

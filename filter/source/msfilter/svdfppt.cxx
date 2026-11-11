@@ -25,6 +25,7 @@
 #include <unotools/tempfile.hxx>
 #include <comphelper/diagnose_ex.hxx>
 #include <comphelper/processfactory.hxx>
+#include <comphelper/scopeguard.hxx>
 #include <comphelper/seqstream.hxx>
 #include <comphelper/storagehelper.hxx>
 #include <tools/debug.hxx>
@@ -134,6 +135,7 @@
 #include <algorithm>
 #include <cassert>
 #include <rtl/strbuf.hxx>
+#include <rtl/ustrbuf.hxx>
 #include <tools/time.hxx>
 #include <memory>
 
@@ -164,6 +166,209 @@ using namespace beans               ;
 using namespace drawing             ;
 using namespace container           ;
 using namespace table               ;
+
+
+namespace
+{
+
+bool lcl_ReadPptCryptoApiEncryptionInfo(
+    SvStream& rStream,
+    sal_uInt64 nStreamLen,
+    const std::optional<sal_uInt32>& rEncryptSessionPersistIdRef,
+    const std::unique_ptr<sal_uInt32[]>& rPersistPtr,
+    sal_uInt32 nPersistPtrCnt,
+    PowerPointImportParam& rParam);
+
+bool ParsePptCryptoApiEncryptionInfo(
+    const std::vector<sal_uInt8>& rData,
+    PptCryptoApiEncryptionInfo& rInfo)
+{
+    // MS-OFFCRYPTO 2.3.2, header contains these parts (each of 4 bytes):
+    // - Flags
+    // - SizeExtra
+    // - AlgID
+    // - AlgIDHash
+    // - KeySize
+    // - ProviderType
+    // - Reserved1
+    // - Reserved2
+    // => so 32 bytes
+    constexpr sal_uInt32 nHeaderFixedSize = 32;
+
+    // MS-OFFCRYPTO 2.3.3 "SaltSize (4 bytes)"
+    constexpr sal_uInt32 nSaltSize = 16;
+
+    // MS-OFFCRYPTO 2.3.3 "EncryptedVerifier (16 bytes)"
+    constexpr sal_uInt32 nVerifierSize = 16;
+
+    SvMemoryStream aStream(
+        const_cast<sal_uInt8*>(rData.data()),
+        rData.size(),
+        StreamMode::READ);
+
+    aStream.SetEndian(SvStreamEndian::LITTLE);
+
+    std::size_t nOffset = 0;
+
+    auto readUInt16 = [&](sal_uInt16& rValue) -> bool
+    {
+        if (nOffset > rData.size() || rData.size() - nOffset < 2)
+            return false;
+
+        aStream.Seek(nOffset);
+        aStream.ReadUInt16(rValue);
+
+        if (!aStream.good())
+            return false;
+
+        nOffset += 2;
+        return true;
+    };
+
+    auto readUInt32 = [&](sal_uInt32& rValue) -> bool
+    {
+        if (nOffset > rData.size() || rData.size() - nOffset < 4)
+            return false;
+
+        aStream.Seek(nOffset);
+        aStream.ReadUInt32(rValue);
+
+        if (!aStream.good())
+            return false;
+
+        nOffset += 4;
+        return true;
+    };
+
+    PptCryptoApiEncryptionInfo aInfo;
+
+    // EncryptionVersionInfo
+    if (!readUInt16(aInfo.nMajorVersion)
+        || !readUInt16(aInfo.nMinorVersion))
+        return false;
+
+    // MS-OFFCRYPTO 2.3.5.1
+    // Version.vMajor MUST be 0x0002, 0x0003, or 0x0004 and Version.vMinor MUST be 0x0002
+    if ((aInfo.nMajorVersion != 2
+         && aInfo.nMajorVersion != 3
+         && aInfo.nMajorVersion != 4)
+        || aInfo.nMinorVersion != 2)
+        return false;
+
+    // EncryptionHeader.Flags (copy)
+    sal_uInt32 nOuterFlags = 0;
+    if (!readUInt32(nOuterFlags))
+        return false;
+
+    // EncryptionHeaderSize
+    sal_uInt32 nHeaderSize = 0;
+    if (!readUInt32(nHeaderSize))
+        return false;
+
+    // EncryptionHeader consists of a 32-byte fixed part followed by
+    // a null-terminated UTF-16 CSPName (at least 2 bytes).
+    if (nHeaderSize < nHeaderFixedSize + 2
+        || nHeaderSize > rData.size() - nOffset)
+        return false;
+
+    const std::size_t nHeaderEnd = nOffset + nHeaderSize;
+
+    if (nHeaderEnd - nOffset < nHeaderFixedSize)
+        return false;
+
+    // EncryptionHeader
+    if (!readUInt32(aInfo.nFlags))
+        return false;
+
+    sal_uInt32 nSizeExtra = 0;
+    sal_uInt32 nReserved1 = 0;
+    sal_uInt32 nReserved2 = 0;
+
+    if (!readUInt32(nSizeExtra)
+        || !readUInt32(aInfo.nAlgID)
+        || !readUInt32(aInfo.nAlgIDHash)
+        || !readUInt32(aInfo.nKeySize)
+        || !readUInt32(aInfo.nProviderType)
+        || !readUInt32(nReserved1)
+        || !readUInt32(nReserved2))
+        return false;
+
+    // Reserved1 and Reserved2 are ignored as specified by MS-OFFCRYPTO.
+    (void)nReserved1;
+    (void)nReserved2;
+
+    // MS-OFFCRYPTO 2.3.2: EncryptionHeader
+    // The outer Flags field is a copy of EncryptionHeader.Flags.
+    if (aInfo.nFlags != nOuterFlags || nSizeExtra != 0)
+        return false;
+
+    // CSPName: null-terminated UTF-16LE.
+    if ((nHeaderEnd - nOffset) % 2 != 0)
+        return false;
+
+    // not necessary to decrypt the file
+    // but since we're parsing the data and its size isn't constant...
+    OUStringBuffer aCSPName;
+    bool bTerminated = false;
+
+    while (nOffset + 2 <= nHeaderEnd)
+    {
+        const sal_uInt16 nChar
+            = static_cast<sal_uInt16>(rData[nOffset])
+              | (static_cast<sal_uInt16>(rData[nOffset + 1]) << 8);
+
+        nOffset += 2;
+
+        if (nChar == 0)
+        {
+            bTerminated = true;
+            break;
+        }
+
+        aCSPName.append(static_cast<sal_Unicode>(nChar));
+    }
+
+    if (!bTerminated || nOffset != nHeaderEnd)
+        return false;
+
+    aInfo.aCSPName = aCSPName.makeStringAndClear();
+
+    // EncryptionVerifier
+    sal_uInt32 nActualSaltSize = 0;
+    if (!readUInt32(nActualSaltSize) || nActualSaltSize != nSaltSize)
+        return false;
+
+    if (rData.size() - nOffset < nSaltSize)
+        return false;
+
+    std::copy_n(rData.begin() + nOffset,
+                nSaltSize, aInfo.aSalt.begin());
+    nOffset += nSaltSize;
+
+    if (rData.size() - nOffset < nVerifierSize)
+        return false;
+
+    std::copy_n(rData.begin() + nOffset,
+                nVerifierSize, aInfo.aEncryptedVerifier.begin());
+    nOffset += nVerifierSize;
+
+    // EncryptionVerifier.VerifierHashSize
+    if (!readUInt32(aInfo.nVerifierHashSize))
+        return false;
+
+    // EncryptionVerifier.EncryptedVerifierHash is variable-length.
+    // Its size depends on the encryption algorithm.
+    if (nOffset >= rData.size())
+        return false;
+
+    aInfo.aEncryptedVerifierHash.assign(
+        rData.begin() + nOffset, rData.end());
+
+    rInfo = std::move(aInfo);
+    return true;
+}
+}
+
 
 PowerPointImportParam::PowerPointImportParam( SvStream& rDocStrm ) :
     rDocStream      ( rDocStrm ),
@@ -466,6 +671,8 @@ SvStream& ReadPptFontEntityAtom( SvStream& rIn, PptFontEntityAtom& rAtom )
 SvStream& ReadPptUserEditAtom( SvStream& rIn, PptUserEditAtom& rAtom )
 {
     sal_Int16 lastViewType = 0;
+    sal_uInt16 unused = 0;
+    rAtom.nEncryptSessionPersistIdRef.reset();
     ReadDffRecordHeader( rIn, rAtom.aHd );
     rIn
        .ReadInt32( rAtom.nLastSlideID )
@@ -474,8 +681,20 @@ SvStream& ReadPptUserEditAtom( SvStream& rIn, PptUserEditAtom& rAtom )
        .ReadUInt32( rAtom.nOffsetPersistDirectory )
        .ReadUInt32( rAtom.nDocumentRef )
        .ReadUInt32( rAtom.nMaxPersistWritten )
-       .ReadInt16( lastViewType );
+       .ReadInt16( lastViewType )
+       .ReadUInt16( unused );
     rAtom.eLastViewType = static_cast<PptViewTypeEnum>(lastViewType);
+
+    // From MS-PPT Spec 2.3.3 UserEditAtom:
+    // nRecLen MUST be 0x0000001C or 0x00000020
+    // when encrypted file, it's 0x20
+    if (rAtom.aHd.nRecLen == 0x20)
+    {
+        sal_uInt32 nEncryptSessionPersistIdRef = 0;
+        rIn.ReadUInt32(nEncryptSessionPersistIdRef);
+        rAtom.nEncryptSessionPersistIdRef = nEncryptSessionPersistIdRef;
+    }
+
     rAtom.aHd.SeekToEndOfRecord(rIn);
     return rIn;
 }
@@ -1406,6 +1625,14 @@ SdrPowerPointImport::SdrPowerPointImport( PowerPointImportParam& rParam, const O
             }
         }
     }
+
+    // Read the CryptSession10Container of an encrypted PowerPoint document.
+    if (m_bOk && rParam.aCurrentUserAtom.IsEncrypted())
+    {
+        m_bOk = lcl_ReadPptCryptoApiEncryptionInfo(rStCtrl, nStreamLen, m_aUserEditAtom.nEncryptSessionPersistIdRef,
+                    m_pPersistPtr, m_nPersistPtrCnt, rParam);
+    }
+
     if ( rStCtrl.GetError() != ERRCODE_NONE )
         m_bOk = false;
     if ( m_bOk )
@@ -6493,6 +6720,116 @@ std::vector<MetroParagraphIndent> lcl_readMetroParaIndents(SvxMSDffManager& rMan
         aIndents.emplace_back(indent);
     }
     return aIndents;
+}
+
+
+bool lcl_ReadPptCryptoApiEncryptionInfo(
+    SvStream& rStream,
+    sal_uInt64 nStreamLen,
+    const std::optional<sal_uInt32>& rEncryptSessionPersistIdRef,
+    const std::unique_ptr<sal_uInt32[]>& rPersistPtr,
+    sal_uInt32 nPersistPtrCnt,
+    PowerPointImportParam& rParam)
+{
+    // See MS-PPT Spec 2.13.24 RecordType
+    // 0x2F14 for CryptSession10Container
+    constexpr sal_uInt16 nCryptSession10ContainerRecordType = 0x2F14;
+
+    if (!rEncryptSessionPersistIdRef)
+    {
+        SAL_WARN("filter.ms", "Encrypted PPT document without encryptSessionPersistIdRef");
+        return false;
+    }
+
+    const sal_uInt32 nPersistId = *rEncryptSessionPersistIdRef;
+
+    if (!rPersistPtr || nPersistId >= nPersistPtrCnt)
+    {
+        SAL_WARN("filter.ms", "Invalid CryptSession10Container Persist ID");
+        return false;
+    }
+
+    const sal_uInt32 nPersistOffset = rPersistPtr[nPersistId];
+
+    // Save the current position before seeking to the container.
+    const sal_uInt64 nOldPos = rStream.Tell();
+    bool bRestoreSucceeded = true;
+
+    const bool bSuccess = [&]() -> bool
+    {
+        // Restore the original stream position, even if reading the record failed.
+        comphelper::ScopeGuard aRestorePosition([&]()
+        {
+            bRestoreSucceeded = checkSeek(rStream, nOldPos);
+        });
+
+        if (!nPersistOffset || !checkSeek(rStream, nPersistOffset))
+        {
+            SAL_WARN("filter.ms", "Invalid CryptSession10Container offset");
+            return false;
+        }
+
+        DffRecordHeader aCryptSessionHd;
+
+        if (!ReadDffRecordHeader(rStream, aCryptSessionHd)
+            || aCryptSessionHd.nRecType != nCryptSession10ContainerRecordType)
+        {
+            SAL_WARN("filter.ms", "Invalid CryptSession10Container record");
+            return false;
+        }
+
+        const sal_uInt64 nDataStart = rStream.Tell();
+
+        if (nDataStart > nStreamLen
+            || aCryptSessionHd.nRecLen > nStreamLen - nDataStart)
+        {
+            SAL_WARN("filter.ms", "CryptSession10Container exceeds stream size");
+            return false;
+        }
+
+        rParam.aCryptSession10ContainerData.resize(aCryptSessionHd.nRecLen);
+
+        const sal_uInt64 nRead = rStream.ReadBytes(
+            rParam.aCryptSession10ContainerData.data(),
+            aCryptSessionHd.nRecLen);
+
+        if (nRead != aCryptSessionHd.nRecLen)
+        {
+            SAL_WARN("filter.ms", "Cannot read CryptSession10Container data");
+            rParam.aCryptSession10ContainerData.clear();
+            return false;
+        }
+
+        SAL_INFO("filter.ms",
+                 "CryptSession10Container successfully read: "
+                     << aCryptSessionHd.nRecLen << " bytes");
+
+        PptCryptoApiEncryptionInfo aEncryptionInfo;
+
+        if (!ParsePptCryptoApiEncryptionInfo(
+                rParam.aCryptSession10ContainerData, aEncryptionInfo))
+        {
+            SAL_WARN("filter.ms",
+                     "Invalid CryptSession10Container encryption data");
+
+            rParam.oCryptoApiEncryptionInfo.reset();
+            return false;
+        }
+
+        rParam.oCryptoApiEncryptionInfo = std::move(aEncryptionInfo);
+
+        SAL_INFO("filter.ms",
+                 "CryptSession10Container parsed successfully: "
+                     << rParam.oCryptoApiEncryptionInfo->aCSPName);
+
+        return true;
+
+    }();
+
+    if (!bRestoreSucceeded)
+        return false;
+
+    return bSuccess;
 }
 }
 

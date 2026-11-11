@@ -18,10 +18,10 @@
  */
 
 #include <editeng/outlobj.hxx>
+#include <vcl/ptrstyle.hxx>
 #include <svx/svdouno.hxx>
 #include <svx/svxids.hrc>
 #include <sfx2/dispatch.hxx>
-#include <vcl/ptrstyle.hxx>
 
 #include <fuconstr.hxx>
 #include <fudraw.hxx>

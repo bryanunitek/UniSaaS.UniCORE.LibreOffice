@@ -265,7 +265,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testBnc822341)
 {
     // Check import / export of embedded text document
     createSdImpressDoc("odp/bnc822341.odp");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     // Export an LO specific ole object (imported from an ODP document)
     {
@@ -293,7 +293,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testBnc822341)
         CPPUNIT_ASSERT_EQUAL(SdrObjKind::OLE2, pObj->GetObjIdentifier());
     }
 
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     // Export an MS specific ole object (imported from a PPTX document)
     {
@@ -1023,7 +1023,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testTdf105739)
 {
     // Gradient was lost during saving to ODP
     createSdImpressDoc("pptx/tdf105739.pptx");
-    save(TestFilter::ODP);
+    saveAndReload(TestFilter::ODP);
     uno::Reference<drawing::XDrawPage> xPage = getPage(0);
     uno::Reference<beans::XPropertySet> xPropSet(xPage, uno::UNO_QUERY);
     uno::Any aAny = xPropSet->getPropertyValue(u"Background"_ustr);
@@ -1317,7 +1317,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testRotateFlip)
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testTdf106867)
 {
     createSdImpressDoc("pptx/tdf106867.pptx");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     const SdrPage* pPage = GetPage(1);
 
@@ -1831,7 +1831,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testTextColumns_tdf140852)
         CPPUNIT_ASSERT_EQUAL(uno::Any(sal_Int32(1000)),
                              xColProps->getPropertyValue(u"AutomaticDistance"_ustr));
     }
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     {
         uno::Reference<drawing::XDrawPage> xPage(getPage(0));
@@ -1877,7 +1877,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testTextColumns_3columns)
         CPPUNIT_ASSERT_LESS(100.0, fFontScale);
     }
 
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     {
         uno::Reference<drawing::XDrawPage> xPage(getPage(0));
@@ -1907,7 +1907,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testTdf59323_slideFooters)
 {
     createSdImpressDoc("pptx/tdf59323.pptx");
 
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     uno::Reference<drawing::XDrawPagesSupplier> xDoc(mxComponent, uno::UNO_QUERY_THROW);
     CPPUNIT_ASSERT_EQUAL(sal_Int32(3), xDoc->getDrawPages()->getCount());
@@ -1944,6 +1944,22 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testTdf59323_slideFooters)
     assertXPath(pXmlDocSlide1, "/p:sld/p:cSld/p:spTree/p:sp/p:txBody/a:p/a:fld/a:rPr");
 }
 
+// A diagram keeps the name the document gave it. Every diagram was written under a name made from
+// the number it was counted with, so the name a reader shows for it changed on every save.
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testDiagramKeepsItsName)
+{
+    createSdImpressDoc("pptx/Bar_List.pptx");
+
+    uno::Reference<container::XNamed> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY_THROW);
+    const OUString aName = xDiagram->getName();
+    CPPUNIT_ASSERT(!aName.isEmpty());
+
+    saveAndReload(TestFilter::PPTX);
+
+    xDiagram.set(getShapeFromPage(0, 0), uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_EQUAL(aName, xDiagram->getName());
+}
+
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testTdf53970_embeddedMediaFile)
 {
     // Embedded media file
@@ -1958,7 +1974,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testTdf53970_linkedMediaFile)
 {
     // Linked media file
     createSdImpressDoc("odp/tdf53970_linked.odp");
-    save(TestFilter::PPTX);
+    saveAndReload(TestFilter::PPTX);
 
     xmlDocUniquePtr pXmlRels = parseExport(u"ppt/slides/_rels/slide1.xml.rels"_ustr);
     CPPUNIT_ASSERT(pXmlRels);

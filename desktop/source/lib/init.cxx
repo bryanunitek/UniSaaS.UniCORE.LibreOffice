@@ -2936,8 +2936,24 @@ static LibreOfficeKitDocument* lo_documentLoadWithOptions(LibreOfficeKit* pThis,
         sal_Int16 nMacroExecMode = document::MacroExecMode::USE_CONFIG;
 #else
         const OUString aEnableMacrosExecution = extractParameter(aOptions, u"EnableMacrosExecution");
-        sal_Int16 nMacroExecMode = aEnableMacrosExecution == "true" ? document::MacroExecMode::USE_CONFIG :
-            document::MacroExecMode::NEVER_EXECUTE;
+        sal_Int16 nMacroExecMode;
+        if (aEnableMacrosExecution == "true")
+        {
+            nMacroExecMode = document::MacroExecMode::USE_CONFIG;
+        }
+        else
+        {
+            nMacroExecMode = document::MacroExecMode::NEVER_EXECUTE;
+            // also set the global flag so IsMacroDisabled() returns true,
+            // blocking share-location scripts that bypass the per-document
+            // MacroExecutionMode check. Affects this per-document process instance,
+            // may require re-visiting when/if CODA gets macro support.
+            std::shared_ptr<comphelper::ConfigurationChanges> xChanges =
+                comphelper::ConfigurationChanges::create();
+            officecfg::Office::Common::Security::Scripting::DisableMacrosExecution::set(
+                true, xChanges);
+            xChanges->commit();
+        }
 #endif
 
         // set AsTemplate explicitly false to be able to load template files
@@ -3739,7 +3755,7 @@ static int doc_saveAs(LibreOfficeKitDocument* pThis, const char* sUrl, const cha
         // Check if watermark for pdf is passed by filteroptions...
         // It is not a real filter option so it must be filtered out.
         OUString watermarkText;
-        std::u16string_view sFullSheetPreview;
+        bool bFullSheetPreview = false;
         int aIndex = -1;
         if ((aIndex = aFilterOptions.indexOf(",Watermark=")) >= 0)
         {
@@ -3751,11 +3767,9 @@ static int doc_saveAs(LibreOfficeKitDocument* pThis, const char* sUrl, const cha
         if ((aIndex = aFilterOptions.indexOf(",FullSheetPreview=")) >= 0)
         {
             int bIndex = aFilterOptions.indexOf("FULLSHEETPREVEND");
-            sFullSheetPreview = aFilterOptions.subView(aIndex+18, bIndex-(aIndex+18));
+            bFullSheetPreview = aFilterOptions.subView(aIndex+18, bIndex-(aIndex+18)) == u"true";
             aFilterOptions = OUString::Concat(aFilterOptions.subView(0, aIndex)) + aFilterOptions.subView(bIndex+16);
         }
-
-        bool bFullSheetPreview = sFullSheetPreview == u"true";
 
         OUString filePassword;
         if ((aIndex = aFilterOptions.indexOf(",Password=")) >= 0)
@@ -3769,7 +3783,7 @@ static int doc_saveAs(LibreOfficeKitDocument* pThis, const char* sUrl, const cha
         if ((aIndex = aFilterOptions.indexOf(",PasswordToModify=")) >= 0)
         {
             int bIndex = aFilterOptions.indexOf("PASSWORDTOMODIFYEND");
-            filePassword = aFilterOptions.subView(aIndex + 18, bIndex - (aIndex + 18));
+            filePasswordToModify = aFilterOptions.subView(aIndex + 18, bIndex - (aIndex + 18));
             aFilterOptions = OUString::Concat(aFilterOptions.subView(0, aIndex))
                              + aFilterOptions.subView(bIndex + 19);
         }
@@ -3781,7 +3795,6 @@ static int doc_saveAs(LibreOfficeKitDocument* pThis, const char* sUrl, const cha
         {
             int bIndex = aFilterOptions.indexOf("PDFVEREND");
             std::u16string_view sPdfVer = aFilterOptions.subView(aIndex+8, bIndex-(aIndex+8));
-            aFilterOptions = OUString::Concat(aFilterOptions.subView(0, aIndex)) + aFilterOptions.subView(bIndex+9);
 
             if (o3tl::equalsIgnoreAsciiCase(sPdfVer, u"PDF/A-1b"))
                 pdfVer = 1;
@@ -3804,6 +3817,8 @@ static int doc_saveAs(LibreOfficeKitDocument* pThis, const char* sUrl, const cha
                 SetLastExceptionMsg(u"wrong PDF version"_ustr);
                 return false;
             }
+
+            aFilterOptions = OUString::Concat(aFilterOptions.subView(0, aIndex)) + aFilterOptions.subView(bIndex+9);
         }
 
         // 'TakeOwnership' == this is a 'real' SaveAs (that is, the document
@@ -8096,6 +8111,9 @@ static int lo_initialize(LibreOfficeKit* pThis, const char* pAppPath, const char
 
     if (const char* pHostExemptVerifyHost = ::getenv("LOK_HOST_ALLOWLIST_EXEMPT_VERIFY_HOST"))
         HostFilter::setAllowedHostsExemptVerifyHost(strncmp(pHostExemptVerifyHost,"1", 1) == 0);
+
+    if (const char* pExtRefPaths = ::getenv("LOK_ALLOWED_EXTREF_PATHS"))
+        HostFilter::setAllowedExtRefPaths(pExtRefPaths);
 
     // What stage are we at ?
     if (pThis == nullptr)

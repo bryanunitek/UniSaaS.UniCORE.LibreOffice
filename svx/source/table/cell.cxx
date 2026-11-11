@@ -174,7 +174,7 @@ SdrText* CellTextProvider::getText(sal_Int32 nIndex) const
         {
         }
 
-        std::unique_ptr<BaseProperties> CellProperties::Clone(SdrObject& rObj) const
+        std::unique_ptr<BaseProperties> CellProperties::implCloneProperties(SdrObject& rObj) const
         {
             OSL_FAIL("CellProperties::Clone(), does not work yet!");
             return std::unique_ptr<BaseProperties>(new CellProperties(*this, rObj,nullptr));
@@ -671,7 +671,7 @@ sal_Int32 Cell::calcPreferredWidth( const Size aSize )
     if( GetOutlinerParaObject() )
         rOutliner.SetText(*GetOutlinerParaObject());
 
-    sal_Int32 nPreferredWidth = const_cast<EditEngine&>(rOutliner.GetEditEngine()).CalcTextWidth();
+    sal_Int32 nPreferredWidth = rOutliner.GetEditEngine().CalcTextWidth();
     rOutliner.Clear();
 
     return GetTextLeftDistance() + GetTextRightDistance() + nPreferredWidth;

@@ -33,6 +33,8 @@
 #include <mdiexp.hxx>
 #include <tools/urlobj.hxx>
 
+#include <config_md4c.h>
+
 #include "swmd.hxx"
 
 int SwMarkdownParser::enter_block_callback(MD_BLOCKTYPE type, void* detail, void* userdata)
@@ -51,7 +53,8 @@ int SwMarkdownParser::enter_block_callback(MD_BLOCKTYPE type, void* detail, void
             parser->StartNumberedBulletList(type);
             break;
         case MD_BLOCK_OL:
-            parser->StartNumberedBulletList(type);
+            parser->StartNumberedBulletList(type,
+                                            static_cast<const MD_BLOCK_OL_DETAIL*>(detail)->start);
             break;
         case MD_BLOCK_LI:
             parser->StartNumberedBulletListItem(*static_cast<const MD_BLOCK_LI_DETAIL*>(detail));
@@ -83,11 +86,13 @@ int SwMarkdownParser::enter_block_callback(MD_BLOCKTYPE type, void* detail, void
             parser->StartTable(nRow, nCol);
             break;
         }
+#if MD4C_MAJOR > 0 || (MD4C_MAJOR == 0 && MD4C_MINOR >= 6)
         case MD_BLOCK_ADMONITION:
         case MD_BLOCK_BLANK:
         case MD_BLOCK_FOOTNOTE_DEF:
         case MD_BLOCK_FOOTNOTE_DEF_SECTION:
             break;
+#endif
         case MD_BLOCK_THEAD:
         case MD_BLOCK_TBODY:
             break;
@@ -142,11 +147,13 @@ int SwMarkdownParser::leave_block_callback(MD_BLOCKTYPE type, void* /*detail*/, 
         case MD_BLOCK_TABLE:
             parser->EndTable();
             break;
+#if MD4C_MAJOR > 0 || (MD4C_MAJOR == 0 && MD4C_MINOR >= 6)
         case MD_BLOCK_ADMONITION:
         case MD_BLOCK_BLANK:
         case MD_BLOCK_FOOTNOTE_DEF:
         case MD_BLOCK_FOOTNOTE_DEF_SECTION:
             break;
+#endif
         case MD_BLOCK_THEAD:
         case MD_BLOCK_TBODY:
             break;
@@ -226,6 +233,7 @@ int SwMarkdownParser::enter_span_callback(MD_SPANTYPE type, void* detail, void* 
         case MD_SPAN_LATEXMATH:
         case MD_SPAN_LATEXMATH_DISPLAY:
             break;
+#if MD4C_MAJOR > 0 || (MD4C_MAJOR == 0 && MD4C_MINOR >= 6)
         case MD_SPAN_FOOTNOTE_REF:
         case MD_SPAN_INS:
         case MD_SPAN_MARK:
@@ -233,6 +241,7 @@ int SwMarkdownParser::enter_span_callback(MD_SPANTYPE type, void* detail, void* 
         case MD_SPAN_SUPERSCRIPT:
         case MD_SPAN_SUBSCRIPT:
             break;
+#endif
         case MD_SPAN_WIKILINK:
         {
             const MD_SPAN_WIKILINK_DETAIL* pWikilink
@@ -274,6 +283,7 @@ int SwMarkdownParser::leave_span_callback(MD_SPANTYPE type, void* /*detail*/, vo
         case MD_SPAN_WIKILINK:
         case MD_SPAN_U:
             break;
+#if MD4C_MAJOR > 0 || (MD4C_MAJOR == 0 && MD4C_MINOR >= 6)
         case MD_SPAN_FOOTNOTE_REF:
         case MD_SPAN_INS:
         case MD_SPAN_MARK:
@@ -281,6 +291,7 @@ int SwMarkdownParser::leave_span_callback(MD_SPANTYPE type, void* /*detail*/, vo
         case MD_SPAN_SUBSCRIPT:
         case MD_SPAN_SUPERSCRIPT:
             break;
+#endif
     }
     return 0;
 }

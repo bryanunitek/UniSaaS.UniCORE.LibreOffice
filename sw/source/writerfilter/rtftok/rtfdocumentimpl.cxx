@@ -30,6 +30,7 @@
 #include <filter/msfilter/util.hxx>
 #include <filter/msfilter/rtfutil.hxx>
 #include <o3tl/numeric.hxx>
+#include <o3tl/safeint.hxx>
 #include <comphelper/string.hxx>
 #include <comphelper/diagnose_ex.hxx>
 #include <tools/globname.hxx>
@@ -50,6 +51,7 @@
 #include <osl/diagnose.h>
 #include <oox/helper/graphichelper.hxx>
 #include <vcl/wmfexternal.hxx>
+#include <vcl/GraphicExternalLink.hxx>
 #include <vcl/graph.hxx>
 #include <vcl/settings.hxx>
 #include <vcl/svapp.hxx>
@@ -949,7 +951,7 @@ void RTFDocumentImpl::resolve(Stream& rMapper)
     }
 }
 
-void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XShape> const& rShape)
+bool RTFDocumentImpl::importPict(uno::Reference<graphic::XGraphic>& rxGraphic)
 {
     SvMemoryStream aStream;
     SvStream* pStream = nullptr;
@@ -971,7 +973,7 @@ void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XS
                 b = b << 4;
                 sal_Int8 parsed = o3tl::convertToHex<sal_Int8>(ch);
                 if (parsed == -1)
-                    return;
+                    return false;
                 b += parsed;
                 count--;
                 if (!count)
@@ -988,7 +990,7 @@ void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XS
 
     if (!pStream->Tell())
         // No destination text? Then we'll get it later.
-        return;
+        return false;
 
     SvMemoryStream aDIBStream;
     if (m_aStates.top().getPicture().eStyle == RTFBmpStyle::DIBITMAP)
@@ -1031,8 +1033,21 @@ void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XS
     if (xServiceInfo.is() && xServiceInfo->supportsService(u"com.sun.star.text.TextFrame"_ustr))
         pExtHeader = nullptr;
 
-    uno::Reference<graphic::XGraphic> xGraphic
-        = m_pGraphicHelper->importGraphic(xInputStream, pExtHeader);
+    rxGraphic = m_pGraphicHelper->importGraphic(xInputStream, pExtHeader);
+    return true;
+}
+
+void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XShape> const& rShape)
+{
+    uno::Reference<graphic::XGraphic> xGraphic;
+    if (!m_aPictureLinkURL.isEmpty())
+    {
+        Graphic aGraphic{ GraphicExternalLink(m_aPictureLinkURL) };
+        xGraphic = aGraphic.GetXGraphic();
+        m_aPictureLinkURL.clear();
+    }
+    else if (!importPict(xGraphic))
+        return;
 
     if (m_aStates.top().getPicture().eStyle != RTFBmpStyle::NONE)
     {
@@ -1311,17 +1326,21 @@ void RTFDocumentImpl::resolvePict(bool const bInline, uno::Reference<drawing::XS
     }
 }
 
-bool RTFDocumentImpl::bufferShapeInsertion(uno::Reference<drawing::XShape> const& rShape,
-                                           bool const bClose)
+void RTFDocumentImpl::insertShape(uno::Reference<drawing::XShape> const& rShape, bool const bClose)
 {
-    RTFBuffer_t* pBuffer = m_aStates.empty() ? nullptr : m_aStates.top().getCurrentBuffer();
-    if (!pBuffer)
-        return false;
-
-    pBuffer->emplace_back(RTFBufferTypes::InsertShape, new RTFValue(rShape), nullptr);
+    bufferOrSend(RTFBufferTypes::InsertShape, new RTFValue(rShape));
     if (bClose)
-        pBuffer->emplace_back(RTFBufferTypes::EndShape, nullptr, nullptr);
-    return true;
+        bufferOrSend(RTFBufferTypes::EndShape);
+}
+
+void RTFDocumentImpl::bufferOrResolveSubstream(std::size_t nPos, Id nId,
+                                               OUString const& rCustomMark)
+{
+    RTFSprms aAttributes;
+    aAttributes.set(Id(0), new RTFValue(nPos));
+    aAttributes.set(Id(1), new RTFValue(nId));
+    aAttributes.set(Id(2), new RTFValue(rCustomMark));
+    bufferOrSend(RTFBufferTypes::ResolveSubstream, new RTFValue(aAttributes));
 }
 
 RTFError RTFDocumentImpl::resolveChars(char ch)
@@ -1740,7 +1759,8 @@ void RTFDocumentImpl::set_tblInd(RTFSprms& tableRowSprms, int val)
     {
         RTFValue::Pointer_t pMarginLeft = pCellMargin->getSprms().find(NS_ooxml::LN_CT_TcMar_left);
         if (pMarginLeft)
-            val -= pMarginLeft->getAttributes().find(NS_ooxml::LN_CT_TblWidth_w)->getInt();
+            val = o3tl::saturating_sub(
+                val, pMarginLeft->getAttributes().find(NS_ooxml::LN_CT_TblWidth_w)->getInt());
     }
 
     putNestedAttribute(tableRowSprms, NS_ooxml::LN_CT_TblPrBase_tblInd, +NS_ooxml::LN_CT_TblWidth_w,
@@ -1776,7 +1796,7 @@ void RTFDocumentImpl::prepareProperties(
         auto pUnitValue = new RTFValue(3);
         putNestedAttribute(localTableRowSprms, NS_ooxml::LN_CT_TblPrBase_tblW,
                            NS_ooxml::LN_CT_TblWidth_type, pUnitValue);
-        auto pWValue = new RTFValue(nCurrentCellX - nTRLeft);
+        auto pWValue = new RTFValue(o3tl::saturating_sub(nCurrentCellX, nTRLeft));
         putNestedAttribute(localTableRowSprms, NS_ooxml::LN_CT_TblPrBase_tblW,
                            NS_ooxml::LN_CT_TblWidth_w, pWValue);
     }
@@ -1804,7 +1824,7 @@ void RTFDocumentImpl::prepareProperties(
                 {
                     // First cell: it was calculated against the initial value of *CurrentCellX,
                     // which is 0; now subtract nTRLeft from it
-                    val -= nTRLeft;
+                    val = o3tl::saturating_sub(val, nTRLeft);
                     pValue = new RTFValue(val);
                 }
                 seenFirstColumn = true;
@@ -1916,13 +1936,89 @@ void RTFDocumentImpl::replayBuffer(RTFBuffer_t& rBuffer, RTFSprms* const pSprms,
     }
 }
 
+static bool lcl_holdsShapeStart(RTFBuffer_t const& rBuffer)
+{
+    int nOpen = 0;
+    for (Buf_t const& rEntry : rBuffer)
+    {
+        switch (std::get<0>(rEntry))
+        {
+            case RTFBufferTypes::StartShape:
+            case RTFBufferTypes::InsertShape:
+                ++nOpen;
+                break;
+            case RTFBufferTypes::EndShape:
+                --nOpen;
+                break;
+            default:
+                break;
+        }
+    }
+    return nOpen > 0;
+}
+
 void RTFDocumentImpl::bufferOrSend(RTFBufferTypes eType, RTFValue::Pointer_t const& pValue)
 {
     RTFBuffer_t* pCurrentBuffer = m_aStates.empty() ? nullptr : m_aStates.top().getCurrentBuffer();
+    // A shape's end follows its start. While the start still waits in the buffer the end waits
+    // behind it, and once a replay has sent the start the end goes to the dmapper directly.
+    if (pCurrentBuffer && eType == RTFBufferTypes::EndShape
+        && !lcl_holdsShapeStart(*pCurrentBuffer))
+        pCurrentBuffer = nullptr;
     if (pCurrentBuffer)
         pCurrentBuffer->emplace_back(eType, pValue, nullptr);
     else
         sendBufferEntry(Buf_t(eType, pValue, nullptr));
+}
+
+void RTFDocumentImpl::bufferTableRow(RTFBuffer_t& rOuterBuffer,
+                                     std::deque<RTFSprms> const& rCellsSprms,
+                                     std::deque<RTFSprms> const& rCellsAttributes, int nCells,
+                                     int nCurrentCellX, int nTRLeft)
+{
+    tools::SvRef<TableRowBuffer> const pBuffer(
+        new TableRowBuffer(m_aTableBufferStack.back(), rCellsSprms, rCellsAttributes, nCells));
+    prepareProperties(m_aStates.top(), pBuffer->GetParaProperties(), pBuffer->GetFrameProperties(),
+                      pBuffer->GetRowProperties(), nCells, nCurrentCellX, nTRLeft);
+    rOuterBuffer.emplace_back(RTFBufferTypes::NestRow, RTFValue::Pointer_t(), pBuffer);
+}
+
+void RTFDocumentImpl::swapShapeTextTableState(ShapeTextTableState& rState)
+{
+    // Swapping a deque keeps its elements in place, so the parser states that point into the
+    // outer table buffers stay valid.
+    std::swap(m_aTableBufferStack, rState.aTableBufferStack);
+    std::swap(m_TopLevelTableRow, rState.aTopLevelTableRow);
+    std::swap(m_PreviousTopLevelTableRow, rState.aPreviousTopLevelTableRow);
+    std::swap(m_BackupTopLevelTableRow, rState.aBackupTopLevelTableRow);
+    std::swap(m_aBackupTableRowSprms, rState.aBackupTableRowSprms);
+    std::swap(m_aBackupTableRowAttributes, rState.aBackupTableRowAttributes);
+    std::swap(m_aDefaultState.getTableCellSprms(), rState.aDefaultTableCellSprms);
+    std::swap(m_nNestedCells, rState.nNestedCells);
+    std::swap(m_aNestedTableCellsSprms, rState.aNestedTableCellsSprms);
+    std::swap(m_aNestedTableCellsAttributes, rState.aNestedTableCellsAttributes);
+    std::swap(m_nNestedTRLeft, rState.nNestedTRLeft);
+    std::swap(m_nNestedCurrentCellX, rState.nNestedCurrentCellX);
+}
+
+void RTFDocumentImpl::startShapeTextTableState()
+{
+    RTFBuffer_t* pCurrentBuffer = m_aStates.top().getCurrentBuffer();
+    if (!pCurrentBuffer)
+        return;
+    ShapeTextTableState& rState = m_aShapeTextTableStates.emplace_back();
+    rState.pOuterBuffer = pCurrentBuffer;
+    rState.nStateDepth = m_aStates.size();
+    swapShapeTextTableState(rState);
+}
+
+void RTFDocumentImpl::endShapeTextTableState()
+{
+    if (m_aShapeTextTableStates.empty()
+        || m_aStates.size() >= m_aShapeTextTableStates.back().nStateDepth)
+        return;
+    swapShapeTextTableState(m_aShapeTextTableStates.back());
+    m_aShapeTextTableStates.pop_back();
 }
 
 void RTFDocumentImpl::sendBufferEntry(Buf_t aTuple)
@@ -1990,13 +2086,13 @@ void RTFDocumentImpl::sendBufferEntry(Buf_t aTuple)
         m_aStates.top().setCurrentBuffer(pCurrentBuffer);
     }
     else if (std::get<0>(aTuple) == RTFBufferTypes::EndShape)
-        m_pSdrImport->close();
+        Mapper().endShape();
     else if (std::get<0>(aTuple) == RTFBufferTypes::InsertShape)
     {
         uno::Reference<drawing::XShape> xShape;
         std::get<1>(aTuple)->getAny() >>= xShape;
         if (xShape.is())
-            m_pSdrImport->open(xShape);
+            Mapper().startShape(xShape);
     }
     else if (std::get<0>(aTuple) == RTFBufferTypes::ResolveSubstream)
     {
@@ -2565,43 +2661,23 @@ RTFError RTFDocumentImpl::beforePopState(RTFParserState& rState)
 
             if (!m_aPicturePath.isEmpty())
             {
-                // Read the picture into m_aStates.top().aDestinationText.
+                // The picture is inserted as a link to the file.
                 pushState();
                 dispatchDestination(RTFKeyword::PICT);
-                if (m_aPicturePath.endsWith(".png"))
-                    dispatchFlag(RTFKeyword::PNGBLIP);
                 OUString aFileURL = m_rMediaDescriptor.getUnpackedValueOrDefault(
                     utl::MediaDescriptor::PROP_URL, OUString());
-                OUString aPictureURL;
                 try
                 {
-                    aPictureURL = rtl::Uri::convertRelToAbs(aFileURL, m_aPicturePath);
+                    m_aPictureLinkURL = rtl::Uri::convertRelToAbs(aFileURL, m_aPicturePath);
                 }
                 catch (const rtl::MalformedUriException& rException)
                 {
                     SAL_WARN("writerfilter.rtf",
                              "rtl::Uri::convertRelToAbs() failed: " << rException.getMessage());
                 }
-
-                if (!aPictureURL.isEmpty())
-                {
-                    SvFileStream aStream(aPictureURL, StreamMode::READ);
-                    if (aStream.IsOpen())
-                    {
-                        OUStringBuffer aBuf;
-                        while (aStream.good())
-                        {
-                            unsigned char ch = 0;
-                            aStream.ReadUChar(ch);
-                            if (ch < 16)
-                                aBuf.append("0");
-                            aBuf.append(static_cast<sal_Int32>(ch), 16);
-                        }
-                        m_aStates.top().getDestinationText() = std::move(aBuf);
-                    }
-                }
                 popState();
                 m_aPicturePath.clear();
+                m_aPictureLinkURL.clear();
             }
 
             break;
@@ -3118,10 +3194,12 @@ RTFError RTFDocumentImpl::beforePopState(RTFParserState& rState)
 
                 if (bTextFrame)
                 {
-                    xPropertySet->setPropertyValue(u"HoriOrientPosition"_ustr,
-                                                   uno::Any(rDrawing.getLeft()));
-                    xPropertySet->setPropertyValue(u"VertOrientPosition"_ustr,
-                                                   uno::Any(rDrawing.getTop()));
+                    xPropertySet->setPropertyValue(
+                        u"HoriOrientPositionEMU"_ustr,
+                        uno::Any(sal_Int64(rDrawing.getLeftLength().as_emu())));
+                    xPropertySet->setPropertyValue(
+                        u"VertOrientPositionEMU"_ustr,
+                        uno::Any(sal_Int64(rDrawing.getTopLength().as_emu())));
                 }
                 else
                 {
@@ -3795,13 +3873,7 @@ void RTFDocumentImpl::afterPopState(RTFParserState& rState)
                     && !m_aStates.top().getDrawingObject().getHadShapeText())
                 {
                     m_aStates.top().setHadShapeText(true);
-                    // A replay can send a buffered start before the group ends, and the end
-                    // has to follow it.
-                    if (m_pSdrImport->isOpenInMapper() || !m_aStates.top().getCurrentBuffer())
-                        m_pSdrImport->close();
-                    else
-                        m_aStates.top().getCurrentBuffer()->emplace_back(RTFBufferTypes::EndShape,
-                                                                         nullptr, nullptr);
+                    bufferOrSend(RTFBufferTypes::EndShape);
                 }
 
                 // It's allowed to declare these inside the shape text, and they
@@ -3905,6 +3977,7 @@ RTFError RTFDocumentImpl::popState()
     }
 
     m_aStates.pop();
+    endShapeTextTableState();
 
     m_pTokenizer->popGroup();
 

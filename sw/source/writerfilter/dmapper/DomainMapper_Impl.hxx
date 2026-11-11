@@ -23,6 +23,7 @@
 #include <com/sun/star/text/XTextCursor.hpp>
 #include <com/sun/star/text/XTextAppend.hpp>
 #include <com/sun/star/text/XTextFrame.hpp>
+#include <com/sun/star/xml/dom/XDocument.hpp>
 #include <com/sun/star/style/TabStop.hpp>
 #include <com/sun/star/container/XNameContainer.hpp>
 #include <com/sun/star/embed/XStorage.hpp>
@@ -219,6 +220,8 @@ enum class SubstreamType
 struct SubstreamContext
 {
     SubstreamType eSubstreamType = SubstreamType::Body;
+    /// The text of the foot or endnote of this substream is on the text append stack.
+    bool bNoteTextAppendPushed = false;
     bool      bTextInserted = false;
     /**
      * This contains the raw table depth. nTableDepth > 0 is the same as
@@ -353,8 +356,12 @@ private:
 
     FFDataHandler::Pointer_t m_pFFDataHandler;
     FormControlHelper::Pointer_t m_pFormControlHelper;
-    /// (Character) properties of the field itself.
-    PropertyMapPtr m_pProperties;
+    /// Field metadata which is independent of command and result run formatting.
+    PropertyMapPtr m_pFieldProperties;
+    /// Character properties copied from the first command w:r (run).
+    PropertyMapPtr m_pCommandFirstRunProperties;
+    /// Character properties copied from the first non-empty result w:r (run).
+    PropertyMapPtr m_pResultFirstRunProperties;
 
     std::vector<FieldParagraph> m_aParagraphsToFinish;
 
@@ -411,7 +418,19 @@ public:
 
     void setFormControlHelper(const FormControlHelper::Pointer_t& pFormControlHelper) { m_pFormControlHelper = pFormControlHelper; }
     const FormControlHelper::Pointer_t& getFormControlHelper() const { return m_pFormControlHelper; }
-    const PropertyMapPtr& getProperties() const { return m_pProperties; }
+    const PropertyMapPtr& getFieldProperties() const { return m_pFieldProperties; }
+    const PropertyMapPtr& getCommandFirstRunProperties() const
+    {
+        return m_pCommandFirstRunProperties;
+    }
+    /// Select run formatting, not field metadata; result formatting is known at PopFieldContext().
+    const PropertyMapPtr& getRunProperties() const
+    {
+        if (m_pResultFirstRunProperties)
+            return m_pResultFirstRunProperties;
+        return m_pCommandFirstRunProperties;
+    }
+    void captureResultFirstRunProperties(const PropertyMapPtr& pProperties);
 
     ::std::vector<OUString> GetCommandParts() const;
 
@@ -710,6 +729,8 @@ private:
     bool m_bAnnotationResolved = false;
     OUString m_sAnnotationParent;
     OUString m_sAnnotationImportedParaId;
+    /// The moment the comment being read was written, when the file records one.
+    std::optional<css::util::DateTime> m_oAnnotationDateUtc;
     std::unordered_map< sal_Int32, AnnotationPosition > m_aAnnotationPositions;
 
     void SetNumberFormat(const OUString& rCommand, css::uno::Reference<css::beans::XPropertySet> const& xPropertySet, bool bDetectFormat = false);
@@ -721,6 +742,14 @@ private:
 
     css::uno::Reference<css::text::XTextRange> m_xGlossaryEntryStart;
     std::stack<BookmarkInsertPosition> m_xSdtStarts;
+
+    /// Storage for all properties documents as xml::dom::XDocument for later querying xpath for data
+    std::unordered_map<OUString, css::uno::Reference<css::xml::dom::XDocument>> m_xPropertiesXMLs;
+
+    /// Check if m_xPropertiesXMLs is initialized and loaded
+    /// (need extra flag to distinguish empty sequence from not yet initialized)
+    bool m_bPropertiesXMLsLoaded = false;
+    void loadPropertiesXMLs();
 
     std::queue< rtl::Reference< SwXTextFrame > > m_xPendingTextBoxFrames;
 
@@ -835,6 +864,7 @@ public:
     /// Gives access to the currently open run/inline SDTs.
     const std::stack<BookmarkInsertPosition>& GetSdtStarts() const;
 
+    std::unordered_map<OUString, css::uno::Reference<css::xml::dom::XDocument>>& GetPropertiesXMLs();
 
     bool GetParaChanged() const { return m_StreamStateStack.top().bParaChanged; }
     bool GetParaHadField() const { return m_StreamStateStack.top().bParaHadField; }
@@ -1298,6 +1328,8 @@ public:
     void HandleLineBreak(const PropertyMapPtr& pPropertyMap);
 
     void commentProps(const OUString& sId, const CommentProperties& rProps);
+    void commentDurableId(const OUString& sParaId, const OUString& sDurableId);
+    void commentDateUtc(const OUString& sDurableId, const OUString& sDateUtc);
 
     OUString ConvertTOCStyleName(OUString const&);
 
@@ -1312,6 +1344,10 @@ private:
     bool m_bSaxError;
 
     std::unordered_map<OUString, CommentProperties> m_aCommentProps;
+    /// Durable id of a comment, by the paragraph id of its last paragraph.
+    std::unordered_map<OUString, OUString> m_aCommentDurableIds;
+    /// The moment a comment was written, as an ISO 8601 string in UTC, by durable id.
+    std::unordered_map<OUString, OUString> m_aCommentDatesUtc;
 };
 
 } //namespace writerfilter::dmapper

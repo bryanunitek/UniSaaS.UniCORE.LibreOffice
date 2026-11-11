@@ -18,6 +18,7 @@
  */
 
 #include <officecfg/Office/Calc.hxx>
+#include <drawview.hxx>
 #include <rangelst.hxx>
 #include <scitems.hxx>
 
@@ -1404,15 +1405,30 @@ void ScTabView::MoveCursorEnd( SCCOL nMovX, SCROW nMovY, ScFollowMode eMode, boo
     if ( nMovX > 0 || nMovY > 0 )
         rDoc.GetPrintArea( nTab, nUsedX, nUsedY );     // get end
 
+    // tdf#107994 - move to the freeze pane splitter position first
+    SCCOL nFixX = aViewData.GetHSplitMode() == SC_SPLIT_FIX ? aViewData.GetFixPosX() : 0;
+    SCROW nFixY = aViewData.GetVSplitMode() == SC_SPLIT_FIX ? aViewData.GetFixPosY() : 0;
+    // tdf#173894 - skip hidden, merged or protected cells towards the non-frozen area
+    if (nMovX < 0 && nFixX > 0)
+    {
+        SCROW nTmpY = nMovY < 0 ? nFixY : nCurY;
+        SkipCursorHorizontal(nFixX, nTmpY, nCurX, 1);
+    }
+    if (nMovY < 0 && nFixY > 0)
+    {
+        SCCOL nTmpX = nMovX < 0 ? nFixX : nCurX;
+        SkipCursorVertical(nTmpX, nFixY, nCurY, 1);
+    }
+    // tdf#173894 - move to the first column/row once at the splitter position or within the frozen area
+    const bool bAtFixPos = (nMovX >= 0 || nCurX <= nFixX) && (nMovY >= 0 || nCurY <= nFixY);
+
     if (nMovX < 0)
-        // tdf#107994 - move to the freeze pane splitter position
-        nNewX = aViewData.GetHSplitMode() == SC_SPLIT_FIX ? aViewData.GetFixPosX() : 0;
+        nNewX = bAtFixPos ? 0 : nFixX;
     else if (nMovX>0)
         nNewX=nUsedX;                                   // last used range
 
     if (nMovY<0)
-        // tdf#107994 - move to the freeze pane splitter position
-        nNewY = aViewData.GetVSplitMode() == SC_SPLIT_FIX ? aViewData.GetFixPosY() : 0;
+        nNewY = bAtFixPos ? 0 : nFixY;
     else if (nMovY>0)
         nNewY=nUsedY;
 
@@ -2020,6 +2036,7 @@ void ScTabView::SetTabNo( SCTAB nTab, bool bNew, bool bExtendSelection, bool bSa
         rMark.SelectOneTable( nTab );
         rBindings.Invalidate( FID_FILL_TAB );
         rBindings.Invalidate( FID_TAB_DESELECTALL );
+        aViewData.GetViewShell()->RemoveInfoBarSelectAllSheets();
     }
 
     bool bUnoRefDialog = pScMod->IsRefDialogOpen() && pScMod->GetCurRefDlgId() == WID_SIMPLE_REF;

@@ -8,6 +8,7 @@
  */
 #include "sdmodeltestbase.hxx"
 
+#include <rtl/character.hxx>
 #include <sfx2/objsh.hxx>
 #include <sfx2/sfxbasemodel.hxx>
 #include <svx/compatflags.hxx>
@@ -30,6 +31,28 @@ public:
         auto* pDoc = pImpress->GetDoc();
         CPPUNIT_ASSERT(pDoc);
         return pDoc;
+    }
+
+    // Item texts ("A1", "B2", ...) of the layout, each with the label drawn before it
+    OUString getNumberedItems()
+    {
+        xmlDocUniquePtr pXmlDoc = parseLayout();
+        OUStringBuffer aItems;
+        OUString aLabel;
+        const int nCount = countXPathNodes(pXmlDoc, "//textarray");
+        for (int i = 1; i <= nCount; ++i)
+        {
+            const OUString aText
+                = getXPathContent(pXmlDoc, "(//textarray)[" + OString::number(i) + "]/text");
+            if (aText.endsWith("."))
+                aLabel = aText;
+            else if (aText.getLength() == 2 && rtl::isAsciiDigit(aText[1]))
+            {
+                aItems.append(aLabel + aText + " ");
+                aLabel.clear();
+            }
+        }
+        return aItems.makeStringAndClear();
     }
 };
 
@@ -302,6 +325,47 @@ CPPUNIT_TEST_FIXTURE(SdLayoutTest, numberedList)
     }
 }
 
+CPPUNIT_TEST_FIXTURE(SdLayoutTest, testTdf173712)
+{
+    // Sixteen text boxes with numbered lists; the expected numbers are those PowerPoint shows
+    createSdImpressDoc("pptx/tdf173712.pptx");
+
+    // Without the fix in place, e.g. every item of A (startAt="2" on each) was numbered "2."
+    CPPUNIT_ASSERT_EQUAL(
+        u"2.A1 3.A2 4.A3 5.A4 " // startAt="2" on every item
+        "1.B1 2.B2 5.B3 6.B4 " // no startAt, then startAt="5"
+        "2.C1 3.C2 4.C3 5.C4 " // startAt="2", then startAt="4"
+        "1.D1 2.D2 3.D3 4.D4 " // no startAt, then startAt="1"
+        "2.E1 3.E2 E3 2.E4 3.E5 " // plain paragraph between
+        "2.F1 3.F2 F3 2.F4 3.F5 " // buNone paragraph between
+        "1.G1 2.G2 I.G3 II.G4 " // arabicPeriod, then romanUcPeriod
+        "3.H1 4.H2 a.H3 b.H4 5.H5 a.H6 6.H7 " // nested, outer startAt="3"
+        "1.I1 2.I2 3.I3 2.I4 2.I5 3.I6 " // nested, inner startAt="2"
+        "2.J1 3.J2 J3 4.J4 5.J5 " // unnumbered lvl="1" paragraph between
+        "1.K1 a.K2 b.K3 K4 a.K5 2.K6 " // unnumbered paragraph inside the inner list
+        "2.L1 2.L2 3.L3 2.L4 3.L5 " // startAt="2" on both levels
+        "2.M1 3.M2 M3 2.M4 3.M5 " // paragraph without a:pPr between
+        "2.N1 3.N2 1.N3 2.N4 " // startAt="2", then no startAt
+        "5.O1 6.O2 2.O3 3.O4 " // startAt="5", then startAt="2"
+        "1.R1 2.R2 R3 1.R4 2.R5 "_ustr, // paragraph without a:pPr, no startAt
+        getNumberedItems());
+}
+
+CPPUNIT_TEST_FIXTURE(SdLayoutTest, testTdf173712_listStyle)
+{
+    // a:lstStyle has <a:buAutoNum type="arabicPeriod" startAt="2"/> for level 1, but no startAt in Z
+    createSdImpressDoc("pptx/tdf173712-liststyle.pptx");
+
+    // Without the fix in place, every item was numbered "2."
+    CPPUNIT_ASSERT_EQUAL(
+        u"2.U1 3.U2 4.U3 5.U4 " // no a:pPr
+        "2.V1 3.V2 4.V3 5.V4 " // a:pPr without a bullet
+        "2.W1 3.W2 4.W3 5.W4 " // own buAutoNum with startAt="2" too
+        "2.Y1 3.Y2 4.Y3 5.Y4 " // from the list style, own, own, from the list style
+        "1.Z1 2.Z2 Z3 1.Z4 2.Z5 "_ustr, // no startAt, buNone paragraph between
+        getNumberedItems());
+}
+
 CPPUNIT_TEST_FIXTURE(SdLayoutTest, testTdf146731)
 {
     createSdImpressDoc("pptx/tdf146731.pptx");
@@ -568,7 +632,7 @@ CPPUNIT_TEST_FIXTURE(SdLayoutTest, testTdf168010_ODP_disabled)
 
         xmlDocUniquePtr pXml = parseLayout();
         sal_Int32 y = getXPath(pXml, "/metafile['3']/push/push/textarray[3]", "y").toInt32();
-        CPPUNIT_ASSERT_DOUBLES_EQUAL(8100, y, 100);
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(7976, y, 100);
         assertXPathContent(pXml, "/metafile['3']/push/push/textarray[3]/text", u"textbox");
     }
 
@@ -580,7 +644,7 @@ CPPUNIT_TEST_FIXTURE(SdLayoutTest, testTdf168010_ODP_disabled)
 
         xmlDocUniquePtr pXml = parseLayout();
         sal_Int32 y = getXPath(pXml, "/metafile['4']/push/push/textarray[3]", "y").toInt32();
-        CPPUNIT_ASSERT_DOUBLES_EQUAL(8100, y, 100);
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(7976, y, 100);
         assertXPathContent(pXml, "/metafile['4']/push/push/textarray[3]/text", u"textbox");
     }
 }
@@ -598,7 +662,7 @@ CPPUNIT_TEST_FIXTURE(SdLayoutTest, testTdf168010_PPTX)
 
         xmlDocUniquePtr pXml = parseLayout();
         sal_Int32 y = getXPath(pXml, "/metafile['5']/push/push/textarray", "y").toInt32();
-        CPPUNIT_ASSERT_DOUBLES_EQUAL(6700, y, 100);
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(6512, y, 100);
         assertXPathContent(pXml, "/metafile['5']/push/push/textarray/text", u"textbox");
     }
 
@@ -610,7 +674,7 @@ CPPUNIT_TEST_FIXTURE(SdLayoutTest, testTdf168010_PPTX)
 
         xmlDocUniquePtr pXml = parseLayout();
         sal_Int32 y = getXPath(pXml, "/metafile['6']/push/push/textarray", "y").toInt32();
-        CPPUNIT_ASSERT_DOUBLES_EQUAL(6700, y, 100);
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(6512, y, 100);
         assertXPathContent(pXml, "/metafile['6']/push/push/textarray/text", u"textbox");
     }
 
@@ -626,7 +690,7 @@ CPPUNIT_TEST_FIXTURE(SdLayoutTest, testTdf168010_PPTX)
 
         xmlDocUniquePtr pXml = parseLayout();
         sal_Int32 y = getXPath(pXml, "/metafile['7']/push/push/textarray", "y").toInt32();
-        CPPUNIT_ASSERT_DOUBLES_EQUAL(6700, y, 100);
+        CPPUNIT_ASSERT_DOUBLES_EQUAL(6512, y, 100);
         assertXPathContent(pXml, "/metafile['7']/push/push/textarray/text", u"textbox");
     }
 }
@@ -657,6 +721,23 @@ CPPUNIT_TEST_FIXTURE(SdLayoutTest, testTdf128206)
     // - Expected: 3617
     // - Actual  : -703490
     assertXPathDoubleValue(pXmlDoc, "//push[@flags='PushMapMode']/textarray", "y", 3617.0, 3.0);
+}
+
+CPPUNIT_TEST_FIXTURE(SdLayoutTest, testJumpingBullet)
+{
+    createSdImpressDoc("odp/jumping_bullet.odp");
+    xmlDocUniquePtr pXmlDoc = parseLayout();
+
+    const OString aBase = "/metafile/push[1]/push[1]/textarray"_ostr;
+    // bullet of paragraph H and bullet of the trailing empty paragraph
+    sal_Int32 nBullet4 = getXPath(pXmlDoc, aBase + "[4]", "y").toInt32();
+    sal_Int32 nBullet6 = getXPath(pXmlDoc, aBase + "[6]", "y").toInt32();
+    sal_Int32 nBullet8 = getXPath(pXmlDoc, aBase + "[8]", "y").toInt32();
+    sal_Int32 nBullet10 = getXPath(pXmlDoc, aBase + "[10]", "y").toInt32();
+
+    // the empty paragraph's bullet must use the same line pitch as the others
+    // allow rounding differences of a few 1/100 mm
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(nBullet6 - nBullet4, nBullet10 - nBullet8, 3);
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

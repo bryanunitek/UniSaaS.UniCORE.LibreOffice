@@ -420,8 +420,7 @@ static void fixupOutlinePlaceholderNumberingDepths(SdDrawDocument* pDoc)
             const sal_Int16 nExpectedDepth = j;
             if (nExpectedDepth != pOutliner->GetDepth(j))
             {
-                Paragraph* p = pOutliner->GetParagraph(j);
-                pOutliner->SetDepth(p, nExpectedDepth);
+                pOutliner->SetDepth(j, nExpectedDepth);
                 bInconsistent = true;
             }
 
@@ -1000,7 +999,7 @@ extern "C" SAL_DLLPUBLIC_EXPORT bool TestImportFODP(SvStream &rStream)
     SdDLL::Init();
 
     sd::DrawDocShellRef xDocSh(new sd::DrawDocShell(SfxObjectCreateMode::EMBEDDED, false, DocumentType::Impress));
-    xDocSh->DoInitNew();
+    xDocSh->DoInitNew(SfxNewDocumentMacros::Disallow);
     uno::Reference<frame::XModel> xModel(xDocSh->GetModel());
 
     uno::Reference<lang::XMultiServiceFactory> xMultiServiceFactory(comphelper::getProcessServiceFactory());
@@ -1053,7 +1052,7 @@ extern "C" SAL_DLLPUBLIC_EXPORT bool TestImportPPTX(SvStream &rStream)
     SdDLL::Init();
 
     sd::DrawDocShellRef xDocSh(new sd::DrawDocShell(SfxObjectCreateMode::EMBEDDED, false, DocumentType::Impress));
-    xDocSh->DoInitNew();
+    xDocSh->DoInitNew(SfxNewDocumentMacros::Disallow);
     uno::Reference<frame::XModel> xModel(xDocSh->GetModel());
 
     uno::Reference<lang::XMultiServiceFactory> xMultiServiceFactory(comphelper::getProcessServiceFactory());

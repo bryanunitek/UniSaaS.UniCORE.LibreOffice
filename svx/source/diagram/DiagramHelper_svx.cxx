@@ -413,7 +413,7 @@ DiagramFrameHdl::DiagramFrameHdl(const basegfx::B2DHomMatrix& rTransformation)
 
 DiagramHelper_svx::DiagramHelper_svx()
 : msSelectedModelID()
-, mbUseDiagramThemeData(false)
+, mbUseDiagramThemeData(true)
 , mbUseDiagramModelData(true)
 , mbForceThemePtrRecreation(false)
 , mbDiagramObjectsLocked(false)
@@ -608,13 +608,6 @@ void DiagramHelper_svx::applyLocksToDiagramObjects(bool bActivate)
     }
 }
 
-const OUString& DiagramHelper_svx::getSelectedModelID() const
-{
-    if (msSelectedModelID.isEmpty())
-        return getBackgroundShapeModelID();
-    return msSelectedModelID;
-}
-
 SdrObject* DiagramHelper_svx::getDiagramSubSelection()
 {
     SdrObjGroup* pRootObject(getAssociatedRootShape());
@@ -689,11 +682,6 @@ void DiagramHelper_svx::initSelectionByKeyboard(bool bPrev)
 
 void DiagramHelper_svx::markDirectDiagramSubSelection(SdrObject& rCandidate)
 {
-    if (rCandidate.isDiagram() || rCandidate.getDiagramDataModelID().isEmpty())
-        // it's directly the root of a Diagram or not a SdrObject associated
-        // with Diagrams at all
-        return;
-
     SdrObjGroup* pRootObject(getAssociatedRootShape());
     if (nullptr == pRootObject || 0 == pRootObject->GetObjCount())
         return;
@@ -714,7 +702,8 @@ void DiagramHelper_svx::markDirectDiagramSubSelection(SdrObject& rCandidate)
         }
     }
 
-    setSelectedModelID(getBackgroundShapeModelID());
+    // default: select BGShape
+    setSelectedModelID(EMPTY_OUSTRING);
 }
 
 DiagramHelperFactory_svx::DiagramHelperFactory_svx()

@@ -25,14 +25,10 @@
 
 /*************************************************************************/
 // SdrItemPool V2, 09-11-1995:
-//      7 new Items for XLineAttrSetItem
-//      7 new Items for XFillAttrSetItem
 //      8 new Items for SdrShadowSetItem
 //      5 new Items for SdrCaptionSetItem
 //     25 new Items for SdrMiscSetItem
 //      6 new Items for SdrNotPersist
-// SdrItemPool V3, 29-02-1996
-//     17 new Items for XFillAttrSetItem (Bitmapfill)
 // SdrItemPool V4, 10-08-1996
 //     45 new Items for Edge and Measure (Connector and Measuring object)
 // SdrItemPool V4+, 18-10-1996
@@ -454,7 +450,17 @@ inline constexpr sal_uInt16                      SDRATTR_EDGEOOXMLCURVE_FIRST(SD
 inline constexpr TypedWhichId<SfxBoolItem>       SDRATTR_EDGEOOXMLCURVE(SDRATTR_EDGEOOXMLCURVE_FIRST+0);   // 1253
 inline constexpr sal_uInt16                      SDRATTR_EDGEOOXMLCURVE_LAST(SDRATTR_EDGEOOXMLCURVE);      // 1253
 
-inline constexpr sal_uInt16 SDRATTR_END (SDRATTR_EDGEOOXMLCURVE_LAST);      // 1253
+inline constexpr sal_uInt16                      SDRATTR_REFLECTION_FIRST(SDRATTR_EDGEOOXMLCURVE_LAST+1);               // 1254
+inline constexpr TypedWhichId<SdrOnOffItem>      SDRATTR_REFLECTION(SDRATTR_REFLECTION_FIRST+0);                        // 1254
+inline constexpr TypedWhichId<SdrMetricItem>     SDRATTR_REFLECTION_DISTANCE(SDRATTR_REFLECTION_FIRST+1);               // 1255
+inline constexpr TypedWhichId<SdrMetricItem>     SDRATTR_REFLECTION_BLUR_RADIUS(SDRATTR_REFLECTION_FIRST+2);            // 1256
+inline constexpr TypedWhichId<SdrPercentItem>    SDRATTR_REFLECTION_START_TRANSPARENCY(SDRATTR_REFLECTION_FIRST+3);     // 1257
+inline constexpr TypedWhichId<SdrPercentItem>    SDRATTR_REFLECTION_START_POSITION(SDRATTR_REFLECTION_FIRST+4);         // 1258
+inline constexpr TypedWhichId<SdrPercentItem>    SDRATTR_REFLECTION_END_TRANSPARENCY(SDRATTR_REFLECTION_FIRST+5);       // 1259
+inline constexpr TypedWhichId<SdrPercentItem>    SDRATTR_REFLECTION_END_POSITION(SDRATTR_REFLECTION_FIRST+6);           // 1260
+inline constexpr sal_uInt16                      SDRATTR_REFLECTION_LAST(SDRATTR_REFLECTION_END_POSITION);              // 1260
+
+inline constexpr sal_uInt16 SDRATTR_END (SDRATTR_REFLECTION_LAST);      // 1260
 
 #endif // INCLUDED_SVX_SVDDEF_HXX
 

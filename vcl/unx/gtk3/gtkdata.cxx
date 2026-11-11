@@ -42,8 +42,6 @@
 
 #include <chrono>
 
-using namespace vcl_sal;
-
 /***************************************************************
  * class GtkSalDisplay                                         *
  ***************************************************************/
@@ -336,7 +334,7 @@ GtkSalData::GtkSalData()
     m_pUserEvent = nullptr;
 }
 
-#if defined(GDK_WINDOWING_X11)
+#if defined(GDK_WINDOWING_X11) && USING_X11
 static XIOErrorHandler aOrigXIOErrorHandler = nullptr;
 
 extern "C" {
@@ -365,7 +363,7 @@ GtkSalData::~GtkSalData()
         g_source_unref (m_pUserEvent);
         m_pUserEvent = nullptr;
     }
-#if defined(GDK_WINDOWING_X11)
+#if defined(GDK_WINDOWING_X11) && USING_X11
     if (DLSYM_GDK_IS_X11_DISPLAY(gdk_display_get_default()))
         XSetIOErrorHandler(aOrigXIOErrorHandler);
 #endif
@@ -572,7 +570,7 @@ void GtkSalData::Init()
 
     ErrorTrapPush();
 
-#if defined(GDK_WINDOWING_X11)
+#if defined(GDK_WINDOWING_X11) && USING_X11
     if (DLSYM_GDK_IS_X11_DISPLAY(pGdkDisp))
         aOrigXIOErrorHandler = XSetIOErrorHandler(XIOErrorHdl);
 #endif
@@ -587,13 +585,8 @@ void GtkSalData::Init()
     gtk_style_context_add_provider_for_display(pGdkDisp, CreateStyleProvider(),
             GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 #else
-    int nScreens = gdk_display_get_n_screens( pGdkDisp );
-    for( int n = 0; n < nScreens; n++ )
+    if (GdkScreen* pScreen = gdk_display_get_screen(pGdkDisp, 0))
     {
-        GdkScreen *pScreen = gdk_display_get_screen( pGdkDisp, n );
-        if (!pScreen)
-            continue;
-
         m_pDisplay->screenSizeChanged( pScreen );
         m_pDisplay->monitorsChanged( pScreen );
         // add signal handler to notify screen size changes
@@ -610,21 +603,16 @@ void GtkSalData::Init()
 
 void GtkSalData::ErrorTrapPush()
 {
-#if GTK_CHECK_VERSION(4, 0, 0)
-# if defined(GDK_WINDOWING_X11)
+# if defined(GDK_WINDOWING_X11) && USING_X11
     GdkDisplay* pGdkDisp = gdk_display_get_default();
     if (DLSYM_GDK_IS_X11_DISPLAY(pGdkDisp))
         gdk_x11_display_error_trap_push(pGdkDisp);
 # endif
-#else
-    gdk_error_trap_push();
-#endif
 }
 
 bool GtkSalData::ErrorTrapPop( bool bIgnoreError )
 {
-#if GTK_CHECK_VERSION(4, 0, 0)
-# if defined(GDK_WINDOWING_X11)
+#if defined(GDK_WINDOWING_X11) && USING_X11
     GdkDisplay* pGdkDisp = gdk_display_get_default();
     if (DLSYM_GDK_IS_X11_DISPLAY(pGdkDisp))
     {
@@ -635,21 +623,11 @@ bool GtkSalData::ErrorTrapPop( bool bIgnoreError )
         }
         return gdk_x11_display_error_trap_pop(pGdkDisp) != 0;
     }
-# endif
-    return false;
 #else
-    if (bIgnoreError)
-    {
-        gdk_error_trap_pop_ignored (); // faster
-        return false;
-    }
-    return gdk_error_trap_pop () != 0;
+    (void)bIgnoreError;
 #endif
+    return false;
 }
-
-#if !GLIB_CHECK_VERSION(2,32,0)
-#define G_SOURCE_REMOVE FALSE
-#endif
 
 extern "C" {
 

@@ -32,7 +32,6 @@ enum class ValueSetItemType
 {
     None,
     Image,
-    ImageAndText,
     Color,
     UserDraw
 };
@@ -44,7 +43,6 @@ struct ValueSetItem
 {
     ValueSet&        mrParent;
     OUString            maText;
-    void*               mpData;
     rtl::Reference< ValueItemAcc > mxAcc;
     Image               maImage;
     Color               maColor;

@@ -63,7 +63,6 @@
 #include <svx/xlntrit.hxx>
 #include <svx/xfltrit.hxx>
 #include <svx/xgrscit.hxx>
-#include <svx/xflasit.hxx>
 #include <svx/xflbmtit.hxx>
 #include <svx/xflbmpit.hxx>
 #include <svx/xflbmsxy.hxx>
@@ -75,7 +74,6 @@
 #include <svx/xfillit0.hxx>
 #include <svx/xfilluseslidebackgrounditem.hxx>
 #include <svx/xtextit0.hxx>
-#include <svx/xlnasit.hxx>
 #include <svx/xlndsit.hxx>
 #include <svx/xlnwtit.hxx>
 #include <svx/xlnclit.hxx>
@@ -187,7 +185,6 @@ static ItemInfoPackage& getItemInfoPackageSdr()
             { XATTR_LINETRANSPARENCE, new XLineTransparenceItem, SID_ATTR_LINE_TRANSPARENCE, SFX_ITEMINFOFLAG_NONE },
             { XATTR_LINEJOINT, new XLineJointItem, SID_ATTR_LINE_JOINT, SFX_ITEMINFOFLAG_NONE },
             { XATTR_LINECAP, new XLineCapItem, SID_ATTR_LINE_CAP, SFX_ITEMINFOFLAG_NONE },
-            { XATTRSET_LINE, nullptr, 0, SFX_ITEMINFOFLAG_NONE },
             { XATTR_FILLSTYLE, new XFillStyleItem, SID_ATTR_FILL_STYLE, SFX_ITEMINFOFLAG_NONE },
             { XATTR_FILLCOLOR, new XFillColorItem   (OUString(), COL_DEFAULT_SHAPE_FILLING), SID_ATTR_FILL_COLOR, SFX_ITEMINFOFLAG_SUPPORT_SURROGATE },
             { XATTR_FILLGRADIENT, new XFillGradientItem(basegfx::BGradient()), SID_ATTR_FILL_GRADIENT, SFX_ITEMINFOFLAG_SUPPORT_SURROGATE },
@@ -209,7 +206,6 @@ static ItemInfoPackage& getItemInfoPackageSdr()
             { XATTR_FILLBMP_POSOFFSETY, new XFillBmpPosOffsetYItem, 0, SFX_ITEMINFOFLAG_NONE },
             { XATTR_FILLBACKGROUND, new XFillBackgroundItem, 0, SFX_ITEMINFOFLAG_NONE },
             { XATTR_FILLUSESLIDEBACKGROUND, new XFillUseSlideBackgroundItem, SID_ATTR_FILL_USE_SLIDE_BACKGROUND, SFX_ITEMINFOFLAG_NONE },
-            { XATTRSET_FILL, nullptr, 0, SFX_ITEMINFOFLAG_NONE },
             { XATTR_FORMTXTSTYLE, new XFormTextStyleItem, SID_FORMTEXT_STYLE, SFX_ITEMINFOFLAG_NONE },
             { XATTR_FORMTXTADJUST, new XFormTextAdjustItem, SID_FORMTEXT_ADJUST, SFX_ITEMINFOFLAG_NONE },
             { XATTR_FORMTXTDISTANCE, new XFormTextDistanceItem, SID_FORMTEXT_DISTANCE, SFX_ITEMINFOFLAG_NONE },
@@ -446,7 +442,16 @@ static ItemInfoPackage& getItemInfoPackageSdr()
 
             { SDRATTR_WRITINGMODE2, new SvxFrameDirectionItem(SvxFrameDirection::Horizontal_LR_TB, SDRATTR_WRITINGMODE2), 0, SFX_ITEMINFOFLAG_NONE },
 
-            { SDRATTR_EDGEOOXMLCURVE, new SfxBoolItem(SDRATTR_EDGEOOXMLCURVE, false), 0, SFX_ITEMINFOFLAG_NONE }
+            { SDRATTR_EDGEOOXMLCURVE, new SfxBoolItem(SDRATTR_EDGEOOXMLCURVE, false), 0, SFX_ITEMINFOFLAG_NONE },
+
+            // The defaults of the reflection are those of the reflection element of DrawingML.
+            { SDRATTR_REFLECTION, new SdrOnOffItem(SDRATTR_REFLECTION, false), SID_ATTR_REFLECTION, SFX_ITEMINFOFLAG_NONE },
+            { SDRATTR_REFLECTION_DISTANCE, new SdrMetricItem(SDRATTR_REFLECTION_DISTANCE, 0), SID_ATTR_REFLECTION_DISTANCE, SFX_ITEMINFOFLAG_NONE },
+            { SDRATTR_REFLECTION_BLUR_RADIUS, new SdrMetricItem(SDRATTR_REFLECTION_BLUR_RADIUS, 0), SID_ATTR_REFLECTION_BLUR_RADIUS, SFX_ITEMINFOFLAG_NONE },
+            { SDRATTR_REFLECTION_START_TRANSPARENCY, new SdrPercentItem(SDRATTR_REFLECTION_START_TRANSPARENCY, 0), SID_ATTR_REFLECTION_START_TRANSPARENCY, SFX_ITEMINFOFLAG_NONE },
+            { SDRATTR_REFLECTION_START_POSITION, new SdrPercentItem(SDRATTR_REFLECTION_START_POSITION, 0), SID_ATTR_REFLECTION_START_POSITION, SFX_ITEMINFOFLAG_NONE },
+            { SDRATTR_REFLECTION_END_TRANSPARENCY, new SdrPercentItem(SDRATTR_REFLECTION_END_TRANSPARENCY, 100), SID_ATTR_REFLECTION_END_TRANSPARENCY, SFX_ITEMINFOFLAG_NONE },
+            { SDRATTR_REFLECTION_END_POSITION, new SdrPercentItem(SDRATTR_REFLECTION_END_POSITION, 100), SID_ATTR_REFLECTION_END_POSITION, SFX_ITEMINFOFLAG_NONE }
         }};
 
         virtual const ItemInfoStatic& getItemInfoStatic(size_t nIndex) const override { return maItemInfos[nIndex]; }
@@ -467,19 +472,13 @@ static ItemInfoPackage& getItemInfoPackageSdr()
         }
 
         virtual size_t size() const override { return maItemInfos.size(); }
-        virtual const ItemInfo& getItemInfo(size_t nIndex, SfxItemPool& rPool) override
+        virtual const ItemInfo& getItemInfo(size_t nIndex, SfxItemPool& /*rPool*/) override
         {
             const ItemInfo& rRetval(maItemInfos[nIndex]);
 
             // return immediately if we have the static entry and Item
             if (nullptr != rRetval.getItem())
                 return rRetval;
-
-            if (XATTRSET_LINE == rRetval.getWhich())
-                return *new ItemInfoDynamic(rRetval, new XLineAttrSetItem(SfxItemSet(rPool, WhichRangesContainer(svl::Items<XATTR_LINE_FIRST, XATTR_LINE_LAST>))));
-
-            if (XATTRSET_FILL == rRetval.getWhich())
-                return *new ItemInfoDynamic(rRetval, new XFillAttrSetItem(SfxItemSet(rPool, WhichRangesContainer(svl::Items<XATTR_FILL_FIRST, XATTR_FILL_LAST>))));
 
             if (XATTR_FILLBITMAP == rRetval.getWhich())
                 return *new ItemInfoDynamic(rRetval, new XFillBitmapItem(Graphic()));
@@ -563,7 +562,6 @@ OUString SdrItemPool::GetItemName(sal_uInt16 nWhich)
         case XATTR_LINEENDCENTER    : pResId = SIP_XA_LINEENDCENTER;break;
         case XATTR_LINETRANSPARENCE : pResId = SIP_XA_LINETRANSPARENCE;break;
         case XATTR_LINEJOINT        : pResId = SIP_XA_LINEJOINT;break;
-        case XATTRSET_LINE          : pResId = SIP_XATTRSET_LINE;break;
 
         case XATTR_FILLSTYLE            : pResId = SIP_XA_FILLSTYLE;break;
         case XATTR_FILLCOLOR            : pResId = SIP_XA_FILLCOLOR;break;
@@ -586,8 +584,6 @@ OUString SdrItemPool::GetItemName(sal_uInt16 nWhich)
         case XATTR_FILLBMP_POSOFFSETY   : pResId = SIP_XA_FILLBMP_POSOFFSETY;break;
         case XATTR_FILLBACKGROUND       : pResId = SIP_XA_FILLBACKGROUND;break;
         case XATTR_FILLUSESLIDEBACKGROUND: pResId = SIP_XA_FILLUSESLIDEBACKGROUND;break;
-
-        case XATTRSET_FILL             : pResId = SIP_XATTRSET_FILL;break;
 
         case XATTR_FORMTXTSTYLE     : pResId = SIP_XA_FORMTXTSTYLE;break;
         case XATTR_FORMTXTADJUST    : pResId = SIP_XA_FORMTXTADJUST;break;
@@ -620,6 +616,14 @@ OUString SdrItemPool::GetItemName(sal_uInt16 nWhich)
         case SDRATTR_GLOW_TEXT_TRANSPARENCY : pResId = SIP_SA_GLOW_TEXT_TRANSPARENCY; break;
 
         case SDRATTR_SOFTEDGE_RADIUS   : pResId = SIP_SA_SOFTEDGE_RADIUS; break;
+
+        case SDRATTR_REFLECTION                    : pResId = SIP_SA_REFLECTION; break;
+        case SDRATTR_REFLECTION_DISTANCE           : pResId = SIP_SA_REFLECTION_DISTANCE; break;
+        case SDRATTR_REFLECTION_BLUR_RADIUS        : pResId = SIP_SA_REFLECTION_BLUR_RADIUS; break;
+        case SDRATTR_REFLECTION_START_TRANSPARENCY : pResId = SIP_SA_REFLECTION_START_TRANSPARENCY; break;
+        case SDRATTR_REFLECTION_START_POSITION     : pResId = SIP_SA_REFLECTION_START_POSITION; break;
+        case SDRATTR_REFLECTION_END_TRANSPARENCY   : pResId = SIP_SA_REFLECTION_END_TRANSPARENCY; break;
+        case SDRATTR_REFLECTION_END_POSITION       : pResId = SIP_SA_REFLECTION_END_POSITION; break;
 
         case SDRATTR_CAPTIONTYPE      : pResId = SIP_SA_CAPTIONTYPE;break;
         case SDRATTR_CAPTIONFIXEDANGLE: pResId = SIP_SA_CAPTIONFIXEDANGLE;break;
@@ -930,6 +934,11 @@ void SdrPercentItem::dumpAsXml(xmlTextWriterPtr pWriter) const
     SfxUInt16Item::dumpAsXml(pWriter);
 
     (void)xmlTextWriterEndElement(pWriter);
+}
+
+SfxPoolItem* SdrAngleItem::CreateDefault()
+{
+    return new SdrAngleItem;
 }
 
 SdrAngleItem* SdrAngleItem::Clone(SfxItemPool* /*pPool*/) const
@@ -1418,10 +1427,9 @@ bool SdrTextAniAmountItem::HasMetrics() const
 
 void SdrTextAniAmountItem::ScaleMetrics(double fScale)
 {
-    if (GetValue()>0) {
-        BigInt aVal(GetValue());
-        aVal*=fScale;
-        SetValue(short(aVal));
+    if (GetValue()>0)
+    {
+        SetValue(short(BigInt::Scale(GetValue(), fScale)));
     }
 }
 

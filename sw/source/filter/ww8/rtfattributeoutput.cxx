@@ -1061,9 +1061,8 @@ void RtfAttributeOutput::TablePositioning(const SwFrameFormat* pFlyFormat)
             m_aRowDefs.append(LO_STRING_SVTOOLS_RTF_TPOSXR);
             break;
         default:
-            SwTwips nTPosX = pFlyFormat->GetHoriOrient().GetPos();
             m_aRowDefs.append(LO_STRING_SVTOOLS_RTF_TPOSX);
-            m_aRowDefs.append(static_cast<sal_Int32>(nTPosX));
+            m_aRowDefs.append(pFlyFormat->GetHoriOrient().getPosition().as_twip<sal_Int32>());
             break;
     }
 
@@ -1083,9 +1082,8 @@ void RtfAttributeOutput::TablePositioning(const SwFrameFormat* pFlyFormat)
             m_aRowDefs.append(LO_STRING_SVTOOLS_RTF_TPOSYB);
             break;
         default:
-            SwTwips nTPosY = pFlyFormat->GetVertOrient().GetPos();
             m_aRowDefs.append(LO_STRING_SVTOOLS_RTF_TPOSY);
-            m_aRowDefs.append(static_cast<sal_Int32>(nTPosY));
+            m_aRowDefs.append(pFlyFormat->GetVertOrient().getPosition().as_twip<sal_Int32>());
             break;
     }
 
@@ -1127,8 +1125,10 @@ void RtfAttributeOutput::TableDefinition(
     TableHeight(pTableTextNodeInfoInner);
     TableCanSplit(pTableTextNodeInfoInner);
 
-    // Write table positioning properties in case this is a floating table.
-    TablePositioning(pTable->GetTableNode()->GetFlyFormat());
+    // Write table positioning properties in case this is a floating table. Tables nested in it
+    // are not positioned.
+    if (pTableTextNodeInfoInner->getDepth() == 1)
+        TablePositioning(pTable->GetTableNode()->GetFlyFormat());
 
     // Cell margins
     const SvxBoxItem& rBox = pFormat->GetBox();
@@ -2448,6 +2448,9 @@ void RtfAttributeOutput::writeTextFrame(const ww8::Frame& rFrame, bool bTextBox)
         m_rExport.m_pTableInfo = std::make_shared<ww8::WW8TableInfo>();
         std::unique_ptr<SwWriteTable> pTableWrt(std::move(m_pTableWrt));
         sal_uInt32 nTableDepth = m_nTableDepth;
+        OStringBuffer aRowDefs = std::exchange(m_aRowDefs, {});
+        std::vector<OString> aTables = std::exchange(m_aTables, {});
+        OStringBuffer aAfterRuns = std::exchange(m_aAfterRuns, {});
 
         m_nTableDepth = 0;
         /*
@@ -2484,6 +2487,9 @@ void RtfAttributeOutput::writeTextFrame(const ww8::Frame& rFrame, bool bTextBox)
         m_rExport.m_pTableInfo = std::move(pTableInfoOrig);
         m_pTableWrt = std::move(pTableWrt);
         m_nTableDepth = nTableDepth;
+        m_aRowDefs = std::move(aRowDefs);
+        m_aTables = std::move(aTables);
+        m_aAfterRuns = std::move(aAfterRuns);
     }
 
     m_rExport.m_pParentFrame = nullptr;
@@ -2536,7 +2542,9 @@ public:
 void RtfAttributeOutput::OutputFlyFrame_Impl(const ww8::Frame& rFrame, const Point& /*rNdTopLeft*/)
 {
     const SwFrameFormat& rFrameFormat = rFrame.GetFrameFormat();
-    if (rFrameFormat.GetFlySplit().GetValue())
+    // Inside a table cell, the frame's table is written as a text frame, which keeps its own table
+    // depth.
+    if (rFrameFormat.GetFlySplit().GetValue() && m_nTableDepth == 0)
     {
         // The frame can split: this was originally from a floating table, write it back as
         // such.
@@ -4114,12 +4122,13 @@ void RtfAttributeOutput::FormatVertOrientation(const SwFormatVertOrient& rFlyVer
             break;
     }
 
+    const SwTwips nVerticalPosition = rFlyVert.getPosition().as_twip<SwTwips>();
     m_rExport.Strm().WriteOString(OOO_STRING_SVTOOLS_RTF_SHPTOP);
-    m_rExport.Strm().WriteNumberAsString(rFlyVert.GetPos());
+    m_rExport.Strm().WriteNumberAsString(nVerticalPosition);
     if (m_pFlyFrameSize)
     {
         m_rExport.Strm().WriteOString(OOO_STRING_SVTOOLS_RTF_SHPBOTTOM);
-        m_rExport.Strm().WriteNumberAsString(rFlyVert.GetPos() + m_pFlyFrameSize->Height());
+        m_rExport.Strm().WriteNumberAsString(nVerticalPosition + m_pFlyFrameSize->Height());
     }
 }
 
@@ -4161,12 +4170,13 @@ void RtfAttributeOutput::FormatHorizOrientation(const SwFormatHoriOrient& rFlyHo
             break;
     }
 
+    const SwTwips nHorizontalPosition = rFlyHori.getPosition().as_twip<SwTwips>();
     m_rExport.Strm().WriteOString(OOO_STRING_SVTOOLS_RTF_SHPLEFT);
-    m_rExport.Strm().WriteNumberAsString(rFlyHori.GetPos());
+    m_rExport.Strm().WriteNumberAsString(nHorizontalPosition);
     if (m_pFlyFrameSize)
     {
         m_rExport.Strm().WriteOString(OOO_STRING_SVTOOLS_RTF_SHPRIGHT);
-        m_rExport.Strm().WriteNumberAsString(rFlyHori.GetPos() + m_pFlyFrameSize->Width());
+        m_rExport.Strm().WriteNumberAsString(nHorizontalPosition + m_pFlyFrameSize->Width());
     }
 }
 

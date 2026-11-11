@@ -472,6 +472,7 @@ static Color lcl_GetDefaultUIColor(ColorConfigEntry eEntry)
         case DISABLEDCOLOR:
             return rStyleSettings.GetDisableColor();
         case DISABLEDTEXTCOLOR:
+            return rStyleSettings.GetDisableTextColor();
         case SHADECOLOR:
             return rStyleSettings.GetShadowColor();
         case SEPARATORCOLOR:
@@ -533,8 +534,8 @@ Color ColorConfig::GetDefaultColor(ColorConfigEntry eEntry, int nMod)
         { COL_BLACK,        COL_BLACK       }, // FONTCOLOR
         { COL_BLUE,         Color(0x1D99F3) }, // LINKS
         { Color(0x0000cc),  Color(0x9B59B6) }, // LINKSVISITED
-        { COL_LIGHTRED,     Color(0xC9211E) }, // SPELL
-        { COL_LIGHTBLUE,    Color(0x729FCF) }, // GRAMMAR
+        { Color(0xf10d0c),  Color(0xf10d0c) }, // SPELL    (Dark Red 1)
+        { Color(0x3465a4),  Color(0x3465a4) }, // GRAMMAR  (Dark Blue 1)
         { COL_LIGHTMAGENTA, Color(0x780373) }, // SMARTTAGS
         { COL_GRAY,         Color(0x1C1C1C) }, // SHADOWCOLOR
         { COL_GRAY7,        COL_GRAY7       }, // WRITERTEXTGRID
@@ -722,6 +723,7 @@ void ColorConfig_Impl::UpdateSettings()
     aStyleSettings.SetFieldColor(aColor);
 
     aStyleSettings.SetDisableColor(GetColorValue(DISABLEDCOLOR, true).nColor);
+    aStyleSettings.SetDisableTextColor(GetColorValue(DISABLEDTEXTCOLOR, true).nColor);
 
     aColor = GetColorValue(ACCENTCOLOR, true).nColor;
     aStyleSettings.SetAccentColor(aColor);
@@ -854,9 +856,9 @@ void EditableColorConfig::SetModified()
     m_bModified = true;
 }
 
-void EditableColorConfig::Commit()
+void EditableColorConfig::Commit(const bool bForceUpdate)
 {
-    if(m_bModified)
+    if(m_bModified || bForceUpdate)
         m_pImpl->SetModified();
     if(m_pImpl->IsModified())
     {

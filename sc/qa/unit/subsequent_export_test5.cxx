@@ -19,6 +19,7 @@
 #include <postit.hxx>
 #include <tabprotection.hxx>
 #include <dpobject.hxx>
+#include <rangenam.hxx>
 
 #include <editeng/wghtitem.hxx>
 #include <editeng/eeitem.hxx>
@@ -469,6 +470,35 @@ CPPUNIT_TEST_FIXTURE(ScExportTest5, testWholeRowBold)
                                  aFont.GetWeightMaybeAskConfig());
 }
 
+CPPUNIT_TEST_FIXTURE(ScExportTest5, testWholeSheetBoldWithColumnWidths)
+{
+    createScDoc();
+
+    {
+        ScDocument* pDoc = getScDoc();
+
+        // Make every column bold, and give two columns their own width, so the XLSX export writes
+        // the bold format in several col elements.
+        ScPatternAttr boldAttr(pDoc->getCellAttributeHelper());
+        boldAttr.ItemSetPut(SvxWeightItem(WEIGHT_BOLD, ATTR_FONT_WEIGHT));
+        pDoc->ApplyPatternAreaTab(0, 0, pDoc->MaxCol(), pDoc->MaxRow(), 0, boldAttr);
+        pDoc->SetColWidth(1000, 0, 3000);
+        pDoc->SetColWidth(2000, 0, 4000);
+    }
+
+    saveAndReload(TestFilter::XLSX);
+    ScDocument* pDoc = getScDoc();
+    CPPUNIT_ASSERT_EQUAL(SCCOL(INITIALCOLCOUNT), pDoc->GetAllocatedColumnsCount(0));
+    CPPUNIT_ASSERT(pDoc->GetColWidth(1000, 0) > pDoc->GetColWidth(1500, 0));
+    vcl::Font aFont;
+    pDoc->GetPattern(1500, 0, 0)->fillFontOnly(aFont);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("font should be bold", WEIGHT_BOLD,
+                                 aFont.GetWeightMaybeAskConfig());
+    pDoc->GetPattern(pDoc->MaxCol(), 0, 0)->fillFontOnly(aFont);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("font should be bold", WEIGHT_BOLD,
+                                 aFont.GetWeightMaybeAskConfig());
+}
+
 CPPUNIT_TEST_FIXTURE(ScExportTest5, testXlsxRowsOrder)
 {
     createScDoc("xlsx/tdf58243.xlsx");
@@ -755,6 +785,17 @@ CPPUNIT_TEST_FIXTURE(ScExportTest5, testAutofilterShowButton)
     assertXPath(pDocXml, "/x:worksheet/x:autoFilter/x:filterColumn[3]", "hiddenButton", u"1");
     assertXPath(pDocXml, "/x:worksheet/x:autoFilter/x:filterColumn[4]", "colId", u"9");
     assertXPath(pDocXml, "/x:worksheet/x:autoFilter/x:filterColumn[4]", "hiddenButton", u"1");
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest5, testAutofilterHiddenButtonToODS)
+{
+    createScDoc("xlsx/hiddenButton.xlsx");
+    save(TestFilter::ODS);
+    xmlDocUniquePtr pDoc = parseExport(u"content.xml"_ustr);
+    CPPUNIT_ASSERT(pDoc);
+    // tdf#170902: all columns have hiddenButton="1", so ODS must not get display-filter-buttons.
+    assertXPathNoAttribute(pDoc, "//table:database-ranges/table:database-range[1]",
+                           "display-filter-buttons");
 }
 
 CPPUNIT_TEST_FIXTURE(ScExportTest5, testShapeStyles)
@@ -1468,6 +1509,34 @@ CPPUNIT_TEST_FIXTURE(ScExportTest5, testTdf170565_empty_functions)
     assertXPathContent(pSheet, "/x:worksheet/x:sheetData/x:row[6]/x:c[2]/x:f", u"PRODUCT(,)");
 }
 
+CPPUNIT_TEST_FIXTURE(ScExportTest5, testNamedExpressionRelativeReferenceXLSX)
+{
+    // Names defined at B1. OOXML stores relative references relative to A1, so B becomes A, also
+    // in formulas that are rewritten for OOXML: SUM and a union of references.
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+    ScRangeName* pNames = &pDoc->GetRangeName();
+    const ScAddress aPos(1, 0, 0);
+    pNames->insert(
+        std::make_unique<ScRangeData>(*pDoc, u"withSum"_ustr, u"SUM($Sheet1.B$1)"_ustr, aPos));
+    pNames->insert(std::make_unique<ScRangeData>(*pDoc, u"withUnion"_ustr,
+                                                 u"AREAS($Sheet1.B$1~$Sheet1.B$2)"_ustr, aPos));
+
+    save(TestFilter::XLSX);
+    xmlDocUniquePtr pBook = parseExport(u"xl/workbook.xml"_ustr);
+    CPPUNIT_ASSERT(pBook);
+    assertXPathContent(pBook, "/x:workbook/x:definedNames/x:definedName[@name='withSum']",
+                       u"SUM(Sheet1!A$1)");
+    assertXPathContent(pBook, "/x:workbook/x:definedNames/x:definedName[@name='withUnion']",
+                       u"AREAS((Sheet1!A$1,Sheet1!A$2))");
+
+    // After reload, seen from B1, the name refers to column B again.
+    saveAndReload(TestFilter::XLSX);
+    pNames = &getScDoc()->GetRangeName();
+    CPPUNIT_ASSERT_EQUAL(u"SUM($Sheet1.B$1)"_ustr,
+                         pNames->findByUpperName(u"WITHSUM"_ustr)->GetSymbol(aPos));
+}
+
 CPPUNIT_TEST_FIXTURE(ScExportTest5, testTdf170963_row_breaks)
 {
     createScDoc("ods/tdf170963_row_breaks.ods");
@@ -1531,6 +1600,24 @@ CPPUNIT_TEST_FIXTURE(ScExportTest5, testQueryTableExport)
     xmlDocUniquePtr pConn = parseExport(u"xl/connections.xml"_ustr);
     CPPUNIT_ASSERT(pConn);
     assertXPath(pConn, "/x:connections/x:connection[1]/x:textPr", "delimiter", u"_x0000_");
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest5, testDecorativeODF14)
+{
+    // a shape whose graphic style has the ODF 1.4 draw:decorative="true"
+    createScDoc("fods/decorative-odf14.fods");
+    uno::Reference<drawing::XDrawPagesSupplier> xDoc(mxComponent, uno::UNO_QUERY_THROW);
+    uno::Reference<drawing::XDrawPage> xPage(xDoc->getDrawPages()->getByIndex(0),
+                                             uno::UNO_QUERY_THROW);
+    uno::Reference<beans::XPropertySet> xShape(xPage->getByIndex(0), uno::UNO_QUERY_THROW);
+    // Without the fix draw:decorative was ignored
+    CPPUNIT_ASSERT(xShape->getPropertyValue(u"Decorative"_ustr).get<bool>());
+
+    save(TestFilter::ODS);
+    xmlDocUniquePtr pDoc = parseExport(u"content.xml"_ustr);
+    CPPUNIT_ASSERT(pDoc);
+    assertXPath(pDoc, "//style:graphic-properties[@draw:decorative='true']", 1);
+    assertXPath(pDoc, "//style:graphic-properties[@loext:decorative='true']", 1);
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

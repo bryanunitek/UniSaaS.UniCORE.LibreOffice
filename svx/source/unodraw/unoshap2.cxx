@@ -45,6 +45,7 @@
 #include <svx/unoshape.hxx>
 #include <svx/unopage.hxx>
 #include <svx/svdobj.hxx>
+#include <svx/svdogrp.hxx>
 #include <svx/svdpage.hxx>
 #include <svx/svdmodel.hxx>
 #include <svx/svdouno.hxx>
@@ -352,6 +353,91 @@ sal_Bool SAL_CALL SvxShapeGroup::hasElements()
     ::SolarMutexGuard aGuard;
 
     return HasSdrObject() && GetSdrObject()->GetSubList() && (GetSdrObject()->GetSubList()->GetObjCount() > 0);
+}
+
+bool SvxShapeGroup::getPropertyValueImpl( const OUString& rName, const SfxItemPropertyMapEntry* pProperty, uno::Any& rValue )
+{
+    switch( pProperty->nWID )
+    {
+    case OWN_ATTR_IS_DIAGRAM:
+    {
+        // check if this is a Diagram
+        bool bIsDiagram = false;
+        auto* pGroup = dynamic_cast<SdrObjGroup*>(GetSdrObject());
+        if (nullptr != pGroup && SdrObject::useAdvancedDiagramFeatures())
+            bIsDiagram = pGroup->isDiagram();
+        rValue <<= bIsDiagram;
+        return true;
+    }
+
+    case OWN_ATTR_DIAGRAM_DATA:
+    {
+        // get DiagramData if available. Format is a uno::Sequence< OUString >
+        // with exactly four entries in a defined order. The entries are
+        // OUString representations of the needed DomTrees. The Data one is
+        // a reduced version of data.xml, the others are unchanged/original
+        uno::Sequence< OUString > aRetval;
+        auto* pGroup = dynamic_cast<SdrObjGroup*>(GetSdrObject());
+
+        if (nullptr != pGroup && SdrObject::useAdvancedDiagramFeatures())
+        {
+            aRetval.realloc(4);
+            aRetval.getArray()[0] = pGroup->GetDiagramLayout();
+            aRetval.getArray()[1] = pGroup->GetDiagramData();
+            aRetval.getArray()[2] = pGroup->GetDiagramColors();
+            aRetval.getArray()[3] = pGroup->GetDiagramQuickstyle();
+        }
+
+        rValue <<= aRetval;
+        return true;
+    }
+
+    default:
+        return SvxShape::getPropertyValueImpl( rName, pProperty, rValue );
+    }
+}
+
+bool SvxShapeGroup::setPropertyValueImpl( const OUString& rName, const SfxItemPropertyMapEntry* pProperty, const uno::Any& rValue )
+{
+    switch( pProperty->nWID )
+    {
+    case OWN_ATTR_DIAGRAM_DATA:
+    {
+        auto* pGroup = dynamic_cast<SdrObjGroup*>(GetSdrObject());
+        if (nullptr == pGroup)
+            // not a Group, error
+            throw lang::IllegalArgumentException();
+
+        uno::Sequence< OUString > aDiagramData;
+        if (!(rValue >>= aDiagramData))
+            // no Data provided, error
+            throw lang::IllegalArgumentException();
+
+        if (4 != aDiagramData.getLength())
+            // Data wrong format, error
+            throw lang::IllegalArgumentException();
+
+        // extract DomTree OUStrings
+        const OUString aLayout(aDiagramData.getArray()[0]);
+        const OUString aData(aDiagramData.getArray()[1]);
+        const OUString aColors(aDiagramData.getArray()[2]);
+        const OUString aQuickstyle(aDiagramData.getArray()[3]);
+
+        if (aLayout.isEmpty() || aData.isEmpty() || aColors.isEmpty() || aQuickstyle.isEmpty())
+            // not all Data provided, error
+            throw lang::IllegalArgumentException();
+
+        if (SdrObject::useAdvancedDiagramFeatures())
+            // set DiagramData. That will instantiate & create all needed data
+            // based on those four DomTrees.
+            pGroup->SetDiagramData(aLayout, aData, aColors, aQuickstyle);
+
+        return true;
+    }
+
+    default:
+        return SvxShape::setPropertyValueImpl( rName, pProperty, rValue );
+    }
 }
 
 SvxShapeConnector::SvxShapeConnector(SdrObject* pObj)
@@ -1788,6 +1874,57 @@ void SAL_CALL SvxCustomShape::setPropertyValue( const OUString& aPropertyName, c
     }
 }
 
+bool SvxCustomShape::setPropertyValueImpl( const OUString& rName, const SfxItemPropertyMapEntry* pProperty, const uno::Any& rValue )
+{
+    switch( pProperty->nWID )
+    {
+    case SDRATTR_CUSTOMSHAPE_ENGINE:
+    {
+        // need to check for this if we are in 'SmartArt' mode
+        OUString sEngine;
+        if (rValue >>= sEngine)
+        {
+            if (sEngine == u"loext:SmartArt"_ustr)
+            {
+                // set flag that we are in 'SmartArt' import mode at target object
+                // NOTE: I tried to set SDRATTR_CUSTOMSHAPE_ENGINE SfxStringItem and use below,
+                //       but when this stays set CustomShapeEngine will not work.
+                static_cast<SdrObjCustomShape*>(GetSdrObject())->setImportingSmartArtMember(true);
+
+                // also do *not* call SvxShapeText::setPropertyValueImpl
+                return true;
+            }
+        }
+
+        // standard behaviour
+        return SvxShapeText::setPropertyValueImpl( rName, pProperty, rValue );
+    }
+    case SDRATTR_CUSTOMSHAPE_DATA:
+    {
+        // need to check for this if we are in 'SmartArt' mode
+        if (static_cast<SdrObjCustomShape*>(GetSdrObject())->getImportingSmartArtMember())
+        {
+            OUString sData;
+            if (rValue >>= sData)
+            {
+                if (SdrObject::isDiagramModelID(sData))
+                {
+                    // if we are in SmartArt mode and data is a DiagramModelID, use for
+                    // that purpose and do *not* call SvxShapeText::setPropertyValueImpl
+                    GetSdrObject()->setDiagramDataModelID(sData);
+                    return true;
+                }
+            }
+        }
+
+        // standard behaviour
+        return SvxShapeText::setPropertyValueImpl( rName, pProperty, rValue );
+    }
+    default:
+        return SvxShapeText::setPropertyValueImpl( rName, pProperty, rValue );
+    }
+}
+
 bool SvxCustomShape::getPropertyValueImpl( const OUString& rName, const SfxItemPropertyMapEntry* pProperty, css::uno::Any& rValue )
 {
     switch( pProperty->nWID )
@@ -1799,9 +1936,35 @@ bool SvxCustomShape::getPropertyValueImpl( const OUString& rName, const SfxItemP
         rValue <<= static_cast<sal_Int32>(fAngle);
         return true;
     }
-    default:
-        return SvxShape::getPropertyValueImpl( rName, pProperty, rValue );
+    case SDRATTR_CUSTOMSHAPE_ENGINE:
+    {
+        const std::shared_ptr< svx::diagram::DiagramHelper_svx >& rDiagramHelper(GetSdrObject()->getDiagramHelper());
+
+        if (rDiagramHelper)
+        {
+            // if we are a Diagram xShape, return engine string for that purpose
+            rValue <<= u"loext:SmartArt"_ustr;
+            return true;
+        }
+        break;
     }
+    case SDRATTR_CUSTOMSHAPE_DATA:
+    {
+        const std::shared_ptr< svx::diagram::DiagramHelper_svx >& rDiagramHelper(GetSdrObject()->getDiagramHelper());
+
+        if (rDiagramHelper)
+        {
+            // if we are a Diagram xShape, return DiagramDataModelID
+            // NOTE: That may still be an empty string for the BGShape
+            rValue <<= GetSdrObject()->getDiagramDataModelID();
+            return true;
+        }
+        break;
+    }
+    default: break;
+    }
+
+    return SvxShapeText::getPropertyValueImpl( rName, pProperty, rValue );
 }
 
 void SvxCustomShape::createCustomShapeDefaults( const OUString& rValueType )

@@ -844,13 +844,24 @@ bool PDFWriterImpl::useObjectStreams() const
 {
     if (m_aContext.Version < PDFWriter::PDFVersion::PDF_1_5)
         return false;
-    // a string in an object stream shall not be separately encrypted, while this writer
-    // encrypts every string as it builds the object
-    if (m_aContext.Encryption.canEncrypt())
-        return false;
     // sdext reads the embedded original document out of a trailer, and a cross-reference
     // stream leaves none
     return m_aDocumentAttachedFiles.empty();
+}
+
+std::shared_ptr<pdf::IPDFEncryptor> PDFWriterImpl::getStringEncryptor(sal_Int32 nObject)
+{
+    if (!useObjectStreams())
+        return m_pPDFEncryptor;
+
+#ifndef NDEBUG
+    m_aPlainStringObjects.insert(nObject);
+#else
+    (void)nObject;
+#endif
+    // ISO 32000-2 7.5.7: a string in an object stream is not encrypted on its own, the
+    // stream carrying it is
+    return nullptr;
 }
 
 bool PDFWriterImpl::writeObject(sal_Int32 nObject, std::string_view aBody)
@@ -895,14 +906,24 @@ bool PDFWriterImpl::emitObjectStream()
     aLine.append(OString::number(nStreamObject) + " 0 obj\n<</Type/ObjStm/N "
                  + OString::number(static_cast<sal_Int32>(m_aCompressedObjects.size())) + "/First "
                  + OString::number(nFirst) + "/Length "
-                 + OString::number(static_cast<sal_Int32>(aStream.size())));
+                 + OString::number(calculateStreamSize(aStream.size())));
     if (!g_bDebugDisableCompression)
         aLine.append("/Filter/FlateDecode");
     aLine.append(">>\nstream\n");
 
-    if (!updateObject(nStreamObject) || !writeBuffer(aLine)
-        || !writeBufferBytes(aStream.data(), aStream.size())
-        || !writeBuffer("\nendstream\nendobj\n\n"))
+    if (!updateObject(nStreamObject) || !writeBuffer(aLine))
+        return false;
+
+    // ISO 32000-2 7.5.7: a string in here is not encrypted on its own, the stream holding
+    // it is, with the cipher set up for the stream's own object number
+    checkAndEnableStreamEncryption(nStreamObject);
+    // the strings inside are covered by nothing else, so stream encryption must really be on
+    assert((!m_aContext.Encryption.canEncrypt()
+            || (m_pPDFEncryptor && m_pPDFEncryptor->isStreamEncryptionEnabled()))
+           && "an object stream is going out unencrypted");
+    const bool bBodies = writeBufferBytes(aStream.data(), aStream.size());
+    disableStreamEncryption();
+    if (!bBodies || !writeBuffer("\nendstream\nendobj\n\n"))
         return false;
 
     // only now can an entry name the stream, which is in the file
@@ -958,7 +979,7 @@ sal_Int32 PDFWriterImpl::emitStructIDTree(sal_Int32 const nObject)
         ids.emplace(GenerateID(n), n);
     }
     OStringBuffer buf;
-    COSWriter aWriter(buf, m_aContext.Encryption.getParams(), m_pPDFEncryptor);
+    COSWriter aWriter(buf, m_aContext.Encryption.getParams(), getStringEncryptor(nObject));
     buf.append("<</Names [\n");
     for (auto const& it : ids)
     {
@@ -1221,7 +1242,7 @@ void PDFWriterImpl::emitNamespaces()
         aWriter.startObject(nObject);
         aWriter.startDict();
         aWriter.write("/Type", "/Namespace");
-        aWriter.writeKeyAndLiteral("/NS", sNamespace);
+        aWriter.writeKeyAndLiteralEncrypt("/NS", sNamespace, nObject);
         // the 1.7 namespace needs none: for it the structure tree root's RoleMap is the fallback
         if (sNamespace == constNamespacePDF2 && !m_aRoleMap.empty())
         {
@@ -1274,7 +1295,7 @@ sal_Int32 PDFWriterImpl::emitStructure( PDFStructureElement& rEle )
     }
 
     OStringBuffer aLine( 512 );
-    COSWriter aWriter(aLine, m_aContext.Encryption.getParams(), m_pPDFEncryptor);
+    COSWriter aWriter(aLine, m_aContext.Encryption.getParams(), getStringEncryptor(rEle.m_nObject));
     aLine.append("<</Type");
     sal_Int32 nParentTree = -1;
     sal_Int32 nIDTree = -1;
@@ -2411,7 +2432,7 @@ bool PDFWriterImpl::emitFonts()
             FontSubsetInfo aSubsetInfo;
             const auto* pFace = subset.first.m_pFace;
             if (pFace->CreateFontSubset(aBuffer, pGlyphIds, pEncoding, nGlyphs, aSubsetInfo,
-                                        subset.first.m_rVariations))
+                                        subset.first.m_aVariations))
             {
                 // create font stream
                 if (g_bDebugDisableCompression)
@@ -2956,10 +2977,11 @@ bool PDFWriterImpl::emitScreenAnnotations()
         aLine.append("/C<</Type/MediaClip /S/MCD ");
         if (bEmbed)
         {
-            aLine.append("\n/D << /Type /Filespec /F (<embedded file>) ");
+            aLine.append("\n/D << /Type /Filespec ");
+            aWriter.writeKeyAndLiteralEncrypt("/F", "<embedded file>", rScreen.m_nObject);
             if (PDFWriter::PDFVersion::PDF_1_7 <= m_aContext.Version)
             {   // ISO 14289-1:2014, Clause: 7.11
-                aLine.append("/UF (<embedded file>) ");
+                aWriter.writeKeyAndLiteralEncrypt("/UF", "<embedded file>", rScreen.m_nObject);
             }
             aLine.append("/EF << /F "
                 + OString::number(rScreen.m_nTempFileObject)
@@ -2984,13 +3006,17 @@ bool PDFWriterImpl::emitScreenAnnotations()
         }
         aLine.append(" >>\n"); // end of /D
         // Allow playing the video via a tempfile.
-        aLine.append("/P <</TF (TEMPACCESS)>>");
+        aLine.append("/P <<");
+        aWriter.writeKeyAndLiteralEncrypt("/TF", "TEMPACCESS", rScreen.m_nObject);
+        aLine.append(">>");
         // ISO 14289-1:2014, Clause: 7.18.6.2
         aLine.append("/CT ");
         aWriter.writeLiteralEncrypt(rScreen.m_MimeType, rScreen.m_nObject);
         // ISO 14289-1:2014, Clause: 7.18.6.2
         // Alt text is a "Multi-language Text Array"
-        aLine.append(" /Alt [ () ");
+        aLine.append(" /Alt [ ");
+        aWriter.writeLiteralEncrypt("", rScreen.m_nObject);
+        aLine.append(" ");
         aWriter.writeUnicodeEncrypt(rScreen.m_AltText, rScreen.m_nObject);
         aLine.append(" ] "
                      ">>");
@@ -3410,9 +3436,10 @@ void PDFWriterImpl::emitTextAnnotationLine(OStringBuffer & aLine, PDFNoteEntry c
 
     auto & rDateTime = rNote.m_aContents.maModificationDate;
 
-    aLine.append("/M (");
-    appendPdfTimeDate(aLine, rDateTime.Year, rDateTime.Month, rDateTime.Day, rDateTime.Hours, rDateTime.Minutes, rDateTime.Seconds, 0);
-    aLine.append(") ");
+    OStringBuffer aDate;
+    appendPdfTimeDate(aDate, rDateTime.Year, rDateTime.Month, rDateTime.Day, rDateTime.Hours,
+                      rDateTime.Minutes, rDateTime.Seconds, 0);
+    aWriter.writeKeyAndLiteralEncrypt("/M", aDate, rNote.m_nObject);
 
     // contents of the note (type text string)
     aLine.append("/Contents ");
@@ -4345,51 +4372,52 @@ bool PDFWriterImpl::emitWidgetAnnotations()
                 {
                     // Get the hexadecimal code
                     sal_UCS4 cChar = rWidget.m_aCurrencySymbol.iterateCodePoints(&o3tl::temporary(sal_Int32(1)), -1);
-                    aHexText = "\\\\u" + OString::number(cChar, 16);
+                    aHexText = "\\u" + OString::number(cChar, 16);
                 }
 
+                const OString aArgs = OString::number(rWidget.m_nDecimalAccuracy) + ", 0, 0, 0, \""
+                                      + aHexText + "\","
+                                      + OString::boolean(rWidget.m_bPrependCurrencySymbol) + ");";
                 aLine.append("/AA<<\n");
-                aLine.append("/F<</JS(AFNumber_Format\\(");
-                aLine.append(OString::number(rWidget.m_nDecimalAccuracy));
-                aLine.append(", 0, 0, 0, \"");
-                aLine.append( aHexText );
-                aLine.append("\",");
-                aLine.append(OString::boolean(rWidget.m_bPrependCurrencySymbol));
-                aLine.append("\\);)");
+                aLine.append("/F<<");
+                const OString aFormatJS = "AFNumber_Format(" + aArgs;
+                aWriter.writeKeyAndLiteralEncrypt("/JS", aFormatJS, rWidget.m_nObject);
                 aLine.append("/S/JavaScript>>\n");
-                aLine.append("/K<</JS(AFNumber_Keystroke\\(");
-                aLine.append(OString::number(rWidget.m_nDecimalAccuracy));
-                aLine.append(", 0, 0, 0, \"");
-                aLine.append( aHexText );
-                aLine.append("\",");
-                aLine.append(OString::boolean(rWidget.m_bPrependCurrencySymbol));
-                aLine.append("\\);)");
+                aLine.append("/K<<");
+                const OString aKeystrokeJS = "AFNumber_Keystroke(" + aArgs;
+                aWriter.writeKeyAndLiteralEncrypt("/JS", aKeystrokeJS, rWidget.m_nObject);
                 aLine.append("/S/JavaScript>>\n");
                 aLine.append(">>\n");
             }
             else if ( rWidget.m_nFormat == PDFWriter::Time )
             {
+                const OString aArg
+                    = "(\"" + OUStringToOString(rWidget.m_aTimeFormat, RTL_TEXTENCODING_ASCII_US)
+                      + "\");";
                 aLine.append("/AA<<\n");
-                aLine.append("/F<</JS(AFTime_FormatEx\\(\"");
-                aLine.append(OUStringToOString(rWidget.m_aTimeFormat, RTL_TEXTENCODING_ASCII_US));
-                aLine.append("\"\\);)");
+                aLine.append("/F<<");
+                const OString aFormatJS = "AFTime_FormatEx" + aArg;
+                aWriter.writeKeyAndLiteralEncrypt("/JS", aFormatJS, rWidget.m_nObject);
                 aLine.append("/S/JavaScript>>\n");
-                aLine.append("/K<</JS(AFTime_KeystrokeEx\\(\"");
-                aLine.append(OUStringToOString(rWidget.m_aTimeFormat, RTL_TEXTENCODING_ASCII_US));
-                aLine.append("\"\\);)");
+                aLine.append("/K<<");
+                const OString aKeystrokeJS = "AFTime_KeystrokeEx" + aArg;
+                aWriter.writeKeyAndLiteralEncrypt("/JS", aKeystrokeJS, rWidget.m_nObject);
                 aLine.append("/S/JavaScript>>\n");
                 aLine.append(">>\n");
             }
             else if ( rWidget.m_nFormat == PDFWriter::Date )
             {
+                const OString aArg
+                    = "(\"" + OUStringToOString(rWidget.m_aDateFormat, RTL_TEXTENCODING_ASCII_US)
+                      + "\");";
                 aLine.append("/AA<<\n");
-                aLine.append("/F<</JS(AFDate_FormatEx\\(\"");
-                aLine.append(OUStringToOString(rWidget.m_aDateFormat, RTL_TEXTENCODING_ASCII_US));
-                aLine.append("\"\\);)");
+                aLine.append("/F<<");
+                const OString aFormatJS = "AFDate_FormatEx" + aArg;
+                aWriter.writeKeyAndLiteralEncrypt("/JS", aFormatJS, rWidget.m_nObject);
                 aLine.append("/S/JavaScript>>\n");
-                aLine.append("/K<</JS(AFDate_KeystrokeEx\\(\"");
-                aLine.append(OUStringToOString(rWidget.m_aDateFormat, RTL_TEXTENCODING_ASCII_US));
-                aLine.append("\"\\);)");
+                aLine.append("/K<<");
+                const OString aKeystrokeJS = "AFDate_KeystrokeEx" + aArg;
+                aWriter.writeKeyAndLiteralEncrypt("/JS", aKeystrokeJS, rWidget.m_nObject);
                 aLine.append("/S/JavaScript>>\n");
                 aLine.append(">>\n");
             }
@@ -4444,9 +4472,10 @@ bool PDFWriterImpl::emitWidgetAnnotations()
                 else
                 {
                     // create a URI action
-                    aLine.append( "/AA<</D<</Type/Action/S/URI/URI(" );
-                    aLine.append( OUStringToOString( rWidget.m_aListEntries.front(), RTL_TEXTENCODING_ASCII_US ) );
-                    aLine.append( ")>>>>\n" );
+                    aLine.append("/AA<</D<</Type/Action/S/URI/URI");
+                    aWriter.writeLiteralEncrypt(rWidget.m_aListEntries.front(), rWidget.m_nObject,
+                                                RTL_TEXTENCODING_ASCII_US);
+                    aLine.append(">>>>\n");
                 }
             }
             else
@@ -4646,6 +4675,11 @@ bool PDFWriterImpl::emitCatalog()
         emitStructure( m_aStructure[ 0 ] );
         if (!emitObjectStream())
             return false;
+        // whatever put its strings in plain has to have landed in an object stream; that the
+        // stream is encrypted is asserted where it is written
+        assert(std::ranges::all_of(m_aPlainStringObjects, [this](sal_Int32 nPlain) {
+            return m_aObjects[nPlain - 1].isCompressed();
+        }));
     }
 
     // adjust tree node file offset
@@ -5409,7 +5443,9 @@ sal_Int32 PDFWriterImpl::emitDocumentMetadata()
     lcl_assignMeta(m_aContext.DocumentInfo.Creator, aMetadata.m_sCreatorTool);
     aMetadata.m_sCreateDate = m_aCreationMetaDateString;
 
-    bool const bEncryptMetadata{m_pPDFEncryptor && m_pPDFEncryptor->isMetadataEncrypted()};
+    // metadata is always encrypted: V 2 has no /EncryptMetadata to leave it plain, and at V 5
+    // that entry defaults to true
+    const bool bEncryptMetadata = m_pPDFEncryptor != nullptr;
 
     {
         sal_uInt64 const nLength{bEncryptMetadata
@@ -5483,9 +5519,6 @@ sal_Int32 PDFWriterImpl::emitEncrypt()
             aWriter.write("/CF", "<</StdCF <</CFM /AESV3 /Length 256>>>>");
             aWriter.write("/StmF", "/StdCF");
             aWriter.write("/StrF", "/StdCF");
-            // Encrypt metadata. Default is true. Relevant for Revision 6+
-            if (!m_pPDFEncryptor->isMetadataEncrypted())
-                aWriter.write("/EncryptMetadata", " false ");
         }
         else
         {
@@ -5948,7 +5981,11 @@ void PDFWriterImpl::registerGlyph(const sal_GlyphId nFontGlyphId,
         tools::Rectangle aRect;
         auto aLayers = pFace->GetGlyphColorLayers(nFontGlyphId);
         auto aBitmap = pFace->GetGlyphColorBitmap(nFontGlyphId, aRect);
-        if (!aLayers.empty() || !aBitmap.empty())
+        // tdf#173919: Some color fonts (e.g. old Noto Color Emoji with CBDT) have no outlines, but
+        // only color bitmaps, so their glyphs without bitmaps (e.g. space) must also go into the
+        // Type 3 font, otherwise they will go into a regular font and we will create a subset with
+        // no outline tables, which will be rejected by PDF readers.
+        if (!aLayers.empty() || !aBitmap.empty() || !pFace->HasOutlines())
         {
             auto& rSubset = m_aType3Fonts[pFace];
             auto it = rSubset.m_aMapping.find(nFontGlyphId);
@@ -8938,10 +8975,12 @@ void PDFWriterImpl::writeReferenceXObject(const ReferenceXObjectEmit& rEmit)
     if (m_aContext.UseReferenceXObject && rEmit.m_nEmbeddedObject > 0)
     {
         // Write the reference dictionary.
-        aLine.append("/Ref<< /F << /Type /Filespec /F (<embedded file>) ");
+        COSWriter aWriter(aLine, m_aContext.Encryption.getParams(), m_pPDFEncryptor);
+        aLine.append("/Ref<< /F << /Type /Filespec ");
+        aWriter.writeKeyAndLiteralEncrypt("/F", "<embedded file>", rEmit.m_nFormObject);
         if (PDFWriter::PDFVersion::PDF_1_7 <= m_aContext.Version)
         {   // ISO 14289-1:2014, Clause: 7.11
-            aLine.append("/UF (<embedded file>) ");
+            aWriter.writeKeyAndLiteralEncrypt("/UF", "<embedded file>", rEmit.m_nFormObject);
         }
         aLine.append("/EF << /F ");
         aLine.append(rEmit.m_nEmbeddedObject);

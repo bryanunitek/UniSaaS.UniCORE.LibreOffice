@@ -240,7 +240,13 @@ CommandLineEvent CheckWebQuery(/* in,out */ OUString& arg, CommandLineEvent curE
 
         stream.Close();
 
-        arg = OStringToOUString(aResult, osl_getThreadTextEncoding());
+        OUString aURL = OStringToOUString(aResult, osl_getThreadTextEncoding());
+        // A web query names a web page.
+        INetProtocol eProtocol = INetURLObject(aURL).GetProtocol();
+        if (eProtocol != INetProtocol::Http && eProtocol != INetProtocol::Https)
+            return curEvt;
+
+        arg = aURL;
         return CommandLineEvent::ForceNew;
     }
     catch (...)
@@ -416,10 +422,6 @@ void CommandLineArgs::ParseCommandLine_Impl( Supplier& supplier )
             else if ( oArg == "version" )
             {
                 m_version = true;
-            }
-            else if ( oArg.startsWith("splash-pipe=") )
-            {
-                m_splashpipe = true;
             }
 #ifdef MACOSX
             /* #i84053# ignore -psn on Mac
@@ -729,7 +731,6 @@ void CommandLineArgs::InitParamValues()
     m_helpimpress = false;
     m_helpbase = false;
     m_version = false;
-    m_splashpipe = false;
     m_bEmpty = true;
     m_bDocumentArgs  = false;
     m_textcat = false;

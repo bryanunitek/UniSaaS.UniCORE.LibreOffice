@@ -52,13 +52,6 @@ $(eval $(call gb_Library_add_defs,sd,\
 	-DSDUI_DLL_NAME=\"$(call gb_Library_get_runtime_filename,$(call gb_Library__get_name,sdui))\" \
 ))
 
-ifneq ($(strip $(dbg_anim_log)$(DBG_ANIM_LOG)),)
-$(eval $(call gb_Library_add_defs,sd,\
-	$$(DEFS) \
-	-DDBG_ANIM_LOG \
-))
-endif
-
 $(eval $(call gb_Library_use_custom_headers,sd,\
 	officecfg/registry \
 	oox/generated \
@@ -184,24 +177,24 @@ $(eval $(call gb_Library_add_exception_objects,sd,\
 	sd/source/core/undo/undoobjects \
 	sd/source/core/undoanim \
 	sd/source/filter/cgm/sdcgmfilter \
-    sd/source/filter/eppt/eppt \
-    sd/source/filter/eppt/epptso \
-    sd/source/filter/eppt/escherex \
-    sd/source/filter/eppt/pptexanimations \
-    sd/source/filter/eppt/pptexsoundcollection \
-    sd/source/filter/eppt/pptx-epptbase \
-    sd/source/filter/eppt/pptx-epptooxml \
-    sd/source/filter/eppt/pptx-animations \
-    sd/source/filter/eppt/pptx-animations-cond \
-    sd/source/filter/eppt/pptx-animations-nodectx \
-    sd/source/filter/eppt/pptx-grouptable \
-    sd/source/filter/eppt/pptx-stylesheet \
-    sd/source/filter/eppt/pptx-text \
-    sd/source/filter/ppt/ppt97animations \
-    sd/source/filter/ppt/pptatom \
-    sd/source/filter/ppt/pptin \
-    sd/source/filter/ppt/pptinanimations \
-    sd/source/filter/ppt/propread \
+	sd/source/filter/eppt/eppt \
+	sd/source/filter/eppt/epptso \
+	sd/source/filter/eppt/escherex \
+	sd/source/filter/eppt/pptexanimations \
+	sd/source/filter/eppt/pptexsoundcollection \
+	sd/source/filter/eppt/pptx-epptbase \
+	sd/source/filter/eppt/pptx-epptooxml \
+	sd/source/filter/eppt/pptx-animations \
+	sd/source/filter/eppt/pptx-animations-cond \
+	sd/source/filter/eppt/pptx-animations-nodectx \
+	sd/source/filter/eppt/pptx-grouptable \
+	sd/source/filter/eppt/pptx-stylesheet \
+	sd/source/filter/eppt/pptx-text \
+	sd/source/filter/ppt/ppt97animations \
+	sd/source/filter/ppt/pptatom \
+	sd/source/filter/ppt/pptin \
+	sd/source/filter/ppt/pptinanimations \
+	sd/source/filter/ppt/propread \
 	sd/source/filter/grf/sdgrffilter \
 	sd/source/filter/html/htmlex \
 	sd/source/filter/html/a11yex \
@@ -373,7 +366,7 @@ $(eval $(call gb_Library_add_exception_objects,sd,\
 	sd/source/ui/slideshow/SlideShowRestarter \
 	sd/source/ui/slideshow/showwin \
 	sd/source/ui/slideshow/slideshow \
-	sd/source/ui/slideshow/slideshowimpl \
+	sd/source/ui/slideshow/SlideShowController \
 	sd/source/ui/slideshow/slideshowviewimpl \
 	sd/source/ui/slidesorter/cache/SlsBitmapCache \
 	sd/source/ui/slidesorter/cache/SlsBitmapCompressor \

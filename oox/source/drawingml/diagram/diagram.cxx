@@ -34,9 +34,13 @@
 #include <drawingml/lineproperties.hxx>
 #include <drawingml/customshapeproperties.hxx>
 #include <o3tl/unit_conversion.hxx>
+#include <algorithm>
+#include <cmath>
 #include <oox/drawingml/theme.hxx>
 #include <oox/token/namespaces.hxx>
+#include <basegfx/color/bcolortools.hxx>
 #include <basegfx/matrix/b2dhommatrix.hxx>
+#include <basegfx/numeric/ftools.hxx>
 #include <svx/svdpage.hxx>
 #include <oox/ppt/pptimport.hxx>
 #include <comphelper/xmltools.hxx>
@@ -46,6 +50,7 @@
 #include <comphelper/processfactory.hxx>
 #include <com/sun/star/io/TempFile.hpp>
 #include <oox/export/drawingml.hxx>
+#include <oox/export/shapes.hxx>
 
 #include <com/sun/star/xml/sax/XSAXSerializable.hpp>
 #include <com/sun/star/xml/sax/Writer.hpp>
@@ -104,6 +109,69 @@ static void sortChildrenByZOrder(const ShapePtr& pShape)
         sortChildrenByZOrder(rChild);
 }
 
+// A layout turns a shape by the rot of its dgm:shape, 73 degrees for the arrow of a descending
+// process, and the box the layout gave it is the box the turned shape is to fill. The shape
+// itself is smaller than that box: turned by the angle, its own width and height reach the box
+// along both axes, W = w cos + h sin and H = w sin + h cos. The shape gets that own size, the
+// middle stays where it was, and the angle becomes a plain rotation of the shape. A right angle
+// changes nothing but which side is which, so the turn before the sizing does the same there and
+// stays; near 45 degrees the two equations say the same thing, and the shape is taken square.
+static void unturnRotatedShapes(const ShapePtr& pShape)
+{
+    for (const ShapePtr& pChild : pShape->getChildren())
+    {
+        unturnRotatedShapes(pChild);
+
+        // the angle is in 60000ths of a degree, as everywhere in the format
+        const sal_Int32 nTurn(pChild->getDiagramRotation());
+        if (nTurn == 0 || nTurn % (90 * 60000) == 0)
+            continue;
+
+        const double fAngle(basegfx::deg2rad<60000>(nTurn));
+        const double fCos(std::abs(cos(fAngle)));
+        const double fSin(std::abs(sin(fAngle)));
+        const awt::Size aBox(pChild->getSize());
+        double fWidth(0.0);
+        double fHeight(0.0);
+        const double fApart(fCos * fCos - fSin * fSin);
+        if (std::abs(fApart) < 0.05)
+            fWidth = fHeight = aBox.Width / (fCos + fSin);
+        else
+        {
+            fWidth = (aBox.Width * fCos - aBox.Height * fSin) / fApart;
+            fHeight = (aBox.Height * fCos - aBox.Width * fSin) / fApart;
+        }
+        // turned by less than 45 degrees a very flat box would tilt its diagonal against the
+        // turn, so the shape stops where its diagonal lies flat (w sin = h cos) and is as high
+        // as the box; a very high box does the same the other way round
+        if (std::abs(fApart) >= 0.05 && fSin > 0.0 && fSin < fCos)
+        {
+            if (fHeight * fCos < fWidth * fSin)
+            {
+                fWidth = aBox.Height / 2.0 / fSin;
+                fHeight = aBox.Height / 2.0 / fCos;
+            }
+            else if (fWidth * fCos < fHeight * fSin)
+            {
+                fWidth = aBox.Width / 2.0 / fCos;
+                fHeight = aBox.Width / 2.0 / fSin;
+            }
+        }
+        if (fWidth <= 1.0 || fHeight <= 1.0)
+            continue;
+
+        const awt::Size aOwn(static_cast<sal_Int32>(fWidth), static_cast<sal_Int32>(fHeight));
+        awt::Point aAt(pChild->getPosition());
+        aAt.X += (aBox.Width - aOwn.Width) / 2;
+        aAt.Y += (aBox.Height - aOwn.Height) / 2;
+        pChild->setPosition(aAt);
+        pChild->setSize(aOwn);
+        pChild->setChildSize(aOwn);
+        pChild->setRotation(pChild->getRotation() + nTurn);
+        pChild->setDiagramRotation(0);
+    }
+}
+
 /// Removes empty group shapes, now that their spacing influenced the layout.
 static void removeUnneededGroupShapes(const ShapePtr& pShape)
 {
@@ -130,20 +198,96 @@ void SmartArtDiagram::createShapeHierarchyFromModel( const ShapePtr & pParentSha
 
     pParentShape->setChildSize(pParentShape->getSize());
 
-    const svx::diagram::Point* pRootPoint = mpData->getRootPoint();
-    if (bCreate && mpLayout->getNode() && pRootPoint)
+    // The names the layout settles, the statements it keeps for a shape levels down and the
+    // shapes a sideways branch places as a whole all describe the tree this run builds. A run
+    // starts with none of them, so a Diagram laid out a second time is measured afresh.
+    maUserVariables.clear();
+    maFittedFontSizes.clear();
+    maRunsSizedByLayout.clear();
+    maParagraphsIndentedByLayout.clear();
+    maDeferredUserVariables.clear();
+    maLaidOutSideways.clear();
+    maWidthOfDescendantSizes.clear();
+    maDeferredSpacers.clear();
+
+    const rtl::Reference<svx::diagram::Point> xRootPoint(mpData->getRootPoint());
+    if (bCreate && mpLayout->getNode() && xRootPoint.is())
     {
-        // create Shape hierarchy
-        ShapeCreationVisitor aCreationVisitor(*this, pRootPoint, pParentShape);
-        mpLayout->getNode()->setExistingShape(pParentShape);
-        mpLayout->getNode()->accept(aCreationVisitor);
+        // A text node asks for a font, and the nodes that share a stated size are laid out as
+        // a group at one font: the first pass at the size the layout states, and where a text
+        // of the group did not fit on a pass the shapes are made and laid out again with that
+        // group a point smaller, down to the least the layout's rule allows. A Diagram whose
+        // texts all fit is laid out once.
+        maFontCandidates.clear();
+        maGroupsThatShrank.clear();
+        maColumnFits.clear();
+        maContentHeights.clear();
+        // a column of composites takes their heights from the pass before, so one more pass
+        // runs where a column met a composite no pass had measured yet
+        bool bExtraPassTaken(false);
+        for (int nPass = 0; nPass < 80; ++nPass)
+        {
+            maGroupsThatDidNotFit.clear();
+            maColumnFitsOfThisPass.clear();
+            maNextContentHeights.clear();
+            mbContentHeightMissing = false;
+            maUserVariables.clear();
+            maFittedFontSizes.clear();
+            maDeferredUserVariables.clear();
+            maLaidOutSideways.clear();
+            maWidthOfDescendantSizes.clear();
+            maDeferredSpacers.clear();
+            mpLayout->getPresPointShapeMap().clear();
+            pParentShape->getChildren().clear();
 
-        // layout shapes - now all shapes are created
-        ShapeLayoutingVisitor aLayoutingVisitor(*this, pRootPoint);
-        mpLayout->getNode()->accept(aLayoutingVisitor);
+            // create Shape hierarchy
+            ShapeCreationVisitor aCreationVisitor(*this, xRootPoint, pParentShape);
+            mpLayout->getNode()->setExistingShape(pParentShape);
+            mpLayout->getNode()->accept(aCreationVisitor);
 
+            // layout shapes - now all shapes are created
+            ShapeLayoutingVisitor aLayoutingVisitor(*this, xRootPoint);
+            mpLayout->getNode()->accept(aLayoutingVisitor);
+
+            // every group whose text did not fit shrinks by a point, and the pass is run
+            // again while any of them can
+            bool bAnyShrank(false);
+            for (const OUString& rGroup : maGroupsThatDidNotFit)
+            {
+                const auto aCandidate = maFontCandidates.find(rGroup);
+                if (aCandidate == maFontCandidates.end()
+                    || aCandidate->second <= mfLeastFont + 1e-6)
+                    continue;
+                aCandidate->second = std::max(mfLeastFont, aCandidate->second - 1.0);
+                maGroupsThatShrank.insert(rGroup);
+                bAnyShrank = true;
+            }
+            // a row whose column did not fit shrinks on the next pass
+            for (const auto& [rName, fPart] : maColumnFitsOfThisPass)
+            {
+                const auto aKept = maColumnFits.find(rName);
+                maColumnFits[rName] = (aKept != maColumnFits.end() ? aKept->second : 1.0) * fPart;
+                bAnyShrank = true;
+            }
+            const bool bMissing(mbContentHeightMissing && !maNextContentHeights.empty()
+                                && maNextContentHeights != maContentHeights);
+            maContentHeights = maNextContentHeights;
+            if (!bAnyShrank)
+            {
+                if (!bMissing || bExtraPassTaken)
+                    break;
+                bExtraPassTaken = true;
+            }
+        }
+        settleEqualNodeSizes(*this, pParentShape);
+        settleSidesBoundToNamedShapes(*this, pParentShape);
+        settleNamedConnectors(*this);
+        settleDeferredSpacers(*this);
         sortChildrenByZOrder(pParentShape);
+        unturnRotatedShapes(pParentShape);
         removeUnneededGroupShapes(pParentShape);
+        centreDrawnShapes(*this, pParentShape);
+        settleUprightText(*this);
     }
 
     ShapePtr pBackground = std::make_shared<Shape>("com.sun.star.drawing.CustomShape");
@@ -155,9 +299,8 @@ void SmartArtDiagram::createShapeHierarchyFromModel( const ShapePtr & pParentSha
     if (mpData->getBackgroundShapeLineProperties())
         pBackground->getLineProperties() = *mpData->getBackgroundShapeLineProperties();
 
-    // create and set ModelID for BackgroundShape to allow later association
-    getData()->setBackgroundShapeModelID(OStringToOUString(comphelper::xml::generateGUIDString(), RTL_TEXTENCODING_UTF8));
-    pBackground->setDiagramDataModelID(getData()->getBackgroundShapeModelID());
+    // create BackgroundShape, use empty string for identification
+    pBackground->setDiagramDataModelID(EMPTY_OUSTRING);
 
     auto& aChildren = pParentShape->getChildren();
     aChildren.insert(aChildren.begin(), pBackground);
@@ -179,6 +322,23 @@ uno::Reference<xml::dom::XDocument> SmartArtDiagram::convertAndSet(std::u16strin
     return aDomTree;
 }
 
+css::uno::Reference<css::xml::dom::XDocument> SmartArtDiagram::convertAndSet(std::u16string_view rDOMData, svx::diagram::DomMapFlag aDomMapFlag, bool bAdd)
+{
+    // construct MemoryStream and OStreamWrapper
+    const OString sUtf8(OUStringToOString(rDOMData, RTL_TEXTENCODING_UTF8));
+    SvMemoryStream aStream(const_cast<char*>(sUtf8.getStr()), sUtf8.getLength(), StreamMode::READ);
+    rtl::Reference<utl::OStreamWrapper> pStreamWrapper = new utl::OStreamWrapper(aStream);
+
+    // create the dom parser & create DomTree
+    uno::Reference<xml::dom::XDocumentBuilder> xDomBuilder(xml::dom::DocumentBuilder::create(comphelper::getProcessComponentContext()));
+    uno::Reference<xml::dom::XDocument> aDomTree(xDomBuilder->parse(pStreamWrapper->getInputStream()));
+
+    // set DomTree locally
+    if (bAdd)
+        setOOXDomValue(aDomMapFlag, uno::Any(aDomTree));
+    return aDomTree;
+}
+
 SmartArtDiagram::SmartArtDiagram()
 : maDiagramFontHeights()
 , mpData(std::make_shared<DiagramData_oox>())
@@ -191,6 +351,7 @@ SmartArtDiagram::SmartArtDiagram()
 
 SmartArtDiagram::SmartArtDiagram(SmartArtDiagram const& rSource)
 : maDiagramFontHeights()
+, msTextFont(rSource.msTextFont)
 , mpData(rSource.mpData ? new DiagramData_oox(*rSource.mpData) : nullptr)
 , mpLayout(rSource.mpLayout)
 , maStyles(rSource.maStyles)
@@ -199,60 +360,67 @@ SmartArtDiagram::SmartArtDiagram(SmartArtDiagram const& rSource)
 {
 }
 
-SmartArtDiagram::SmartArtDiagram(const boost::property_tree::ptree& rDiagramModel)
+SmartArtDiagram::SmartArtDiagram(std::u16string_view rLayout, std::u16string_view rData, std::u16string_view rColors, std::u16string_view rQuickstyle)
 : maDiagramFontHeights()
-, mpData(std::make_shared<DiagramData_oox>(rDiagramModel))
+, mpData(std::make_shared<DiagramData_oox>())
 , mpLayout(std::make_shared<DiagramLayout>(*this))
 , maStyles()
 , maColors()
 , maDiagramPRDomMap()
 {
-#ifdef DBG_UTIL
-    mpData->dump();
-#endif
-    const OUString aOOXLayoutDOM(OUString::fromUtf8(rDiagramModel.get("OOXLayout", "")));
-    const OUString aOOXStyleDOM(OUString::fromUtf8(rDiagramModel.get("OOXStyle", "")));
-    const OUString aOOXColorDOM(OUString::fromUtf8(rDiagramModel.get("OOXColor", "")));
+    if (rLayout.empty() || rData.empty() || rQuickstyle.empty() || rColors.empty())
+        return;
 
-    if (!aOOXLayoutDOM.isEmpty() || !aOOXStyleDOM.isEmpty() || !aOOXColorDOM.isEmpty())
+    // we need a PowerPointImport for the FragmentHandlers, so create a single
+    // temporary one. Use this for all possible DomTrees
+    rtl::Reference<oox::ppt::PowerPointImport> xPPTImport(new oox::ppt::PowerPointImport(comphelper::getProcessComponentContext()));
+
+    if (!rData.empty())
     {
-        // we need a PowerPointImport for the FragmentHandlers, so create a single
-        // temporary one. Use this for all possible DomTrees
-        rtl::Reference<oox::ppt::PowerPointImport> xPPTImport(new oox::ppt::PowerPointImport(comphelper::getProcessComponentContext()));
+        // create and set DomTree locally/do *not* add to DomTree holder, this is a temporary instance
+        uno::Reference<xml::dom::XDocument> xDom(convertAndSet(rData, svx::diagram::DomMapFlag::OOXLayout, false));
 
-        if (!aOOXLayoutDOM.isEmpty())
-        {
-            // create and set DomTree locally
-            uno::Reference<xml::dom::XDocument> xDom(convertAndSet(aOOXLayoutDOM, svx::diagram::DomMapFlag::OOXLayout));
-
-            // import DomTree to mpLayout
-            uno::Reference<xml::sax::XFastSAXSerializable> xSerializer(xDom, uno::UNO_QUERY_THROW);
-            rtl::Reference< core::FragmentHandler > xRefLayout(new DiagramLayoutFragmentHandler(*this, *xPPTImport, "internal", mpLayout));
-            xPPTImport->importFragment(xRefLayout, xSerializer);
-        }
-
-        if (!aOOXStyleDOM.isEmpty())
-        {
-            // create and set DomTree locally
-            uno::Reference<xml::dom::XDocument> xDom(convertAndSet(aOOXStyleDOM, svx::diagram::DomMapFlag::OOXStyle));
-
-            // import DomTree to maStyles
-            uno::Reference<xml::sax::XFastSAXSerializable> xSerializer(xDom, uno::UNO_QUERY_THROW);
-            rtl::Reference< core::FragmentHandler > xRefLayout(new DiagramQStylesFragmentHandler(*xPPTImport, "internal", maStyles));
-            xPPTImport->importFragment(xRefLayout, xSerializer);
-        }
-
-        if (!aOOXColorDOM.isEmpty())
-        {
-            // create and set DomTree locally
-            uno::Reference<xml::dom::XDocument> xDom(convertAndSet(aOOXColorDOM, svx::diagram::DomMapFlag::OOXColor));
-
-            // import DomTree to maColors
-            uno::Reference<xml::sax::XFastSAXSerializable> xSerializer(xDom, uno::UNO_QUERY_THROW);
-            rtl::Reference< core::FragmentHandler > xRefLayout(new ColorFragmentHandler(*xPPTImport, "internal", maColors));
-            xPPTImport->importFragment(xRefLayout, xSerializer);
-        }
+        // import DomTree to mpLayout
+        uno::Reference<xml::sax::XFastSAXSerializable> xSerializer(xDom, uno::UNO_QUERY_THROW);
+        rtl::Reference< core::FragmentHandler > xRefLayout(new DiagramDataFragmentHandler(*xPPTImport, u"internal"_ustr, mpData));
+        xPPTImport->importFragment(xRefLayout, xSerializer);
     }
+
+    if (!rLayout.empty())
+    {
+        // create and set DomTree locally
+        uno::Reference<xml::dom::XDocument> xDom(convertAndSet(rLayout, svx::diagram::DomMapFlag::OOXLayout, true));
+
+        // import DomTree to mpLayout
+        uno::Reference<xml::sax::XFastSAXSerializable> xSerializer(xDom, uno::UNO_QUERY_THROW);
+        rtl::Reference< core::FragmentHandler > xRefLayout(new DiagramLayoutFragmentHandler(*this, *xPPTImport, u"internal"_ustr, mpLayout));
+        xPPTImport->importFragment(xRefLayout, xSerializer);
+    }
+
+    if (!rQuickstyle.empty())
+    {
+        // create and set DomTree locally
+        uno::Reference<xml::dom::XDocument> xDom(convertAndSet(rQuickstyle, svx::diagram::DomMapFlag::OOXStyle, true));
+
+        // import DomTree to maStyles
+        uno::Reference<xml::sax::XFastSAXSerializable> xSerializer(xDom, uno::UNO_QUERY_THROW);
+        rtl::Reference< core::FragmentHandler > xRefLayout(new DiagramQStylesFragmentHandler(*xPPTImport, u"internal"_ustr, maStyles));
+        xPPTImport->importFragment(xRefLayout, xSerializer);
+    }
+
+    if (!rColors.empty())
+    {
+        // create and set DomTree locally
+        uno::Reference<xml::dom::XDocument> xDom(convertAndSet(rColors, svx::diagram::DomMapFlag::OOXColor, true));
+
+        // import DomTree to maColors
+        uno::Reference<xml::sax::XFastSAXSerializable> xSerializer(xDom, uno::UNO_QUERY_THROW);
+        rtl::Reference< core::FragmentHandler > xRefLayout(new ColorFragmentHandler(*xPPTImport, u"internal"_ustr, maColors));
+        xPPTImport->importFragment(xRefLayout, xSerializer);
+    }
+
+    // link the Connections to their Points
+    mpData->buildDiagramDataModel(false);
 }
 
 SmartArtDiagram::~SmartArtDiagram()
@@ -310,7 +478,7 @@ void SmartArtDiagram::writeDiagramOOXData(DrawingML& rOriginalDrawingML, uno::Re
 
     // re-create OOXData DomFile from model data
     sax_fastparser::FSHelperPtr aFS = std::make_shared<sax_fastparser::FastSerializerHelper>(xOutputStream, true);
-    getData()->writeDiagramData(rOriginalDrawingML, aFS, rDrawingRelId);
+    getData()->writeDiagramData(rOriginalDrawingML, aFS, rDrawingRelId, false);
 
     // this call is *important*, without it xDocBuilder->parse below fails and some strange
     // and wrong assertion gets thrown in ~FastSerializerHelper that shall get called
@@ -340,6 +508,50 @@ void SmartArtDiagram::writeDiagramOOXData(DrawingML& rOriginalDrawingML, uno::Re
         comphelper::OStorageHelper::CopyInputToOutput(xInStream->getInputStream(), xOutStream->getOutputStream());
     }
 #endif
+}
+
+void SmartArtDiagram::writeDiagramReducedOOXData(css::uno::Reference<css::io::XOutputStream>& xOutputStream) const
+{
+    // need a XmlFilterBase for ShapeExport/DrawingML. All the 'big' exports classes for
+    // this are in sd/sc/sw and we are not in an oox export here, so none exist. Use
+    // a minimal one. It's main purpose is to host the XModel access. In this case we
+    // will not write any Line/Fill/TextAttributes and/or text, so will be fine for the
+    // reduced form.
+    class LocalFilterBase final : public oox::core::XmlFilterBase
+    {
+    public:
+        explicit LocalFilterBase(css::uno::Reference<css::uno::XComponentContext> const& rxContext)
+        : XmlFilterBase(rxContext) {}
+        // virtual ~LocalFilterBase() override;
+
+        virtual const oox::drawingml::Theme* getCurrentTheme() const override { return mpTheme.get(); }
+        virtual std::shared_ptr<oox::drawingml::Theme> getCurrentThemePtr() const override { return mpTheme; }
+
+        virtual oox::vml::Drawing* getVmlDrawing() override { return nullptr; }
+        virtual oox::drawingml::table::TableStyleListPtr getTableStyles() override { return oox::drawingml::table::TableStyleListPtr(); }
+        virtual oox::drawingml::chart::ChartConverter* getChartConverter() override { return nullptr; }
+        virtual oox::ole::VbaProject* implCreateVbaProject() const override { return nullptr; }
+
+        virtual bool importDocument() override { return false; }
+        virtual bool exportDocument() override { return true; }
+
+    private:
+        virtual OUString SAL_CALL getImplementationName() override { return EMPTY_OUSTRING; }
+        oox::drawingml::ThemePtr mpTheme;
+    };
+
+    rtl::Reference<LocalFilterBase> xLocalFilterBase(new LocalFilterBase(comphelper::getProcessComponentContext()));
+    xLocalFilterBase->setSourceDocument(getData()->accessRootModel());
+
+    // need a sax_fastparser
+    sax_fastparser::FSHelperPtr aFS = std::make_shared<sax_fastparser::FastSerializerHelper>(xOutputStream, true);
+
+    // need a DrawingML, use a ShapeExport. Claim to be a DOCUMENT_PPTX for all ODF targets
+    oox::drawingml::ShapeExport aShapeExport(XML_dsp, aFS, nullptr, xLocalFilterBase.get(), DOCUMENT_PPTX, nullptr, true);
+    aShapeExport.setDiagaramExport(true);
+
+    // write reduced DiagramData
+    getData()->writeDiagramData(aShapeExport, aFS, EMPTY_OUSTRING, true);
 }
 
 void SmartArtDiagram::writeDiagramOOXDrawing(DrawingML& rOriginalDrawingML, uno::Reference<io::XOutputStream>& xOutputStream) const
@@ -380,63 +592,6 @@ void SmartArtDiagram::writeDiagramOOXDrawing(DrawingML& rOriginalDrawingML, uno:
         comphelper::OStorageHelper::CopyInputToOutput(xInStream->getInputStream(), xOutStream->getOutputStream());
     }
 #endif
-}
-
-void SmartArtDiagram::addDomTreeToModelData(svx::diagram::DomMapFlag aId, std::u16string_view aName, boost::property_tree::ptree& rTarget) const
-{
-    uno::Reference<xml::dom::XDocument> aDomTree;
-    getOOXDomValue(aId) >>= aDomTree;
-
-    if (aDomTree)
-    {
-        // serialize DomTree to a MemoryStream
-        SvMemoryStream aStream( 1024, 1024 );
-        rtl::Reference<utl::OStreamWrapper> pStreamWrapper = new utl::OStreamWrapper( aStream );
-        uno::Reference<xml::sax::XSAXSerializable> serializer;
-        uno::Reference<xml::sax::XWriter> writer = xml::sax::Writer::create(comphelper::getProcessComponentContext());
-        serializer.set(aDomTree, uno::UNO_QUERY);
-        writer->setOutputStream(pStreamWrapper->getOutputStream());
-        serializer->serialize(uno::Reference<xml::sax::XDocumentHandler>(writer, uno::UNO_QUERY_THROW), uno::Sequence<beans::StringPair>());
-
-        // put into string
-        const OUString aContent(static_cast<const char*>(aStream.GetData()), aStream.TellEnd(), RTL_TEXTENCODING_UTF8);
-
-        // add to ModelData
-        const OString sUtf8(OUStringToOString(aName, RTL_TEXTENCODING_UTF8));
-        rTarget.put(sUtf8.getStr(), aContent);
-    }
-}
-
-void SmartArtDiagram::addDiagramModelData(boost::property_tree::ptree& rTarget) const
-{
-    // add Point and Connection data
-    getData()->addDiagramModelData(rTarget);
-
-    // What DomMaps are needed?
-    //
-    // With the above OOXData is covered. OOXDataImageRels/OOXDataHlinkRels also,
-    // these may/will be re-created when OOX export and a new OOXDataDomTree
-    // needs to be created.
-    // Similar with OOXDrawing: This contains parts of ModelData, e.g. Text and
-    // Attributes represented by the XShapes/Sdrobjects, so for internal formats
-    // this is not needed to be saved. This is also true for OOXDrawingImageRels
-    // and OOXDrawingHlinkRels.
-    // We *do* import OOXLayoutDomTree/ModelInfo and this is used in the layouting
-    // mechanism (reLayout), but it is not changed. We could add an export of that
-    // for internal formats, but since it's not changed it just needs to be
-    // preserved, either for internal use or export to OOX formats.
-    // OOXStyle and OOXColor are imported only on oox import side, partially held
-    // for initial import at Diagram classes. Also never changed, but maybe needed
-    // for export to OOX formats. Not sure about that since Style and Color is
-    // part of XShape/SdrObject Model Hierarchy, so exports to OOX should be possible
-    // without these, but maybe MSO wants that data...
-    //
-    // OOXLayout = 3,
-    // OOXStyle = 4,
-    // OOXColor = 5,
-    addDomTreeToModelData(svx::diagram::DomMapFlag::OOXLayout, u"OOXLayout", rTarget);
-    addDomTreeToModelData(svx::diagram::DomMapFlag::OOXStyle, u"OOXStyle", rTarget);
-    addDomTreeToModelData(svx::diagram::DomMapFlag::OOXColor, u"OOXColor", rTarget);
 }
 
 using ShapePairs
@@ -674,11 +829,13 @@ void loadDiagram( ShapePtr const & pShape,
         if( !pDiagram->getData()->getExtDrawings().empty() )
         {
             const DiagramColorMap::const_iterator aColor = pDiagram->getColors().find(u"node0"_ustr);
-            if( aColor != pDiagram->getColors().end() && !aColor->second.maTextFillColors.empty())
+            if( aColor != pDiagram->getColors().end()
+                && !aColor->second.maTextFillColors.maColors.empty())
             {
                 // TODO(F1): well, actually, there might be *several* color
                 // definitions in it, after all it's called list.
-                pShape->setFontRefColorForNodes(DiagramColor::getColorByIndex(aColor->second.maTextFillColors, -1));
+                pShape->setFontRefColorForNodes(
+                    DiagramColor::getColorByIndex(aColor->second.maTextFillColors, -1, 0));
             }
         }
 
@@ -699,6 +856,10 @@ void loadDiagram( ShapePtr const & pShape,
         // up
         static bool bIgnoreExtDrawings(nullptr != std::getenv("DIAGRAM_IGNORE_EXTDRAWINGS"));
         const bool bCreate(bIgnoreExtDrawings || pShape->getExtDrawings().empty());
+        // the text font of the theme, the layout measures the text with it
+        if (const std::shared_ptr<::oox::drawingml::Theme> pTheme = rFilter.getCurrentThemePtr();
+            pTheme && pTheme->getTheme())
+            pDiagram->setTextFont(pTheme->getTheme()->getFontScheme().getMinorLatin().maTypeface);
         pDiagram->createShapeHierarchyFromModel(pShape, bCreate);
 
         // Get the oox::Theme definition and - if available - move/secure the
@@ -721,16 +882,88 @@ void loadDiagram( ShapePtr const & pShape,
     }
 }
 
-const oox::drawingml::Color&
-DiagramColor::getColorByIndex(const std::vector<oox::drawingml::Color>& rColors, sal_Int32 nIndex)
+oox::drawingml::Color DiagramColor::getColorByIndex(const DiagramColorList& rList,
+                                                    sal_Int32 nIndex, sal_Int32 nCount)
 {
+    const std::vector<oox::drawingml::Color>& rColors(rList.maColors);
     assert(!rColors.empty());
+
     if (nIndex == -1)
+        return rColors.back();
+
+    const sal_Int32 nColors(static_cast<sal_Int32>(rColors.size()));
+
+    // A span and a cycle list both spread their colors over the shapes, and only if there is
+    // something to spread between. A repeat list, and any list of one colour, hands out one
+    // of its colors as it stands.
+    const bool bSpan(XML_span == rList.mnMethod);
+    const bool bCycle(XML_cycle == rList.mnMethod);
+
+    // A span puts a color on the first shape and another on the last, so it needs two shapes
+    // to spread between; a cycle starts its walk on one shape and needs only that. Both ways
+    // of spreading divide by the number of shapes below, and this is what keeps that divisor
+    // away from zero.
+    const sal_Int32 nShapesNeeded(bSpan ? 2 : 1);
+
+    if ((!bSpan && !bCycle) || nColors < 2 || nCount < nShapesNeeded
+        || rList.maResolvedColors.size() != rColors.size())
+        return rColors[nIndex % nColors];
+
+    const sal_Int32 nPlace(std::clamp<sal_Int32>(nIndex, 0, nCount - 1));
+
+    // Where this shape sits in the run of colors, which says which pair of them it falls
+    // between and how far along that pair it is.
+    double fPosition(0.0);
+
+    if (bSpan)
     {
-        return rColors[rColors.size() - 1];
+        // The colors and the shapes are spread over the same run, the first color on the
+        // first shape and the last color on the last one. There are two shapes at least,
+        // so the divisor is one at least.
+        fPosition = nPlace * (nColors - 1.0) / (nCount - 1.0);
+    }
+    else
+    {
+        // A cycle walks the colors to the end and back again, and it leaves room for one
+        // shape more than the run holds, so that shapes laid out in a ring meet the color
+        // they started from rather than repeat it.
+        // There is one shape at least, so the divisor is one at least.
+        const double fWholeWalk(2.0 * (nColors - 1));
+        const double fWalked(nPlace * fWholeWalk / nCount);
+        fPosition = fWalked <= nColors - 1 ? fWalked : fWholeWalk - fWalked;
     }
 
-    return rColors[nIndex % rColors.size()];
+    const sal_Int32 nFirst(std::min<sal_Int32>(fPosition, nColors - 2));
+    const double fFactor(fPosition - nFirst);
+
+    const basegfx::BColor aStartRGB(rList.maResolvedColors[nFirst].getBColor());
+    const basegfx::BColor aEndRGB(rList.maResolvedColors[nFirst + 1].getBColor());
+    const basegfx::BColor aStartHSL(basegfx::utils::rgb2hsl(aStartRGB));
+    const basegfx::BColor aEndHSL(basegfx::utils::rgb2hsl(aEndRGB));
+
+    // The hue rises when the end color has the larger hue and falls otherwise, so the walk
+    // stays between 0 and 360 degrees and never passes red at 0 degrees, even when the way
+    // round the other side would be shorter. A list may state a direction to walk in, but the
+    // producer of the format ignores that attribute, as [MS-OI29500] 2.1.1630 b. states, so it
+    // is not read here. See also
+    // https://learn.microsoft.com/en-us/answers/questions/5905698/the-huedir-attribute-of-a-dgm-fillclrlst-element-d
+    const basegfx::BColor aWantedHSL(basegfx::utils::rgb2hsl(basegfx::utils::interpolateInHSL(
+        aStartRGB, aEndRGB, fFactor, aStartHSL.getRed() <= aEndHSL.getRed())));
+
+    // Keep the color of the list itself and add the distance to the wanted one as
+    // hue, saturation and luminance offsets, which is how the format expresses a
+    // spread color. A shape then still follows its theme color.
+    oox::drawingml::Color aRetval(rColors[nFirst]);
+    const auto aAddOffset = [&aRetval](sal_Int32 nToken, double fOffset, sal_Int32 nUnit) {
+        const sal_Int32 nValue(static_cast<sal_Int32>(std::round(fOffset * nUnit)));
+        if (0 != nValue)
+            aRetval.addTransformation(nToken, nValue);
+    };
+    aAddOffset(XML_hueOff, aWantedHSL.getRed() - aStartHSL.getRed(), PER_DEGREE);
+    aAddOffset(XML_satOff, aWantedHSL.getGreen() - aStartHSL.getGreen(), MAX_PERCENT);
+    aAddOffset(XML_lumOff, aWantedHSL.getBlue() - aStartHSL.getBlue(), MAX_PERCENT);
+
+    return aRetval;
 }
 }
 

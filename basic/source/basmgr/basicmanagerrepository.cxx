@@ -79,6 +79,7 @@ namespace basic
         static ImplRepository& Instance();
 
         BasicManager*   getDocumentBasicManager( const Reference< XModel >& _rxDocumentModel );
+        BasicManager*   getExistingDocumentBasicManager( const Reference< XModel >& _rxDocumentModel ) const;
         BasicManager*   getOrCreateApplicationBasicManager();
         static BasicManager* getApplicationBasicManager();
         static void          setApplicationBasicManager( std::unique_ptr<BasicManager> _pBasicManager );
@@ -234,6 +235,15 @@ namespace basic
         if (impl_createManagerForModel(loc, _rxDocumentModel))
             return loc->second.get();
         return nullptr;
+    }
+
+    BasicManager* ImplRepository::getExistingDocumentBasicManager( const Reference< XModel >& _rxDocumentModel ) const
+    {
+        SolarMutexGuard g;
+
+        Reference< XInterface > xNormalized( _rxDocumentModel, UNO_QUERY );
+        auto const loc = m_aStore.find( xNormalized );
+        return loc != m_aStore.end() ? loc->second.get() : nullptr;
     }
 
     BasicManager* ImplRepository::getOrCreateApplicationBasicManager()
@@ -469,7 +479,7 @@ namespace basic
         // initialize the containers
         impl_initDocLibraryContainers_nothrow( xBasicLibs, xDialogLibs );
 
-        // so that also dialogs etc. could be 'qualified' addressed
+        // so that also dialogs etc. can be addressed in a qualified way
         _out_rpBasicManager->GetLib(0)->SetParent( pAppBasic );
 
         // global properties in the document's Basic
@@ -598,6 +608,11 @@ namespace basic
     BasicManager* BasicManagerRepository::getDocumentBasicManager( const Reference< XModel >& _rxDocumentModel )
     {
         return ImplRepository::Instance().getDocumentBasicManager( _rxDocumentModel );
+    }
+
+    BasicManager* BasicManagerRepository::getExistingDocumentBasicManager( const Reference< XModel >& _rxDocumentModel )
+    {
+        return ImplRepository::Instance().getExistingDocumentBasicManager( _rxDocumentModel );
     }
 
     BasicManager* BasicManagerRepository::getApplicationBasicManager()

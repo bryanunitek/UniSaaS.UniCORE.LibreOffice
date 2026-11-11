@@ -263,7 +263,7 @@ CPPUNIT_TEST_FIXTURE(SigningTest, testECDSAPDF)
     // a stream.
     loadFromURL(u"private:factory/swriter"_ustr);
 
-    save(TestFilter::PDF_WRITER);
+    save(TestFilter::PDF);
 
     DocumentSignatureManager aManager(m_xContext, DocumentSignatureMode::Content);
     CPPUNIT_ASSERT(aManager.init());
@@ -559,8 +559,9 @@ CPPUNIT_TEST_FIXTURE(SigningTest, testODFTripleX509Data)
     CPPUNIT_ASSERT(pObjectShell);
     SignatureState nActual = pObjectShell->GetDocumentSignatureState();
     // here, libxmlsec will pick the 1st X509Data but signing key is the 2nd
+    // - now using xd:SigningCertificate the signature can be validated.
     CPPUNIT_ASSERT_EQUAL_MESSAGE((OString::number(o3tl::to_underlying(nActual)).getStr()),
-                                 SignatureState::BROKEN, nActual);
+                                 SignatureState::NOTVALIDATED, nActual);
     uno::Sequence<security::DocumentSignatureInformation> const infos(
         pObjectShell->GetDocumentSignatureInformation(false));
     CPPUNIT_ASSERT_EQUAL(sal_Int32(1), infos.getLength());

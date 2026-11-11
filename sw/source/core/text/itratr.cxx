@@ -1606,9 +1606,10 @@ sal_uInt16 SwTextFrame::GetScalingOfSelectedText(
             nProWidth += aIter.GetFnt()->GetTextSize_( aDrawInf ).Width();
             nIdx++;
         }
-        else if ( pHint && ( cChar == CH_TXTATR_BREAKWORD || cChar == CH_TXTATR_INWORD ) )
+        else if (cChar == CH_TXTATR_BREAKWORD || cChar == CH_TXTATR_INWORD)
         {
-            switch( pHint->Which() )
+            const sal_uInt16 nWhich = pHint ? pHint->Which() : 0;
+            switch(nWhich)
             {
             case RES_TXTATR_FTN :
                 {
@@ -1803,7 +1804,7 @@ bool SwTextFrame::IsEmptyWithSplitFly() const
     }
 
     // It has a split fly anchored to it.
-    if (pFlyFrame->GetFrameFormat()->GetVertOrient().GetPos() >= 0)
+    if (pFlyFrame->GetFrameFormat()->GetVertOrient().getPosition().as_twip<SwTwips>() >= 0)
     {
         return false;
     }
@@ -1814,7 +1815,7 @@ bool SwTextFrame::IsEmptyWithSplitFly() const
     return true;
 }
 
-SwTwips SwTextNode::GetWidthOfLeadingTabs() const
+gfx::Length SwTextNode::GetWidthOfLeadingTabs() const
 {
     SwTwips nRet = 0;
 
@@ -1853,7 +1854,7 @@ SwTwips SwTextNode::GetWidthOfLeadingTabs() const
         }
     }
 
-    return nRet;
+    return gfx::Length::twip(nRet);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

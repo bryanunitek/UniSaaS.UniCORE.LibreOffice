@@ -18,6 +18,7 @@
  */
 
 #include <editeng/editeng.hxx>
+#include <vcl/ptrstyle.hxx>
 #include <editeng/outlobj.hxx>
 #include <svx/svdobj.hxx>
 #include <svx/svdoole2.hxx>
@@ -25,7 +26,6 @@
 #include <svx/ImageMapInfo.hxx>
 #include <sfx2/dispatch.hxx>
 #include <sfx2/viewfrm.hxx>
-#include <vcl/ptrstyle.hxx>
 #include <vcl/uitest/logger.hxx>
 #include <vcl/uitest/eventdescription.hxx>
 

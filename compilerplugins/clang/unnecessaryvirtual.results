@@ -28,16 +28,6 @@ canvas/inc/base/bitmapcanvasbase.hxx:84
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XBitmap> canvas::BitmapCanvasBase::getScaledBitmap(const struct com::sun::star::geometry::RealSize2D &,unsigned char,)
 canvas/inc/base/bitmapcanvasbase.hxx:105
     void canvas::BitmapCanvasBase2::copyRect(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XBitmapCanvas> &,const struct com::sun::star::geometry::RealRectangle2D &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,const struct com::sun::star::geometry::RealRectangle2D &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,)
-canvas/inc/base/bufferedgraphicdevicebase.hxx:92
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XBufferController> canvas::BufferedGraphicDeviceBase::getBufferController()
-canvas/inc/base/bufferedgraphicdevicebase.hxx:98
-    int canvas::BufferedGraphicDeviceBase::createBuffers(int,)
-canvas/inc/base/bufferedgraphicdevicebase.hxx:105
-    void canvas::BufferedGraphicDeviceBase::destroyBuffers()
-canvas/inc/base/bufferedgraphicdevicebase.hxx:109
-    unsigned char canvas::BufferedGraphicDeviceBase::showBuffer(unsigned char,)
-canvas/inc/base/bufferedgraphicdevicebase.hxx:116
-    unsigned char canvas::BufferedGraphicDeviceBase::switchBuffer(unsigned char,)
 canvas/inc/base/bufferedgraphicdevicebase.hxx:160
     void canvas::BufferedGraphicDeviceBase::disposeThis()
 canvas/inc/base/bufferedgraphicdevicebase.hxx:207
@@ -64,22 +54,12 @@ canvas/inc/base/canvasbase.hxx:189
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XCachedPrimitive> canvas::CanvasBase::drawPolyPolygon(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XPolyPolygon2D> &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,)
 canvas/inc/base/canvasbase.hxx:205
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XCachedPrimitive> canvas::CanvasBase::strokePolyPolygon(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XPolyPolygon2D> &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,const struct com::sun::star::rendering::StrokeAttributes &,)
-canvas/inc/base/canvasbase.hxx:222
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XCachedPrimitive> canvas::CanvasBase::strokeTexturedPolyPolygon(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XPolyPolygon2D> &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,const class com::sun::star::uno::Sequence<struct com::sun::star::rendering::Texture> &,const struct com::sun::star::rendering::StrokeAttributes &,)
-canvas/inc/base/canvasbase.hxx:240
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XCachedPrimitive> canvas::CanvasBase::strokeTextureMappedPolyPolygon(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XPolyPolygon2D> &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,const class com::sun::star::uno::Sequence<struct com::sun::star::rendering::Texture> &,const class com::sun::star::uno::Reference<class com::sun::star::geometry::XMapping2D> &,const struct com::sun::star::rendering::StrokeAttributes &,)
-canvas/inc/base/canvasbase.hxx:259
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XPolyPolygon2D> canvas::CanvasBase::queryStrokeShapes(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XPolyPolygon2D> &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,const struct com::sun::star::rendering::StrokeAttributes &,)
 canvas/inc/base/canvasbase.hxx:276
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XCachedPrimitive> canvas::CanvasBase::fillPolyPolygon(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XPolyPolygon2D> &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,)
 canvas/inc/base/canvasbase.hxx:292
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XCachedPrimitive> canvas::CanvasBase::fillTexturedPolyPolygon(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XPolyPolygon2D> &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,const class com::sun::star::uno::Sequence<struct com::sun::star::rendering::Texture> &,)
-canvas/inc/base/canvasbase.hxx:309
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XCachedPrimitive> canvas::CanvasBase::fillTextureMappedPolyPolygon(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XPolyPolygon2D> &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,const class com::sun::star::uno::Sequence<struct com::sun::star::rendering::Texture> &,const class com::sun::star::uno::Reference<class com::sun::star::geometry::XMapping2D> &,)
 canvas/inc/base/canvasbase.hxx:328
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XCanvasFont> canvas::CanvasBase::createFont(const struct com::sun::star::rendering::FontRequest &,const class com::sun::star::uno::Sequence<struct com::sun::star::beans::PropertyValue> &,const struct com::sun::star::geometry::Matrix2D &,)
-canvas/inc/base/canvasbase.hxx:346
-    class com::sun::star::uno::Sequence<struct com::sun::star::rendering::FontInfo> canvas::CanvasBase::queryAvailableFonts(const struct com::sun::star::rendering::FontInfo &,const class com::sun::star::uno::Sequence<struct com::sun::star::beans::PropertyValue> &,)
 canvas/inc/base/canvasbase.hxx:360
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XCachedPrimitive> canvas::CanvasBase::drawText(const struct com::sun::star::rendering::StringContext &,const class com::sun::star::uno::Reference<class com::sun::star::rendering::XCanvasFont> &,const struct com::sun::star::rendering::ViewState &,const struct com::sun::star::rendering::RenderState &,signed char,)
 canvas/inc/base/canvasbase.hxx:382
@@ -130,8 +110,6 @@ canvas/inc/base/disambiguationhelper.hxx:73
     void canvas::DisambiguationHelper::disposing(const struct com::sun::star::lang::EventObject &,)
 canvas/inc/base/graphicdevicebase.hxx:134
     void canvas::GraphicDeviceBase::disposeThis()
-canvas/inc/base/graphicdevicebase.hxx:145
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XBufferController> canvas::GraphicDeviceBase::getBufferController()
 canvas/inc/base/graphicdevicebase.hxx:150
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XColorSpace> canvas::GraphicDeviceBase::getDeviceColorSpace()
 canvas/inc/base/graphicdevicebase.hxx:157
@@ -144,18 +122,10 @@ canvas/inc/base/graphicdevicebase.hxx:178
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XBezierPolyPolygon2D> canvas::GraphicDeviceBase::createCompatibleBezierPolyPolygon(const class com::sun::star::uno::Sequence<class com::sun::star::uno::Sequence<struct com::sun::star::geometry::RealBezierSegment2D> > &,)
 canvas/inc/base/graphicdevicebase.hxx:185
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XBitmap> canvas::GraphicDeviceBase::createCompatibleBitmap(const struct com::sun::star::geometry::IntegerSize2D &,)
-canvas/inc/base/graphicdevicebase.hxx:196
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XVolatileBitmap> canvas::GraphicDeviceBase::createVolatileBitmap(const struct com::sun::star::geometry::IntegerSize2D &,)
 canvas/inc/base/graphicdevicebase.hxx:207
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XBitmap> canvas::GraphicDeviceBase::createCompatibleAlphaBitmap(const struct com::sun::star::geometry::IntegerSize2D &,)
-canvas/inc/base/graphicdevicebase.hxx:218
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XVolatileBitmap> canvas::GraphicDeviceBase::createVolatileAlphaBitmap(const struct com::sun::star::geometry::IntegerSize2D &,)
 canvas/inc/base/graphicdevicebase.hxx:229
     class com::sun::star::uno::Reference<class com::sun::star::lang::XMultiServiceFactory> canvas::GraphicDeviceBase::getParametricPolyPolygonFactory()
-canvas/inc/base/graphicdevicebase.hxx:234
-    unsigned char canvas::GraphicDeviceBase::hasFullScreenMode()
-canvas/inc/base/graphicdevicebase.hxx:239
-    unsigned char canvas::GraphicDeviceBase::enterFullScreenMode(unsigned char,)
 canvas/inc/base/graphicdevicebase.hxx:245
     class com::sun::star::uno::Reference<class com::sun::star::uno::XInterface> canvas::GraphicDeviceBase::createInstance(const class rtl::OUString &,)
 canvas/inc/base/graphicdevicebase.hxx:253
@@ -190,10 +160,6 @@ canvas/inc/base/integerbitmapbase.hxx:99
     struct com::sun::star::rendering::IntegerBitmapLayout canvas::IntegerBitmapBase::getMemoryLayout()
 canvas/inc/base/spritecanvasbase.hxx:84
     void canvas::SpriteCanvasBase::disposeThis()
-canvas/inc/base/spritecanvasbase.hxx:95
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XAnimatedSprite> canvas::SpriteCanvasBase::createSpriteFromAnimation(const class com::sun::star::uno::Reference<class com::sun::star::rendering::XAnimation> &,)
-canvas/inc/base/spritecanvasbase.hxx:106
-    class com::sun::star::uno::Reference<class com::sun::star::rendering::XAnimatedSprite> canvas::SpriteCanvasBase::createSpriteFromBitmaps(const class com::sun::star::uno::Sequence<class com::sun::star::uno::Reference<class com::sun::star::rendering::XBitmap> > &,signed char,)
 canvas/inc/base/spritecanvasbase.hxx:121
     class com::sun::star::uno::Reference<class com::sun::star::rendering::XCustomSprite> canvas::SpriteCanvasBase::createCustomSprite(const struct com::sun::star::geometry::RealSize2D &,)
 canvas/inc/base/spritecanvasbase.hxx:132

@@ -3008,11 +3008,17 @@ bool SwContentTree::RequestingChildren(const weld::TreeIter& rParent)
                     }
                 }
 
+                // tdf#173801 Prevent Navigator loop with groupshape in footer
+                if (vMemberIndexes == vNoParentYetFoundForMemberIndexes)
+                    break;
+
                 vMemberIndexes = std::move(vNoParentYetFoundForMemberIndexes);
             }
         }
         else
             InsertContent(rParent);
+
+        m_xTreeView->set_children_on_demand(rParent, false);
 
         return nCount != 0;
     }
@@ -3110,8 +3116,7 @@ void SwContentTree::Expand(const weld::TreeIter& rParent,
             std::map< void*, bool > aCurrOutLineNodeMap;
 
             SwWrtShell* pShell = GetWrtShell();
-            bool bParentHasChild = RequestingChildren(rParent);
-            if (bParentHasChild)
+            if (RequestingChildren(rParent))
             {
                 std::unique_ptr<weld::TreeIter> xChild(m_xTreeView->make_iterator(&rParent));
                 bool bChild = m_xTreeView->iter_next(*xChild);
@@ -3127,10 +3132,8 @@ void SwContentTree::Expand(const weld::TreeIter& rParent,
                         if( iter != mOutLineNodeMap.end() && mOutLineNodeMap[key])
                         {
                             aCurrOutLineNodeMap[key] = true;
-                            RequestingChildren(*xChild);
                             if (pNodesToExpand)
                                 pNodesToExpand->emplace_back(m_xTreeView->make_iterator(xChild.get()));
-                            m_xTreeView->set_children_on_demand(*xChild, false);
                         }
                     }
                     bChild = m_xTreeView->iter_next(*xChild);
@@ -3175,8 +3178,6 @@ void SwContentTree::Expand(const weld::TreeIter& rParent,
                             if (pNodesToExpand)
                                 pNodesToExpand->emplace_back(
                                     m_xTreeView->make_iterator(xChild.get()));
-                            RequestingChildren(*xChild);
-                            m_xTreeView->set_children_on_demand(*xChild, false);
                         }
                     }
                 }
@@ -3216,8 +3217,6 @@ void SwContentTree::Expand(const weld::TreeIter& rParent,
                         {
                             if (pNodesToExpand)
                                 pNodesToExpand->emplace_back(m_xTreeView->make_iterator(xChild.get()));
-                            RequestingChildren(*xChild);
-                            m_xTreeView->set_children_on_demand(*xChild, false);
                         }
                     }
                 }
@@ -3257,8 +3256,6 @@ void SwContentTree::Expand(const weld::TreeIter& rParent,
                         {
                             if (pNodesToExpand)
                                 pNodesToExpand->emplace_back(m_xTreeView->make_iterator(xChild.get()));
-                            RequestingChildren(*xChild);
-                            m_xTreeView->set_children_on_demand(*xChild, false);
                         }
                     }
                 }
@@ -3297,7 +3294,6 @@ void SwContentTree::Expand(const weld::TreeIter& rParent,
                             if (pNodesToExpand)
                                 pNodesToExpand->emplace_back(
                                             m_xTreeView->make_iterator(xChild.get()));
-                            // RequestingChildren(*xChild);
                         }
                     }
                 }
@@ -3645,7 +3641,6 @@ IMPL_LINK_NOARG(SwContentTree, AsyncContentDoubleClickHdl, void*, void)
         if (lcl_IsContentType(*xEntry, *m_xTreeView) && !m_xTreeView->iter_has_child(*xEntry))
         {
             RequestingChildren(*xEntry);
-            m_xTreeView->set_children_on_demand(*xEntry, false);
         }
         else if (!lcl_IsContentType(*xEntry, *m_xTreeView) && (State::HIDDEN != m_eState))
         {
@@ -3859,7 +3854,14 @@ void SwContentTree::Display( bool bActive )
                 {
                     // fill contents of to-be expanded entries while frozen
                     Expand(*xEntry, &aNodesToExpand);
-                    m_xTreeView->set_children_on_demand(*xEntry, false);
+                }
+                else
+                {
+                    // This is a workaround to avoid the following gtk assert
+                    // Gtk:ERROR:../../../gtk/gtktreestore.c:597:gtk_tree_store_get_path: assertion failed: (G_NODE (iter->user_data)->parent != NULL)
+                    // Bail out! Gtk:ERROR:../../../gtk/gtktreestore.c:597:gtk_tree_store_get_path: assertion failed: (G_NODE (iter->user_data)->parent != NULL)
+                    // This defeats the supposed purpose of using children on demand to make loading the tree less time consuming.
+                    RequestingChildren(*xEntry);
                 }
             }
 
@@ -3898,7 +3900,6 @@ void SwContentTree::Display( bool bActive )
             {
                 // fill contents of to-be expanded entries while frozen
                 Expand(*xEntry, &aNodesToExpand);
-                m_xTreeView->set_children_on_demand(*xEntry, false);
             }
 
             m_xTreeView->set_sensitive(*xEntry, m_xTreeView->iter_has_child(*xEntry));

@@ -17,6 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 #include <sfx2/bindings.hxx>
+#include <drawview.hxx>
 #include <drwlayer.hxx>
 #include <sfx2/dispatch.hxx>
 #include <sfx2/passwd.hxx>
@@ -1323,6 +1324,7 @@ void ScTabViewShell::Execute( SfxRequest& rReq )
                     SfxBindings& rBind = rViewData.GetBindings();
                     rBind.Invalidate( FID_FILL_TAB );
                     rBind.Invalidate( FID_TAB_DESELECTALL );
+                    RemoveInfoBarSelectAllSheets();
                 }
 
                 rReq.Done();

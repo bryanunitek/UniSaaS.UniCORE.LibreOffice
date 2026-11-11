@@ -11,6 +11,7 @@
 
 #include "qahelper.hxx"
 #include <LibreOfficeKit/LibreOfficeKitEnums.h>
+#include <drawview.hxx>
 #include <comphelper/propertysequence.hxx>
 #include "csv_handler.hxx"
 #include "debughelper.hxx"
@@ -979,13 +980,13 @@ void ScUcalcTestBase::printRange(ScDocument* pDoc, const ScRange& rRange, const 
     printRange(pDoc, rRange, rCaption.getStr(), printFormula);
 }
 
-void ScUcalcTestBase::clearRange(ScDocument* pDoc, const ScRange& rRange)
+void ScUcalcTestBase::clearRange(ScDocument* pDoc, const ScRange& rRange, InsertDeleteFlags eFlags)
 {
     ScMarkData aMarkData(pDoc->GetSheetLimits());
     aMarkData.SetMarkArea(rRange);
     pDoc->DeleteArea(
         rRange.aStart.Col(), rRange.aStart.Row(),
-        rRange.aEnd.Col(), rRange.aEnd.Row(), aMarkData, InsertDeleteFlags::CONTENTS);
+        rRange.aEnd.Col(), rRange.aEnd.Row(), aMarkData, eFlags);
 }
 
 void ScUcalcTestBase::clearSheet(ScDocument* pDoc, SCTAB nTab)

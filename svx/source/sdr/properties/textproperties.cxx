@@ -57,6 +57,7 @@ namespace sdr::properties
                 SDRATTR_TEXTDIRECTION, SDRATTR_TEXTDIRECTION,
                 SDRATTR_GLOW_FIRST, SDRATTR_GLOW_TEXT_LAST,
                 SDRATTR_TEXTCOLUMNS_FIRST, SDRATTR_TEXTCOLUMNS_LAST,
+                SDRATTR_REFLECTION_FIRST, SDRATTR_REFLECTION_LAST,
 
                 // range from SdrTextObj
                 EE_ITEMS_START, EE_ITEMS_END>);
@@ -78,7 +79,7 @@ namespace sdr::properties
         {
         }
 
-        std::unique_ptr<BaseProperties> TextProperties::Clone(SdrObject& rObj) const
+        std::unique_ptr<BaseProperties> TextProperties::implCloneProperties(SdrObject& rObj) const
         {
             return std::unique_ptr<BaseProperties>(new TextProperties(*this, rObj));
         }
@@ -466,9 +467,9 @@ namespace sdr::properties
 
                             if(aSet.GetItemState(EE_CHAR_COLOR) == SfxItemState::SET)
                             {
-                                EditEngine* pEditEngine = const_cast<EditEngine*>(&(pOutliner->GetEditEngine()));
+                                EditEngine& rEditEngine = pOutliner->GetEditEngine();
                                 std::vector<EECharAttrib> aAttribs;
-                                pEditEngine->GetCharAttribs(nPara, aAttribs);
+                                rEditEngine.GetCharAttribs(nPara, aAttribs);
 
                                 for(const auto& rAttrib : aAttribs)
                                 {
@@ -503,17 +504,17 @@ namespace sdr::properties
                                             aSel.end.nIndex = rAttrib.nStart;
 
                                             if (aSel.start.nIndex != aSel.end.nIndex)
-                                                pEditEngine->QuickSetAttribs(aColorSet, aSel);
+                                                rEditEngine.QuickSetAttribs(aColorSet, aSel);
 
                                             aSel.start.nIndex = rAttrib.nEnd;
                                         }
                                     }
 
-                                    aSel.end.nIndex = pEditEngine->GetTextLen(nPara);
+                                    aSel.end.nIndex = rEditEngine.GetTextLen(nPara);
 
                                     if (aSel.start.nIndex != aSel.end.nIndex)
                                     {
-                                        pEditEngine->QuickSetAttribs( aColorSet, aSel );
+                                        rEditEngine.QuickSetAttribs( aColorSet, aSel );
                                     }
                                 }
 

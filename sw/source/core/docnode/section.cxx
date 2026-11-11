@@ -63,6 +63,7 @@
 #include <unosection.hxx>
 #include <calbck.hxx>
 #include <fmtclds.hxx>
+#include <tools/hostfilter.hxx>
 #include <algorithm>
 #include <utility>
 #include "ndsect.hxx"
@@ -1037,7 +1038,7 @@ static void lcl_BreakSectionLinksInSect( const SwSectionNode& rSectNd )
     const ::sfx2::SvBaseLinks& rLnks = rSectNd.GetDoc().getIDocumentLinksAdministration().GetLinkManager().GetLinks();
     for ( auto n = rLnks.size(); n > 0; )
     {
-        SwIntrnlSectRefLink* pSectLnk = dynamic_cast<SwIntrnlSectRefLink*>(&(*rLnks[ --n ]));
+        SwIntrnlSectRefLink* pSectLnk = dynamic_cast<SwIntrnlSectRefLink*>(rLnks[ --n ].get());
         if ( pSectLnk && pSectLnk != pOwnLink &&
              pSectLnk->IsInRange( rSectNd.GetIndex(), rSectNd.EndOfSectionIndex() ) )
         {
@@ -1071,7 +1072,7 @@ static void lcl_UpdateLinksInSect( const SwBaseLink& rUpdLnk, SwSectionNode& rSe
     const ::sfx2::SvBaseLinks& rLnks = rDoc.getIDocumentLinksAdministration().GetLinkManager().GetLinks();
     for( auto n = rLnks.size(); n; )
     {
-        ::sfx2::SvBaseLink* pLnk = &(*rLnks[ --n ]);
+        ::sfx2::SvBaseLink* pLnk = rLnks[ --n ].get();
         if( pLnk == &rUpdLnk )
             continue;
         if( sfx2::SvBaseLinkObjectType::ClientFile != pLnk->GetObjType() )
@@ -1091,11 +1092,11 @@ static void lcl_UpdateLinksInSect( const SwBaseLink& rUpdLnk, SwSectionNode& rSe
                 if( n >= rLnks.size() && 0 != ( n = rLnks.size() ))
                     --n;
 
-                if( n && pLnk != &(*rLnks[ n ]) )
+                if( n && pLnk != rLnks[ n ].get() )
                 {
                     // Find - it can only precede it!
                     while( n )
-                        if( pLnk == &(*rLnks[ --n ] ) )
+                        if( pLnk == rLnks[ --n ].get() )
                             break;
                 }
             }
@@ -1186,6 +1187,12 @@ static void lcl_UpdateLinksInSect( const SwBaseLink& rUpdLnk, SwSectionNode& rSe
             OUString sRange;
             sfx2::LinkManager::GetDisplayNames( this, nullptr, &sFileName,
                                                     &sRange, &sFilter );
+
+            if (HostFilter::isFileUrlForbidden(sFileName))
+            {
+                SAL_WARN("sw.core", "SwIntrnlSectRefLink::DataChanged: blocked file path: \"" << sFileName << "\"");
+                break;
+            }
 
             RedlineFlags eOldRedlineFlags = RedlineFlags::NONE;
             SfxObjectShellRef xDocSh;

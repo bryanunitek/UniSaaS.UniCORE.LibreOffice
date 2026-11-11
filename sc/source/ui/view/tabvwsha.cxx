@@ -19,6 +19,7 @@
 
 #include <com/sun/star/table/BorderLineStyle.hpp>
 #include <officecfg/Office/Calc.hxx>
+#include <drawview.hxx>
 
 #include <comphelper/lok.hxx>
 #include <editeng/boxitem.hxx>
@@ -198,13 +199,8 @@ void ScTabViewShell::GetState( SfxItemSet& rSet )
     SfxViewFrame& rThisFrame = GetViewFrame();
     bool bOle = GetViewFrame().GetFrame().IsInPlace();
 
-    SCTAB nTabSelCount = rMark.GetSelectCount();
     SCTAB nCountVisible = 0;
     const SCTAB nTabCount = rDoc.GetTableCount();
-    for ( SCTAB i = 0; nCountVisible < 2 && i < nTabCount ; i++ )
-        if ( rDoc.IsVisible( i ) )
-            ++nCountVisible;
-    const bool bOnlyOneVisibleSheet = nCountVisible < 2;
     bool bAllSelected = true;
 
     SfxWhichIter    aIter(rSet);
@@ -284,7 +280,10 @@ void ScTabViewShell::GetState( SfxItemSet& rSet )
                 rSet.Put( SfxUInt16Item( nWhich, static_cast<sal_uInt16>(GetViewData().GetTabNumber()) + 1 ) );
 
                 // enabled only if several sheets are visible
-                if ( bOnlyOneVisibleSheet )
+                for ( SCTAB i = 0; nCountVisible < 2 && i < nTabCount ; i++ )
+                    if ( rDoc.IsVisible( i ) )
+                        ++nCountVisible;
+                if ( nCountVisible < 2 )
                     rSet.DisableItem( nWhich );
                 break;
 
@@ -555,17 +554,23 @@ void ScTabViewShell::GetState( SfxItemSet& rSet )
                 break;
 
             case FID_TAB_DESELECTALL:
-                if ( nTabSelCount == 1 )
+                if ( rMark.GetSelectCount() == 1 )
                     rSet.DisableItem( nWhich );     // enabled only if several sheets are selected
                 break;
 
             case FID_TAB_SELECTALL:
-                if ( bOnlyOneVisibleSheet )
-                    rSet.DisableItem( nWhich );     // enabled only if several sheets are visible
-                else
+                if ( officecfg::Office::Calc::Input::SelectHiddenSheets::get() )
+                {
+                    // tdf#173835 count visible and hidden sheets
+                    if ( nTabCount == rMark.GetSelectCount() )
+                        rSet.DisableItem( nWhich );  // disabled if all sheets are already selected
+                }
+                else // count only visible sheets
                 {
                     for ( SCTAB i = 0; i < nTabCount && bAllSelected; i++ )
+                    {
                         bAllSelected = !( rDoc.IsVisible(i) && !rMark.GetTableSelect(i) );
+                    }
                     if ( bAllSelected )
                         rSet.DisableItem( nWhich );  // disabled if all sheets are already selected
                 }

@@ -42,6 +42,7 @@ protected:
 
     Primitive2DSequence parseSvg(std::u16string_view aSource);
     xmlDocUniquePtr dumpAndParseSvg(std::u16string_view aSource);
+    xmlDocUniquePtr dumpAndParseSvgText(const OString& rSvg, const OUString& rLocation);
 };
 
 Primitive2DSequence Test::parseSvg(std::u16string_view aSource)
@@ -70,6 +71,21 @@ xmlDocUniquePtr Test::dumpAndParseSvg(std::u16string_view aSource)
     xmlDocUniquePtr pDocument = dumper.dumpAndParse(aSequence);
 
     CPPUNIT_ASSERT (pDocument);
+    return pDocument;
+}
+
+xmlDocUniquePtr Test::dumpAndParseSvgText(const OString& rSvg, const OUString& rLocation)
+{
+    const Reference<XSvgParser> xSvgParser = SvgTools::create(m_xContext);
+
+    Sequence<sal_Int8> aData(reinterpret_cast<const sal_Int8*>(rSvg.getStr()), rSvg.getLength());
+    Reference<XInputStream> xStream(new comphelper::SequenceInputStream(aData));
+
+    drawinglayer::Primitive2dXmlDump dumper;
+    xmlDocUniquePtr pDocument
+        = dumper.dumpAndParse(xSvgParser->getDecomposition(xStream, rLocation));
+
+    CPPUNIT_ASSERT(pDocument);
     return pDocument;
 }
 
@@ -364,6 +380,60 @@ CPPUNIT_TEST_FIXTURE(Test, testFilterFeImage)
     xmlDocUniquePtr pDocument = dumpAndParseSvg(u"/svgio/qa/cppunit/data/filterFeImage.svg");
 
     assertXPath(pDocument, "/primitive2D/transform/transform/bitmap");
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testImageOutsideSvgNeedsLocation)
+{
+    const OUString aImageUrl
+        = m_directories.getURLFromSrc(u"/svgio/qa/cppunit/data/externalImage.png");
+    const OString aSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\""
+                         " xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"200\" height=\"200\">"
+                         "<image x=\"10\" y=\"10\" width=\"100\" height=\"100\" xlink:href=\""
+                         + aImageUrl.toUtf8() + "\"/></svg>";
+
+    // An SVG inside a document has no location, and its picture outside the SVG stays out.
+    assertXPath(dumpAndParseSvgText(aSvg, OUString()), "//bitmap", 0);
+
+    // The same SVG read from a location shows the picture.
+    assertXPath(dumpAndParseSvgText(aSvg, m_directories.getURLFromSrc(u"/svgio/qa/cppunit/data/")),
+                "//bitmap", 1);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testOutsidePicturesListedWithoutOpening)
+{
+    const OUString aLocation = m_directories.getURLFromSrc(u"/svgio/qa/cppunit/data/");
+    const OUString aAbsoluteUrl = m_directories.getURLFromSrc(u"/svgio/qa/cppunit/elsewhere.png");
+    const OString aSvg
+        = "<svg xmlns=\"http://www.w3.org/2000/svg\""
+          " xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"200\" height=\"200\">"
+          "<defs><filter id=\"f\"><feImage xlink:href=\"sub/inner.png\"/></filter>"
+          "<rect id=\"r\" width=\"10\" height=\"10\"/></defs>"
+          "<image width=\"10\" height=\"10\" xlink:href=\"externalImage.png\"/>"
+          "<g><image width=\"10\" height=\"10\" xlink:href=\""
+          + aAbsoluteUrl.toUtf8()
+          + "\"/></g>"
+            "<image width=\"10\" height=\"10\" xlink:href=\"externalImage.png\"/>"
+            "<image width=\"10\" height=\"10\" xlink:href=\"#r\"/>"
+            "<image width=\"10\" height=\"10\""
+            " xlink:href=\"data:image/png;base64,iVBORw0KGgo=\"/></svg>";
+
+    const Reference<XSvgParser> xSvgParser = SvgTools::create(m_xContext);
+    Sequence<sal_Int8> aData(reinterpret_cast<const sal_Int8*>(aSvg.getStr()), aSvg.getLength());
+
+    // Each outside picture is listed once, resolved against the location. The data URL and the
+    // reference to an element of the SVG are not listed.
+    const Sequence<OUString> aUrls
+        = xSvgParser->getExternalImageUrls(new comphelper::SequenceInputStream(aData), aLocation);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(3), aUrls.getLength());
+    CPPUNIT_ASSERT_EQUAL(OUString(aLocation + "sub/inner.png"), aUrls[0]);
+    CPPUNIT_ASSERT_EQUAL(OUString(aLocation + "externalImage.png"), aUrls[1]);
+    CPPUNIT_ASSERT_EQUAL(aAbsoluteUrl, aUrls[2]);
+
+    // With no location nothing is listed, because nothing would be opened.
+    CPPUNIT_ASSERT_EQUAL(
+        sal_Int32(0),
+        xSvgParser->getExternalImageUrls(new comphelper::SequenceInputStream(aData), OUString())
+            .getLength());
 }
 
 CPPUNIT_TEST_FIXTURE(Test, testTdf87309)

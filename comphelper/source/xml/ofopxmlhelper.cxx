@@ -17,87 +17,109 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
-
 #include <comphelper/ofopxmlhelper.hxx>
 #include <comphelper/attributelist.hxx>
 
-#include <cppuhelper/implbase.hxx>
 #include <rtl/ref.hxx>
+#include <sal/log.hxx>
+
+#include <com/sun/star/xml/sax/FastParser.hpp>
+#include <com/sun/star/xml/sax/XFastParser.hpp>
+#include <com/sun/star/xml/sax/XFastDocumentHandler.hpp>
+#include <com/sun/star/xml/sax/XFastContextHandler.hpp>
+#include <com/sun/star/xml/sax/XFastAttributeList.hpp>
 
 #include <com/sun/star/beans/StringPair.hpp>
-#include <com/sun/star/xml/sax/Parser.hpp>
-#include <com/sun/star/xml/sax/XDocumentHandler.hpp>
 #include <com/sun/star/xml/sax/SAXException.hpp>
 #include <com/sun/star/xml/sax/Writer.hpp>
 #include <com/sun/star/lang/IllegalArgumentException.hpp>
 #include <vector>
 
-#define RELATIONINFO_FORMAT 0
-#define CONTENTTYPE_FORMAT  1
-#define FORMAT_MAX_ID CONTENTTYPE_FORMAT
-
 using namespace ::com::sun::star;
 
-namespace comphelper {
-
-namespace {
-
-// this helper class is designed to allow to parse ContentType- and Relationship-related information from OfficeOpenXML format
-class OFOPXMLHelper_Impl
-    : public cppu::WeakImplHelper< css::xml::sax::XDocumentHandler >
+namespace comphelper
 {
-    sal_uInt16 const m_nFormat; // which format to parse
-
-    css::uno::Sequence< css::uno::Sequence< css::beans::StringPair > > m_aResultSeq;
-    std::vector< OUString > m_aElementsSeq; // stack of elements being parsed
-
-
-public:
-    css::uno::Sequence< css::uno::Sequence< css::beans::StringPair > > const & GetParsingResult() const;
-
-    explicit OFOPXMLHelper_Impl( sal_uInt16 nFormat ); // must not be created directly
-
-    // XDocumentHandler
-    virtual void SAL_CALL startDocument() override;
-    virtual void SAL_CALL endDocument() override;
-    virtual void SAL_CALL startElement( const OUString& aName, const css::uno::Reference< css::xml::sax::XAttributeList >& xAttribs ) override;
-    virtual void SAL_CALL endElement( const OUString& aName ) override;
-    virtual void SAL_CALL characters( const OUString& aChars ) override;
-    virtual void SAL_CALL ignorableWhitespace( const OUString& aWhitespaces ) override;
-    virtual void SAL_CALL processingInstruction( const OUString& aTarget, const OUString& aData ) override;
-    virtual void SAL_CALL setDocumentLocator( const css::uno::Reference< css::xml::sax::XLocator >& xLocator ) override;
+namespace
+{
+enum class Format
+{
+    RelationInfo,
+    ContentType
 };
 
+// this helper class is designed to allow to parse ContentType- and Relationship-related information from OfficeOpenXML format
+class OFOPXMLHelper_Impl : public cppu::WeakImplHelper<css::xml::sax::XFastDocumentHandler>
+{
+    Format const m_eFormat; // which format to parse
+
+    css::uno::Sequence<css::uno::Sequence<css::beans::StringPair>> m_aResultSeq;
+    std::vector<OUString> m_aElementsSeq; // stack of elements being parsed
+
+public:
+    css::uno::Sequence<css::uno::Sequence<css::beans::StringPair>> const& GetParsingResult() const;
+
+    explicit OFOPXMLHelper_Impl(Format eFormat); // must not be created directly
+
+    // XFastDocumentHandler
+    virtual void SAL_CALL startDocument() override;
+    virtual void SAL_CALL endDocument() override;
+    virtual void SAL_CALL processingInstruction(const OUString& aTarget,
+                                                const OUString& aData) override;
+    virtual void SAL_CALL
+    setDocumentLocator(const uno::Reference<css::xml::sax::XLocator>& xLocator) override;
+
+    // XFastContextHandler
+    virtual uno::Reference<css::xml::sax::XFastContextHandler> SAL_CALL createFastChildContext(
+        sal_Int32 Element,
+        const uno::Reference<css::xml::sax::XFastAttributeList>& Attribs) override;
+
+    virtual uno::Reference<css::xml::sax::XFastContextHandler> SAL_CALL createUnknownChildContext(
+        const OUString& Namespace, const OUString& Name,
+        const uno::Reference<css::xml::sax::XFastAttributeList>& Attribs) override;
+
+    virtual void SAL_CALL
+    startFastElement(sal_Int32 Element,
+                     const uno::Reference<css::xml::sax::XFastAttributeList>& Attribs) override;
+
+    virtual void SAL_CALL
+    startUnknownElement(const OUString& Namespace, const OUString& Name,
+                        const uno::Reference<css::xml::sax::XFastAttributeList>& Attribs) override;
+
+    virtual void SAL_CALL endFastElement(sal_Int32 Element) override;
+
+    virtual void SAL_CALL endUnknownElement(const OUString& Namespace,
+                                            const OUString& Name) override;
+
+    virtual void SAL_CALL characters(const OUString& aChars) override;
+};
 }
 
-namespace OFOPXMLHelper {
-
+namespace OFOPXMLHelper
+{
 /// @throws css::uno::Exception
-static uno::Sequence<uno::Sequence< beans::StringPair>> ReadSequence_Impl(
-    const uno::Reference<io::XInputStream>& xInStream,
-    const OUString& aStringID, sal_uInt16 nFormat,
-    const uno::Reference<uno::XComponentContext>& xContext);
+static uno::Sequence<uno::Sequence<beans::StringPair>>
+ReadSequence_Impl(const uno::Reference<io::XInputStream>& xInStream, const OUString& aStringID,
+                  Format eFormat, const uno::Reference<uno::XComponentContext>& xContext);
 
-uno::Sequence< uno::Sequence< beans::StringPair > > ReadRelationsInfoSequence(
-        const uno::Reference< io::XInputStream >& xInStream,
-        std::u16string_view aStreamName,
-        const uno::Reference< uno::XComponentContext >& rContext )
+uno::Sequence<uno::Sequence<beans::StringPair>>
+ReadRelationsInfoSequence(const uno::Reference<io::XInputStream>& xInStream,
+                          std::u16string_view aStreamName,
+                          const uno::Reference<uno::XComponentContext>& rContext)
 {
     OUString aStringID = OUString::Concat("_rels/") + aStreamName;
-    return ReadSequence_Impl( xInStream, aStringID, RELATIONINFO_FORMAT, rContext );
+    return ReadSequence_Impl(xInStream, aStringID, Format::RelationInfo, rContext);
 }
 
-
-uno::Sequence< uno::Sequence< beans::StringPair > > ReadContentTypeSequence(
-        const uno::Reference< io::XInputStream >& xInStream,
-        const uno::Reference< uno::XComponentContext >& rContext )
+uno::Sequence<uno::Sequence<beans::StringPair>>
+ReadContentTypeSequence(const uno::Reference<io::XInputStream>& xInStream,
+                        const uno::Reference<uno::XComponentContext>& rContext)
 {
-    return ReadSequence_Impl( xInStream, u"[Content_Types].xml"_ustr, CONTENTTYPE_FORMAT, rContext );
+    return ReadSequence_Impl(xInStream, u"[Content_Types].xml"_ustr, Format::ContentType, rContext);
 }
 
 OUString GetContentTypeByName(
-                const css::uno::Sequence<css::uno::Sequence<css::beans::StringPair>>& rContentTypes,
-                const OUString& rFilename)
+    const css::uno::Sequence<css::uno::Sequence<css::beans::StringPair>>& rContentTypes,
+    const OUString& rFilename)
 {
     if (rContentTypes.getLength() < 2)
     {
@@ -107,91 +129,89 @@ OUString GetContentTypeByName(
     const uno::Sequence<beans::StringPair>& rDefaults = rContentTypes[0];
     const uno::Sequence<beans::StringPair>& rOverrides = rContentTypes[1];
 
-    // Find the extension and use it to get the type.
-    const sal_Int32 nDotOffset = rFilename.lastIndexOf('.');
-    const OUString aExt = (nDotOffset >= 0 ? rFilename.copy(nDotOffset + 1) : rFilename); // Skip the dot.
+    // An Override names one part, and a Default covers the parts with that extension that have no
+    // Override. Matching part names and extensions is done ignoring case.
+    const OUString aPartName = rFilename.startsWith("/") ? rFilename : "/" + rFilename;
+    const auto itOverride = std::find_if(rOverrides.begin(), rOverrides.end(),
+                                         [&aPartName](const beans::StringPair& rPair) {
+                                             return rPair.First.equalsIgnoreAsciiCase(aPartName);
+                                         });
+    if (itOverride != rOverrides.end())
+        return itOverride->Second;
 
-    const std::vector<OUString> aNames = { aExt, "/" + rFilename };
-    for (const OUString& aName : aNames)
-    {
-        const auto it1 = std::find_if(rOverrides.begin(), rOverrides.end(), [&aName](const beans::StringPair& rPair)
-                                                                              { return rPair.First == aName; });
-        if (it1 != rOverrides.end())
-            return it1->Second;
-
-        const auto it2 = std::find_if(rDefaults.begin(), rDefaults.end(), [&aName](const beans::StringPair& rPair)
-                                                                            { return rPair.First == aName; });
-        if (it2 != rDefaults.end())
-            return it2->Second;
-    }
+    // The extension is what comes after its last dot
+    const sal_Int32 nDotOffset = aPartName.lastIndexOf('.');
+    if (nDotOffset < aPartName.lastIndexOf('/'))
+        return OUString();
+    const OUString aExtension = aPartName.copy(nDotOffset + 1);
+    const auto itDefault = std::find_if(rDefaults.begin(), rDefaults.end(),
+                                        [&aExtension](const beans::StringPair& rPair) {
+                                            return rPair.First.equalsIgnoreAsciiCase(aExtension);
+                                        });
+    if (itDefault != rDefaults.end())
+        return itDefault->Second;
 
     return OUString();
 }
 
-void WriteRelationsInfoSequence(
-        const uno::Reference< io::XOutputStream >& xOutStream,
-        const uno::Sequence< uno::Sequence< beans::StringPair > >& aSequence,
-        const uno::Reference< uno::XComponentContext >& rContext )
+void WriteRelationsInfoSequence(const uno::Reference<io::XOutputStream>& xOutStream,
+                                const uno::Sequence<uno::Sequence<beans::StringPair>>& aSequence,
+                                const uno::Reference<uno::XComponentContext>& rContext)
 {
-    if ( !xOutStream.is() )
+    if (!xOutStream.is())
         throw uno::RuntimeException(u"Invalid output stream"_ustr);
 
-    uno::Reference< css::xml::sax::XWriter > xWriter = css::xml::sax::Writer::create(rContext);
+    uno::Reference<css::xml::sax::XWriter> xWriter = css::xml::sax::Writer::create(rContext);
 
-    xWriter->setOutputStream( xOutStream );
+    xWriter->setOutputStream(xOutStream);
 
-    OUString aRelListElement( u"Relationships"_ustr );
-    OUString aRelElement( u"Relationship"_ustr );
-    OUString aWhiteSpace( u" "_ustr );
+    OUString aRelListElement(u"Relationships"_ustr);
+    OUString aRelElement(u"Relationship"_ustr);
+    OUString aWhiteSpace(u" "_ustr);
 
     // write the namespace
     rtl::Reference<AttributeList> pRootAttrList = new AttributeList;
     pRootAttrList->AddAttribute(
-        u"xmlns"_ustr,
-        u"http://schemas.openxmlformats.org/package/2006/relationships"_ustr );
+        u"xmlns"_ustr, u"http://schemas.openxmlformats.org/package/2006/relationships"_ustr);
 
     xWriter->startDocument();
-    xWriter->startElement( aRelListElement, pRootAttrList );
+    xWriter->startElement(aRelListElement, pRootAttrList);
 
-    for ( const auto & i : aSequence )
+    for (const auto& i : aSequence)
     {
         rtl::Reference<AttributeList> pAttrList = new AttributeList;
-        for( const beans::StringPair & pair : i )
+        for (const beans::StringPair& pair : i)
         {
-            if ( !(pair.First == "Id"
-                  || pair.First == "Type"
-                  || pair.First == "TargetMode"
-                  || pair.First == "Target") )
+            if (!(pair.First == "Id" || pair.First == "Type" || pair.First == "TargetMode"
+                  || pair.First == "Target"))
             {
                 // TODO/LATER: should the extensions be allowed?
                 throw lang::IllegalArgumentException();
             }
-            pAttrList->AddAttribute( pair.First, pair.Second );
+            pAttrList->AddAttribute(pair.First, pair.Second);
         }
 
-        xWriter->startElement( aRelElement, pAttrList );
-        xWriter->ignorableWhitespace( aWhiteSpace );
-        xWriter->endElement( aRelElement );
+        xWriter->startElement(aRelElement, pAttrList);
+        xWriter->ignorableWhitespace(aWhiteSpace);
+        xWriter->endElement(aRelElement);
     }
 
-    xWriter->ignorableWhitespace( aWhiteSpace );
-    xWriter->endElement( aRelListElement );
+    xWriter->ignorableWhitespace(aWhiteSpace);
+    xWriter->endElement(aRelListElement);
     xWriter->endDocument();
 }
 
-
-void WriteContentSequence(
-        const uno::Reference< io::XOutputStream >& xOutStream,
-        const uno::Sequence< beans::StringPair >& aDefaultsSequence,
-        const uno::Sequence< beans::StringPair >& aOverridesSequence,
-        const uno::Reference< uno::XComponentContext >& rContext )
+void WriteContentSequence(const uno::Reference<io::XOutputStream>& xOutStream,
+                          const uno::Sequence<beans::StringPair>& aDefaultsSequence,
+                          const uno::Sequence<beans::StringPair>& aOverridesSequence,
+                          const uno::Reference<uno::XComponentContext>& rContext)
 {
-    if ( !xOutStream.is() )
+    if (!xOutStream.is())
         throw uno::RuntimeException(u"Invalid output stream"_ustr);
 
-    uno::Reference< css::xml::sax::XWriter > xWriter = css::xml::sax::Writer::create(rContext);
+    uno::Reference<css::xml::sax::XWriter> xWriter = css::xml::sax::Writer::create(rContext);
 
-    xWriter->setOutputStream( xOutStream );
+    xWriter->setOutputStream(xOutStream);
 
     static constexpr OUString aTypesElement(u"Types"_ustr);
     static constexpr OUString aDefaultElement(u"Default"_ustr);
@@ -202,58 +222,55 @@ void WriteContentSequence(
     // write the namespace
     rtl::Reference<AttributeList> pRootAttrList = new AttributeList;
     pRootAttrList->AddAttribute(
-        u"xmlns"_ustr,
-        u"http://schemas.openxmlformats.org/package/2006/content-types"_ustr );
+        u"xmlns"_ustr, u"http://schemas.openxmlformats.org/package/2006/content-types"_ustr);
 
     xWriter->startDocument();
-    xWriter->startElement( aTypesElement, pRootAttrList );
+    xWriter->startElement(aTypesElement, pRootAttrList);
 
-    for ( const beans::StringPair & pair : aDefaultsSequence )
+    for (const beans::StringPair& pair : aDefaultsSequence)
     {
         rtl::Reference<AttributeList> pAttrList = new AttributeList;
-        pAttrList->AddAttribute( u"Extension"_ustr, pair.First );
-        pAttrList->AddAttribute( aContentTypeAttr, pair.Second );
+        pAttrList->AddAttribute(u"Extension"_ustr, pair.First);
+        pAttrList->AddAttribute(aContentTypeAttr, pair.Second);
 
-        xWriter->startElement( aDefaultElement, pAttrList  );
-        xWriter->ignorableWhitespace( aWhiteSpace );
-        xWriter->endElement( aDefaultElement );
+        xWriter->startElement(aDefaultElement, pAttrList);
+        xWriter->ignorableWhitespace(aWhiteSpace);
+        xWriter->endElement(aDefaultElement);
     }
 
-    for ( const beans::StringPair & pair : aOverridesSequence )
+    for (const beans::StringPair& pair : aOverridesSequence)
     {
         rtl::Reference<AttributeList> pAttrList = new AttributeList;
-        pAttrList->AddAttribute( u"PartName"_ustr, pair.First );
-        pAttrList->AddAttribute( aContentTypeAttr, pair.Second );
+        pAttrList->AddAttribute(u"PartName"_ustr, pair.First);
+        pAttrList->AddAttribute(aContentTypeAttr, pair.Second);
 
-        xWriter->startElement( aOverrideElement, pAttrList );
-        xWriter->ignorableWhitespace( aWhiteSpace );
-        xWriter->endElement( aOverrideElement );
+        xWriter->startElement(aOverrideElement, pAttrList);
+        xWriter->ignorableWhitespace(aWhiteSpace);
+        xWriter->endElement(aOverrideElement);
     }
 
-    xWriter->ignorableWhitespace( aWhiteSpace );
-    xWriter->endElement( aTypesElement );
+    xWriter->ignorableWhitespace(aWhiteSpace);
+    xWriter->endElement(aTypesElement);
     xWriter->endDocument();
-
 }
 
-uno::Sequence< uno::Sequence< beans::StringPair > > ReadSequence_Impl(
-        const uno::Reference< io::XInputStream >& xInStream,
-        const OUString& aStringID, sal_uInt16 nFormat,
-        const uno::Reference< uno::XComponentContext >& rContext )
+uno::Sequence<uno::Sequence<beans::StringPair>>
+ReadSequence_Impl(const uno::Reference<io::XInputStream>& xInStream, const OUString& aStringID,
+                  Format eFormat, const uno::Reference<uno::XComponentContext>& rContext)
 {
-    if ( !rContext.is() || !xInStream.is() || nFormat > FORMAT_MAX_ID )
+    if (!rContext.is() || !xInStream.is())
         throw uno::RuntimeException(u"Invalid input stream or context"_ustr);
 
+    uno::Reference<css::xml::sax::XFastParser> xParser
+        = css::xml::sax::FastParser::create(rContext);
 
-    uno::Reference< css::xml::sax::XParser > xParser = css::xml::sax::Parser::create( rContext );
-
-    rtl::Reference<OFOPXMLHelper_Impl> pHelper = new OFOPXMLHelper_Impl( nFormat );
+    rtl::Reference<OFOPXMLHelper_Impl> pHelper = new OFOPXMLHelper_Impl(eFormat);
     css::xml::sax::InputSource aParserInput;
     aParserInput.aInputStream = xInStream;
     aParserInput.sSystemId = aStringID;
-    xParser->setDocumentHandler( pHelper );
-    xParser->parseStream( aParserInput );
-    xParser->setDocumentHandler( uno::Reference < css::xml::sax::XDocumentHandler > () );
+    xParser->setFastDocumentHandler(pHelper);
+    xParser->parseStream(aParserInput);
+    xParser->setFastDocumentHandler(uno::Reference<css::xml::sax::XFastDocumentHandler>());
 
     return pHelper->GetParsingResult();
 }
@@ -261,186 +278,208 @@ uno::Sequence< uno::Sequence< beans::StringPair > > ReadSequence_Impl(
 } // namespace OFOPXMLHelper
 
 // Relations info related strings
-constexpr OUStringLiteral g_aRelListElement(u"Relationships");
-constexpr OUStringLiteral g_aRelElement( u"Relationship" );
-constexpr OUString g_aIDAttr( u"Id"_ustr );
-constexpr OUString g_aTypeAttr( u"Type"_ustr );
-constexpr OUString g_aTargetModeAttr( u"TargetMode"_ustr );
-constexpr OUString g_aTargetAttr( u"Target"_ustr );
+
+constexpr OUString g_aIDAttr(u"Id"_ustr);
+constexpr OUString g_aTypeAttr(u"Type"_ustr);
+constexpr OUString g_aTargetModeAttr(u"TargetMode"_ustr);
+constexpr OUString g_aTargetAttr(u"Target"_ustr);
 
 // ContentType related strings
-constexpr OUStringLiteral g_aTypesElement( u"Types" );
-constexpr OUStringLiteral g_aDefaultElement( u"Default" );
-constexpr OUStringLiteral g_aOverrideElement( u"Override" );
-constexpr OUStringLiteral g_aExtensionAttr( u"Extension" );
-constexpr OUStringLiteral g_aPartNameAttr( u"PartName" );
-constexpr OUString g_aContentTypeAttr( u"ContentType"_ustr );
+constexpr OUString g_aContentTypeAttr(u"ContentType"_ustr);
 
-OFOPXMLHelper_Impl::OFOPXMLHelper_Impl( sal_uInt16 nFormat )
-: m_nFormat( nFormat )
+OFOPXMLHelper_Impl::OFOPXMLHelper_Impl(Format eFormat)
+    : m_eFormat(eFormat)
 {
 }
 
-uno::Sequence< uno::Sequence< beans::StringPair > > const & OFOPXMLHelper_Impl::GetParsingResult() const
+uno::Sequence<uno::Sequence<beans::StringPair>> const& OFOPXMLHelper_Impl::GetParsingResult() const
 {
-    if ( !m_aElementsSeq.empty() )
+    if (!m_aElementsSeq.empty())
         throw uno::RuntimeException(); // the parsing has still not finished!
 
     return m_aResultSeq;
 }
 
+void SAL_CALL OFOPXMLHelper_Impl::startDocument() {}
 
-void SAL_CALL OFOPXMLHelper_Impl::startDocument()
+void SAL_CALL OFOPXMLHelper_Impl::endDocument() {}
+
+static OUString getAttributeValue(const uno::Reference<css::xml::sax::XFastAttributeList>& xAttribs,
+                                  std::u16string_view rName)
 {
-}
-
-
-void SAL_CALL OFOPXMLHelper_Impl::endDocument()
-{
-}
-
-
-void SAL_CALL OFOPXMLHelper_Impl::startElement( const OUString& aName, const uno::Reference< css::xml::sax::XAttributeList >& xAttribs )
-{
-    if ( m_nFormat == RELATIONINFO_FORMAT )
+    for (const auto& rAttr : xAttribs->getUnknownAttributes())
     {
-        if ( aName == g_aRelListElement )
+        if (rAttr.Name == rName)
+            return rAttr.Value;
+    }
+
+    return {};
+}
+
+void SAL_CALL OFOPXMLHelper_Impl::startUnknownElement(
+    const OUString& rNamespace, const OUString& rName,
+    const uno::Reference<css::xml::sax::XFastAttributeList>& xAttribs)
+{
+    SAL_INFO("comphelper", "startUnknownElement: namespace=" << rNamespace << ", name=" << rName);
+
+    const OUString rExpectedNamespace
+        = m_eFormat == Format::RelationInfo
+              ? u"http://schemas.openxmlformats.org/package/2006/relationships"_ustr
+              : u"http://schemas.openxmlformats.org/package/2006/content-types"_ustr;
+
+    if (rNamespace != rExpectedNamespace)
+        throw css::xml::sax::SAXException();
+
+    const sal_Int32 nColonPos = rName.lastIndexOf(':');
+    const OUString aLocalName = nColonPos >= 0 ? rName.copy(nColonPos + 1) : rName;
+
+    if (m_eFormat == Format::RelationInfo)
+    {
+        if (aLocalName == u"Relationships"_ustr)
         {
             sal_Int32 nNewLength = m_aElementsSeq.size() + 1;
 
-            if ( nNewLength != 1 )
-                throw css::xml::sax::SAXException(); // TODO: this element must be the first level element
+            if (nNewLength != 1)
+                throw css::xml::sax::
+                    SAXException(); // TODO: this element must be the first level element
 
-            m_aElementsSeq.push_back( aName );
+            m_aElementsSeq.push_back(aLocalName);
 
             return; // nothing to do
         }
-        else if ( aName == g_aRelElement )
+        else if (aLocalName == u"Relationship"_ustr)
         {
             sal_Int32 nNewLength = m_aElementsSeq.size() + 1;
-            if ( nNewLength != 2 )
-                throw css::xml::sax::SAXException(); // TODO: this element must be the second level element
+            if (nNewLength != 2)
+                throw css::xml::sax::
+                    SAXException(); // TODO: this element must be the second level element
 
-            m_aElementsSeq.push_back( aName );
+            m_aElementsSeq.push_back(aLocalName);
 
             sal_Int32 nNewEntryNum = m_aResultSeq.getLength() + 1;
-            m_aResultSeq.realloc( nNewEntryNum );
+            m_aResultSeq.realloc(nNewEntryNum);
             auto pResultSeq = m_aResultSeq.getArray();
             sal_Int32 nAttrNum = 0;
-            pResultSeq[nNewEntryNum-1].realloc( 4 ); // the maximal expected number of arguments is 4
-            auto pAttrs = pResultSeq[nNewEntryNum-1].getArray();
+            pResultSeq[nNewEntryNum - 1].realloc(
+                4); // the maximal expected number of arguments is 4
+            auto pAttrs = pResultSeq[nNewEntryNum - 1].getArray();
 
-            OUString aIDValue = xAttribs->getValueByName( g_aIDAttr );
-            if ( aIDValue.isEmpty() )
+            OUString aIDValue = getAttributeValue(xAttribs, g_aIDAttr);
+            if (aIDValue.isEmpty())
                 throw css::xml::sax::SAXException(); // TODO: the ID value must present
 
-            OUString aTypeValue = xAttribs->getValueByName( g_aTypeAttr );
-            OUString aTargetValue = xAttribs->getValueByName( g_aTargetAttr );
-            OUString aTargetModeValue = xAttribs->getValueByName( g_aTargetModeAttr );
+            OUString aTypeValue = getAttributeValue(xAttribs, g_aTypeAttr);
+            OUString aTargetValue = getAttributeValue(xAttribs, g_aTargetAttr);
+            OUString aTargetModeValue = getAttributeValue(xAttribs, g_aTargetModeAttr);
 
             pAttrs[++nAttrNum - 1].First = g_aIDAttr;
             pAttrs[nAttrNum - 1].Second = aIDValue;
 
-            if ( !aTypeValue.isEmpty() )
+            if (!aTypeValue.isEmpty())
             {
                 pAttrs[++nAttrNum - 1].First = g_aTypeAttr;
                 pAttrs[nAttrNum - 1].Second = aTypeValue;
             }
 
-            if ( !aTargetValue.isEmpty() )
+            if (!aTargetValue.isEmpty())
             {
                 pAttrs[++nAttrNum - 1].First = g_aTargetAttr;
                 pAttrs[nAttrNum - 1].Second = aTargetValue;
             }
 
-            if ( !aTargetModeValue.isEmpty() )
+            if (!aTargetModeValue.isEmpty())
             {
                 pAttrs[++nAttrNum - 1].First = g_aTargetModeAttr;
                 pAttrs[nAttrNum - 1].Second = aTargetModeValue;
             }
 
-            pResultSeq[nNewEntryNum-1].realloc( nAttrNum );
+            pResultSeq[nNewEntryNum - 1].realloc(nAttrNum);
         }
         else
             throw css::xml::sax::SAXException(); // TODO: no other elements expected!
     }
-    else if ( m_nFormat == CONTENTTYPE_FORMAT )
+    else if (m_eFormat == Format::ContentType)
     {
-        if ( aName == g_aTypesElement )
+        if (aLocalName == u"Types"_ustr)
         {
             sal_Int32 nNewLength = m_aElementsSeq.size() + 1;
 
-            if ( nNewLength != 1 )
-                throw css::xml::sax::SAXException(); // TODO: this element must be the first level element
+            if (nNewLength != 1)
+                throw css::xml::sax::
+                    SAXException(); // TODO: this element must be the first level element
 
-            m_aElementsSeq.push_back( aName );
+            m_aElementsSeq.push_back(aLocalName);
 
-            if ( !m_aResultSeq.hasElements() )
-                m_aResultSeq.realloc( 2 );
+            if (!m_aResultSeq.hasElements())
+                m_aResultSeq.realloc(2);
 
             return; // nothing to do
         }
-        else if ( aName == g_aDefaultElement )
+        else if (aLocalName == u"Default"_ustr)
         {
             sal_Int32 nNewLength = m_aElementsSeq.size() + 1;
-            if ( nNewLength != 2 )
-                throw css::xml::sax::SAXException(); // TODO: this element must be the second level element
+            if (nNewLength != 2)
+                throw css::xml::sax::
+                    SAXException(); // TODO: this element must be the second level element
 
-            m_aElementsSeq.push_back( aName );
+            m_aElementsSeq.push_back(aLocalName);
 
-            if ( !m_aResultSeq.hasElements() )
-                m_aResultSeq.realloc( 2 );
+            if (!m_aResultSeq.hasElements())
+                m_aResultSeq.realloc(2);
 
-            if ( m_aResultSeq.getLength() != 2 )
-                throw uno::RuntimeException(u"m_aResultSeq already has elements and is not reallocated to 2."_ustr);
+            if (m_aResultSeq.getLength() != 2)
+                throw uno::RuntimeException(
+                    u"m_aResultSeq already has elements and is not reallocated to 2."_ustr);
 
             auto pResultSeq = m_aResultSeq.getArray();
 
-            const OUString aExtensionValue = xAttribs->getValueByName( g_aExtensionAttr );
-            if ( aExtensionValue.isEmpty() )
+            const OUString aExtensionValue = getAttributeValue(xAttribs, u"Extension");
+            if (aExtensionValue.isEmpty())
                 throw css::xml::sax::SAXException(); // TODO: the Extension value must present
 
-            const OUString aContentTypeValue = xAttribs->getValueByName( g_aContentTypeAttr );
-            if ( aContentTypeValue.isEmpty() )
+            const OUString aContentTypeValue = getAttributeValue(xAttribs, g_aContentTypeAttr);
+            if (aContentTypeValue.isEmpty())
                 throw css::xml::sax::SAXException(); // TODO: the ContentType value must present
 
             const sal_Int32 nNewResultLen = m_aResultSeq[0].getLength() + 1;
-            pResultSeq[0].realloc( nNewResultLen );
+            pResultSeq[0].realloc(nNewResultLen);
             auto pSeq = pResultSeq[0].getArray();
 
-            pSeq[nNewResultLen-1].First = aExtensionValue;
-            pSeq[nNewResultLen-1].Second = aContentTypeValue;
+            pSeq[nNewResultLen - 1].First = aExtensionValue;
+            pSeq[nNewResultLen - 1].Second = aContentTypeValue;
         }
-        else if ( aName == g_aOverrideElement )
+        else if (aLocalName == u"Override"_ustr)
         {
             sal_Int32 nNewLength = m_aElementsSeq.size() + 1;
-            if ( nNewLength != 2 )
-                throw css::xml::sax::SAXException(); // TODO: this element must be the second level element
+            if (nNewLength != 2)
+                throw css::xml::sax::
+                    SAXException(); // TODO: this element must be the second level element
 
-            m_aElementsSeq.push_back( aName );
+            m_aElementsSeq.push_back(aLocalName);
 
-            if ( !m_aResultSeq.hasElements() )
-                m_aResultSeq.realloc( 2 );
+            if (!m_aResultSeq.hasElements())
+                m_aResultSeq.realloc(2);
 
-            if ( m_aResultSeq.getLength() != 2 )
-                throw uno::RuntimeException(u"m_aResultSeq already has elements and is not reallocated to 2."_ustr);
+            if (m_aResultSeq.getLength() != 2)
+                throw uno::RuntimeException(
+                    u"m_aResultSeq already has elements and is not reallocated to 2."_ustr);
 
             auto pResultSeq = m_aResultSeq.getArray();
 
-            OUString aPartNameValue = xAttribs->getValueByName( g_aPartNameAttr );
-            if ( aPartNameValue.isEmpty() )
+            OUString aPartNameValue = getAttributeValue(xAttribs, u"PartName");
+            if (aPartNameValue.isEmpty())
                 throw css::xml::sax::SAXException(); // TODO: the PartName value must present
 
-            OUString aContentTypeValue = xAttribs->getValueByName( g_aContentTypeAttr );
-            if ( aContentTypeValue.isEmpty() )
+            OUString aContentTypeValue = getAttributeValue(xAttribs, g_aContentTypeAttr);
+            if (aContentTypeValue.isEmpty())
                 throw css::xml::sax::SAXException(); // TODO: the ContentType value must present
 
             sal_Int32 nNewResultLen = m_aResultSeq[1].getLength() + 1;
-            pResultSeq[1].realloc( nNewResultLen );
+            pResultSeq[1].realloc(nNewResultLen);
             auto pSeq = pResultSeq[1].getArray();
 
-            pSeq[nNewResultLen-1].First = aPartNameValue;
-            pSeq[nNewResultLen-1].Second = aContentTypeValue;
+            pSeq[nNewResultLen - 1].First = aPartNameValue;
+            pSeq[nNewResultLen - 1].Second = aContentTypeValue;
         }
         else
             throw css::xml::sax::SAXException(); // TODO: no other elements expected!
@@ -449,41 +488,67 @@ void SAL_CALL OFOPXMLHelper_Impl::startElement( const OUString& aName, const uno
         throw css::xml::sax::SAXException(); // TODO: no other elements expected!
 }
 
-
-void SAL_CALL OFOPXMLHelper_Impl::endElement( const OUString& aName )
+void SAL_CALL OFOPXMLHelper_Impl::endUnknownElement(const OUString& rNamespace,
+                                                    const OUString& rName)
 {
-    if ( m_nFormat == RELATIONINFO_FORMAT || m_nFormat == CONTENTTYPE_FORMAT )
-    {
-        sal_Int32 nLength = m_aElementsSeq.size();
-        if ( nLength <= 0 )
-            throw css::xml::sax::SAXException(); // TODO: no other end elements expected!
+    const OUString rExpectedNamespace
+        = m_eFormat == Format::RelationInfo
+              ? u"http://schemas.openxmlformats.org/package/2006/relationships"_ustr
+              : u"http://schemas.openxmlformats.org/package/2006/content-types"_ustr;
 
-        if ( m_aElementsSeq[nLength-1] != aName )
-            throw css::xml::sax::SAXException(); // TODO: unexpected element ended
+    if (rNamespace != rExpectedNamespace)
+        throw css::xml::sax::SAXException();
 
-        m_aElementsSeq.resize( nLength - 1 );
-    }
+    // Remove the namespace prefix, if present.
+    const sal_Int32 nColonPos = rName.lastIndexOf(':');
+    const OUString aLocalName = nColonPos >= 0 ? rName.copy(nColonPos + 1) : rName;
+
+    sal_Int32 nLength = m_aElementsSeq.size();
+
+    if (nLength <= 0)
+        throw css::xml::sax::SAXException();
+
+    if (m_aElementsSeq[nLength - 1] != aLocalName)
+        throw css::xml::sax::SAXException();
+
+    SAL_INFO("comphelper", "endUnknownElement: localName=" << aLocalName << ", stackName="
+                                                           << m_aElementsSeq[nLength - 1]);
+
+    m_aElementsSeq.resize(nLength - 1);
 }
 
+void SAL_CALL OFOPXMLHelper_Impl::characters(const OUString& /*aChars*/) {}
 
-void SAL_CALL OFOPXMLHelper_Impl::characters( const OUString& /*aChars*/ )
+void SAL_CALL OFOPXMLHelper_Impl::processingInstruction(const OUString& /*aTarget*/,
+                                                        const OUString& /*aData*/)
 {
 }
 
-
-void SAL_CALL OFOPXMLHelper_Impl::ignorableWhitespace( const OUString& /*aWhitespaces*/ )
+void SAL_CALL
+OFOPXMLHelper_Impl::setDocumentLocator(const uno::Reference<css::xml::sax::XLocator>& /*xLocator*/)
 {
 }
 
+uno::Reference<css::xml::sax::XFastContextHandler> SAL_CALL
+OFOPXMLHelper_Impl::createFastChildContext(sal_Int32,
+                                           const uno::Reference<css::xml::sax::XFastAttributeList>&)
+{
+    return this;
+}
 
-void SAL_CALL OFOPXMLHelper_Impl::processingInstruction( const OUString& /*aTarget*/, const OUString& /*aData*/ )
+uno::Reference<css::xml::sax::XFastContextHandler>
+    SAL_CALL OFOPXMLHelper_Impl::createUnknownChildContext(
+        const OUString&, const OUString&, const uno::Reference<css::xml::sax::XFastAttributeList>&)
+{
+    return this;
+}
+
+void SAL_CALL OFOPXMLHelper_Impl::startFastElement(
+    sal_Int32, const uno::Reference<css::xml::sax::XFastAttributeList>&)
 {
 }
 
-
-void SAL_CALL OFOPXMLHelper_Impl::setDocumentLocator( const uno::Reference< css::xml::sax::XLocator >& /*xLocator*/ )
-{
-}
+void SAL_CALL OFOPXMLHelper_Impl::endFastElement(sal_Int32) {}
 
 } // namespace comphelper
 

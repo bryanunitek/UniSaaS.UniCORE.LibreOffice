@@ -2081,6 +2081,78 @@ void XMLShapeExport::ImpExportDescription( const uno::Reference< drawing::XShape
     }
 }
 
+void XMLShapeExport::ImpExportDiagramData( const uno::Reference< drawing::XShape >& xShape, const XMLShapeExportFlags nFeatures)
+{
+    try
+    {
+        // check if this is a Diagram
+        bool bIsDiagram(false);
+        uno::Reference< beans::XPropertySet > xProps( xShape, uno::UNO_QUERY_THROW );
+        xProps->getPropertyValue(u"IsDiagram"_ustr) >>= bIsDiagram;
+
+        if (!bIsDiagram)
+            // not a diagram at all, done
+            return;
+
+        uno::Sequence< OUString > aAllDiagramData;
+        xProps->getPropertyValue(u"DiagramData"_ustr) >>= aAllDiagramData;
+
+        if (4 != aAllDiagramData.getLength())
+            // we expect four Strings, otherwise we are done
+            return;
+
+        // extract Data
+        const OUString aDiagramLayout(aAllDiagramData.getArray()[0]);
+        const OUString aDiagramData(aAllDiagramData.getArray()[1]);
+        const OUString aDiagramColors(aAllDiagramData.getArray()[2]);
+        const OUString aDiagramQuickstyle(aAllDiagramData.getArray()[3]);
+        const bool bDiagramLayoutEmpty(aDiagramLayout.isEmpty());
+        const bool bDiagramDataEmpty(aDiagramData.isEmpty());
+        const bool bDiagramColorsEmpty(aDiagramColors.isEmpty());
+        const bool bDiagramQuickstyleEmpty(aDiagramQuickstyle.isEmpty());
+
+        if (bDiagramLayoutEmpty && bDiagramDataEmpty && bDiagramColorsEmpty && bDiagramQuickstyleEmpty)
+            // all empty, error, we are done
+            return;
+
+        // write  <loext:diagram> // XML_DIAGRAM
+        bool bCreateNewline( (nFeatures & XMLShapeExportFlags::NO_WS) == XMLShapeExportFlags::NONE ); // #86116#/#92210#
+        SvXMLElementExport aPGR(mrExport, XML_NAMESPACE_LO_EXT, XML_DIAGRAM, bCreateNewline, true);
+
+        if (!bDiagramLayoutEmpty)
+        {
+            // write <loext:layout> // XML_DIAGRAM_LAYOUT
+            SvXMLElementExport aEventElemt(mrExport, XML_NAMESPACE_LO_EXT, XML_DIAGRAM_LAYOUT, true, false);
+            mrExport.Characters( aDiagramLayout );
+        }
+
+        if (!bDiagramDataEmpty)
+        {
+            // write <loext:data> // XML_DIAGRAM_DATA
+            SvXMLElementExport aEventElemt(mrExport, XML_NAMESPACE_LO_EXT, XML_DATA, true, false);
+            mrExport.Characters( aDiagramData );
+        }
+
+        if (!bDiagramColorsEmpty)
+        {
+            // write <loext:colors> // XML_DIAGRAM_COLORS
+            SvXMLElementExport aEventElemt(mrExport, XML_NAMESPACE_LO_EXT, XML_DIAGRAM_COLORS, true, false);
+            mrExport.Characters( aDiagramColors );
+        }
+
+        if (!bDiagramQuickstyleEmpty)
+        {
+            // write <loext:quickstyle> // XML_DIAGRAM_QUICKSTYLE
+            SvXMLElementExport aEventElemt(mrExport, XML_NAMESPACE_LO_EXT, XML_DIAGRAM_QUICKSTYLE, true, false);
+            mrExport.Characters( aDiagramQuickstyle );
+        }
+    }
+    catch( uno::Exception& )
+    {
+        DBG_UNHANDLED_EXCEPTION( "xmloff", "exporting Title and/or Description for shape" );
+    }
+}
+
 void XMLShapeExport::ImpExportGroupShape( const uno::Reference< drawing::XShape >& xShape, XMLShapeExportFlags nFeatures, awt::Point* pRefPoint)
 {
     uno::Reference< drawing::XShapes > xShapes(xShape, uno::UNO_QUERY);
@@ -2090,6 +2162,13 @@ void XMLShapeExport::ImpExportGroupShape( const uno::Reference< drawing::XShape 
     // write group shape
     bool bCreateNewline( (nFeatures & XMLShapeExportFlags::NO_WS) == XMLShapeExportFlags::NONE ); // #86116#/#92210#
     SvXMLElementExport aPGR(mrExport, XML_NAMESPACE_DRAW, XML_G, bCreateNewline, true);
+
+    // do export Diagram in current ODF standard
+    if (GetExport().getSaneDefaultVersion() & SvtSaveOptions::ODFSVER_EXTENDED)
+    {
+        // export Diagram (if exists, test in called method)
+        ImpExportDiagramData(xShape, nFeatures);
+    }
 
     ImpExportDescription( xShape ); // #i68101#
     ImpExportEvents( xShape );
@@ -5334,23 +5413,22 @@ void XMLShapeExport::ImpExportTableShape( const uno::Reference< drawing::XShape 
                 {
                     const OUString sTemplate( xTemplate->getName() );
                     if( !sTemplate.isEmpty() )
-                    {
                         mrExport.AddAttribute(XML_NAMESPACE_TABLE, XML_TEMPLATE_NAME, sTemplate );
+                }
 
-                        for( const XMLPropertyMapEntry* pEntry = &aXMLTableShapeAttributes[0]; !pEntry->IsEnd(); pEntry++ )
-                        {
-                            try
-                            {
-                                bool bBool = false;
-                                xPropSet->getPropertyValue( pEntry->getApiName() ) >>= bBool;
-                                if( bBool )
-                                    mrExport.AddAttribute(pEntry->mnNameSpace, pEntry->meXMLName, XML_TRUE );
-                            }
-                            catch( uno::Exception& )
-                            {
-                                DBG_UNHANDLED_EXCEPTION("xmloff.draw");
-                            }
-                        }
+                // the flags are also used without a template, e.g. for a table from PPTX
+                for( const XMLPropertyMapEntry* pEntry = &aXMLTableShapeAttributes[0]; !pEntry->IsEnd(); pEntry++ )
+                {
+                    try
+                    {
+                        bool bBool = false;
+                        xPropSet->getPropertyValue( pEntry->getApiName() ) >>= bBool;
+                        if( bBool )
+                            mrExport.AddAttribute(pEntry->mnNameSpace, pEntry->meXMLName, XML_TRUE );
+                    }
+                    catch( uno::Exception& )
+                    {
+                        DBG_UNHANDLED_EXCEPTION("xmloff.draw");
                     }
                 }
 

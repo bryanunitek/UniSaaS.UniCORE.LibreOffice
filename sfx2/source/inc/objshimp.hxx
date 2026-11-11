@@ -37,10 +37,11 @@ class AutoReloadTimer_Impl final : public Timer
 {
     OUString          aUrl;
     SfxObjectShell*   pObjSh;
+    bool              bLinkUpdateAllowed;
 
 public:
     AutoReloadTimer_Impl( OUString aURL, sal_uInt32 nTime,
-                          SfxObjectShell* pSh );
+                          SfxObjectShell* pSh, bool bLinkUpdateAllowed = false );
     virtual void Invoke() override;
 };
 
@@ -77,6 +78,7 @@ struct SfxObjectShell_Impl final : public ::sfx2::IMacroDocumentAccess
                         bPreserveVersions:1,
                         m_bMacroSignBroken:1, // whether the macro signature was explicitly broken
                         m_bNoBasicCapabilities:1,
+                        m_bMacroCallsAllowed:1, // the macro decision allows the document's own UI configuration to call macros
                         m_bDocRecoverySupport:1,
                         bQueryLoadTemplate:1,
                         bLoadReadonly:1,

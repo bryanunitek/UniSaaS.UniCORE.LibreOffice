@@ -254,7 +254,7 @@ static tools::Long lcl_Undersize( const SwFrame* pFrame )
 
 namespace sw {
 
-SwTwips FootnoteSeparatorHeight(SwDoc& rDoc, SwPageFootnoteInfo const& rInf)
+gfx::Length FootnoteSeparatorHeight(SwDoc& rDoc, SwPageFootnoteInfo const& rInf)
 {
     const IDocumentSettingAccess& rIDSA = rDoc.getIDocumentSettingAccess();
     if (rIDSA.get(DocumentSettingId::CONTINUOUS_ENDNOTES))
@@ -263,12 +263,12 @@ SwTwips FootnoteSeparatorHeight(SwDoc& rDoc, SwPageFootnoteInfo const& rInf)
         SwTwips nHeight{};
         if (FootnoteSeparatorHeightFromParagraph(rDoc, nHeight))
         {
-            return nHeight;
+            return gfx::Length::twip(nHeight);
         }
     }
 
     // Writer style: calculate from the page style.
-    return rInf.GetTopDist() + rInf.GetBottomDist() + rInf.GetLineWidth();
+    return rInf.GetTopDist() + rInf.GetBottomDist() + gfx::Length::twip(rInf.GetLineWidth());
 }
 
 } // namespace sw
@@ -280,7 +280,7 @@ void SwFootnoteContFrame::Format( vcl::RenderContext* /*pRenderContext*/, const 
     const SwPageFrame* pPage = FindPageFrame();
     const SwPageFootnoteInfo &rInf = pPage->GetPageDesc()->GetFootnoteInfo();
     SwDoc* pDoc = getRootFrame()->GetCurrShell()->GetDoc();
-    const SwTwips nBorder = sw::FootnoteSeparatorHeight(*pDoc, rInf);
+    const SwTwips nBorder = sw::FootnoteSeparatorHeight(*pDoc, rInf).as_twip<SwTwips>();
     SwRectFnSet aRectFnSet(*this);
 
     if ( !isFramePrintAreaValid() )
@@ -1658,21 +1658,7 @@ void SwFootnoteBossFrame::AppendFootnote( SwContentFrame *pRef, SwTextFootnote *
             {
                 SwSection* pSwSection = rDoc.GetEndNoteInfo().GetSwSection(rDoc);
                 pEndnoteSection = new SwSectionFrame(*pSwSection, pPage);
-                SwLayoutFrame* pParent = pPage->GetEndNoteSectionUpper();
-                SwFrame* pBefore = pPage->FindLastBodyContent();
-                while (pBefore)
-                {
-                    // Check if the last content frame is directly under the body frame or there is
-                    // something in-between, e.g. a section frame.
-                    if (pBefore->GetUpper() == pParent)
-                    {
-                        break;
-                    }
-
-                    // If so, insert behind the parent of the content frame, not inside the parent.
-                    pBefore = pBefore->GetUpper();
-                }
-                pEndnoteSection->InsertBehind(pParent, pBefore);
+                pPage->InsertEndNoteSection(*pEndnoteSection);
                 pEndnoteSection->Init();
                 pEndnoteSection->SetEndNoteSection(true);
             }

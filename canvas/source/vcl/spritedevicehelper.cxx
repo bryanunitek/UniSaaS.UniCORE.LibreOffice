@@ -47,34 +47,12 @@ namespace vclcanvas
         vclcanvastools::SetDefaultDeviceAntiAliasing( &mpBackBuffer->getOutDev());
     }
 
-    bool SpriteDeviceHelper::showBuffer( bool, bool )
-    {
-        OSL_FAIL("Not supposed to be called, handled by SpriteCanvas");
-        return false;
-    }
-
-    bool SpriteDeviceHelper::switchBuffer( bool, bool )
-    {
-        OSL_FAIL("Not supposed to be called, handled by SpriteCanvas");
-        return false;
-    }
-
     void SpriteDeviceHelper::disposing()
     {
         // release all references
         mpBackBuffer.reset();
 
         DeviceHelper::disposing();
-    }
-
-    uno::Any SpriteDeviceHelper::isAccelerated() const
-    {
-        return DeviceHelper::isAccelerated();
-    }
-
-    uno::Any SpriteDeviceHelper::getDeviceHandle() const
-    {
-        return DeviceHelper::getDeviceHandle();
     }
 
     uno::Any SpriteDeviceHelper::getSurfaceHandle() const

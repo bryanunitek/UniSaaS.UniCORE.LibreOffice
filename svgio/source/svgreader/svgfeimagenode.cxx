@@ -26,7 +26,6 @@
 #include <svgdocument.hxx>
 #include <comphelper/base64.hxx>
 #include <tools/stream.hxx>
-#include <rtl/uri.hxx>
 
 namespace svgio::svgreader
 {
@@ -72,6 +71,11 @@ void SvgFeImageNode::parseAttribute(SVGToken aSVGToken, const OUString& aContent
     }
 }
 
+OUString SvgFeImageNode::getExternalImageUrl() const
+{
+    return resolveExternalImageUrl(getDocument().getAbsolutePath(), maUrl, maData);
+}
+
 void SvgFeImageNode::apply(drawinglayer::primitive2d::Primitive2DContainer& rTarget,
                            const SvgFilterNode* pParent) const
 {
@@ -97,18 +101,9 @@ void SvgFeImageNode::apply(drawinglayer::primitive2d::Primitive2DContainer& rTar
     }
     else if (!maUrl.isEmpty())
     {
-        const OUString& rPath = getDocument().getAbsolutePath();
-        OUString aAbsUrl;
-        try
-        {
-            aAbsUrl = rtl::Uri::convertRelToAbs(rPath, maUrl);
-        }
-        catch (rtl::MalformedUriException& e)
-        {
-            SAL_WARN("svg", "caught rtl::MalformedUriException \"" << e.getMessage() << "\"");
-        }
+        const OUString aAbsUrl = getExternalImageUrl();
 
-        if (!aAbsUrl.isEmpty() && rPath != aAbsUrl)
+        if (!aAbsUrl.isEmpty())
         {
             SvFileStream aStream(aAbsUrl, StreamMode::STD_READ);
             Graphic aGraphic;

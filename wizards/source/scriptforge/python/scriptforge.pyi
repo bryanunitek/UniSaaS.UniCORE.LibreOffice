@@ -50,7 +50,7 @@
 from __future__ import annotations
 import datetime
 import time
-from typing import Any, Literal, NewType, overload, TypeVar
+from typing import Any, Iterable, Literal, NewType, overload, TypeVar
 
 # List the available service types
 #   SFScriptForge
@@ -133,7 +133,7 @@ SQL_ACTION = TypeVar('SQL_ACTION', str, str)
 """ A SQL command containing an action statement (CREATE TABLE, INSERT, DELETE, ...).
 Table- and field names may be surrounded by square brackets. """
 SCALAR = int | float | str | datetime.datetime
-VECTOR = tuple[SCALAR]
+VECTOR = tuple[SCALAR] | Iterable[SCALAR]
 MATRIX = tuple[VECTOR]
 
 #   Define the used UNO types
@@ -975,6 +975,26 @@ class SFScriptForge:
                 """
             ...
 
+        def CompressToZip(self, filename: FILE, foldername: FILE, rootfolder: str = ...) -> bool:
+            """
+                Stores the content of Folder, including its subfolders, into a zip archive.
+                Encrypted files are not supported. The compressed files are stored optionally under a root folder.
+                Files existing already in the archive are not overwritten.
+                    Args
+                        ``filename``: a string representing the zip file.
+                        If it does not exist, the archive is created, including its parent folders.
+                        All files present in the archive are kept untouched.
+
+                        ``foldername``: the folder to compress, as a string. All files and subfolders are included.
+                        The folder itself is not.
+
+                        ``rootfolder``: when absent, files and folders are loaded in the archive from the root ("/").
+                        When present, given as a string without path separator, they are stored below that folder.
+                    Returns
+                        ``True`` when successful. When ``False``, the reason might be found in the console.
+                """
+            ...
+
         def CopyFile(self, source: FILE, destination: FILE, overwrite: bool = ...) -> bool:
             """
                 Copies one or more files from one location to another.
@@ -1092,6 +1112,28 @@ class SFScriptForge:
                 """
             ...
 
+        def ExtractFromZip(self,
+                           filename: FILE,
+                           destination: FILE,
+                           source: str | tuple[str, ...] | Iterable[str] = ...
+                           ) -> bool:
+            """
+                Extracts a list of files contained in a zip archive and stores them in a folder.
+                    Args
+                        ``filename``: a string representing the zip archive.
+
+                        ``destination``: the folder where to extract the compressed files to.
+                        Existing files with the same names are overwritten without warning. Other files stay untouched.
+                        When the folder or a subfolder does not exist, it is created.
+
+                        ``source``: a single string or a tuple of strings with valid names of files contained in
+                        the zip file. When ``source`` is omitted, is an empty tuple or an empty string,
+                        all the files and folders are extracted.
+                    Returns
+                        ``True`` when successful. When ``False``, the reason might be found in the console.
+                """
+            ...
+
         def FileExists(self, filename: FILE) -> bool:
             """
                 Return ``True`` if the given file exists.
@@ -1118,6 +1160,24 @@ class SFScriptForge:
                         subfolders (Default = ``False``).
                     Returns
                         A tuple of strings, each entry is the ``FileName`` of an existing file.
+                """
+            ...
+
+        def FilesInZip(self, filename: FILE, pattern: str = ...) -> tuple[str, ...]:
+            """
+                Returns the list of the files contained in a zip container. The list of names may optionally
+                be filtered.
+                    Args
+                        ``filename``: a string representing the zip archive.
+
+                        ``pattern``: a pattern as a not case-sensitive string containing 0 or more wildcards.
+                        Admitted wildcards are: the "?" represents any single character,
+                        the "*" represents zero, one, or multiple characters.
+                    Returns
+                        An unordered tuple of file names without a heading slash. The path separator is always
+                        the slash ("/"), also on Windows. The list may be filtered with a name pattern.
+                        Without pattern, all files are returned. The resulting tuple may be empty. An empty tuple
+                        is returned when the file is not a valid zip file.
                 """
             ...
 
@@ -1232,6 +1292,16 @@ class SFScriptForge:
                             - SHA256
                             - SHA384
                             - SHA512
+                """
+            ...
+
+        def IsZipFile(self, filename: FILE) -> bool:
+            """
+                Returns ``True`` if filename is a valid ZIP file based on its magic number.
+                    Args
+                        ``filename``: a string representing the zip archive.
+                    Returns
+                        ``True`` when ``filename`` is a valid zip file. Otherwise ``False``.
                 """
             ...
 
@@ -2130,7 +2200,8 @@ class SFScriptForge:
 
         def StoreValue(self,
                        variablename: str,
-                       value: Any | datetime.datetime | UNO | tuple[int | float | str | bool, ...],
+                       value: Any | datetime.datetime | UNO |
+                              tuple[int | float | str | bool, ...] | Iterable[int | float | str | bool, ...],
                        ) -> bool:
             """
                 Store in the shared and persistent storage area the given value. Later retrieval will be done thanks
@@ -2613,7 +2684,7 @@ class SFScriptForge:
                        'DATE', 'TIME', 'DATETIME', 'COMBO', 'LIST', 'RADIO'] = ...,
                        default: str | bool | int | float | datetime.datetime = ...,
                        title: str = ...,
-                       choices: tuple[str, ...] = ...,
+                       choices: tuple[str, ...] | Iterable[str] = ...,
                        format: str = ...,
                        ) -> str | bool | int | float | datetime.datetime:
             r"""
@@ -4280,7 +4351,10 @@ class SFDialogs:
                 """
             ...
 
-        def OrderTabs(self, tabslist: tuple[str], start: int = ..., increment: int = ...) -> bool:
+        def OrderTabs(self, tabslist: tuple[str] | Iterable[str],
+                      start: int = ...,
+                      increment: int = ...,
+                      ) -> bool:
             """
                 Set the tabulation index of a series of controls.
 
@@ -4837,7 +4911,7 @@ class SFDocuments:
                 """
             ...
 
-        def DeleteStyles(self, family: str, styleslist: str | tuple[str]) -> None:
+        def DeleteStyles(self, family: str, styleslist: str | tuple[str] | Iterable[str]) -> None:
             """
                 Suppresses a single style or a list of styles given by their names within a specific styles family.
                 Only user-defined styles may be deleted, built-in styles are ignored.
@@ -5786,9 +5860,9 @@ class SFDocuments:
                              pivottablename: str,
                              sourcerange: RANGE,
                              targetcell: RANGE,
-                             datafields: tuple[str, ...] | str = ...,
-                             rowfields: tuple[str, ...] | str = ...,
-                             columnfields: tuple[str, ...] | str = ...,
+                             datafields: tuple[str, ...] | Iterable[str] | str = ...,
+                             rowfields: tuple[str, ...] | Iterable[str] | str = ...,
+                             columnfields: tuple[str, ...] | Iterable[str] | str = ...,
                              filterbutton: bool = ...,
                              rowtotals: bool = ...,
                              columntotals: bool = ...,
@@ -6148,7 +6222,7 @@ class SFDocuments:
 
         def ImportStylesFromFile(self,
                                  filename: FILE,
-                                 families: str | tuple[str, ...] = ...,
+                                 families: str | tuple[str, ...] | Iterable[str] = ...,
                                  overwrite: bool = ...
                                  ):
             """
@@ -7297,7 +7371,7 @@ class SFDocuments:
 
         def ImportStylesFromFile(self,
                                  filename: FILE,
-                                 families: str | tuple[str, ...] = ...,
+                                 families: str | tuple[str, ...] | Iterable[str] = ...,
                                  overwrite: bool = ...
                                  ):
             """

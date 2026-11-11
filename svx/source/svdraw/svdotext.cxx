@@ -22,6 +22,7 @@
 #include <svl/stritem.hxx>
 #include <svx/svdetc.hxx>
 #include <svx/svdotext.hxx>
+#include <svx/svdoashp.hxx>
 #include <svx/svdpage.hxx>
 #include <svx/svdoutl.hxx>
 #include <svx/svdmodel.hxx>
@@ -186,7 +187,7 @@ void SdrTextObj::NbcSetText(const OUString& rStr)
 {
     SdrOutliner& rOutliner=ImpGetDrawOutliner();
     rOutliner.SetStyleSheet( 0, GetStyleSheet());
-    rOutliner.SetText(rStr,rOutliner.GetParagraph( 0 ));
+    rOutliner.SetText(rStr, 0);
     std::optional<OutlinerParaObject> pNewText=rOutliner.CreateParaObject();
     NbcSetOutlinerParaObject(std::move(pNewText));
     mbTextSizeDirty=true;
@@ -414,15 +415,15 @@ bool SdrTextObj::HasTextImpl( SdrOutliner const * pOutliner )
     bool bRet=false;
     if(pOutliner)
     {
-        Paragraph* p1stPara=pOutliner->GetParagraph( 0 );
+        sal_Int32 n1stPara=0;
         sal_Int32 nParaCount=pOutliner->GetParagraphCount();
-        if(p1stPara==nullptr)
+        if(n1stPara>=nParaCount)
             nParaCount=0;
 
         if(nParaCount==1)
         {
             // if it is only one paragraph, check if that paragraph is empty
-            if( pOutliner->GetText(p1stPara).isEmpty() )
+            if( pOutliner->GetText(n1stPara).isEmpty() )
                 nParaCount = 0;
         }
 
@@ -1055,7 +1056,7 @@ OUString SdrTextObj::TakeObjNamePlural() const
     return sName;
 }
 
-rtl::Reference<SdrObject> SdrTextObj::CloneSdrObject(SdrModel& rTargetModel) const
+rtl::Reference<SdrObject> SdrTextObj::implCloneSdrObject(SdrModel& rTargetModel) const
 {
     return new SdrTextObj(rTargetModel, *this);
 }
@@ -1221,11 +1222,21 @@ double SdrTextObj::GetSpacingScale() const
 
 void SdrTextObj::setupAutoFitText(SdrOutliner& rOutliner) const
 {
-    const Size aShapeSize = GetSnapRect().GetSize();
-    Size aSize(aShapeSize.Width() - GetTextLeftDistance() - GetTextRightDistance(),
-               aShapeSize.Height() - GetTextUpperDistance() - GetTextLowerDistance());
+    // The text is fitted into the room it is painted in: the anchor rectangle, with the text
+    // distances taken off, in the unrotated frame of the object. For a custom shape that is the
+    // text area of its geometry, and a text turned against the shape by a quarter, as a Diagram
+    // keeps the text of a node on its side upright, runs along the area's height.
+    tools::Rectangle aAnchorRect;
+    TakeTextAnchorRect(aAnchorRect);
+    Size aRoom(aAnchorRect.GetSize());
+    if (const SdrObjCustomShape* pCustomShape = dynamic_cast<const SdrObjCustomShape*>(this))
+    {
+        const double fTurn(std::fmod(std::fabs(pCustomShape->GetExtraTextRotation(true)), 180.0));
+        if (std::fabs(fTurn - 90.0) < 1.0)
+            aRoom = Size(aRoom.Height(), aRoom.Width());
+    }
 
-    setupAutoFitText(rOutliner, aSize);
+    setupAutoFitText(rOutliner, aRoom);
 }
 void SdrTextObj::setupAutoFitText(SdrOutliner& rOutliner, const Size& rTextBoxSize) const
 {
@@ -1828,10 +1839,10 @@ void SdrTextObj::onEditOutlinerStatusEvent( EditStatus* pEditStatus )
     const EditStatusFlags nStat = pEditStatus->GetStatusWord();
     const bool bGrowX = bool(nStat & EditStatusFlags::TEXTWIDTHCHANGED);
     const bool bGrowY = bool(nStat & EditStatusFlags::TextHeightChanged);
-    if(!(mbTextFrame && (bGrowX || bGrowY)))
+    if(!(bGrowX || bGrowY))
         return;
 
-    if ((bGrowX && IsAutoGrowWidth()) || (bGrowY && IsAutoGrowHeight()))
+    if (mbTextFrame && ((bGrowX && IsAutoGrowWidth()) || (bGrowY && IsAutoGrowHeight())))
     {
         AdjustTextFrameWidthAndHeight();
     }

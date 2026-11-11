@@ -9,6 +9,8 @@
 
 #include "rtfdocumentimpl.hxx"
 
+#include <algorithm>
+
 #include <com/sun/star/beans/XPropertySet.hpp>
 #include <com/sun/star/text/WrapTextMode.hpp>
 #include <com/sun/star/document/XDocumentProperties.hpp>
@@ -263,6 +265,15 @@ bool RTFDocumentImpl::dispatchCharacterAttributeValue(RTFKeyword nKeyword, int n
 
 bool RTFDocumentImpl::dispatchParagraphSprmValue(RTFKeyword nKeyword, int nParam)
 {
+    // far deeper table nesting than any real document uses
+    constexpr int nMaxTableDepth = 1024;
+    if (nKeyword == RTFKeyword::ITAP && nParam > nMaxTableDepth)
+    {
+        SAL_WARN("writerfilter.rtf",
+                 "table nesting depth " << nParam << " limited to " << nMaxTableDepth);
+        nParam = nMaxTableDepth;
+    }
+
     int nSprm = 0;
     tools::SvRef<RTFValue> pIntValue(new RTFValue(nParam));
 
@@ -395,7 +406,8 @@ bool RTFDocumentImpl::dispatchTableValue(RTFKeyword nKeyword, int nParam)
                 (Destination::NESTEDTABLEPROPERTIES == m_aStates.top().getDestination())
                     ? m_nNestedCurrentCellX
                     : m_TopLevelTableRow.nCurrentCellX);
-            int nCellWidth = nParam - rCurrentCellX;
+            const int nCellWidth = static_cast<int>(std::clamp<sal_Int64>(
+                sal_Int64(nParam) - rCurrentCellX, SAL_MIN_INT32, SAL_MAX_INT32));
             rCurrentCellX = nParam;
             auto pXValue = new RTFValue(nCellWidth);
             m_aStates.top().getTableRowSprms().set(NS_ooxml::LN_CT_TblGridBase_gridCol, pXValue,
@@ -961,7 +973,8 @@ RTFError RTFDocumentImpl::dispatchValue(RTFKeyword nKeyword, int nParam)
         case RTFKeyword::EXPND:
         {
             // Convert quarter-points to twentieths of a point
-            auto pValue = new RTFValue(nParam * 5);
+            auto pValue = new RTFValue(static_cast<int>(
+                std::clamp<sal_Int64>(sal_Int64(nParam) * 5, SAL_MIN_INT32, SAL_MAX_INT32)));
             m_aStates.top().getCharacterSprms().set(NS_ooxml::LN_EG_RPrBase_spacing, pValue);
         }
         break;
@@ -1396,10 +1409,10 @@ RTFError RTFDocumentImpl::dispatchValue(RTFKeyword nKeyword, int nParam)
         }
         break;
         case RTFKeyword::SHPLEFT:
-            m_aStates.top().getShape().setLeft(convertTwipToMm100(nParam));
+            m_aStates.top().getShape().setLeftTwip(nParam);
             break;
         case RTFKeyword::SHPTOP:
-            m_aStates.top().getShape().setTop(convertTwipToMm100(nParam));
+            m_aStates.top().getShape().setTopTwip(nParam);
             break;
         case RTFKeyword::SHPRIGHT:
             m_aStates.top().getShape().setRight(convertTwipToMm100(nParam));
@@ -1543,10 +1556,10 @@ RTFError RTFDocumentImpl::dispatchValue(RTFKeyword nKeyword, int nParam)
                                NS_ooxml::LN_CT_Spacing_after, pIntValue);
             break;
         case RTFKeyword::DPX:
-            m_aStates.top().getDrawingObject().setLeft(convertTwipToMm100(nParam));
+            m_aStates.top().getDrawingObject().setLeftTwip(nParam);
             break;
         case RTFKeyword::DPY:
-            m_aStates.top().getDrawingObject().setTop(convertTwipToMm100(nParam));
+            m_aStates.top().getDrawingObject().setTopTwip(nParam);
             break;
         case RTFKeyword::DPXSIZE:
             m_aStates.top().getDrawingObject().setRight(convertTwipToMm100(nParam));

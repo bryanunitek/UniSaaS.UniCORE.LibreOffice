@@ -37,6 +37,8 @@
 #include <com/sun/star/drawing/XShape.hpp>
 #include <com/sun/star/form/XFormComponent.hpp>
 #include <com/sun/star/beans/XPropertySet.hpp>
+#include <com/sun/star/awt/XControlContainer.hpp>
+#include <vcl/vclptr.hxx>
 
 #include <memory>
 #include <utility>
@@ -46,7 +48,7 @@
 #include <set>
 
 class SfxMedium;
-class SfxViewFrame;
+class WorkWindow;
 class SdrObject;
 class SvxMacroTableDtor;
 class SwDoc;
@@ -484,11 +486,12 @@ class SwHTMLParser : public SfxHTMLParser, public SvtListener
     bool m_bInFootEndNoteAnchor : 1;
     bool m_bInFootEndNoteSymbol : 1;
     bool m_bIgnoreHTMLComments : 1;
-    bool m_bRemoveHidden : 1; // the filter implementation might set the hidden flag
 
     bool m_bBodySeen : 1;
     bool m_bReadingHeaderOrFooter : 1;
     bool m_bNotifyMacroEventRead : 1;
+    // The caller gave no base URL, which is how content pasted from the clipboard arrives.
+    bool m_bFromClipboard : 1;
     bool m_isInTableStructure;
 
     int m_nTableDepth;
@@ -498,7 +501,10 @@ class SwHTMLParser : public SfxHTMLParser, public SvtListener
     /// the names corresponding to the DOCINFO field subtypes INFO[1-4]
     OUString m_InfoNames[4];
 
-    SfxViewFrame* m_pTempViewFrame;
+    // A hidden window, and the control container on it, in which a form control is realized to
+    // measure its size when the document has no view.
+    VclPtr<WorkWindow> m_xControlSizeWindow;
+    uno::Reference<css::awt::XControlContainer> m_xControlSizeContainer;
 
     bool m_bXHTML = false;
     bool m_bReqIF = false;

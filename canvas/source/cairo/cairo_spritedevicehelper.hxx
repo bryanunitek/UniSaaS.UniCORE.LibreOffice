@@ -45,13 +45,7 @@ namespace cairocanvas
         /// Dispose all internal references
         void disposing();
 
-        // XWindowGraphicDevice
-        bool  showBuffer( bool, bool );
-        bool  switchBuffer( bool, bool bUpdateAll );
-
         css::uno::Any isAccelerated() const;
-        css::uno::Any getDeviceHandle() const;
-        css::uno::Any getSurfaceHandle() const;
 
         void notifySizeUpdate( const css::awt::Rectangle& rBounds );
         void setSize( const ::basegfx::B2ISize& rSize );

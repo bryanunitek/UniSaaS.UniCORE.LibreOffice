@@ -172,6 +172,15 @@ enum class SfxObjectCreateMode
     INTERNAL
 };
 
+/// The macro state a document made by SfxObjectShell::DoInitNew starts with.
+enum class SfxNewDocumentMacros
+{
+    /// A document the user goes on to work in, so its macros are the user's own.
+    Allow,
+    /// A document that holds content from elsewhere, or one that only serves another operation.
+    Disallow
+};
+
 /*
     The class SfxObjectShell is the base class for SFx-objects, ie documents
     and parts of documents that can be integrated as separate objects
@@ -206,6 +215,10 @@ private:
     bool                        bPendingLinkUpdateInfobar;
     std::vector<std::pair<css::uno::WeakReference<css::beans::XPropertySet>, OUString>>
                                 maDeferredFormControlImages;
+    bool                        mbHasExternalDatabaseForms;
+    std::vector<std::pair<css::uno::WeakReference<css::uno::XInterface>,
+                          std::function<void(const css::uno::Reference<css::uno::XInterface>&)>>>
+                                maDeferredLinkLoads;
 
     enum TriState               {undefined, yes, no};
     TriState                    mbContinueImportOnFilterExceptions = undefined; // try to import as much as possible
@@ -296,6 +309,10 @@ public:
     bool                        AcceptStateUpdate() const;
     bool                        IsHelpDocument() const;
 
+    // Whether the document's location lets its links update without asking. A document embedded
+    // in another one has no location of its own and is never in a trusted location.
+    bool                        IsTrustedLocationForUpdatingLinks() const;
+
     bool                        IsDocShared() const;
     OUString                    GetSharedFileURL() const;
     bool                        SwitchToShared( bool bShared, bool bSave );
@@ -318,7 +335,7 @@ public:
      * @return true if the initialization is successful, false otherwise.
      */
     void                        DoInitUnitTest();
-    bool                        DoInitNew();
+    bool                        DoInitNew(SfxNewDocumentMacros eMacros);
     bool                        DoLoad( SfxMedium* pMedium );
     bool                        DoLoadExternal( SfxMedium* pMed );
     bool                        DoSave();
@@ -344,9 +361,10 @@ public:
                                     const css::uno::Reference< css::embed::XStorage >& xStorage );
     virtual void                UpdateLinks();
     virtual void                PerformLinkUpdate();
-    void                        SetPendingLinkUpdateInfobar() { bPendingLinkUpdateInfobar = true; }
+    void                        SetPendingLinkUpdateInfobar();
     void                        CheckPendingLinkUpdateInfobar();
     void                        ShowLinkUpdateInfobar();
+    void                        AllowLinkUpdate();
     void                        AddDeferredFormControlImage(
                                     const css::uno::Reference<css::beans::XPropertySet>& rxControl,
                                     const OUString& rURL);
@@ -355,6 +373,17 @@ public:
                                     { return maDeferredFormControlImages; }
     void                        ClearDeferredFormControlImages()
                                     { maDeferredFormControlImages.clear(); }
+    /// Whether rxForm is a database form that names a database, by URL or by data source name.
+    static bool                 IsExternalDatabaseForm(
+                                    const css::uno::Reference<css::beans::XPropertySet>& rxForm);
+    void                        SetHasExternalDatabaseForms() { mbHasExternalDatabaseForms = true; }
+    bool                        HasExternalDatabaseForms() const
+                                    { return mbHasExternalDatabaseForms; }
+    /// Run aLoad on rxOwner when the user allows link updates for this document, if rxOwner
+    /// still exists then. An owner that is already waiting is not added again.
+    void                        AddDeferredLinkLoad(
+                                    const css::uno::Reference<css::uno::XInterface>& rxOwner,
+                                    std::function<void(const css::uno::Reference<css::uno::XInterface>&)> aLoad);
     virtual bool                LoadExternal( SfxMedium& rMedium );
     bool                        IsConfigOptionsChecked() const;
     void                        SetConfigOptionsChecked( bool bChecked );
@@ -447,6 +476,11 @@ public:
     static bool                 isScriptURLAllowed(const OUString& rScriptURL);
 
     static bool                 isScriptAccessAllowed(const css::uno::Reference<css::uno::XInterface>& rScriptContext);
+
+    /// Whether a script URL that rxDocument binds may run: the URL is allowed, the document may
+    /// run macros, and the script is not an untrusted one
+    static bool                 isDocumentScriptAllowed(const OUString& rScriptURL,
+                                    const css::uno::Reference<css::uno::XInterface>& rxDocument);
 
     SvKeyValueIterator*         GetHeaderAttributes();
     void                        ClearHeaderAttributesForSourceViewHack();
@@ -641,6 +675,9 @@ public:
                                 CreateAndLoadComponent( const SfxItemSet& rSet );
     static SfxObjectShell* GetShellFromComponent(const css::uno::Reference< css::uno::XInterface >& xComp);
     static SfxObjectShell* GetParentShell(const css::uno::Reference<css::uno::XInterface>& xChild);
+    /// The document that holds this one, following embedded objects up to the top. This shell
+    /// itself when it is not embedded.
+    SfxObjectShell&             GetTopShell();
     static OUString             GetServiceNameFromFactory( const OUString& rFact );
     bool                        IsInPlaceActive() const;
     bool                        IsUIActive() const;
@@ -759,6 +796,7 @@ public:
     SAL_DLLPRIVATE void InitOwnModel_Impl();
     SAL_DLLPRIVATE void BreakMacroSign_Impl( bool bBreakMacroSing );
     SAL_DLLPRIVATE void CheckSecurityOnLoading_Impl();
+    SAL_DLLPRIVATE bool DocumentUIConfigurationHasMacroCalls_Impl();
     SAL_DLLPRIVATE void CheckForBrokenDocSignatures_Impl();
     SAL_DLLPRIVATE void CheckEncryption_Impl( const css::uno::Reference< css::task::XInteractionHandler >& xHandler );
     SAL_DLLPRIVATE void SetModifyPasswordEntered( bool bEntered = true );

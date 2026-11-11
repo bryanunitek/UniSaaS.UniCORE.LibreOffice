@@ -189,6 +189,8 @@ SdOutliner::SdOutliner( SdDrawDocument& rDoc, OutlinerMode nMode )
     SetStyleSheetPool(static_cast<SfxStyleSheetPool*>( mrDrawDocument.GetStyleSheetPool() ));
     SetCalcFieldValueHdl(LINK(SdModule::get(), SdModule, CalcFieldValueHdl));
     SetForbiddenCharsTable( rDoc.GetForbiddenCharsTable() );
+    SetSpellNextDocumentHdl(LINK(this, SdOutliner, SpellNextDocumentHdl));
+    SetConvertNextDocumentHdl(LINK(this, SdOutliner, ConvertNextDocumentHdl));
 
     EEControlBits nCntrl = GetControlWord();
     nCntrl |= EEControlBits::ALLOWBIGOBJS;
@@ -370,7 +372,7 @@ void SdOutliner::EndSpelling()
     mnStartPageIndex = sal_uInt16(-1);
 }
 
-bool SdOutliner::SpellNextDocument()
+IMPL_LINK(SdOutliner, SpellNextDocumentHdl, Outliner*, /*pOutliner*/, bool)
 {
     std::shared_ptr<sd::ViewShell> pViewShell (mpWeakViewShell.lock());
     if( nullptr != dynamic_cast< const sd::OutlineViewShell *>( pViewShell.get() ))
@@ -481,11 +483,11 @@ bool SdOutliner::StartSearchAndReplace (const SvxSearchItem* pSearchItem)
         else
             switch (pShell->GetShellType())
             {
-                case sd::ViewShell::ST_DRAW:
-                case sd::ViewShell::ST_IMPRESS:
-                case sd::ViewShell::ST_NOTES:
-                case sd::ViewShell::ST_HANDOUT:
-                case sd::ViewShell::ST_OUTLINE:
+                case sd::ViewShell::ShellType::Draw:
+                case sd::ViewShell::ShellType::Impress:
+                case sd::ViewShell::ShellType::Notes:
+                case sd::ViewShell::ShellType::Handout:
+                case sd::ViewShell::ShellType::Outline:
                     bAbort = false;
                     break;
                 default:
@@ -1056,7 +1058,7 @@ void SdOutliner::DetectChange()
             pOutlinerView->SetOutputArea( ::tools::Rectangle( Point(), Size(1, 1) ) );
         if (meMode == SPELL)
             SetPaperSize( Size(1, 1) );
-        SetText(OUString(), GetParagraph(0));
+        SetText(OUString(), 0);
 
         RememberStartPosition ();
 
@@ -1274,7 +1276,7 @@ void SdOutliner::ProvideNextTextObject()
         pOutlinerView->SetOutputArea( ::tools::Rectangle( Point(), Size(1, 1) ) );
     if (meMode == SPELL)
         SetPaperSize( Size(1, 1) );
-    SetText(OUString(), GetParagraph(0));
+    SetText(OUString(), 0);
 
     mpSearchSpellTextObj = nullptr;
 
@@ -1996,7 +1998,7 @@ void SdOutliner::EndConversion()
     EndSpelling();
 }
 
-bool SdOutliner::ConvertNextDocument()
+IMPL_LINK(SdOutliner, ConvertNextDocumentHdl, Outliner*, /*pOutliner*/, bool)
 {
     std::shared_ptr<sd::ViewShell> pViewShell (mpWeakViewShell.lock());
     if (dynamic_cast< const sd::OutlineViewShell *>( pViewShell.get() ) )
@@ -2110,10 +2112,10 @@ void SdOutliner::Implementation::ProvideOutlinerView (
 
     switch (rpViewShell->GetShellType())
     {
-        case sd::ViewShell::ST_DRAW:
-        case sd::ViewShell::ST_IMPRESS:
-        case sd::ViewShell::ST_NOTES:
-        case sd::ViewShell::ST_HANDOUT:
+        case sd::ViewShell::ShellType::Draw:
+        case sd::ViewShell::ShellType::Impress:
+        case sd::ViewShell::ShellType::Notes:
+        case sd::ViewShell::ShellType::Handout:
         {
             // Create a new outline view to do the search on.
             bool bInsert = false;
@@ -2140,14 +2142,14 @@ void SdOutliner::Implementation::ProvideOutlinerView (
             rOutliner.SetUpdateLayout(false);
             mpOutlineView->SetOutputArea (::tools::Rectangle (Point(), Size(1, 1)));
             rOutliner.SetPaperSize( Size(1, 1) );
-            rOutliner.SetText(OUString(), rOutliner.GetParagraph(0));
+            rOutliner.SetText(OUString(), 0);
 
             meOriginalEditMode =
                 std::static_pointer_cast<sd::DrawViewShell>(rpViewShell)->GetEditMode();
         }
         break;
 
-        case sd::ViewShell::ST_OUTLINE:
+        case sd::ViewShell::ShellType::Outline:
         {
             if (mpOutlineView!=nullptr && mbOwnOutlineView)
                 delete mpOutlineView;
@@ -2157,8 +2159,8 @@ void SdOutliner::Implementation::ProvideOutlinerView (
         break;
 
         default:
-        case sd::ViewShell::ST_NONE:
-        case sd::ViewShell::ST_PRESENTATION:
+        case sd::ViewShell::ShellType::None:
+        case sd::ViewShell::ShellType::Presentation:
             // Ignored
             break;
     }

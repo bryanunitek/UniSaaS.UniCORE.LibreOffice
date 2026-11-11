@@ -331,12 +331,26 @@ void OOXMLDocument::resolveCommentsExtendedStream(Stream& rStream)
     resolveFastSubStream(rStream, OOXMLStream::StreamType_t::COMMENTS_EXTENDED);
 }
 
+void OOXMLDocument::resolveCommentsIdsStream(Stream& rStream)
+{
+    resolveFastSubStream(rStream, OOXMLStream::StreamType_t::COMMENTS_IDS);
+}
+
+void OOXMLDocument::resolveCommentsExtensibleStream(Stream& rStream)
+{
+    resolveFastSubStream(rStream, OOXMLStream::StreamType_t::COMMENTS_EXTENSIBLE);
+}
+
 void OOXMLDocument::resolveComment(Stream & rStream,
                                        const sal_Int32 nId)
 {
     if (!mbCommentsExtendedResolved)
     {
         resolveCommentsExtendedStream(rStream);
+        // The durable ids these two streams share are what ties a comment to the moment it was
+        // written, so both have to be read before the first comment.
+        resolveCommentsIdsStream(rStream);
+        resolveCommentsExtensibleStream(rStream);
         mbCommentsExtendedResolved = true;
     }
 
@@ -780,12 +794,18 @@ void OOXMLDocument::resolveEmbeddingsStream(const OOXMLStream::Pointer_t& pStrea
     xRelationshipAccess.set(dynamic_cast<OOXMLStreamImpl&>(*pStream).accessDocumentStream(), uno::UNO_QUERY);
     if (xRelationshipAccess.is())
     {
-        static constexpr OUStringLiteral sChartType(u"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart");
-        static constexpr OUStringLiteral sChartTypeStrict(u"http://purl.oclc.org/ooxml/officeDocument/relationships/chart");
-        static constexpr OUStringLiteral sFootersType(u"http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer");
-        static constexpr OUStringLiteral sFootersTypeStrict(u"http://purl.oclc.org/ooxml/officeDocument/relationships/footer");
-        static constexpr OUStringLiteral sHeaderType(u"http://schemas.openxmlformats.org/officeDocument/2006/relationships/header");
-        static constexpr OUStringLiteral sHeaderTypeStrict(u"http://purl.oclc.org/ooxml/officeDocument/relationships/header");
+        static constexpr OUString sChartType(
+            u"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart"_ustr);
+        static constexpr OUString sChartTypeStrict(
+            u"http://purl.oclc.org/ooxml/officeDocument/relationships/chart"_ustr);
+        static constexpr OUString sFootersType(
+            u"http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"_ustr);
+        static constexpr OUString sFootersTypeStrict(
+            u"http://purl.oclc.org/ooxml/officeDocument/relationships/footer"_ustr);
+        static constexpr OUString sHeaderType(
+            u"http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"_ustr);
+        static constexpr OUString sHeaderTypeStrict(
+            u"http://purl.oclc.org/ooxml/officeDocument/relationships/header"_ustr);
 
         bool bFound = false;
         bool bHeaderFooterFound = false;

@@ -19,6 +19,7 @@
 #include <com/sun/star/graphic/GraphicType.hpp>
 #include <com/sun/star/drawing/FillStyle.hpp>
 #include <com/sun/star/drawing/BitmapMode.hpp>
+#include <com/sun/star/drawing/XControlShape.hpp>
 #include <com/sun/star/document/XEmbeddedObjectSupplier2.hpp>
 #include <com/sun/star/document/UpdateDocMode.hpp>
 #include <com/sun/star/document/XDocumentPropertiesSupplier.hpp>
@@ -230,6 +231,26 @@ CPPUNIT_TEST_FIXTURE(HtmlImportTest, testImageLazyRead)
     Graphic aGraphic(xGraphic);
     // This failed, import loaded the graphic, it wasn't lazy-read.
     CPPUNIT_ASSERT(!aGraphic.isAvailable());
+}
+
+CPPUNIT_TEST_FIXTURE(HtmlImportTest, testImgDataAttributeIsLink)
+{
+    // An img with a data attribute is imported as a link to its src, like any other img.
+    createSwWebDoc("img-data-attribute.html");
+    SwDoc* pDoc = getSwDoc();
+    SwNodeOffset nNodes = pDoc->GetNodes().Count();
+    for (SwNodeOffset i(0); i < nNodes; ++i)
+    {
+        if (SwGrfNode* pGrfNode = pDoc->GetNodes()[i]->GetGrfNode())
+        {
+            CPPUNIT_ASSERT(pGrfNode->IsLinkedFile());
+            OUString aFileName;
+            pGrfNode->GetFileFilterNms(&aFileName, nullptr);
+            CPPUNIT_ASSERT_EQUAL(createFileURL(u"img-data-attribute.png"), aFileName);
+            return;
+        }
+    }
+    CPPUNIT_FAIL("no graphic node in the document");
 }
 
 CPPUNIT_TEST_FIXTURE(HtmlImportTest, testChangedby)
@@ -475,6 +496,26 @@ CPPUNIT_TEST_FIXTURE(HtmlImportTest, testImageNotFetchedWithoutPermission)
         }
     }
     CPPUNIT_FAIL("no graphic node in the document");
+}
+
+CPPUNIT_TEST_FIXTURE(HtmlImportTest, testImageButtonPictureWaitsForLinkUpdate)
+{
+    // An image button's picture is set only once the links are allowed to update.
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                      sal_Int16(document::UpdateDocMode::NO_UPDATE)),
+    };
+    loadFromFile(u"image-button.html", aParams);
+
+    uno::Reference<drawing::XControlShape> xControlShape(getShape(1), uno::UNO_QUERY_THROW);
+    uno::Reference<beans::XPropertySet> xButton(xControlShape->getControl(), uno::UNO_QUERY_THROW);
+    CPPUNIT_ASSERT_EQUAL(OUString(), getProperty<OUString>(xButton, u"ImageURL"_ustr));
+
+    uno::Reference<util::XLinkUpdate> xLinkUpdate(mxComponent, uno::UNO_QUERY_THROW);
+    xLinkUpdate->updateLinks();
+
+    CPPUNIT_ASSERT_EQUAL(createFileURL(u"image-button.png"),
+                         getProperty<OUString>(xButton, u"ImageURL"_ustr));
 }
 
 CPPUNIT_TEST_FIXTURE(HtmlImportTest, testTdf79298StrikeoutVariants)

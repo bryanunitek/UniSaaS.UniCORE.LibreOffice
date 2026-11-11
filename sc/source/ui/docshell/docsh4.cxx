@@ -22,6 +22,8 @@
 #include <com/sun/star/frame/Desktop.hpp>
 
 #include <scitems.hxx>
+#include <sfx2/viewfrm.hxx>
+#include <drawview.hxx>
 #include <editeng/flstitem.hxx>
 #include <sfx2/fcontnr.hxx>
 #include <sfx2/linkmgr.hxx>
@@ -168,8 +170,7 @@ ScLkUpdMode ScDocShell::GetLinkUpdateModeState() const
         nSet = LM_NEVER;
     }
     else if (nSet == LM_ALWAYS
-            && !(SvtSecurityOptions::isTrustedLocationUriForUpdatingLinks(
-                    GetMedium() == nullptr ? OUString() : GetMedium()->GetName())
+            && !(IsTrustedLocationForUpdatingLinks()
                 || (IsDocShared()
                     && SvtSecurityOptions::isTrustedLocationUriForUpdatingLinks(
                         GetSharedFileURL()))))
@@ -245,7 +246,8 @@ void ScDocShell::PerformLinkUpdate()
 
 bool ScDocShell::HasExternalLinks() const
 {
-    return GetDocument().HasExternalLinks() || !GetDeferredFormControlImages().empty();
+    return GetDocument().HasExternalLinks() || !GetDeferredFormControlImages().empty()
+           || HasExternalDatabaseForms();
 }
 
 namespace
@@ -2925,6 +2927,10 @@ void ScDocShell::LOKCommentNotify(LOKCommentNotificationType nType, const ScDocu
         {
             aAnnotation.put("author", pNote->GetAuthor());
             aAnnotation.put("dateTime", pNote->GetDate());
+            // The moment the note was written, when it is known. dateTime beside it is the
+            // author's wall clock with no zone; this one is the same moment in UTC.
+            if (!pNote->GetDateUTC().isEmpty())
+                aAnnotation.put("dateTimeUtc", pNote->GetDateUTC());
             if (const auto* pData = pNote->GetThreadedCommentData())
             {
                 aAnnotation.put("text", pData->maRoot.maText);

@@ -42,6 +42,7 @@
 #include <tokenarray.hxx>
 
 #include <com/sun/star/beans/XPropertySet.hpp>
+#include <com/sun/star/sdb/DatabaseContext.hpp>
 #include <com/sun/star/sdb/XCompletedExecution.hpp>
 #include <com/sun/star/sdbc/DataType.hpp>
 #include <com/sun/star/sdbc/SQLException.hpp>
@@ -80,6 +81,7 @@
 #include <vcl/vclenum.hxx>
 #include <vcl/weld/MessageDialog.hxx>
 #include <tools/XmlWriter.hxx>
+#include <tools/hostfilter.hxx>
 
 #include <vector>
 #include <memory>
@@ -1351,9 +1353,9 @@ void ScDPObject::GetDrillDownData(const ScAddress& rPos, Sequence< Sequence<Any>
     rTableData = xDrillDownData->getDrillDownData(filters);
 }
 
-bool ScDPObject::IsDimNameInUse(std::u16string_view rName) const
+bool ScDPObject::IsDimNameInUse(std::u16string_view rName)
 {
-    if (!mxSource.is())
+    if (!GetSource().is())
         return false;
 
     Reference<container::XNameAccess> xDims = mxSource->getDimensions();
@@ -3474,6 +3476,35 @@ bool ScDPCollection::DBType::less::operator() (const DBType& left, const DBType&
 
 ScDPCollection::DBCaches::DBCaches(ScDocument& rDoc) : mrDoc(rDoc) {}
 
+bool ScDPCollection::IsRegisteredDatabase(const OUString& rDBName)
+{
+    if (rDBName.isEmpty())
+        return false;
+
+    try
+    {
+        uno::Reference<sdb::XDatabaseContext> xContext
+            = sdb::DatabaseContext::create(comphelper::getProcessComponentContext());
+        return xContext->hasRegisteredDatabase(rDBName);
+    }
+    catch (const uno::Exception&)
+    {
+        TOOLS_WARN_EXCEPTION("sc", "ScDPCollection::IsRegisteredDatabase");
+    }
+    return false;
+}
+
+bool ScDPCollection::IsForbiddenUrlDataSource(const OUString& rDBName)
+{
+    // A registered name is a user data source and is left alone. Any other name is a URL that
+    // the document supplies, and it can point a file-backed driver at a local file or reach a
+    // remote host, so apply the allowed-path, host, and protocol checks to it.
+    if (IsRegisteredDatabase(rDBName))
+        return false;
+
+    return HostFilter::isUrlForbidden(rDBName);
+}
+
 bool ScDPCollection::DBCaches::hasCache(sal_Int32 nSdbType, const OUString& rDBName, const OUString& rCommand) const
 {
     DBType aType(nSdbType, rDBName, rCommand);
@@ -3532,6 +3563,23 @@ uno::Reference<sdbc::XRowSet> ScDPCollection::DBCaches::createRowSet(
     sal_Int32 nSdbType, const OUString& rDBName, const OUString& rCommand)
 {
     uno::Reference<sdbc::XRowSet> xRowSet;
+
+    // A database document named by URL is an external link, so it is opened only once the user
+    // allows link updates.
+    ScDocShell* pDocShell = mrDoc.GetDocumentShell();
+    if (pDocShell && !pDocShell->GetEmbeddedObjectContainer().getUserAllowsLinkUpdate()
+        && !IsRegisteredDatabase(rDBName))
+    {
+        SAL_WARN("sc", "data pilot source " << rDBName << " waits for link updates to be allowed");
+        return xRowSet;
+    }
+
+    if (IsForbiddenUrlDataSource(rDBName))
+    {
+        SAL_WARN("sc", "data pilot source " << rDBName << " is not an allowed source");
+        return xRowSet;
+    }
+
     try
     {
         xRowSet.set(comphelper::getProcessServiceFactory()->createInstance(

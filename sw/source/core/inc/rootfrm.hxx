@@ -186,6 +186,9 @@ class SAL_DLLPUBLIC_RTTI SwRootFrame final : public SwLayoutFrame
     void DeleteEmptyFlys_();
     void RemoveFromList_( SwSectionFrame* pSct ); // Removes SectionFrames from the Delete List
 
+    /// Remove the virtual fly draw objects from the page (called by DestroyImpl)
+    void RemoveVirtFlyDrawObjs();
+
     virtual void DestroyImpl() override;
     virtual ~SwRootFrame() override;
 
@@ -342,7 +345,12 @@ public:
     bool IsBetweenPages(const Point& rPt) const;
 
     enum class RectsMode { Default, NoAnchoredFlys };
-    void CalcFrameRects(SwShellCursor const&, SwRects &, RectsMode eMode = RectsMode::Default);
+    /// pPieces, when given, also receives the rectangles the selection was built from,
+    /// which follow the lines while the region left in the second argument need not, and
+    /// pHoles the ones cut out of it afterwards - a fly, a drop cap. The two account for
+    /// the region only in NoAnchoredFlys mode, where nothing is added back to it.
+    void CalcFrameRects(SwShellCursor const&, SwRects&, RectsMode eMode = RectsMode::Default,
+                        SwRects* pPieces = nullptr, SwRects* pHoles = nullptr);
 
     /**
      * Calculates the cells included from the current selection
@@ -388,6 +396,8 @@ public:
     /// Empty SwFlyFrames are registered here for deletion and destroyed later if they are not
     /// de-registered in the meantime.
     void InsertEmptyFly(SwFlyFrame* pDel);
+    /// Remove an SwFlyFrame from the deferred deletion list before destroying it.
+    void RemoveEmptyFly(SwFlyFrame* pFly);
     void DeleteEmptySct() { if( mpDestroy ) DeleteEmptySct_(); }
     void DeleteEmptyFlys() { if( mpFlyDestroy ) DeleteEmptyFlys_(); }
     void RemoveFromList( SwSectionFrame* pSct ) { if( mpDestroy ) RemoveFromList_( pSct ); }

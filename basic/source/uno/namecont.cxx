@@ -339,6 +339,7 @@ void ModifiableHelper::setModified(bool _bModified, std::unique_lock<std::mutex>
 SfxLibraryContainer::SfxLibraryContainer()
     : mnRunningVBAScripts( 0 )
     , mbVBACompat( false )
+    , mbVBACompatDeferred( false )
     , meVBATextEncoding( RTL_TEXTENCODING_DONTKNOW )
     , maModifiable( *this )
     , maNameContainer( cppu::UnoType<XNameAccess>::get(), *this )
@@ -952,10 +953,12 @@ void SfxLibraryContainer::init_Impl( const OUString& rInitialDocumentURL,
 
     // Preload?
     {
+        // A password-protected library of a document is loaded with the document's Basic project.
+        const bool bDocumentContainer = Reference< XModel >( mxOwnerDocument ).is();
         for (auto& aName : maNameContainer.getElementNames())
         {
             SfxLibrary* pImplLib = getImplLib( aName );
-            if( pImplLib->mbPreload )
+            if( pImplLib->mbPreload && !( bDocumentContainer && pImplLib->mbPasswordProtected ) )
             {
                 loadLibrary_Impl(aName, guard);
             }
@@ -2782,6 +2785,7 @@ void SAL_CALL SfxLibraryContainer::setVBACompatibilityMode( sal_Bool _vbacompatm
         to getBasicManager() may call getVBACompatibilityMode() which returns
         this value. */
     mbVBACompat = _vbacompatmodeon;
+    mbVBACompatDeferred = false;
     BasicManager* pBasMgr = getBasicManager();
     if( !pBasMgr )
         return;
@@ -2875,15 +2879,23 @@ css::uno::Reference<css::beans::XPropertySetInfo> SAL_CALL SfxLibraryContainer::
 void SAL_CALL SfxLibraryContainer::setPropertyValue(const OUString& aPropertyName,
                                                     const uno::Any& aValue)
 {
-    if (aPropertyName != sVBATextEncodingPropName)
+    if (aPropertyName == sVBATextEncodingPropName)
+        aValue >>= meVBATextEncoding;
+    else if (aPropertyName == sDeferredVBACompatibilityModePropName)
+    {
+        aValue >>= mbVBACompat;
+        mbVBACompatDeferred = mbVBACompat;
+    }
+    else
         throw UnknownPropertyException(aPropertyName, getXWeak());
-    aValue >>= meVBATextEncoding;
 }
 
 css::uno::Any SAL_CALL SfxLibraryContainer::getPropertyValue(const OUString& aPropertyName)
 {
     if (aPropertyName == sVBATextEncodingPropName)
         return uno::Any(meVBATextEncoding);
+    if (aPropertyName == sDeferredVBACompatibilityModePropName)
+        return uno::Any(mbVBACompatDeferred);
     throw UnknownPropertyException(aPropertyName, getXWeak());
 }
 

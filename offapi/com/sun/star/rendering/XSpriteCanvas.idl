@@ -20,7 +20,6 @@
 module com { module sun { module star { module rendering {
 
 interface XSprite;
-interface XAnimatedSprite;
 interface XCustomSprite;
 
 /** Specialization of a XCanvas, where moving, animated objects
@@ -30,47 +29,12 @@ interface XCustomSprite;
     undefined, unless XSpriteCanvas::updateScreen() is called. This is
     because a sprite canvas might choose to employ double buffering to
     reduce animation flicker, and cannot know the instant suitable to
-    display the newly rendered canvas content. When using external
-    double-buffering via XBufferController on a sprite canvas, the
-    implementation takes care of this issue, and in this case is able
-    to render correctly even without explicit updateScreen() calls
-    (because there's a defined moment in time where content display
-    can happen, namely the XBufferController::showBuffer()) call. If
+    display the newly rendered canvas content. If
     you don't need sprite functionality, and don't want the
     updateScreen hassle, simply use the XCanvas.
  */
 interface XSpriteCanvas : XCanvas
 {
-    /** Create a sprite object from the specified animation
-        sequence. A sprite is a back-buffered object with its own,
-        independent animation.
-     */
-    XAnimatedSprite createSpriteFromAnimation( [in] XAnimation animation )
-        raises (com::sun::star::lang::IllegalArgumentException);
-
-    /** Create a sprite object from the specified animation
-        sequence.
-
-        A sprite is a back-buffered object with its own,
-        independent animation.
-
-        @param animationBitmaps
-        Sequence of bitmaps. The bitmaps don't need to have the same
-        size, but they are all rendered with their left, top edges
-        aligned.
-
-        @param interpolationMode
-        Value of InterpolationMode, to determine whether
-        and how to interpolate between the provided bitmaps, if
-        animation runs fast enough.
-
-        @throws VolatileContentDestroyedException
-        if at least one of the bitmap is volatile, and its content has been destroyed by the system.
-     */
-    XAnimatedSprite createSpriteFromBitmaps( [in] sequence<XBitmap> animationBitmaps, [in] byte interpolationMode )
-        raises (com::sun::star::lang::IllegalArgumentException,
-                VolatileContentDestroyedException);
-
     /** Create a custom, user-handles-it-all sprite object.
 
         A sprite is a back-buffered object with its own, independent
@@ -112,11 +76,6 @@ interface XSpriteCanvas : XCanvas
         updates to stopped animations and XCustomSprites in
         general. This method will return only after the screen update
         is done, or earlier if an error happened.<p>
-
-        If double buffering is enabled via XBufferController, no
-        explicit call of updateScreen() is necessary, since the
-        XBufferController methods will automatically notify all
-        associated XSpriteCanvas instances.<p>
 
         @param bUpdateAll
         When `TRUE`, update the whole screen. When `FALSE`,

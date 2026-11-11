@@ -224,6 +224,9 @@ namespace vcl
         Idle maUpdatePreviewIdle;
         DECL_LINK(updatePreviewIdle, Timer*, void);
 
+        Timer maPageRangeUpdateTimer;
+        DECL_LINK(PageRangeUpdateTimerHdl, Timer*, void);
+
         DECL_LINK(ClickOKCancelHdl, weld::Button&, void);
         DECL_LINK(ClickForwardHdl, weld::Button&, void);
         DECL_LINK(ClickBackwardHdl, weld::Button&, void);
@@ -263,6 +266,7 @@ namespace vcl
         void readFromSettings();
         void setPaperOrientation( Orientation eOrientation, bool fromUser );
         void updateOrientationBox( bool bAutomatic = true );
+        void updatePaperSizeBox();
         void updatePageSize( int nOrientation );
         void updatePageRange( const sal_Int32 nPages );
         bool hasOrientationChanged() const;

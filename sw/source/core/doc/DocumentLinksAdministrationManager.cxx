@@ -45,7 +45,6 @@
 #include <svx/fillbitmaplink.hxx>
 #include <tools/urlobj.hxx>
 #include <unotools/charclass.hxx>
-#include <unotools/securityoptions.hxx>
 
 using namespace ::com::sun::star;
 
@@ -214,7 +213,7 @@ void DocumentLinksAdministrationManager::UpdateLinks()
     registerDeferredFormImageLinks(pShell->GetDeferredFormControlImages(), GetLinkManager());
     pShell->ClearDeferredFormControlImages();
 
-    if (GetLinkManager().GetLinks().empty())
+    if (GetLinkManager().GetLinks().empty() && !pShell->HasExternalDatabaseForms())
         return;
     sal_uInt16 nLinkMode = m_rDoc.GetDocumentSettingManager().getLinkUpdateMode(true);
     sal_uInt16 nUpdateDocMode = pShell->GetUpdateDocMode();
@@ -231,14 +230,21 @@ void DocumentLinksAdministrationManager::UpdateLinks()
     }
     if (nLinkMode == AUTOMATIC && !bAskUpdate)
     {
-        SfxMedium * medium = pShell->GetMedium();
-        if (!SvtSecurityOptions::isTrustedLocationUriForUpdatingLinks(
-                medium == nullptr ? OUString() : medium->GetName()))
+        if (!pShell->IsTrustedLocationForUpdatingLinks())
         {
             bAskUpdate = true;
         }
     }
     comphelper::EmbeddedObjectContainer& rEmbeddedObjectContainer = pShell->getEmbeddedObjectContainer();
+    // An embedded document is loaded with no update mode, and follows the document that contains it.
+    if (!bUpdate && pShell->GetCreateMode() == SfxObjectCreateMode::EMBEDDED)
+    {
+        if (rEmbeddedObjectContainer.getUserAllowsLinkUpdate())
+            GetLinkManager().UpdateAllLinks(false, OUString());
+        else
+            pShell->SetPendingLinkUpdateInfobar();
+        return;
+    }
     if (bUpdate)
     {
         if (bAskUpdate)

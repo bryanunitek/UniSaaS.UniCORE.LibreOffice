@@ -41,7 +41,6 @@ public:
 
 class SVXCORE_DLLPUBLIC SdrPathObj final : public SdrTextObj
 {
-private:
     friend class ImpPathForDragAndCreate;
 
     virtual std::unique_ptr<sdr::contact::ViewContact> CreateObjectSpecificViewContact() override;
@@ -49,6 +48,7 @@ private:
     basegfx::B2DPolyPolygon maPathPolygon;
     SdrObjKind meKind;
     bool mbHandleScale = false;
+    basegfx::B2DPolyPolygon maClipPolygon;
 
     // for isolation of old Drag/Create code
     std::unique_ptr<ImpPathForDragAndCreate> mpDAC;
@@ -59,9 +59,10 @@ private:
     void ImpForceLineAngle();
     ImpPathForDragAndCreate& impGetDAC() const;
 
-private:
     // protected destructor - due to final, make private
     virtual ~SdrPathObj() override;
+
+    virtual rtl::Reference<SdrObject> implCloneSdrObject(SdrModel& rTargetModel) const override;
 
 public:
     SdrPathObj(
@@ -77,7 +78,6 @@ public:
     virtual void TakeObjInfo(SdrObjTransformInfoRec& rInfo) const override;
     virtual SdrObjKind GetObjIdentifier() const override;
     virtual void TakeUnrotatedSnapRect(tools::Rectangle& rRect) const override;
-    virtual rtl::Reference<SdrObject> CloneSdrObject(SdrModel& rTargetModel) const override;
 
     virtual OUString TakeObjNameSingul() const override;
     virtual OUString TakeObjNamePlural() const override;
@@ -141,6 +141,10 @@ public:
     const basegfx::B2DPolyPolygon& GetPathPoly() const { return maPathPolygon; }
     void SetPathPoly(const basegfx::B2DPolyPolygon& rPathPoly);
     void NbcSetPathPoly(const basegfx::B2DPolyPolygon& rPathPoly);
+
+    // Clip Polygon getter/setter
+    const basegfx::B2DPolyPolygon& GetClipPoly() const { return maClipPolygon; }
+    void SetClipPoly(const basegfx::B2DPolyPolygon& rClipPoly);
 
     // special functions for Bezier-polygon handling
     bool IsClosed() const { return meKind==SdrObjKind::Polygon || meKind==SdrObjKind::PathPoly || meKind==SdrObjKind::PathFill || meKind==SdrObjKind::FreehandFill; }

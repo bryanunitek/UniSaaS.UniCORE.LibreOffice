@@ -568,8 +568,9 @@ void ScHTMLLayoutParser::SkipLocked( ScEEParseEntry* pE, bool bJoin )
             if ( rR.Intersects( aRange ) )
             {
                 SCCOL nTmp(0);
+                // tdf#168166 - use column span to calculate end column of shifted cells
                 bFail = o3tl::checked_add<SCCOL>(rR.aEnd.Col(), 1, pE->nCol) ||
-                        o3tl::checked_add<SCCOL>(pE->nCol, pE->nRowOverlap - 1, nTmp);
+                        o3tl::checked_add<SCCOL>(pE->nCol, pE->nColOverlap - 1, nTmp);
                 if ( bFail || pE->nCol > mrDoc.MaxCol() || nTmp > mrDoc.MaxCol() )
                     bBadCol = true;
                 else
@@ -1515,14 +1516,18 @@ void ScHTMLLayoutParser::Image( HtmlImportInfo* pInfo )
         *oGraphic = rFilter.ImportUnloadedGraphic(*pStream);
         pImage->aURL.clear();
     }
-    else if ( ERRCODE_NONE == GraphicFilter::LoadGraphic( pImage->aURL, pImage->aFilterName,
-            *oGraphic, &rFilter, &nFormat ) )
+    else if (aBaseURL.isEmpty())
     {
-        pImage->aFilterName = rFilter.GetImportFormatName( nFormat );
-    }
-    else
-    {
-        return ; // Bad luck
+        // aBaseURL is empty if the source is clipboard.
+        if ( ERRCODE_NONE == GraphicFilter::LoadGraphic( pImage->aURL, pImage->aFilterName,
+                *oGraphic, &rFilter, &nFormat ) )
+        {
+            pImage->aFilterName = rFilter.GetImportFormatName( nFormat );
+        }
+        else
+        {
+            return ; // Bad luck
+        }
     }
     if (!mxActEntry->bHasGraphic)
     {   // discard any ALT text in this cell if we have any image
@@ -1533,8 +1538,11 @@ void ScHTMLLayoutParser::Image( HtmlImportInfo* pInfo )
     if ( !(pImage->aSize.Width() && pImage->aSize.Height()) )
     {
         OutputDevice* pDefaultDev = Application::GetDefaultDevice();
-        pImage->aSize = pDefaultDev->LogicToPixel( pImage->oGraphic->GetPrefSize(),
-            pImage->oGraphic->GetPrefMapMode() );
+        if (pImage->oGraphic->IsNone())
+            pImage->aSize = pDefaultDev->LogicToPixel(Size(2000, 1000), MapMode(MapUnit::Map100thMM));
+        else
+            pImage->aSize = pDefaultDev->LogicToPixel( pImage->oGraphic->GetPrefSize(),
+                pImage->oGraphic->GetPrefMapMode() );
     }
     if (mxActEntry->maImageList.empty())
         return;

@@ -47,6 +47,7 @@
 #include <basegfx/utils/gradienttools.hxx>
 
 #include <numeric>
+#include <optional>
 #include <string_view>
 #include <set>
 
@@ -110,6 +111,8 @@
 #include <com/sun/star/drawing/RectanglePoint.hpp>
 
 #include <comphelper/propertyvalue.hxx>
+#include <comphelper/sequenceashashmap.hxx>
+#include <basegfx/units/Length.hxx>
 #include <comphelper/random.hxx>
 #include <comphelper/seqstream.hxx>
 #include <comphelper/storagehelper.hxx>
@@ -269,6 +272,8 @@ DrawingML::DrawingML(::sax_fastparser::FSHelperPtr pFS, ::oox::core::XmlFilterBa
     , mbPlaceholder(false)
     , mbDiagaramExport(false)
     , mbDiagaramReplacementExport(false)
+    , mbDiagramModelTextExport(false)
+    , mnDiagramModelTextParagraph(-1)
 {
     uno::Reference<beans::XPropertySet> xSettings(pFB->getModelFactory()->createInstance(u"com.sun.star.document.Settings"_ustr), uno::UNO_QUERY);
     if (xSettings.is())
@@ -2062,12 +2067,15 @@ void DrawingML::WriteXGraphicStretch(uno::Reference<beans::XPropertySet> const &
         {
             Graphic aGraphic(rxGraphic);
             Size aOriginalSize(aGraphic.GetPrefSize());
-            mpFS->singleElementNS(XML_a, XML_fillRect,
-                XML_l, OString::number(((aGraphicCropStruct.Left)   * 100000) / aOriginalSize.Width()),
-                XML_t, OString::number(((aGraphicCropStruct.Top)    * 100000) / aOriginalSize.Height()),
-                XML_r, OString::number(((aGraphicCropStruct.Right)  * 100000) / aOriginalSize.Width()),
-                XML_b, OString::number(((aGraphicCropStruct.Bottom) * 100000) / aOriginalSize.Height()));
-            bCrop = true;
+            if (aOriginalSize.Width() != 0 && aOriginalSize.Height() != 0)
+            {
+                mpFS->singleElementNS(XML_a, XML_fillRect,
+                    XML_l, OString::number(static_cast<sal_Int64>(aGraphicCropStruct.Left)   * 100000 / aOriginalSize.Width()),
+                    XML_t, OString::number(static_cast<sal_Int64>(aGraphicCropStruct.Top)    * 100000 / aOriginalSize.Height()),
+                    XML_r, OString::number(static_cast<sal_Int64>(aGraphicCropStruct.Right)  * 100000 / aOriginalSize.Width()),
+                    XML_b, OString::number(static_cast<sal_Int64>(aGraphicCropStruct.Bottom) * 100000 / aOriginalSize.Height()));
+                bCrop = true;
+            }
         }
     }
 
@@ -2337,6 +2345,8 @@ void DrawingML::WriteShapeTransformation( const Reference< XShape >& rXShape, sa
 
     Degree100 nRotation;
     Degree100 nCameraRotation;
+    // The rotation from the imported file in 1/60000 deg (more precise than RotateAngle)
+    std::optional<sal_Int32> oMSORotation;
     awt::Point aPos = rXShape->getPosition();
     awt::Size aSize = rXShape->getSize();
 
@@ -2414,6 +2424,12 @@ void DrawingML::WriteShapeTransformation( const Reference< XShape >& rXShape, sa
         {
             uno::Sequence<beans::PropertyValue> aGrabBagProps;
             xPropertySet->getPropertyValue(UNO_NAME_MISC_OBJ_INTEROPGRABBAG) >>= aGrabBagProps;
+            auto pMSORotation = std::find_if(
+                std::cbegin(aGrabBagProps), std::cend(aGrabBagProps),
+                [](const PropertyValue& rProp) { return rProp.Name == "mso-rotation-angle"; });
+            sal_Int32 nMSORotation = 0;
+            if (pMSORotation != std::cend(aGrabBagProps) && (pMSORotation->Value >>= nMSORotation))
+                oMSORotation = nMSORotation;
             auto p3DEffectProps = std::find_if(
                 std::cbegin(aGrabBagProps), std::cend(aGrabBagProps),
                 [](const PropertyValue& rProp) { return rProp.Name == "3DEffectProperties"; });
@@ -2424,18 +2440,10 @@ void DrawingML::WriteShapeTransformation( const Reference< XShape >& rXShape, sa
                 // We have imported a scene3d.
                 if (rXShape->getShapeType() == "com.sun.star.drawing.CustomShape")
                 {
-                    auto pMSORotation
-                        = std::find_if(std::cbegin(aGrabBagProps), std::cend(aGrabBagProps),
-                                       [](const PropertyValue& rProp) {
-                                           return rProp.Name == "mso-rotation-angle";
-                                       });
-                    sal_Int32 nMSORotation = 0;
-                    if (pMSORotation != std::cend(aGrabBagProps))
-                        pMSORotation->Value >>= nMSORotation;
                     WriteTransformation(
                         rXShape,
                         tools::Rectangle(Point(aPos.X, aPos.Y), Size(aSize.Width, aSize.Height)),
-                        nXmlNamespace, bFlipHWrite, bFlipVWrite, nMSORotation);
+                        nXmlNamespace, bFlipHWrite, bFlipVWrite, oMSORotation.value_or(0));
                     return;
                 }
                 if (rXShape->getShapeType() == "com.sun.star.drawing.GraphicObjectShape")
@@ -2455,7 +2463,7 @@ void DrawingML::WriteShapeTransformation( const Reference< XShape >& rXShape, sa
                         {
                             sal_Int32 nTmp = 0;
                             pZRotationProp->Value >>= nTmp;
-                            nCameraRotation = NormAngle36000(Degree100(nTmp / -600));
+                            nCameraRotation = MSORotateAngleToAPIAngle(nTmp);
                             // FixMe tdf#160327. Vertical flip will be false.
                         }
                     }
@@ -2468,8 +2476,15 @@ void DrawingML::WriteShapeTransformation( const Reference< XShape >& rXShape, sa
     if(bFlipH != bFlipV)
         nRotation = 36000_deg100 - nRotation;
 
+    sal_Int32 nOOXRotation = ExportRotateClockwisify(nRotation + nCameraRotation);
+    // When the imported angle rounds to the angle that is about to be written, write
+    // the imported angle, so an unchanged shape keeps the full precision of the file
+    if (oMSORotation && nCameraRotation == 0_deg100
+        && NormAngle36000(nRotation) == MSORotateAngleToAPIAngle(*oMSORotation))
+        nOOXRotation = *oMSORotation;
+
     WriteTransformation(rXShape, tools::Rectangle(Point(aPos.X, aPos.Y), Size(aSize.Width, aSize.Height)), nXmlNamespace,
-            bFlipHWrite, bFlipVWrite, ExportRotateClockwisify(nRotation + nCameraRotation), IsGroupShape( rXShape ));
+            bFlipHWrite, bFlipVWrite, nOOXRotation, IsGroupShape( rXShape ));
 }
 
 static OUString lcl_GetTarget(const css::uno::Reference<css::frame::XModel>& xModel, std::u16string_view rURL)
@@ -2728,6 +2743,14 @@ void DrawingML::WriteRunProperties(const Reference<XPropertySet>& rRun, sal_Int3
 
     assert(nSize >= 100 && "Minimum accepted value for fontsize(ST_TextFontSize) is 100");
 
+    // The data model of a Diagram defines the language, also holds no paragraph properties
+    if (isDiagramModelTextExport())
+    {
+        mpFS->singleElementNS(XML_a, nElement, XML_lang,
+                              sax_fastparser::UseIf(usLanguage, !usLanguage.isEmpty()));
+        return;
+    }
+
     mpFS->startElementNS( XML_a, nElement,
                           XML_lang, sax_fastparser::UseIf(usLanguage, !usLanguage.isEmpty()),
                           XML_sz, OString::number(nSize),
@@ -2850,7 +2873,9 @@ void DrawingML::WriteRunProperties(const Reference<XPropertySet>& rRun, sal_Int3
         if( color != COL_AUTO )
         {
             mpFS->startElementNS(XML_a, XML_uFill);
-            WriteSolidFill( color );
+            if (!WriteSchemeColor(u"CharUnderlineComplexColor"_ustr, rXPropSet,
+                                  rRunInput.bUseTextSchemeColors))
+                WriteSolidFill( color );
             mpFS->endElementNS( XML_a, XML_uFill );
         }
         else
@@ -3619,6 +3644,11 @@ void DrawingML::WriteLinespacing(const LineSpacing& rSpacing, float fFirstCharHe
 
 bool DrawingML::WriteParagraphProperties(const Reference<XTextContent>& rParagraph, float fFirstCharHeight, sal_Int32 nElement)
 {
+    // The data model of a Diagram holds the text only. Attributes come from the layout,
+    // the style and the colours that the Diagram, so do not write here
+    if (isDiagramModelTextExport())
+        return false;
+
     Reference< XPropertySet > rXPropSet( rParagraph, UNO_QUERY );
     Reference< XPropertyState > rXPropState( rParagraph, UNO_QUERY );
     PropertyState eState;
@@ -4374,12 +4404,11 @@ void DrawingML::WriteBodyProps(const css::uno::Reference< css::uno::XInterface >
     bool bRequireInset = GetProperty(rXPropSet, u"IsPresentationObject"_ustr) && rXPropSet->getPropertyValue(u"IsPresentationObject"_ustr).get<bool>();
 
     mpFS->startElementNS( (nXmlNamespace ? nXmlNamespace : XML_a), XML_bodyPr,
-                           XML_numCol, sax_fastparser::UseIf(OString::number(nCols), nCols > 0),
-                           XML_spcCol, sax_fastparser::UseIf(OString::number(oox::drawingml::convertHmmToEmu(nColSpacing)), nCols > 0 && nColSpacing >= 0),
-                           XML_wrap, pWrap,
-                           XML_horzOverflow, sHorzOverflow,
+                           XML_rot, sTextRotateAngleMSUnit,
                            XML_vertOverflow, sVertOverflow,
-                           XML_fromWordArt, sax_fastparser::UseIf("1", bFromWordArt),
+                           XML_horzOverflow, sHorzOverflow,
+                           XML_vert, sWritingMode,
+                           XML_wrap, pWrap,
                            XML_lIns, sax_fastparser::UseIf(OString::number(oox::drawingml::convertHmmToEmu(nLeft)),
                                                            bRequireInset || nLeft != mconstDefaultLeftRightInset),
                            XML_tIns, sax_fastparser::UseIf(OString::number(oox::drawingml::convertHmmToEmu(nTop)),
@@ -4388,11 +4417,12 @@ void DrawingML::WriteBodyProps(const css::uno::Reference< css::uno::XInterface >
                                                            bRequireInset || nRight != mconstDefaultLeftRightInset),
                            XML_bIns, sax_fastparser::UseIf(OString::number(oox::drawingml::convertHmmToEmu(nBottom)),
                                                            bRequireInset || nBottom != mconstDefaultTopBottomInset),
+                           XML_numCol, sax_fastparser::UseIf(OString::number(nCols), nCols > 0),
+                           XML_spcCol, sax_fastparser::UseIf(OString::number(oox::drawingml::convertHmmToEmu(nColSpacing)), nCols > 0 && nColSpacing >= 0),
+                           XML_fromWordArt, sax_fastparser::UseIf("1", bFromWordArt),
                            XML_anchor, sAnchor,
                            XML_anchorCtr, sax_fastparser::UseIf("1", bAnchorCtr),
-                           XML_vert, sWritingMode,
-                           XML_upright, isUpright,
-                           XML_rot, sTextRotateAngleMSUnit);
+                           XML_upright, isUpright);
 
     if (bIsFontworkShape)
     {
@@ -4716,6 +4746,8 @@ void DrawingML::WriteText(const Reference<XInterface>& rXIface, bool bBodyPr, bo
         return;
     }
 
+    sal_Int32 nParagraphIndex(0);
+
     while( enumeration->hasMoreElements() )
     {
         Reference< XTextContent > paragraph;
@@ -4723,6 +4755,15 @@ void DrawingML::WriteText(const Reference<XInterface>& rXIface, bool bBodyPr, bo
 
         if( any >>= paragraph)
         {
+            // A shape of a Diagram can represent several Points, one paragraph of it each. Only
+            // the paragraph that represents the Point being written belongs in it.
+            const bool bOtherPoint(isDiagramModelTextExport() && mnDiagramModelTextParagraph >= 0
+                                   && nParagraphIndex != mnDiagramModelTextParagraph);
+            nParagraphIndex++;
+
+            if (bOtherPoint)
+                continue;
+
             if (bFirstParagraph && bWritePropertiesAsLstStyles)
                 WriteLstStyles(paragraph, bOverridingCharHeight, nCharHeight, rXPropSet);
 
@@ -6377,150 +6418,104 @@ static sal_Int32 lcl_CalculateDir(const double dX, const double dY)
 
 void DrawingML::WriteShapeEffects( const Reference< XPropertySet >& rXPropSet )
 {
-    Sequence< PropertyValue > aGrabBag, aEffects, aOuterShdwProps;
-    bool bHasInteropGrabBag = rXPropSet->getPropertySetInfo()->hasPropertyByName(u"InteropGrabBag"_ustr);
-    if (bHasInteropGrabBag && GetProperty(rXPropSet, u"InteropGrabBag"_ustr))
+    // The effects without a shape property are written as they were imported. The others are
+    // written from their shape properties, and take only what the properties lack from the import.
+    comphelper::SequenceAsHashMap aStoredEffects;
+    if (GetProperty(rXPropSet, u"InteropGrabBag"_ustr))
     {
-        mAny >>= aGrabBag;
-        auto pProp = std::find_if(std::cbegin(aGrabBag), std::cend(aGrabBag),
-            [](const PropertyValue& rProp) { return rProp.Name == "EffectProperties"; });
-        if (pProp != std::cend(aGrabBag))
-        {
-            pProp->Value >>= aEffects;
-            auto pEffect = std::find_if(std::cbegin(aEffects), std::cend(aEffects),
-                [](const PropertyValue& rEffect) { return rEffect.Name == "outerShdw"; });
-            if (pEffect != std::cend(aEffects))
-                pEffect->Value >>= aOuterShdwProps;
-        }
+        comphelper::SequenceAsHashMap aGrabBag(mAny);
+        aStoredEffects << aGrabBag.getValue(u"EffectProperties"_ustr);
     }
+    auto getStoredEffect = [&aStoredEffects](const OUString& rName)
+    { return aStoredEffects.getUnpackedValueOrDefault(rName, Sequence<PropertyValue>()); };
+
+    bool bHasShadow = false;
+    if (GetProperty(rXPropSet, u"Shadow"_ustr))
+        mAny >>= bHasShadow;
+    sal_Int32 nGlowRadius = 0;
+    if (GetProperty(rXPropSet, u"GlowEffectRadius"_ustr))
+        mAny >>= nGlowRadius;
+    sal_Int32 nSoftEdgeRadius = 0;
+    if (GetProperty(rXPropSet, u"SoftEdgeRadius"_ustr))
+        mAny >>= nSoftEdgeRadius;
+    bool bHasReflection = false;
+    if (GetProperty(rXPropSet, u"ReflectionEffect"_ustr))
+        mAny >>= bHasReflection;
+
+    // An imported effect list is written even when all its effects are off, because an effect
+    // list replaces the effects that the style of the shape refers to.
+    if (!bHasShadow && !nGlowRadius && !nSoftEdgeRadius && !bHasReflection
+        && aStoredEffects.empty())
+        return;
 
     // tdf#132201: the order of effects is important. Effects order (CT_EffectList in ECMA-376):
     // blur -> fillOverlay -> glow -> innerShdw -> outerShdw -> prstShdw -> reflection -> softEdge
+    // The import keeps no fillOverlay and no prstShdw.
+    mpFS->startElementNS(XML_a, XML_effectLst);
+    WriteShapeEffect(u"blur", getStoredEffect(u"blur"_ustr));
+    WriteGlowEffect(rXPropSet);
+    WriteShapeEffect(u"innerShdw", getStoredEffect(u"innerShdw"_ustr));
+    if (bHasShadow)
+        WriteShadowEffect(rXPropSet, getStoredEffect(u"outerShdw"_ustr));
+    WriteReflectionEffect(rXPropSet, getStoredEffect(u"reflection"_ustr));
+    WriteSoftEdgeEffect(rXPropSet);
+    mpFS->endElementNS(XML_a, XML_effectLst);
+}
 
-    if( !aEffects.hasElements() )
+void DrawingML::WriteShadowEffect(const Reference<XPropertySet>& rXPropSet,
+                                  const Sequence<PropertyValue>& rStoredEffect)
+{
+    double dX = +0.0, dY = +0.0;
+    sal_Int32 nBlur = 0;
+    sal_Int32 nSizeX = MAX_PERCENT;
+    sal_Int32 nSizeY = MAX_PERCENT;
+    sal_Int32 nAlignment = static_cast<sal_Int32>(model::RectangleAlignment::Unset);
+    rXPropSet->getPropertyValue(u"ShadowXDistance"_ustr) >>= dX;
+    rXPropSet->getPropertyValue(u"ShadowYDistance"_ustr) >>= dY;
+    rXPropSet->getPropertyValue(u"ShadowBlur"_ustr) >>= nBlur;
+    if (GetProperty(rXPropSet, u"ShadowSizeX"_ustr))
+        mAny >>= nSizeX;
+    if (GetProperty(rXPropSet, u"ShadowSizeY"_ustr))
+        mAny >>= nSizeY;
+    if (GetProperty(rXPropSet, u"ShadowAlignment"_ustr))
+        mAny >>= nAlignment;
+
+    // The stored attributes keep what has no shape property, like the skew. A shadow without
+    // them has rotWithShape="0", because the shadow distances of the shape are an offset on the
+    // page and the schema default is "1".
+    comphelper::SequenceAsHashMap aStoredEffect(rStoredEffect);
+    comphelper::SequenceAsHashMap aAttribs(aStoredEffect.getValue(u"Attribs"_ustr));
+    if (aAttribs.empty())
+        aAttribs[u"rotWithShape"_ustr] <<= sal_Int32(0);
+
+    aAttribs[u"dist"_ustr] <<= lcl_CalculateDist(dX, dY);
+    aAttribs[u"dir"_ustr] <<= lcl_CalculateDir(dX, dY);
+    aAttribs[u"blurRad"_ustr] <<= oox::drawingml::convertHmmToEmu(nBlur);
+
+    // A value that equals the schema default is written only when the imported shadow had it.
+    auto setScale = [&aAttribs](const OUString& rName, sal_Int32 nScale)
     {
-        bool bHasShadow = false;
-        if( GetProperty( rXPropSet, u"Shadow"_ustr ) )
-            mAny >>= bHasShadow;
-        bool bHasEffects = bHasShadow;
-        if (!bHasEffects && GetProperty(rXPropSet, u"GlowEffectRadius"_ustr))
-        {
-            sal_Int32 rad = 0;
-            mAny >>= rad;
-            bHasEffects = rad > 0;
-        }
-        if (!bHasEffects && GetProperty(rXPropSet, u"SoftEdgeRadius"_ustr))
-        {
-            sal_Int32 rad = 0;
-            mAny >>= rad;
-            bHasEffects = rad > 0;
-        }
+        if (nScale != MAX_PERCENT || aAttribs.contains(rName))
+            aAttribs[rName] <<= nScale;
+    };
+    setScale(u"sx"_ustr, nSizeX);
+    setScale(u"sy"_ustr, nSizeY);
+    const OString aAlignment(
+        convertRectangleAlignment(static_cast<model::RectangleAlignment>(nAlignment)));
+    if (!aAlignment.isEmpty() && (aAlignment != "b" || aAttribs.contains(u"algn"_ustr)))
+        aAttribs[u"algn"_ustr] <<= OUString::fromUtf8(aAlignment);
+    aStoredEffect[u"Attribs"_ustr] <<= aAttribs.getAsConstPropertyValueList();
 
-        if (bHasEffects)
-        {
-            mpFS->startElementNS(XML_a, XML_effectLst);
-            WriteGlowEffect(rXPropSet);
-            if( bHasShadow )
-            {
-                double dX = +0.0, dY = +0.0;
-                sal_Int32 nBlur =0;
-                rXPropSet->getPropertyValue( u"ShadowXDistance"_ustr ) >>= dX;
-                rXPropSet->getPropertyValue( u"ShadowYDistance"_ustr ) >>= dY;
-                rXPropSet->getPropertyValue( u"ShadowBlur"_ustr ) >>= nBlur;
-
-                Sequence< PropertyValue > aShadowAttribsGrabBag{
-                    comphelper::makePropertyValue(u"dist"_ustr, lcl_CalculateDist(dX, dY)),
-                    comphelper::makePropertyValue(u"dir"_ustr, lcl_CalculateDir(dX, dY)),
-                    comphelper::makePropertyValue(u"blurRad"_ustr, oox::drawingml::convertHmmToEmu(nBlur)),
-                    comphelper::makePropertyValue(u"rotWithShape"_ustr, false) //ooxml default is 'true', so must write it
-                };
-
-                Sequence< PropertyValue > aShadowGrabBag{
-                    comphelper::makePropertyValue(u"Attribs"_ustr, aShadowAttribsGrabBag),
-                    comphelper::makePropertyValue(u"RgbClr"_ustr, rXPropSet->getPropertyValue( u"ShadowColor"_ustr )),
-                    comphelper::makePropertyValue(u"RgbClrTransparency"_ustr, rXPropSet->getPropertyValue( u"ShadowTransparence"_ustr ))
-                };
-
-                WriteShapeEffect( u"outerShdw", aShadowGrabBag );
-            }
-            WriteSoftEdgeEffect(rXPropSet);
-            mpFS->endElementNS(XML_a, XML_effectLst);
-        }
-    }
-    else
+    // A theme color is written as it was imported, because the shadow color property holds only
+    // the resolved color.
+    if (!aStoredEffect.contains(u"SchemeClr"_ustr))
     {
-        for( auto& rOuterShdwProp : asNonConstRange(aOuterShdwProps) )
-        {
-            if( rOuterShdwProp.Name == "Attribs" )
-            {
-                Sequence< PropertyValue > aAttribsProps;
-                rOuterShdwProp.Value >>= aAttribsProps;
-
-                double dX = +0.0, dY = +0.0;
-                sal_Int32 nBlur =0;
-                rXPropSet->getPropertyValue( u"ShadowXDistance"_ustr ) >>= dX;
-                rXPropSet->getPropertyValue( u"ShadowYDistance"_ustr ) >>= dY;
-                rXPropSet->getPropertyValue( u"ShadowBlur"_ustr ) >>= nBlur;
-
-
-                for( auto& rAttribsProp : asNonConstRange(aAttribsProps) )
-                {
-                    if( rAttribsProp.Name == "dist" )
-                    {
-                        rAttribsProp.Value <<= lcl_CalculateDist(dX, dY);
-                    }
-                    else if( rAttribsProp.Name == "dir" )
-                    {
-                        rAttribsProp.Value <<= lcl_CalculateDir(dX, dY);
-                    }
-                    else if( rAttribsProp.Name == "blurRad" )
-                    {
-                        rAttribsProp.Value <<= oox::drawingml::convertHmmToEmu(nBlur);
-                    }
-                }
-
-                rOuterShdwProp.Value <<= aAttribsProps;
-            }
-            else if( rOuterShdwProp.Name == "RgbClr" )
-            {
-                rOuterShdwProp.Value = rXPropSet->getPropertyValue( u"ShadowColor"_ustr );
-            }
-            else if( rOuterShdwProp.Name == "RgbClrTransparency" )
-            {
-                rOuterShdwProp.Value = rXPropSet->getPropertyValue( u"ShadowTransparence"_ustr );
-            }
-        }
-
-        mpFS->startElementNS(XML_a, XML_effectLst);
-        bool bGlowWritten = false;
-        for (const auto& rEffect : aEffects)
-        {
-            if (!bGlowWritten
-                && (rEffect.Name == "innerShdw" || rEffect.Name == "outerShdw"
-                    || rEffect.Name == "prstShdw" || rEffect.Name == "reflection"
-                    || rEffect.Name == "softEdge"))
-            {
-                WriteGlowEffect(rXPropSet);
-                bGlowWritten = true;
-            }
-
-            if( rEffect.Name == "outerShdw" )
-            {
-                WriteShapeEffect( rEffect.Name, aOuterShdwProps );
-            }
-            else
-            {
-                Sequence< PropertyValue > aEffectProps;
-                rEffect.Value >>= aEffectProps;
-                WriteShapeEffect( rEffect.Name, aEffectProps );
-            }
-        }
-        if (!bGlowWritten)
-            WriteGlowEffect(rXPropSet);
-        WriteSoftEdgeEffect(rXPropSet); // the last
-
-        mpFS->endElementNS(XML_a, XML_effectLst);
+        aStoredEffect[u"RgbClr"_ustr] = rXPropSet->getPropertyValue(u"ShadowColor"_ustr);
+        aStoredEffect[u"RgbClrTransparency"_ustr]
+            = rXPropSet->getPropertyValue(u"ShadowTransparence"_ustr);
     }
+
+    WriteShapeEffect(u"outerShdw", aStoredEffect.getAsConstPropertyValueList());
 }
 
 void DrawingML::WriteGlowEffect(const Reference< XPropertySet >& rXPropSet)
@@ -6589,6 +6584,86 @@ void DrawingML::WriteSoftEdgeEffect(const css::uno::Reference<css::beans::XPrope
                                                                                         aAttribs) };
 
     WriteShapeEffect(u"softEdge", aProps);
+}
+
+namespace
+{
+// DrawingML has 1/1000 of a percent, the shape property has whole percent.
+sal_Int32 toWholePercent(sal_Int32 nThousandthsOfPercent)
+{
+    return static_cast<sal_Int32>(std::lround(nThousandthsOfPercent / 1000.0));
+}
+}
+
+void DrawingML::WriteReflectionEffect(const Reference<XPropertySet>& rXPropSet,
+                                      const Sequence<PropertyValue>& rStoredEffect)
+{
+    if (!rXPropSet->getPropertySetInfo()->hasPropertyByName(u"ReflectionEffect"_ustr))
+        return;
+
+    bool bReflection = false;
+    rXPropSet->getPropertyValue(u"ReflectionEffect"_ustr) >>= bReflection;
+    if (!bReflection)
+        return;
+
+    sal_Int32 nDistance = 0;
+    sal_Int32 nBlurRadius = 0;
+    sal_Int16 nStartTransparency = 0;
+    sal_Int16 nStartPosition = 0;
+    sal_Int16 nEndTransparency = 100;
+    sal_Int16 nEndPosition = 100;
+    rXPropSet->getPropertyValue(u"ReflectionEffectDistance"_ustr) >>= nDistance;
+    rXPropSet->getPropertyValue(u"ReflectionEffectBlurRadius"_ustr) >>= nBlurRadius;
+    rXPropSet->getPropertyValue(u"ReflectionEffectStartTransparency"_ustr) >>= nStartTransparency;
+    rXPropSet->getPropertyValue(u"ReflectionEffectStartPosition"_ustr) >>= nStartPosition;
+    rXPropSet->getPropertyValue(u"ReflectionEffectEndTransparency"_ustr) >>= nEndTransparency;
+    rXPropSet->getPropertyValue(u"ReflectionEffectEndPosition"_ustr) >>= nEndPosition;
+
+    // The stored attributes keep what has no shape property, like the direction and the scale. A
+    // reflection without them is mirrored straight down below the shape, like the presets.
+    comphelper::SequenceAsHashMap aStoredEffect(rStoredEffect);
+    comphelper::SequenceAsHashMap aAttribs(aStoredEffect.getValue(u"Attribs"_ustr));
+    if (aAttribs.empty())
+    {
+        aAttribs[u"dir"_ustr] <<= sal_Int32(5400000);
+        aAttribs[u"sy"_ustr] <<= sal_Int32(-100000);
+        aAttribs[u"algn"_ustr] <<= u"bl"_ustr;
+        aAttribs[u"rotWithShape"_ustr] <<= sal_Int32(0);
+    }
+
+    // A stored value stays when it still gives the value of the shape property, since the stored
+    // one can be more precise. A value that equals the schema default is left out.
+    auto setLength = [&aAttribs](const OUString& rName, gfx::Length aLength)
+    {
+        sal_Int64 nStored = 0;
+        if ((aAttribs.getValue(rName) >>= nStored)
+            && gfx::Length::emu(nStored).as_hmm<sal_Int32>() == aLength.as_hmm<sal_Int32>())
+            return;
+        if (aLength == gfx::Length())
+            aAttribs.erase(rName);
+        else
+            aAttribs[rName] <<= aLength.as_emu<sal_Int32>();
+    };
+    auto setPercent = [&aAttribs](const OUString& rName, sal_Int32 nPercent, sal_Int32 nDefault)
+    {
+        sal_Int32 nStored = 0;
+        if ((aAttribs.getValue(rName) >>= nStored) && toWholePercent(nStored) == nPercent)
+            return;
+        if (nPercent * PER_PERCENT == nDefault)
+            aAttribs.erase(rName);
+        else
+            aAttribs[rName] <<= nPercent * PER_PERCENT;
+    };
+    setLength(u"dist"_ustr, gfx::Length::hmm(nDistance));
+    setLength(u"blurRad"_ustr, gfx::Length::hmm(nBlurRadius));
+    setPercent(u"stA"_ustr, 100 - nStartTransparency, MAX_PERCENT);
+    setPercent(u"stPos"_ustr, nStartPosition, 0);
+    setPercent(u"endA"_ustr, 100 - nEndTransparency, 0);
+    setPercent(u"endPos"_ustr, nEndPosition, MAX_PERCENT);
+
+    Sequence<PropertyValue> aProps{ comphelper::makePropertyValue(
+        u"Attribs"_ustr, aAttribs.getAsConstPropertyValueList()) };
+    WriteShapeEffect(u"reflection", aProps);
 }
 
 void DrawingML::Write3DEffects( const Reference< XPropertySet >& xPropSet, bool bIsText )
@@ -7069,7 +7144,15 @@ void DrawingML::WriteDiagram(const css::uno::Reference<css::drawing::XShape>& rX
     // but can be different from diagram's own id
     const sal_Int32 nExpShapeId = nShapeId != -1 ? nShapeId : nDiagramId;
     pDocPrAttrList->add(XML_id, OString::number(nExpShapeId));
+    // A diagram that was given a name keeps it. One that has none is named after its number,
+    // which is what a reader shows for it.
     OString sName = "Diagram" + OString::number(nDiagramId);
+    if (uno::Reference<css::container::XNamed> xNamed{ rXShape, uno::UNO_QUERY })
+    {
+        const OUString aShapeName = xNamed->getName();
+        if (!aShapeName.isEmpty())
+            sName = OUStringToOString(aShapeName, RTL_TEXTENCODING_UTF8);
+    }
     pDocPrAttrList->add(XML_name, sName);
 
     if (GetDocumentType() == DOCUMENT_DOCX)

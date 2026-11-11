@@ -3183,7 +3183,7 @@ static void InsertTableImpl(SwWrtShell& rSh,
         rSh.GetTableFormat()->SetFormatName( aTableName );
 
     if( pTAFormat != nullptr && !aAutoName.isEmpty()
-                        && aAutoName != SwViewShell::GetShellRes()->aStrNone )
+        && aAutoName != SvxResId(RID_SVXSTR_TBLAFMT_NONE))
     {
         SwTableNode* pTableNode = const_cast<SwTableNode*>( rSh.IsCursorInTable() );
         if ( pTableNode )
@@ -3262,12 +3262,6 @@ void SwBaseShell::InsertTable( SfxRequest& _rRequest )
                         break;
                     }
                 }
-            }
-            // Use Default Style if no autoformat is provided
-            else
-            {
-                aAutoNameIn = SvxResId(RID_SVXSTR_TBLAFMT_DEFAULT_STYLE);
-                pTAFormatIn.reset(new SwTableAutoFormat(rTableTable[0]));
             }
 
             if ( pFlags )

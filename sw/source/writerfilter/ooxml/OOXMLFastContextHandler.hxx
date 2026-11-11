@@ -20,6 +20,7 @@
 #pragma once
 
 #include <set>
+#include <vector>
 #include <cppuhelper/implbase.hxx>
 #include <com/sun/star/uno/XComponentContext.hpp>
 #include <com/sun/star/xml/sax/XFastContextHandler.hpp>
@@ -596,6 +597,9 @@ protected:
     // should be private, but not much point in making deep copies of it
     oox::formulaimport::XmlStreamBuilder m_buffer;
 
+    // tdf#170236: comment ids referenced inside the formula, resolved in Math::process()
+    std::vector<sal_Int32> m_aCommentIds;
+
 private:
     int m_depthCount;
 };
@@ -637,6 +641,50 @@ private:
     OUString m_sParaId;
     bool m_bDone = false;
     OUString m_sParentId {};
+};
+
+/**
+ Handler for the w16cid:commentId elements of the commentsIds stream.
+
+ Each element ties the paragraph id of a comment's last paragraph to the durable id the
+ commentsExtensible stream uses for the same comment.
+*/
+class OOXMLFastContextHandlerCommentId : public OOXMLFastContextHandler
+{
+public:
+    explicit OOXMLFastContextHandlerCommentId(OOXMLFastContextHandler* pContext);
+
+    virtual std::string getType() const override { return "CommentId"; }
+    virtual void lcl_endFastElement(Token_t Element) override;
+
+    void att_paraId(const OOXMLValue& pValue);
+    void att_durableId(const OOXMLValue& pValue);
+
+private:
+    OUString m_sParaId;
+    OUString m_sDurableId;
+};
+
+/**
+ Handler for the w16cex:commentExtensible elements of the commentsExtensible stream.
+
+ Each element carries the moment a comment was written, in UTC, against the comment's durable
+ id. The w:date of the comment itself is the author's wall clock with no zone.
+*/
+class OOXMLFastContextHandlerCommentExtensible : public OOXMLFastContextHandler
+{
+public:
+    explicit OOXMLFastContextHandlerCommentExtensible(OOXMLFastContextHandler* pContext);
+
+    virtual std::string getType() const override { return "CommentExtensible"; }
+    virtual void lcl_endFastElement(Token_t Element) override;
+
+    void att_durableId(const OOXMLValue& pValue);
+    void att_dateUtc(const OOXMLValue& pValue);
+
+private:
+    OUString m_sDurableId;
+    OUString m_sDateUtc;
 };
 
 }

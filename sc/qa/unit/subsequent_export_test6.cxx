@@ -68,6 +68,19 @@ CPPUNIT_TEST_FIXTURE(ScExportTest6, testXlStartupExternalXLSX)
     assertXPath(pExternalRel, "/rels:Relationships/rels:Relationship", "Target", u"personal.xls");
 }
 
+CPPUNIT_TEST_FIXTURE(ScExportTest6, testInvalidFileNameExternalLink)
+{
+    createScDoc("xls/tdf171084.xls");
+    save(TestFilter::XLSX);
+
+    xmlDocUniquePtr pExternalRel
+        = parseExport(u"xl/externalLinks/_rels/externalLink1.xml.rels"_ustr);
+    CPPUNIT_ASSERT(pExternalRel);
+
+    assertXPath(pExternalRel, "/rels:Relationships/rels:Relationship", "Target",
+                u"file://501200.xls");
+}
+
 CPPUNIT_TEST_FIXTURE(ScExportTest6, testShapeMacroExtRef)
 {
     createScDoc("xlsx/shape-macro-ext-ref.xlsx");
@@ -386,6 +399,26 @@ CPPUNIT_TEST_FIXTURE(ScExportTest6, testValidationListNameThroughTableRefWithHea
     CPPUNIT_ASSERT_EQUAL(u"10"_ustr, aStrings[0].GetString());
     CPPUNIT_ASSERT_EQUAL(u"20"_ustr, aStrings[1].GetString());
     CPPUNIT_ASSERT_EQUAL(u"30"_ustr, aStrings[2].GetString());
+}
+
+CPPUNIT_TEST_FIXTURE(ScExportTest6, testChartExternalRefCache)
+{
+    // In this test, the chart series read a range in another workbook, but
+    // no formula cell
+    // reads anything there. Verify that the cached values of that range
+    // still get written out
+    createScDoc("xlsx/ExternalRefChart.xlsx");
+    save(TestFilter::XLSX);
+
+    xmlDocUniquePtr pExtLink = parseExport(u"xl/externalLinks/externalLink1.xml"_ustr);
+    CPPUNIT_ASSERT(pExtLink);
+
+    static constexpr char aRowPath[]
+        = "/x:externalLink/x:externalBook/x:sheetDataSet/x:sheetData/x:row";
+    assertXPath(pExtLink, aRowPath, 3);
+    assertXPathContent(pExtLink, OString::Concat(aRowPath) + "[1]/x:cell/x:v", u"10");
+    assertXPathContent(pExtLink, OString::Concat(aRowPath) + "[2]/x:cell/x:v", u"20");
+    assertXPathContent(pExtLink, OString::Concat(aRowPath) + "[3]/x:cell/x:v", u"30");
 }
 
 CPPUNIT_TEST_FIXTURE(ScExportTest6, testValidationListNameThroughTableRefColumn)

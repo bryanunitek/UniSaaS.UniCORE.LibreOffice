@@ -112,6 +112,7 @@ CustomShapeProperties::CustomShapeProperties()
 , mnTextPreRotateAngle ( 0 )
 , mnTextCameraZRotateAngle ( 0 )
 , mnArcNum ( 0 )
+, mbPathUsesEquations ( false )
 {
 }
 
@@ -128,6 +129,102 @@ bool CustomShapeProperties::representsDefaultShape() const
 }
 
 CustomShapeProperties::PresetDataMap CustomShapeProperties::maPresetDataMap;
+
+bool CustomShapeProperties::isAngleAdjustment( sal_Int32 nPresetType, sal_Int32 nIndex )
+{
+    if (maPresetDataMap.empty())
+        initializePresetDataMap();
+    const auto aPreset = maPresetDataMap.find( nPresetType );
+    if (aPreset == maPresetDataMap.end() || !aPreset->second.hasProperty( PROP_Equations ))
+        return false;
+    Sequence< OUString > aEquations;
+    aPreset->second.getProperty( PROP_Equations ) >>= aEquations;
+    const sal_Int32 nCount( aEquations.getLength() );
+
+    // The preset writes the clamp of an angle as "if(0-$3 ,0,if(21599999-$3 ,$3 ,21599999))":
+    // that is the start and the end of a pie, an arc, a chord and a circular arrow.
+    const OUString aAdjustment( "$" + OUString::number( nIndex - 1 ) );
+    const OUString aClamp( "21599999-" + aAdjustment + " " );
+    std::vector< bool > aClamped( nCount, false );
+    for (sal_Int32 n = 0; n < nCount; ++n)
+    {
+        if (aEquations[n].indexOf( aClamp ) >= 0)
+            return true;
+        if (aEquations[n].indexOf( u"21599999-$" ) >= 0)
+            aClamped[n] = true;
+    }
+
+    // The angle of a circular arrow's head is clamped to what is left of the turn and then
+    // added to the end angle, "?3 +?48 -0", within a few guides of reading the adjustment. A
+    // guide that reads the adjustment is followed through the guides that read it, four steps
+    // at most, and a sum or a difference on that way that holds one of the clamped angles makes
+    // the adjustment an angle. A thickness never enters such a sum, it is multiplied into a
+    // radius, so the arrow's other adjustments stay parts of one.
+    const auto aReferences = []( std::u16string_view rEquation ) {
+        std::vector< sal_Int32 > aOut;
+        size_t nAt( rEquation.find( u'?' ) );
+        while (nAt != std::u16string_view::npos)
+        {
+            size_t nEnd( nAt + 1 );
+            while (nEnd < rEquation.size() && rEquation[nEnd] >= '0' && rEquation[nEnd] <= '9')
+                ++nEnd;
+            if (nEnd > nAt + 1)
+                aOut.push_back( o3tl::toInt32( rEquation.substr( nAt + 1, nEnd - nAt - 1 ) ) );
+            nAt = rEquation.find( u'?', nEnd );
+        }
+        return aOut;
+    };
+    const auto aIsSum = []( const OUString& rEquation ) {
+        // "?3 +?48 -0", "?52 +0-?5 " or "?3 +?48 -?5 ": a guide, a plus, a term, a minus, a term
+        const sal_Int32 nPlus( rEquation.indexOf( " +" ) );
+        const sal_Int32 nMinus( rEquation.indexOf( '-' ) );
+        return rEquation.startsWith( "?" ) && nPlus > 0 && nMinus > nPlus
+               && rEquation.indexOf( '*' ) < 0 && rEquation.indexOf( '/' ) < 0
+               && rEquation.indexOf( '(' ) < 0;
+    };
+    std::vector< bool > aSeen( nCount, false );
+    std::vector< sal_Int32 > aFrontier;
+    for (sal_Int32 n = 0; n < nCount; ++n)
+    {
+        const sal_Int32 nAt( aEquations[n].indexOf( aAdjustment ) );
+        if (nAt < 0)
+            continue;
+        // "$1" and not the start of "$12"
+        const sal_Int32 nAfter( nAt + aAdjustment.getLength() );
+        if (nAfter < aEquations[n].getLength() && aEquations[n][nAfter] >= '0'
+            && aEquations[n][nAfter] <= '9')
+            continue;
+        aSeen[n] = true;
+        aFrontier.push_back( n );
+    }
+    for (int nStep = 0; nStep < 4 && !aFrontier.empty(); ++nStep)
+    {
+        std::vector< sal_Int32 > aNext;
+        for (sal_Int32 n = 0; n < nCount; ++n)
+        {
+            if (aSeen[n])
+                continue;
+            const std::vector< sal_Int32 > aRefs( aReferences( aEquations[n] ) );
+            bool bReads( false );
+            bool bAngle( false );
+            for (sal_Int32 nRef : aRefs)
+            {
+                if (std::find( aFrontier.begin(), aFrontier.end(), nRef ) != aFrontier.end())
+                    bReads = true;
+                if (nRef >= 0 && nRef < nCount && aClamped[nRef])
+                    bAngle = true;
+            }
+            if (!bReads)
+                continue;
+            if (bAngle && aIsSum( aEquations[n] ))
+                return true;
+            aSeen[n] = true;
+            aNext.push_back( n );
+        }
+        aFrontier = std::move( aNext );
+    }
+    return false;
+}
 
 void CustomShapeProperties::pushToPropSet(
     const Reference < XPropertySet >& xPropSet, const awt::Size &aSize )
@@ -231,14 +328,14 @@ void CustomShapeProperties::pushToPropSet(
             aPropertyMap.setProperty(PROP_TextCameraZRotateAngle, mnTextCameraZRotateAngle);
         if (moTextAreaRotateAngle.has_value())
             aPropertyMap.setProperty(PROP_TextRotateAngle, moTextAreaRotateAngle.value());
-        // Note 1: If Equations are defined - they are processed using internal div by 360 coordinates
-        // while if they are not, standard ooxml coordinates are used.
-        // This size specifically affects scaling.
-        // Note 2: Width and Height are set to 0 to force scaling to 1.
+        // A path of plain numbers holds ooxml coordinates, so the ViewBox carries the shape size
+        // in the same unit and scales the path down to 1/100 mm. Equations, and a path with its
+        // own w and h, need the scale of 1 that a width and height of 0 force.
+        bool bPathHasOwnBox
+            = std::any_of( maPath2DList.begin(), maPath2DList.end(),
+                           []( const Path2D& rPath ) { return rPath.w || rPath.h; } );
         awt::Rectangle aViewBox( 0, 0, aSize.Width, aSize.Height );
-        // tdf#113187 Each ArcTo introduces two additional equations for converting start and swing
-        // angles. They do not count for test for use of standard ooxml coordinates
-        if (maGuideList.size() - 2 * countArcTo() > 0)
+        if ( mbPathUsesEquations || bPathHasOwnBox )
             aViewBox = awt::Rectangle( 0, 0, 0, 0 );
         aPropertyMap.setProperty( PROP_ViewBox, aViewBox);
 
@@ -294,28 +391,17 @@ void CustomShapeProperties::pushToPropSet(
                 aParameterPairsRange[ k++ ] = j;
         aPath.setProperty( PROP_Coordinates, aParameterPairs);
 
-        if ( !maPath2DList.empty() )
+        if ( bPathHasOwnBox )
         {
-            bool bAllZero = true;
-            for ( auto const & i: maPath2DList )
-            {
-                if ( i.w || i.h ) {
-                    bAllZero = false;
-                    break;
-                }
-            }
-
-            if ( !bAllZero ) {
-                Sequence< awt::Size > aSubViewSize( maPath2DList.size() );
-                std::transform(maPath2DList.begin(), maPath2DList.end(), aSubViewSize.getArray(),
-                               [](const auto& p2d)
-                               {
-                                   SAL_INFO("oox.cscode",
-                                            "set subpath; size: " << p2d.w << " x " << p2d.h);
-                                   return awt::Size(p2d.w, p2d.h);
-                               });
-                aPath.setProperty( PROP_SubViewSize, aSubViewSize);
-            }
+            Sequence< awt::Size > aSubViewSize( maPath2DList.size() );
+            std::transform(maPath2DList.begin(), maPath2DList.end(), aSubViewSize.getArray(),
+                           [](const auto& p2d)
+                           {
+                               SAL_INFO("oox.cscode",
+                                        "set subpath; size: " << p2d.w << " x " << p2d.h);
+                               return awt::Size(p2d.w, p2d.h);
+                           });
+            aPath.setProperty( PROP_SubViewSize, aSubViewSize);
         }
 
         Sequence< PropertyValue > aPathSequence = aPath.makePropertyValueSequence();

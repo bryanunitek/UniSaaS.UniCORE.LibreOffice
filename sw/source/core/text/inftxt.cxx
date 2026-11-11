@@ -466,8 +466,8 @@ void SwTextSizeInfo::GetTextSize(const SwScriptInfo* pSI, const TextFrameIndex n
     aDrawInf.SetKanaComp( nComp );
     SwPositiveSize aSize( m_pFnt->GetTextSize_( aDrawInf ) );
     nMaxSizeDiff = aDrawInf.GetKanaDiff();
-    nExtraAscent = aDrawInf.GetExtraAscent();
-    nExtraDescent = aDrawInf.GetExtraDescent();
+    nExtraAscent = aDrawInf.GetExtraAscent().as_twip<SwTwips>();
+    nExtraDescent = aDrawInf.GetExtraDescent().as_twip<SwTwips>();
     nMinSize = aSize.Width();
 }
 
@@ -854,7 +854,7 @@ void SwTextPaintInfo::CalcRect( const SwLinePortion& rPor,
     Size aSize( rPor.Width(), nHeight);
 
     if( rPor.IsHangingPortion() )
-        aSize.setWidth( static_cast<const SwHangingPortion&>(rPor).GetInnerWidth() );
+        aSize.setWidth(static_cast<const SwHangingPortion&>(rPor).GetInnerWidth().as_twip<SwTwips>());
     if( rPor.InSpaceGrp() && GetSpaceAdd() )
     {
         SwTwips nAdd = rPor.CalcSpacing( GetSpaceAdd(), *this );
@@ -1183,7 +1183,7 @@ void SwTextPaintInfo::DrawPostIts( bool bScript ) const
     Size aSize;
     Point aTmp;
 
-    const SwTwips nPostItsWidth = SwViewOption::GetPostItsWidth(GetOut());
+    const SwTwips nPostItsWidth = SwViewOption::GetPostItsWidth(GetOut()).as_twip<SwTwips>();
     const sal_uInt16 nFontHeight = m_pFnt->GetHeight( m_pVsh, *GetOut() );
     const sal_uInt16 nFontAscent = m_pFnt->GetAscent( m_pVsh, *GetOut() );
 
@@ -1623,13 +1623,14 @@ static void lcl_InitHyphValues( PropertyValues &rVals,
             bool bNoCapsHyphenation, bool bNoLastWordHyphenation,
             sal_Int16 nMinWordLength, sal_Int16 nTextHyphZone, bool bKeep, sal_Int16 nKeepType,
             bool bKeepLine, sal_Int16 nCompoundMinLeading,
-            sal_Int16 nCompoundMinTrailing, sal_Int16 nTextHyphZoneAlways, sal_Int16 nLevel )
+            sal_Int16 nTextHyphZoneAlways, sal_Int16 nLevel, sal_Int16 nCompoundMinTrailing,
+            bool bSplitCompoundWord )
 {
     sal_Int32 nLen = rVals.getLength();
 
     if (0 == nLen)  // yet to be initialized?
     {
-        rVals.realloc( 13 );
+        rVals.realloc( 14 );
         PropertyValue *pVal = rVals.getArray();
 
         pVal[0].Name    = UPN_HYPH_MIN_LEADING;
@@ -1683,8 +1684,12 @@ static void lcl_InitHyphValues( PropertyValues &rVals,
         pVal[12].Name    = UPN_HYPH_LEVEL;
         pVal[12].Handle  = UPH_HYPH_LEVEL;
         pVal[12].Value   <<= nLevel;
+
+        pVal[13].Name    = UPN_HYPH_SPLIT_COMPOUND_WORD;
+        pVal[13].Handle  = UPH_HYPH_SPLIT_COMPOUND_WORD;
+        pVal[13].Value   <<= bSplitCompoundWord;
     }
-    else if (13 == nLen) // already initialized once?
+    else if (14 == nLen) // already initialized once?
     {
         PropertyValue *pVal = rVals.getArray();
         pVal[0].Value <<= nMinLeading;
@@ -1700,6 +1705,7 @@ static void lcl_InitHyphValues( PropertyValues &rVals,
         pVal[10].Value <<= bKeepLine;
         pVal[11].Value <<= nTextHyphZoneAlways;
         pVal[12].Value <<= nLevel;
+        pVal[13].Value <<= bSplitCompoundWord;
     }
     else {
         OSL_FAIL( "unexpected size of sequence" );
@@ -1708,7 +1714,7 @@ static void lcl_InitHyphValues( PropertyValues &rVals,
 
 const PropertyValues & SwTextFormatInfo::GetHyphValues() const
 {
-    OSL_ENSURE( 13 == m_aHyphVals.getLength(),
+    OSL_ENSURE( 14 == m_aHyphVals.getLength(),
             "hyphenation values not yet initialized" );
     return m_aHyphVals;
 }
@@ -1734,6 +1740,7 @@ bool SwTextFormatInfo::InitHyph( const bool bAutoHyphen )
         const bool bKeep = rAttr.IsKeep();
         const sal_Int16 nKeepType = rAttr.GetKeepType();
         const bool bKeepLine = rAttr.IsKeepLine();
+        const bool bSplitCompoundWord = rAttr.IsSplitCompoundWord();
         const sal_Int16 nCompoundMinimalLeading  = rAttr.GetCompoundMinLead();
         const sal_Int16 nCompoundMinimalTrailing  = rAttr.GetCompoundMinTrail();
         const sal_Int16 nLevel  = rAttr.GetLevel();
@@ -1741,7 +1748,8 @@ bool SwTextFormatInfo::InitHyph( const bool bAutoHyphen )
                  bNoCapsHyphenation, bNoLastWordHyphenation,
                  nMinimalWordLength, nTextHyphZone, bKeep, nKeepType,
                  bKeepLine, nCompoundMinimalLeading,
-                 nCompoundMinimalTrailing, nTextHyphZoneAlways, nLevel );
+                 nCompoundMinimalTrailing, nTextHyphZoneAlways, nLevel,
+                 bSplitCompoundWord );
     }
     return bAuto;
 }
@@ -1767,8 +1775,8 @@ void SwTextFormatInfo::CtorInitTextFormatInfo( OutputDevice* pRenderContext, SwT
     m_nFirst = 0;
     m_nRealWidth = 0;
     m_nForcedLeftMargin = 0;
-    m_nExtraAscent = 0;
-    m_nExtraDescent = 0;
+    m_nExtraAscent = 0_emu;
+    m_nExtraDescent = 0_emu;
     m_pRest = nullptr;
     m_nLineHeight = 0;
     m_nLineNetHeight = 0;
@@ -1866,8 +1874,8 @@ void SwTextFormatInfo::Init()
     m_cTabDecimal = 0;
     m_nWidth = m_nRealWidth;
     m_nForcedLeftMargin = 0;
-    m_nExtraAscent = 0;
-    m_nExtraDescent = 0;
+    m_nExtraAscent = 0_emu;
+    m_nExtraDescent = 0_emu;
     m_nSoftHyphPos = TextFrameIndex(0);
     m_nLastBookmarkPos = TextFrameIndex(-1);
     ClearHookChar();
@@ -1909,8 +1917,8 @@ SwTextFormatInfo::SwTextFormatInfo( const SwTextFormatInfo& rInf,
     m_nLineHeight(0),
     m_nLineNetHeight(0),
     m_nForcedLeftMargin(0),
-    m_nExtraAscent(0),
-    m_nExtraDescent(0),
+    m_nExtraAscent(0_emu),
+    m_nExtraDescent(0_emu),
     m_bFull(false),
     m_bFootnoteDone(true),
     m_bErgoDone(true),

@@ -22,10 +22,12 @@
 #include <xmlsec/nss/x509.h>
 
 #include <xmlelementwrapper_xmlsecimpl.hxx>
+#include <SignatureTemplateInternal.hxx>
 #include <xmlsec/xmlstreamio.hxx>
 #include <xmlsec/errorcallback.hxx>
 
 #include "securityenvironment_nssimpl.hxx"
+#include "x509certificate_nssimpl.hxx"
 
 #include <xmlsec/xmldsig.h>
 #include <sal/log.hxx>
@@ -59,6 +61,87 @@ template <> struct default_delete<xmlSecDSigCtx>
 }
 
 namespace {
+
+CERTCertificate const* GetNssCert(
+        css::uno::Reference<css::security::XCertificate> const& xCertificate)
+{
+    X509Certificate_NssImpl *const pCert{dynamic_cast<X509Certificate_NssImpl*>(xCertificate.get())};
+    return pCert ? pCert->getNssCert() : nullptr;
+}
+
+/// convert to xmlsec key - the returned value owns the certificate
+xmlSecKeyPtr CreateKeyFromCertificate(css::uno::Reference<css::security::XCertificate> const& xCertificate)
+{
+    CERTCertificate const* pCertificate{GetNssCert(xCertificate)};
+    if (!pCertificate)
+    {
+        return nullptr;
+    }
+    // xmlsec will take ownership of "signKey"
+    pCertificate = CERT_DupCertificate(const_cast<CERTCertificate *>(pCertificate));
+    // NSS keeps the reference count of a certificate in its NSSCertificate, so a certificate that
+    // still has none after CERT_DupCertificate has no reference of its own to hand to xmlsec:
+    if (!pCertificate->nssCertificate)
+    {
+        return nullptr;
+    }
+
+    xmlSecKeyDataPtr const pValue{xmlSecNssX509CertGetKey(const_cast<CERTCertificate *>(pCertificate))};
+    xmlSecKeyPtr const pKey{pValue ? xmlSecKeyCreate() : nullptr};
+    if (!pKey || xmlSecKeySetValue(pKey, pValue) < 0)
+    {
+        if (pValue)
+        {
+            xmlSecKeyDataDestroy(pValue);
+        }
+        if (pKey)
+        {
+            xmlSecKeyDestroy(pKey);
+        }
+        CERT_DestroyCertificate(const_cast<CERTCertificate *>(pCertificate));
+        return nullptr;
+    }
+
+    // The key owns the X.509 data, and the X.509 data owns the certificate once it is adopted.
+    xmlSecKeyDataPtr const pX509Data{xmlSecKeyEnsureData(pKey, xmlSecNssKeyDataX509GetKlass())};
+    if (!pX509Data || xmlSecNssKeyDataX509AdoptKeyCert(pX509Data, const_cast<CERTCertificate *>(pCertificate)) < 0)
+    {
+        CERT_DestroyCertificate(const_cast<CERTCertificate *>(pCertificate));
+        xmlSecKeyDestroy(pKey);
+        return nullptr;
+    }
+    return pKey;
+}
+
+css::uno::Reference<css::security::XCertificate> GetKeyCertificate(xmlSecKeyPtr pKey,
+    css::uno::Reference<css::security::XCertificate> const& xSigningCertificate)
+{
+    if (!pKey)
+    {
+        return {};
+    }
+    xmlSecKeyDataPtr const pX509Data{xmlSecKeyGetData(pKey, xmlSecNssKeyDataX509GetKlass())};
+    if (!pX509Data)
+    {
+        return {};
+    }
+    CERTCertificate *const pCertificate{xmlSecNssKeyDataX509GetKeyCert(pX509Data)};
+    if (!pCertificate)
+    {
+        return {};
+    }
+    CERTCertificate const*const pSigningCertificate{GetNssCert(xSigningCertificate)};
+    if (pSigningCertificate == pCertificate)
+    {
+        return xSigningCertificate;
+    }
+    else
+    {
+        rtl::Reference<X509Certificate_NssImpl> const pNew{new X509Certificate_NssImpl()};
+        pNew->setCert(pCertificate);
+        return pNew;
+    }
+}
 
 class XMLSignature_NssImpl
     : public ::cppu::WeakImplHelper<xml::crypto::XXMLSignature, lang::XServiceInfo>
@@ -151,6 +234,10 @@ SAL_CALL XMLSignature_NssImpl::generate(
 
     //Sign the template
     pDsigCtx->keyInfoReadCtx.flags |= XMLSEC_KEYINFO_FLAGS_X509DATA_DONT_VERIFY_CERTS;
+
+    // Allow ODF/OOXML references to resolve.
+    pDsigCtx->enabledReferenceUris = xmlSecTransformUriTypeAny;
+
     if( xmlSecDSigCtxSign( pDsigCtx.get() , pNode ) == 0 )
     {
         if (pDsigCtx->status == xmlSecDSigStatusSucceeded)
@@ -208,6 +295,10 @@ SAL_CALL XMLSignature_NssImpl::validate(
 
     setErrorRecorder();
 
+    auto const pInternal{dynamic_cast<xmlsecurity::ISignatureTemplateInternal*>(aTemplate.get())};
+    css::uno::Reference<css::security::XCertificate> const xSigningCertificate{
+        pInternal ? pInternal->GetSigningCertificate() : nullptr};
+
     sal_Int32 nSecurityEnvironment = aSecurityCtx->getSecurityEnvironmentNumber();
     sal_Int32 i;
 
@@ -237,9 +328,25 @@ SAL_CALL XMLSignature_NssImpl::validate(
         // We do certificate verification ourselves.
         pDsigCtx->keyInfoReadCtx.flags |= XMLSEC_KEYINFO_FLAGS_X509DATA_DONT_VERIFY_CERTS;
 
+        // Allow ODF/OOXML references to resolve.
+        pDsigCtx->enabledReferenceUris = xmlSecTransformUriTypeAny;
+
         // limit possible key data to valid X509 certificates only, no KeyValues
         if (xmlSecPtrListAdd(&(pDsigCtx->keyInfoReadCtx.enabledKeyData), BAD_CAST xmlSecNssKeyDataX509GetKlass()) < 0)
             throw RuntimeException(u"failed to limit allowed key data"_ustr);
+
+        // xmlsec reads ds:KeyInfo only when the context has no key yet, so an
+        // expected certificate is the only source of the key.
+        if (xSigningCertificate.is())
+        {
+            pDsigCtx->signKey = CreateKeyFromCertificate(xSigningCertificate);
+            if (!pDsigCtx->signKey)
+            {
+                SAL_WARN("xmlsecurity.xmlsec", "cannot create key from the expected certificate");
+                aTemplate->setStatus(css::xml::crypto::SecurityOperationStatus_UNKNOWN);
+                continue;
+            }
+        }
 
         xmlBufferPtr pBuf = xmlBufferCreate();
         xmlNodeDump(pBuf, nullptr, pNode, 0, 0);
@@ -269,6 +376,10 @@ SAL_CALL XMLSignature_NssImpl::validate(
         if (rs == 0 && pDsigCtx->status == xmlSecDSigStatusSucceeded && nReferenceCount == nReferenceGood)
         {
             aTemplate->setStatus(css::xml::crypto::SecurityOperationStatus_OPERATION_SUCCEEDED);
+            if (pInternal)
+            {
+                pInternal->SetVerifiedCertificate(GetKeyCertificate(pDsigCtx->signKey, xSigningCertificate));
+            }
             break;
         }
         else

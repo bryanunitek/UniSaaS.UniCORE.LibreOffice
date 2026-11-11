@@ -24,17 +24,18 @@
 #include <unx/gtk/gtkdata.hxx>
 #include <unx/gtk/gtkinst.hxx>
 #include <unx/genprn.h>
-#include <unx/salobj.h>
 #include <unx/gtk/gtkgdi.hxx>
 #include <unx/gtk/gtkframe.hxx>
 #include <unx/gtk/gtkobject.hxx>
 #include <unx/gtk/gtksalmenu.hxx>
+#include <vclpluginapi.h>
 #include <headless/svpvd.hxx>
 #include <headless/svpbmp.hxx>
 #include <utility>
 #include <unotools/localedatawrapper.hxx>
 #include <vcl/builder.hxx>
 #include <vcl/inputtypes.hxx>
+#include <vcl/opengl/OpenGLContext.hxx>
 #include <vcl/specialchars.hxx>
 #include <vcl/sysdata.hxx>
 #include <vcl/transfer.hxx>
@@ -146,6 +147,8 @@
 #include <boost/property_tree/ptree.hpp>
 #include <opengl/zone.hxx>
 
+#include <epoxy/gl.h>
+
 using namespace com::sun::star;
 using namespace com::sun::star::uno;
 using namespace com::sun::star::lang;
@@ -181,11 +184,12 @@ extern "C"
 
         // for gtk2 it is always built with X support, so this is always called
         // for gtk3 it is normally built with X and Wayland support, if
-        // X is supported GDK_WINDOWING_X11 is defined and this is always
+        // X is supported GDK_WINDOWING_X11 is defined and if we were
+        // configured to support X11, USING_X11 is set to 1, then this is always
         // called, regardless of if we're running under X or Wayland.
         // We can't use (DLSYM_GDK_IS_X11_DISPLAY(pDisplay)) to only do it under
         // X, because we need to do it earlier than we have a display
-#if defined(GDK_WINDOWING_X11)
+#if defined(GDK_WINDOWING_X11) && USING_X11
         /* #i92121# workaround deadlocks in the X11 implementation
         */
         static const char* pNoXInitThreads = getenv( "SAL_NO_XINITTHREADS" );
@@ -491,7 +495,7 @@ namespace
             return bRet;
         }
 #endif
-#if defined(GDK_WINDOWING_X11)
+#if defined(GDK_WINDOWING_X11) && USING_X11
         if (DLSYM_GDK_IS_X11_DISPLAY(pDisplay))
         {
             GPollFD aPollFD;
@@ -563,7 +567,7 @@ std::unique_ptr<GenPspGraphics> GtkInstance::CreatePrintGraphics()
 Platform GtkInstance::GetPlatform() const
 {
     GdkDisplay* pDisplay = GetGtkSalData()->GetGdkDisplay();
-#if defined(GDK_WINDOWING_X11)
+#if defined(GDK_WINDOWING_X11) && USING_X11
     if (DLSYM_GDK_IS_X11_DISPLAY(pDisplay))
         return Platform::Xcb;
 #endif
@@ -2098,7 +2102,7 @@ class GtkInstanceBuilder;
 #if !GTK_CHECK_VERSION(4, 0, 0)
         if (nKeyCode == 0)
         {
-            GdkKeymap* keymap = gdk_keymap_get_default();
+            GdkKeymap* keymap = gdk_keymap_get_for_display(gdk_display_get_default());
             guint8 best_group = GtkSalFrame::GetBestAccelKeyGroup(keymap, group);
             guint updated_keyval = GtkSalFrame::GetKeyValFor(keymap, hardware_keycode, best_group);
             nKeyCode = GtkSalFrame::GetKeyCode(updated_keyval);
@@ -10368,12 +10372,13 @@ GtkPositionType show_menu_older_gtk(GtkWidget* pMenuButton, GtkWindow* pMenu, co
 bool show_menu_newer_gtk(GtkWidget* pComboBox, GtkWindow* pMenu, const GdkRectangle &rAnchor,
                          weld::Placement ePlace, bool bTryShrink)
 {
+#if defined(GDK_WINDOWING_X11) && USING_X11
     // under wayland gdk_window_move_to_rect works great for me, but in my current
     // gtk 3.24 under X it leaves part of long menus outside the work area
     GdkDisplay *pDisplay = gtk_widget_get_display(pComboBox);
     if (DLSYM_GDK_IS_X11_DISPLAY(pDisplay))
         return false;
-
+#endif
     //place the toplevel just below its launcher button
     GtkWidget* pToplevel = widget_get_toplevel(pComboBox);
     gtk_coord x, y;
@@ -10938,7 +10943,7 @@ public:
         }
 
         m_nSignalId = g_signal_connect(GTK_TOGGLE_BUTTON(m_pMenuButton), "toggled", G_CALLBACK(signalMenuButtonToggled), this);
-
+#if defined(GDK_WINDOWING_X11) && USING_X11
         if (!m_pMenuHack)
         {
             //under wayland a Popover will work to "escape" the parent dialog, not
@@ -10957,7 +10962,7 @@ public:
                 g_signal_connect(m_pMenuHack, "button-release-event", G_CALLBACK(signalButtonRelease), this);
             }
         }
-
+#endif
         if (m_pMenuHack)
         {
             GtkWidget* pPlaceHolder = gtk_popover_new(GTK_WIDGET(m_pMenuButton));
@@ -11565,11 +11570,10 @@ private:
             // so that, e.g. with focus initially in writer main document then
             // after clicking the heading menu in the writer navigator focus is
             // left in the main document and not in the toolbar
+            gtk_widget_set_focus_on_click(GTK_WIDGET(pMenuButton), false);
 #if !GTK_CHECK_VERSION(4, 0, 0)
-            gtk_button_set_focus_on_click(GTK_BUTTON(pMenuButton), false);
             g_signal_connect(pMenuButton, "toggled", G_CALLBACK(signalItemToggled), this);
 #else
-            gtk_widget_set_focus_on_click(GTK_WIDGET(pMenuButton), false);
 
             GtkWidget* pToggleButton = gtk_widget_get_first_child(GTK_WIDGET(pMenuButton));
             assert(GTK_IS_TOGGLE_BUTTON(pToggleButton));
@@ -12146,7 +12150,7 @@ public:
         GdkDevice* pDevice = gdk_seat_get_keyboard(pSeat);
         guint nState = gdk_device_get_modifier_state(pDevice);
 #else
-        GdkKeymap* pKeymap = gdk_keymap_get_default();
+        GdkKeymap* pKeymap = gdk_keymap_get_for_display(gdk_display_get_default());
         guint nState = gdk_keymap_get_modifier_state(pKeymap);
 #endif
         return GtkSalFrame::GetKeyModCode(nState);
@@ -22927,7 +22931,7 @@ public:
         , m_nSignalId(g_signal_connect(m_pPopover, "closed", G_CALLBACK(signalClosed), this))
         , m_pClosedEvent(nullptr)
     {
-#if !GTK_CHECK_VERSION(4, 0, 0)
+#if !GTK_CHECK_VERSION(4, 0, 0) && defined(GDK_WINDOWING_X11) && USING_X11
         //under wayland a Popover will work to "escape" the parent dialog, not
         //so under X, so come up with this hack to use a raw GtkWindow
         GdkDisplay *pDisplay = gtk_widget_get_display(GTK_WIDGET(m_pPopover));
@@ -22979,7 +22983,7 @@ public:
                 gtk_popover_set_position(m_pPopover, GTK_POS_RIGHT);
         }
 
-#if !GTK_CHECK_VERSION(4, 0, 0)
+#if !GTK_CHECK_VERSION(4, 0, 0) && defined(GDK_WINDOWING_X11) && USING_X11
         //under wayland a Popover will work to "escape" the parent dialog, not
         //so under X, so come up with this hack to use a raw GtkWindow
         GdkDisplay *pDisplay = gtk_widget_get_display(GTK_WIDGET(m_pPopover));
@@ -23018,7 +23022,7 @@ public:
 
     virtual void popdown() override
     {
-#if !GTK_CHECK_VERSION(4, 0, 0)
+#if !GTK_CHECK_VERSION(4, 0, 0) && defined(GDK_WINDOWING_X11) && USING_X11
         //under wayland a Popover will work to "escape" the parent dialog, not
         //so under X, so come up with this hack to use a raw GtkWindow
         GdkDisplay *pDisplay = gtk_widget_get_display(GTK_WIDGET(m_pPopover));

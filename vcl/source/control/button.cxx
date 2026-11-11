@@ -1042,7 +1042,12 @@ void PushButton::ImplDrawPushButton(vcl::RenderContext& rRenderContext)
         // prepare single line hint (needed on mac to decide between normal push button and
         // rectangular bevel button look)
         Size aFontSize(Application::GetSettings().GetStyleSettings().GetPushButtonFont().GetFontSize());
+#ifdef MACOSX
+        // already in pixels on macOS: a point conversion would inflate the single-line hint
+        aFontSize = rRenderContext.LogicToPixel(aFontSize, MapMode(MapUnit::MapPixel));
+#else
         aFontSize = rRenderContext.LogicToPixel(aFontSize, MapMode(MapUnit::MapPoint));
+#endif
         Size aInRectSize(rRenderContext.LogicToPixel(Size(aInRect.GetWidth(), aInRect.GetHeight())));
         aControlValue.mbSingleLine = (aInRectSize.Height() < 2 * aFontSize.Height());
 
@@ -2906,7 +2911,8 @@ Size RadioButton::CalcMinimumSize(tools::Long nMaxWidth) const
 
 Size RadioButton::GetOptimalSize() const
 {
-    return CalcMinimumSize();
+    int nWidthRequest(get_width_request());
+    return CalcMinimumSize(nWidthRequest != -1 ? nWidthRequest : 0);
 }
 
 void RadioButton::ShowFocus(const tools::Rectangle& rRect)

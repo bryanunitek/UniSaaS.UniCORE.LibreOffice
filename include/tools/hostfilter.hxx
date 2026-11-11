@@ -27,6 +27,28 @@ public:
     static void setExemptVerifyHost(const OUString& rExemptVerifyHost);
 
     static bool isExemptVerifyHost(const std::u16string_view rHost);
+
+    /// A colon-separated list of directory paths that file:// external
+    /// references are allowed to reach. An empty string means:
+    /// "block all file URLs"
+    ///
+    /// This is just an advisory list to prevent the user from creating links
+    /// to files in their document's jail because those files will not be there
+    /// when the document is reopened in a new jail.
+    static void setAllowedExtRefPaths(const char* sPaths);
+
+    /// Reset AllowedExtRefPaths as if it was never called, back to
+    /// default allow all state.
+    static void resetAllowedExtRefPaths();
+
+    /// Return true when rFileUrl is a file:// URL that is outside any
+    /// directory registered with setAllowedExtRefPaths. Non-file URLs
+    /// are always allowed.
+    static bool isFileUrlForbidden(const OUString& rFileUrl);
+
+    /// Return true when rUrl has an exotic protocol, is a file URL that isFileUrlForbidden, or is
+    /// any other URL whose host isForbidden.
+    static bool isUrlForbidden(const OUString& rUrl);
 };
 
 #endif

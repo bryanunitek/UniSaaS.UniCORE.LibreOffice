@@ -42,7 +42,9 @@ namespace sdr::properties
                     SDRATTR_MISC_FIRST, SDRATTR_MISC_LAST,
                     SDRATTR_CIRC_FIRST, SDRATTR_CIRC_LAST,
                     SDRATTR_TEXTDIRECTION, SDRATTR_TEXTDIRECTION,
+                    SDRATTR_GLOW_FIRST, SDRATTR_GLOW_TEXT_LAST,
                     SDRATTR_TEXTCOLUMNS_FIRST, SDRATTR_TEXTCOLUMNS_LAST,
+                    SDRATTR_REFLECTION_FIRST, SDRATTR_REFLECTION_LAST,
                     // Range from SdrTextObj:
                     EE_ITEMS_START, EE_ITEMS_END>);
         }
@@ -61,7 +63,7 @@ namespace sdr::properties
         {
         }
 
-        std::unique_ptr<BaseProperties> CircleProperties::Clone(SdrObject& rObj) const
+        std::unique_ptr<BaseProperties> CircleProperties::implCloneProperties(SdrObject& rObj) const
         {
             return std::unique_ptr<BaseProperties>(new CircleProperties(*this, rObj));
         }

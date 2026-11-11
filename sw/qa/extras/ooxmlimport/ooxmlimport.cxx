@@ -1225,10 +1225,15 @@ CPPUNIT_TEST_FIXTURE(Test, testFdo75722dml)
 
     // a slight difference regarding vml file is tolerated due to rounding errors
     CPPUNIT_ASSERT_EQUAL(sal_Int32(3720), aPos.X);
-    CPPUNIT_ASSERT_EQUAL(sal_Int32(-397), aPos.Y);
+    // The exact top is -225.3 twips (-397.4). Writer rotates the shape while its internal
+    // rectangle is still one twip too small, so it turns around a center that is one twip off,
+    // and the top ends at -226 twips (-399).
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(-399), aPos.Y);
     CPPUNIT_ASSERT_EQUAL(sal_Int32(5457), aSize.Width);
     CPPUNIT_ASSERT_EQUAL(sal_Int32(3447), aSize.Height);
-    CPPUNIT_ASSERT_EQUAL(sal_Int64(3128), nRot);
+    // The file has rot="-1877111", which is nearer to 31.29 degrees than to 31.28.
+    // (-1877111/60000 = -31.2852 degrees ccw, 31.2852 cw)
+    CPPUNIT_ASSERT_EQUAL(sal_Int64(3129), nRot);
 }
 
 CPPUNIT_TEST_FIXTURE(Test, testUnbalancedColumnsCompat)
@@ -1958,6 +1963,31 @@ CPPUNIT_TEST_FIXTURE(Test, testInlineFormulaTextMode)
     // ... and an ODF round-trip: text mode is persisted in the formula's settings.
     saveAndReload(TestFilter::ODT);
     testFitsOnOnePage();
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf170236CommentInFormula)
+{
+    // tdf#170236: a w:commentReference inside an m:oMath formula was dropped on import
+    createSwDoc("tdf170236.docx");
+    uno::Reference<text::XTextFieldsSupplier> xTextFieldsSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<container::XEnumerationAccess> xFieldsAccess(xTextFieldsSupplier->getTextFields());
+    uno::Reference<container::XEnumeration> xFields(xFieldsAccess->createEnumeration());
+
+    bool bFoundAnnotation = false;
+    while (xFields->hasMoreElements())
+    {
+        uno::Reference<lang::XServiceInfo> xServiceInfo(xFields->nextElement(), uno::UNO_QUERY);
+        if (xServiceInfo->supportsService(u"com.sun.star.text.textfield.Annotation"_ustr))
+        {
+            bFoundAnnotation = true;
+            uno::Reference<beans::XPropertySet> xPropertySet(xServiceInfo, uno::UNO_QUERY);
+            OUString aContent;
+            xPropertySet->getPropertyValue(u"Content"_ustr) >>= aContent;
+            CPPUNIT_ASSERT_EQUAL(u"Hello World!"_ustr, aContent);
+            break;
+        }
+    }
+    CPPUNIT_ASSERT_MESSAGE("No annotation found in document", bFoundAnnotation);
 }
 
 // tests should only be added to ooxmlIMPORT *if* they fail round-tripping in ooxmlEXPORT

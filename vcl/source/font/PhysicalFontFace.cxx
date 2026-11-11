@@ -231,8 +231,7 @@ static int ItalicMatchValue(FontSelectPattern const& rFSP, FontItalic eItalic)
 
 bool PhysicalFontFace::IsBetterMatch(const FontSelectPattern& rFSP, int& rnBestMatch) const
 {
-    int nMatch = MatchFamilyName(rFSP.maTargetName) ? 240000 : 0;
-    nMatch += StyleNameMatchValue(rFSP, *this);
+    int nMatch = StyleNameMatchValue(rFSP, *this);
     nMatch += PitchMatchValue(rFSP, GetPitch());
     nMatch += WidthMatchValue(rFSP, GetWidthType());
     nMatch += WeightMatchValue(rFSP, GetWeight());
@@ -696,6 +695,15 @@ std::vector<ColorLayer> PhysicalFontFace::GetGlyphColorLayers(sal_GlyphId nGlyph
 }
 
 bool PhysicalFontFace::HasColorBitmaps() const { return hb_ot_color_has_png(GetHbFace()); }
+
+bool PhysicalFontFace::HasOutlines() const
+{
+    if (!mxHasOutlines.has_value())
+        mxHasOutlines = !GetRawFontData(HB_TAG('g', 'l', 'y', 'f')).empty()
+                        || !GetRawFontData(HB_TAG('C', 'F', 'F', ' ')).empty()
+                        || !GetRawFontData(HB_TAG('C', 'F', 'F', '2')).empty();
+    return *mxHasOutlines;
+}
 
 RawFontData PhysicalFontFace::GetGlyphColorBitmap(sal_GlyphId nGlyphIndex,
                                                   tools::Rectangle& rRect) const

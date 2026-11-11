@@ -260,6 +260,49 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf132770_inserted_text)
     CPPUNIT_ASSERT_EQUAL(FontLineStyle::LINESTYLE_SINGLE, rUnderlineItem.GetLineStyle());
 }
 
+CPPUNIT_TEST_FIXTURE(Test, testTdf168166_rowspan_colspan)
+{
+    // Paste a table containing rowspan and colspan:
+    //
+    //   <tr><td rowspan="2">A</td><td>B</td></tr>
+    //   <tr><td rowspan="3" colspan="2">C</td><td>D</td></tr>
+    //
+    //   +---+---+
+    //   | A | B |
+    //   |   +---+---+---+
+    //   |   |   C   | D |
+    //   +---+       +---+
+    //       |       |
+    //       |       |
+    //       +-------+
+    //
+    // Without the fix in place, C locked one column per row instead of one per column:
+    //
+    //   +---+---+
+    //   | A | B |
+    //   |   +---+---+---+---+
+    //   |   |   C   |   | D |
+    //   +---+       +---+---+
+    //       |       |
+    //       |       |
+    //       +-------+
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+    ScAddress aCellPos(/*nColP=*/0, /*nRowP=*/0, /*nTabP=*/0);
+    ScImportExport aImporter(*pDoc, aCellPos);
+    SvFileStream aFile(createFileURL(u"tdf168166_rowspan_colspan.html"), StreamMode::READ);
+    SvMemoryStream aMemory;
+    aMemory.WriteStream(aFile);
+    aMemory.Seek(0);
+    CPPUNIT_ASSERT(aImporter.ImportStream(aMemory, OUString(), SotClipboardFormatId::HTML));
+
+    // Without the accompanying fix in place, this test would have failed with:
+    // - Expected: D
+    // - Actual  :
+    // i.e. an empty column exists between column C and D
+    CPPUNIT_ASSERT_EQUAL(u"D"_ustr, pDoc->GetString(/*col=*/3, /*row=*/1, /*tab=*/0));
+}
+
 CPPUNIT_TEST_FIXTURE(Test, testCopyText)
 {
     // Given a document with 01 in A1:
@@ -445,6 +488,36 @@ CPPUNIT_TEST_FIXTURE(Test, testHTMLEmbeddedImagePaste)
     const Color aFillColor = rBitmap.GetPixelColor(20, 20);
     Color aExpectedFillColor(0xff, 0x00, 0x00);
     CPPUNIT_ASSERT_EQUAL(aExpectedFillColor, aFillColor);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf39217_paste_image_undo)
+{
+    createScDoc();
+    ScDocument* pDoc = getScDoc();
+
+    // Create an HTML table including a picture loaded from a URL
+    OUString aImageURL = m_directories.getURLFromSrc(u"/sc/qa/unit/tiledrendering/data/smile.png");
+    OString aHtml = "<table><tr><td><img src=\""
+                    + OUStringToOString(aImageURL, RTL_TEXTENCODING_UTF8) + "\"></td></tr></table>";
+
+    // Import the HTML table into cell A1 and check that the picture exists in the sheet
+    SvMemoryStream aStream(const_cast<char*>(aHtml.getStr()), aHtml.getLength(), StreamMode::READ);
+    ScImportExport aImporter(*pDoc, ScAddress(0, 0, 0));
+    CPPUNIT_ASSERT(aImporter.ImportStream(aStream, OUString(), SotClipboardFormatId::HTML));
+    const SdrPage* pPage = pDoc->GetDrawLayer()->GetPage(0);
+    CPPUNIT_ASSERT_EQUAL(size_t(1), pPage->GetObjCount());
+
+    // When undoing the paste, the picture has to be removed without crashing
+    dispatchCommand(mxComponent, u".uno:Undo"_ustr, {});
+    // Without the fix in place, this test would have failed with:
+    // - Expected: 0
+    // - Actual  : 1
+    // i.e. the pasted picture was not removed after the undo action
+    CPPUNIT_ASSERT_EQUAL(size_t(0), pPage->GetObjCount());
+
+    // The redo action has to restore the picture
+    dispatchCommand(mxComponent, u".uno:Redo"_ustr, {});
+    CPPUNIT_ASSERT_EQUAL(size_t(1), pPage->GetObjCount());
 }
 }
 

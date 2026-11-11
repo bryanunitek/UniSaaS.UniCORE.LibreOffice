@@ -171,7 +171,6 @@ RemoteFilesDialog::~RemoteFilesDialog()
 
 void RemoteFilesDialog::EnableExtraMenuItems(bool bEnable)
 {
-    m_xManageServices->set_item_visible(u"change_password"_ustr, bEnable);
     m_xManageServices->set_item_visible(u"edit_service"_ustr, bEnable);
     m_xManageServices->set_item_visible(u"delete_service"_ustr, bEnable);
     m_xManageServices->set_item_visible(u"change_password"_ustr, bEnable);
@@ -312,6 +311,8 @@ int RemoteFilesDialog::GetSelectedServicePos()
     int i = -1;
 
     int nSelected = m_xServices_lb->get_active();
+    if(nSelected == -1)
+        return -1;
 
     int nServices = static_cast<int>(m_aServices.size());
     while( nPos < nServices )
@@ -345,6 +346,7 @@ void RemoteFilesDialog::OpenURL( OUString const & sURL )
         return;
 
     DisableControls();
+    m_bIsConnected = false;
 
     auto xWait = std::make_unique<weld::WaitObject>(m_xDialog.get());
 
@@ -416,7 +418,7 @@ void RemoteFilesDialog::EnableControls()
                     {
                         OUString sUrl( m_aServices[nPos]->GetUrl() );
 
-                        UrlRecord aURLEntries = m_xMasterPasswd->find( sUrl, Reference< XInteractionHandler>() );
+                        UrlRecord aURLEntries = FindPersistentPassword(sUrl, Reference< XInteractionHandler>());
 
                         if( aURLEntries.UserList.hasElements() )
                         {
@@ -554,6 +556,19 @@ void RemoteFilesDialog::AddService()
     }
 }
 
+UrlRecord RemoteFilesDialog::FindPersistentPassword(std::u16string_view aUrl, const Reference<XInteractionHandler>& rHandler) const
+{
+    const Sequence<UrlRecord> aUrlRecords = m_xMasterPasswd->getAllPersistent(rHandler);
+    for(const UrlRecord& rRecord : aUrlRecords)
+    {
+        if(rRecord.Url == aUrl)
+        {
+            return rRecord;
+        }
+    }
+    return UrlRecord();
+}
+
 IMPL_LINK_NOARG( RemoteFilesDialog, SelectServiceHdl, weld::ComboBox&, void )
 {
     int nPos = GetSelectedServicePos();
@@ -597,6 +612,7 @@ IMPL_LINK ( RemoteFilesDialog, EditServiceMenuHdl, const OUString&, rIdent, void
 
                     m_xServices_lb->insert_text(nSelected, sPrefix + pEditedService->GetName());
                     m_xServices_lb->set_active( nSelected );
+                    SelectServiceHdl( *m_xServices_lb );
 
                     m_bIsUpdated = true;
                     break;
@@ -634,9 +650,9 @@ IMPL_LINK ( RemoteFilesDialog, EditServiceMenuHdl, const OUString&, rIdent, void
                         Reference< XInteractionHandler > xInteractionHandler =
                             InteractionHandler::createWithParent( m_xContext, nullptr );
 
-                        UrlRecord aURLEntries = m_xMasterPasswd->find( sUrl, xInteractionHandler );
+                        UrlRecord aURLEntries = FindPersistentPassword(sUrl, xInteractionHandler);
 
-                        if( aURLEntries.Url == sUrl && aURLEntries.UserList.hasElements() )
+                        if( aURLEntries.UserList.hasElements() )
                         {
                             OUString sUserName = aURLEntries.UserList[0].UserName;
 
@@ -675,9 +691,9 @@ IMPL_LINK ( RemoteFilesDialog, EditServiceMenuHdl, const OUString&, rIdent, void
                     Reference< XInteractionHandler > xInteractionHandler =
                         InteractionHandler::createWithParent( m_xContext, nullptr );
 
-                    UrlRecord aURLEntries = m_xMasterPasswd->find( sUrl, xInteractionHandler );
+                    UrlRecord aURLEntries = FindPersistentPassword(sUrl, xInteractionHandler);
 
-                    if( aURLEntries.Url == sUrl && aURLEntries.UserList.hasElements() )
+                    if( aURLEntries.UserList.hasElements() )
                     {
                         OUString sUserName = aURLEntries.UserList[0].UserName;
 

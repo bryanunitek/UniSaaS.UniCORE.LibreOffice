@@ -817,6 +817,8 @@ bool PowerPointExport::exportDocument()
 
     WriteVBA();
 
+    exportChartEmbeddings();
+
     WriteModifyVerifier();
 
     WriteSections();
@@ -1495,6 +1497,11 @@ void PowerPointExport::WriteTransition(const FSHelperPtr& pFS)
                 pPresetTransition = "fallOver";
                 bOOXmlSpecificTransition = true;
                 break;
+            case animations::TransitionSubType::AIRPLANE: // Airplane
+                nTransition = XML_fade;
+                pPresetTransition = "airplane";
+                bOOXmlSpecificTransition = true;
+                break;
             case animations::TransitionSubType::CORNERSIN: // Inside turning cube
                 pInverted = "true";
                 [[fallthrough]];
@@ -1528,6 +1535,7 @@ void PowerPointExport::WriteTransition(const FSHelperPtr& pFS)
 
     sal_Int32 nTransitionDuration = -1;
     bool isTransitionDurationSet = false;
+    bool isNonDefaultTransitionDurationSet = false;
 
     // try to use TransitionDuration instead of old Speed property
     if (ImplGetPropertyValue(mXPagePropSet, u"TransitionDuration"_ustr))
@@ -1553,6 +1561,8 @@ void PowerPointExport::WriteTransition(const FSHelperPtr& pFS)
                 speed = "med";
             }
 
+            isNonDefaultTransitionDurationSet
+                = fTransitionDuration != SdPage::DEFAULT_TRANSITION_DURATION;
             bool isStandardValue = nTransitionDuration == 500
                 || nTransitionDuration == 750
                 || nTransitionDuration == 1000;
@@ -1579,16 +1589,19 @@ void PowerPointExport::WriteTransition(const FSHelperPtr& pFS)
         }
     }
 
-    // check if we resolved what transition to export or time is set
-    if (!nPPTTransitionType && !bOOXmlSpecificTransition && !isTransitionDurationSet)
-        return;
-
     if (ImplGetPropertyValue(mXPagePropSet, u"Change"_ustr))
         mAny >>= changeType;
 
     // 1 means automatic, 2 half automatic - not sure what it means - at least I don't see it in UI
     if (changeType == 1 && ImplGetPropertyValue(mXPagePropSet, u"Duration"_ustr))
         mAny >>= advanceTiming;
+
+    // check if we resolved what transition to export, or a time or a sound is set
+    if (!nPPTTransitionType && !bOOXmlSpecificTransition && !isNonDefaultTransitionDurationSet
+        && advanceTiming == -1 && sSoundRelId.isEmpty())
+    {
+        return;
+    }
 
     if (!bOOXmlSpecificTransition)
     {
@@ -1691,7 +1704,8 @@ void PowerPointExport::WriteTransition(const FSHelperPtr& pFS)
     bool isAdvanceTimingSet = advanceTiming != -1;
     if (nTransition14 || pPresetTransition || isTransitionDurationSet)
     {
-        const char* pRequiresNS = (nTransition14 || isTransitionDurationSet) ? "p14" : "p15";
+        // p15:prstTrans needs p15, even if p14:dur is also written.
+        const char* pRequiresNS = (!nTransition14 && pPresetTransition) ? "p15" : "p14";
 
         pFS->startElement(FSNS(XML_mc, XML_AlternateContent));
         pFS->startElement(FSNS(XML_mc, XML_Choice), XML_Requires, pRequiresNS);
@@ -3635,7 +3649,7 @@ Reference<XShape> PowerPointExport::GetReferencedPlaceholderXShape(const Placeho
         SdrPage* pPage;
         if (ePageType == LAYOUT)
         {
-            // since Layout pages do not have drawpages themselves - mXDrawPage is still the master they reference to..
+            // since Layout pages do not have drawpages themselves - mXDrawPage is still the master they reference to.
             pPage = SdPage::getImplementation(mXDrawPage);
         }
         else

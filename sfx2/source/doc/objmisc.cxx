@@ -19,8 +19,12 @@
 
 #include <config_features.h>
 
+#include <cstdlib>
+
 #include <tools/debug.hxx>
+#include <tools/hostfilter.hxx>
 #include <tools/inetmsg.hxx>
+#include <comphelper/configuration.hxx>
 #include <comphelper/diagnose_ex.hxx>
 #include <svl/eitem.hxx>
 #include <svl/stritem.hxx>
@@ -43,6 +47,7 @@
 #include <com/sun/star/script/provider/XScript.hpp>
 #include <com/sun/star/script/provider/XScriptProvider.hpp>
 #include <com/sun/star/script/provider/XScriptProviderSupplier.hpp>
+#include <com/sun/star/script/vba/XVBACompatibility.hpp>
 #include <com/sun/star/uri/UriReferenceFactory.hpp>
 #include <com/sun/star/uri/XVndSunStarScriptUrl.hpp>
 #include <com/sun/star/util/XModifiable.hpp>
@@ -70,6 +75,7 @@
 #include <basic/sbx.hxx>
 #include <svtools/sfxecode.hxx>
 
+#include <unotools/securityoptions.hxx>
 #include <unotools/ucbhelper.hxx>
 #include <tools/urlobj.hxx>
 #include <svl/sharecontrolfile.hxx>
@@ -77,6 +83,8 @@
 #include <vcl/svapp.hxx>
 #include <framework/interaction.hxx>
 #include <framework/documentundoguard.hxx>
+#include <framework/documentmacrocalls.hxx>
+#include <com/sun/star/ui/UIConfigurationManager.hpp>
 #include <comphelper/interaction.hxx>
 #include <comphelper/storagehelper.hxx>
 #include <comphelper/documentconstants.hxx>
@@ -646,6 +654,14 @@ bool SfxObjectShell::HasSharedXMLFlagSet() const
 
 #endif
 
+bool SfxObjectShell::IsTrustedLocationForUpdatingLinks() const
+{
+    if (GetCreateMode() == SfxObjectCreateMode::EMBEDDED)
+        return SvtSecurityOptions::GetMacroSecurityLevel() == 0;
+    return SvtSecurityOptions::isTrustedLocationUriForUpdatingLinks(
+        pMedium == nullptr ? OUString() : pMedium->GetName());
+}
+
 bool SfxObjectShell::IsDocShared() const
 {
 #if HAVE_FEATURE_MULTIUSER_ENVIRONMENT
@@ -951,6 +967,31 @@ void SfxObjectShell::BreakMacroSign_Impl( bool bBreakMacroSign )
 }
 
 
+bool SfxObjectShell::DocumentUIConfigurationHasMacroCalls_Impl()
+{
+    try
+    {
+        uno::Reference<embed::XStorage> xStorage = GetStorage();
+        if (!xStorage.is() || !xStorage->hasByName(u"Configurations2"_ustr))
+            return false;
+        uno::Reference<embed::XStorage> xConfigStorage
+            = xStorage->openStorageElement(u"Configurations2"_ustr, embed::ElementModes::READ);
+        // A separate manager reads the folder, so the model's own manager is still created when
+        // the view first asks for it.
+        uno::Reference<ui::XUIConfigurationManager2> xConfiguration
+            = ui::UIConfigurationManager::create(comphelper::getProcessComponentContext());
+        xConfiguration->setStorage(xConfigStorage);
+        const bool bHasMacroCalls = framework::documentConfigurationHasMacroCalls(xConfiguration);
+        xConfiguration->dispose();
+        return bHasMacroCalls;
+    }
+    catch (const uno::Exception&)
+    {
+        TOOLS_WARN_EXCEPTION("sfx.doc", "");
+    }
+    return false;
+}
+
 void SfxObjectShell::CheckSecurityOnLoading_Impl()
 {
     if (GetErrorCode() == ERRCODE_IO_BROKENPACKAGE)
@@ -972,10 +1013,30 @@ void SfxObjectShell::CheckSecurityOnLoading_Impl()
     CheckEncryption_Impl( xInteraction );
 
     // check macro security
+    if (!GetMacroCallsSeenWhileLoading() && DocumentUIConfigurationHasMacroCalls_Impl())
+        SetMacroCallsSeenWhileLoading();
     const bool bHasValidContentSignature = HasValidSignatures();
     const bool bHasMacros = pImpl->aMacroMode.hasMacros();
-    pImpl->aMacroMode.checkMacrosOnLoading( xInteraction, bHasValidContentSignature, bHasMacros );
+    const bool bMacrosAllowed = pImpl->aMacroMode.checkMacrosOnLoading(
+        xInteraction, bHasValidContentSignature, bHasMacros);
     pImpl->m_bHadCheckedMacrosOnLoad = bHasMacros;
+    pImpl->m_bMacroCallsAllowed = bMacrosAllowed;
+    if (pImpl->pBaseModel.is())
+        pImpl->pBaseModel->SetUIConfigurationMacroCallsAllowed_Impl(bMacrosAllowed);
+
+    // Import records a deferred VBA compatibility mode on the document's own Basic container, so
+    // only one that already exists can hold it.
+    if (bMacrosAllowed)
+    {
+        uno::Reference<beans::XPropertySet> xLibraries(pImpl->xBasicLibraries, uno::UNO_QUERY);
+        if (xLibraries.is()
+            && xLibraries->getPropertyValue(u"DeferredVBACompatibilityMode"_ustr).get<bool>())
+        {
+            uno::Reference<script::vba::XVBACompatibility> xVBACompat(xLibraries,
+                                                                      uno::UNO_QUERY_THROW);
+            xVBACompat->setVBACompatibilityMode(true);
+        }
+    }
 }
 
 bool SfxObjectShell::GetHadCheckedMacrosOnLoad() const
@@ -1380,12 +1441,23 @@ void SfxObjectShell::CancelTransfers()
 
 
 AutoReloadTimer_Impl::AutoReloadTimer_Impl(
-    OUString _aURL, sal_uInt32 nTime, SfxObjectShell* pSh )
+    OUString _aURL, sal_uInt32 nTime, SfxObjectShell* pSh, bool _bLinkUpdateAllowed )
     : Timer("sfx2 AutoReloadTimer_Impl"), aUrl(std::move( _aURL )), pObjSh( pSh )
+    , bLinkUpdateAllowed( _bLinkUpdateAllowed )
 {
     SetTimeout( nTime );
 }
 
+
+static void lcl_allowAutoReload(const Reference<XInterface>& rxModel, const OUString& rURL)
+{
+    SfxObjectShell* pObjSh = SfxObjectShell::GetShellFromComponent(rxModel);
+    if (!pObjSh)
+        return;
+    pObjSh->Get_Impl()->pReloadTimer.reset(
+        new AutoReloadTimer_Impl(rURL, 0, pObjSh, /*bLinkUpdateAllowed=*/true));
+    pObjSh->Get_Impl()->pReloadTimer->Start();
+}
 
 void AutoReloadTimer_Impl::Invoke()
 {
@@ -1401,17 +1473,35 @@ void AutoReloadTimer_Impl::Invoke()
             return;
         }
 
+        SfxObjectShell* pSh = pObjSh;
+        const OUString sURL = aUrl;
+        const bool bAllowed = bLinkUpdateAllowed;
+        // Resetting pReloadTimer deletes this timer, so only the copies above are used after it.
+        pSh->Get_Impl()->pReloadTimer.reset();
+
+        if (HostFilter::isFileUrlForbidden(sURL))
+        {
+            SAL_WARN("sfx.doc",
+                     "AutoReloadTimer_Impl::Invoke: blocked file path: \"" << sURL << "\"");
+            return;
+        }
+        if (!sURL.isEmpty() && !bAllowed)
+        {
+            pSh->AddDeferredLinkLoad(pSh->GetModel(),
+                                     [sURL](const Reference<XInterface>& rxModel)
+                                     { lcl_allowAutoReload(rxModel, sURL); });
+            return;
+        }
+
         SfxAllItemSet aSet( SfxGetpApp()->GetPool() );
         aSet.Put( SfxBoolItem( SID_AUTOLOAD, true ) );
-        if ( !aUrl.isEmpty() )
-            aSet.Put(  SfxStringItem( SID_FILE_NAME, aUrl ) );
-        if (pObjSh->HasName()) {
+        if ( !sURL.isEmpty() )
+            aSet.Put(  SfxStringItem( SID_FILE_NAME, sURL ) );
+        if (pSh->HasName()) {
             aSet.Put(
-                SfxStringItem(SID_REFERER, pObjSh->GetMedium()->GetName()));
+                SfxStringItem(SID_REFERER, pSh->GetMedium()->GetName()));
         }
         SfxRequest aReq( SID_RELOAD, SfxCallMode::SLOT, aSet );
-        // this will delete this
-        pObjSh->Get_Impl()->pReloadTimer.reset();
         pFrame->ExecReload_Impl( aReq );
         return;
     }
@@ -1429,16 +1519,14 @@ ErrCode SfxObjectShell::CallBasic( std::u16string_view rMacro,
     std::u16string_view rBasic, SbxArray* pArgs,
     SbxValue* pRet )
 {
-    SfxApplication* pApp = SfxGetpApp();
-    if( pApp->GetName() != rBasic )
-    {
-        if ( !AdjustMacroMode() )
-            return ERRCODE_IO_ACCESSDENIED;
-    }
+    // The call is made for this document, so its macro mode applies to the application Basic too.
+    if ( !AdjustMacroMode() )
+        return ERRCODE_IO_ACCESSDENIED;
 
-    BasicManager *pMgr = GetBasicManager();
-    if( pApp->GetName() == rBasic )
-        pMgr = SfxApplication::GetBasicManager();
+    SfxApplication* pApp = SfxGetpApp();
+
+    BasicManager* pMgr = pApp->GetName() == rBasic ? SfxApplication::GetBasicManager()
+                                                   : GetBasicManager();
     ErrCode nRet = SfxApplication::CallBasic( OUString(rMacro), pMgr, pArgs, pRet );
     return nRet;
 }
@@ -1488,10 +1576,17 @@ bool SfxObjectShell::isScriptAccessAllowed( const Reference< XInterface >& _rxSc
     return false;
 }
 
+bool SfxObjectShell::isDocumentScriptAllowed(const OUString& rScriptURL,
+                                             const Reference<XInterface>& rxDocument)
+{
+    return isScriptURLAllowed(rScriptURL) && isScriptAccessAllowed(rxDocument)
+           && !UnTrustedScript(rScriptURL);
+}
+
 // don't allow LibreLogo to be used with our mouseover/etc dom-alike events
 bool SfxObjectShell::UnTrustedScript(const OUString& rScriptURL)
 {
-    if (!rScriptURL.startsWith("vnd.sun.star.script:"))
+    if (!rScriptURL.startsWithIgnoreAsciiCase("vnd.sun.star.script:"))
         return false;
 
     // ensure URL Escape Codes are decoded
@@ -1563,6 +1658,8 @@ ErrCode SfxObjectShell::CallXScript( const Reference< XInterface >& _rxScriptCon
                 xProps->setPropertyValue(u"Caller"_ustr, uno::Any( aArgs ) );
             }
         }
+        if (comphelper::IsFuzzing())
+            std::abort();
         aRet = xScript->invoke( aParams, aOutParamIndex, aOutParam );
     }
     catch ( const uno::Exception& )
@@ -1888,11 +1985,6 @@ OUString SfxObjectShell_Impl::getDocumentLocation() const
     if ( pMedium )
     {
         sLocation = pMedium->GetName();
-        if ( sLocation.isEmpty() )
-        {
-            // for documents made from a template: get the name of the template
-            sLocation = rDocShell.getDocProperties()->getTemplateURL();
-        }
 
         // tdf#128006 take document base url as location
         if (sLocation.isEmpty())

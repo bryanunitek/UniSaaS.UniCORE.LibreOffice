@@ -2400,7 +2400,8 @@ void WW8AttributeOutput::TablePositioning(const SwFrameFormat* pFlyFormat)
             nTDxaAbs = -8;
             break;
         default:
-            nTDxaAbs = pFlyFormat->GetHoriOrient().GetPos();
+            nTDxaAbs = MakeSafePositioningValue(
+                pFlyFormat->GetHoriOrient().getPosition().as_twip<SwTwips>());
             break;
     }
     m_rWW8Export.InsUInt16(NS_sprm::TDxaAbs::val);
@@ -2423,7 +2424,8 @@ void WW8AttributeOutput::TablePositioning(const SwFrameFormat* pFlyFormat)
             nTDyaAbs = -12;
             break;
         default:
-            nTDyaAbs = pFlyFormat->GetVertOrient().GetPos();
+            nTDyaAbs = MakeSafePositioningValue(
+                pFlyFormat->GetVertOrient().getPosition().as_twip<SwTwips>());
             break;
     }
     m_rWW8Export.InsUInt16(NS_sprm::TDyaAbs::val);
@@ -2513,7 +2515,7 @@ void WW8AttributeOutput::TableDefinition(const ww8::WW8TableNodeInfoInner::Point
                 break;
 
             default:
-                nTableOffset = rHori.GetPos();
+                nTableOffset = rHori.getPosition().as_twip<SwTwips>();
                 const SvxLRSpaceItem& rLRSp = pFormat->GetLRSpace();
                 nTableOffset += rLRSp.ResolveLeft();
 
@@ -3276,6 +3278,11 @@ void WW8Export::StoreDoc1()
         m_pPapPlc->AppendFkpEntry(Strm().Tell(), nSprmsLen, pLastSprms);
     }
     delete[] pLastSprms;
+
+    // The CHPX bin table must cover the same text as the PAPX one, including the final
+    // paragraph mark. A paragraph mark is normally covered only by the CHPX entry of
+    // the next run, so the last one would be left out, and get dropped by Word
+    m_pChpPlc->AppendFkpEntry(Strm().Tell());
 
     m_pSepx->Finish( Fc2Cp( Strm().Tell() ));// Text + Footnote + HdFt as section end
     m_pMagicTable->Finish( Fc2Cp( Strm().Tell() ),0);

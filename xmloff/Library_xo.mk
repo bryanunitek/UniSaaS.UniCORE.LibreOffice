@@ -64,6 +64,7 @@ $(eval $(call gb_Library_use_libraries,xo,\
     sal \
     salhelper \
     sax \
+    sfx \
     svl \
     tl \
     utl \
@@ -170,6 +171,7 @@ $(eval $(call gb_Library_add_exception_objects,xo,\
     xmloff/source/draw/ximpcustomshape \
     xmloff/source/draw/ximpgrp \
     xmloff/source/draw/ximplink \
+    xmloff/source/draw/ximpdiagram \
     xmloff/source/draw/ximpnote \
     xmloff/source/draw/ximppage \
     xmloff/source/draw/ximpshap \

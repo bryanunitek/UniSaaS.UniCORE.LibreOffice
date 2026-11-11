@@ -359,13 +359,13 @@ void PrintDialog::PrintPreviewWindow::preparePreviewBitmap()
     // tdf#141761
     // The display quality of the Preview is pretty ugly when
     // FormControls are used. I made a deep-dive why this happens,
-    // and in principle the reason is the Mteafile::Scale used
+    // and in principle the reason is the Metafile::Scale used
     // below. Since Metafile actions are integer, that floating point
     // scale leads to rounding errors that make the lines painting
     // the FormControls disappear in the surrounding ClipRegions.
-    // That Scale cannot be avoided since the Metafile contains it's
+    // That Scale cannot be avoided since the Metafile contains its
     // own SetMapMode commands which *will* be executed on ::Play,
-    // so the ::Scale is the only possibility fr Metafile currently:
+    // so the ::Scale is the only possibility for Metafile currently:
     // Giving a Size as parameter in ::Play will *not* work due to
     // the relativeMapMode that gets created will fail on
     // ::SetMapMode actions in the Metafile - and FormControls DO
@@ -393,7 +393,7 @@ void PrintDialog::PrintPreviewWindow::preparePreviewBitmap()
         // memory problems, still limit to a useful factor is
         // necessary, also empirically estimated to
         // avoid the quality from collapsing (using a direct
-        // in-between , ceil'd result)
+        // in-between, ceil'd result)
         static const double fMaximumQualitySquare(1396221.0);
 
         if(fNewNeededPixels > fMaximumQualitySquare)
@@ -586,6 +586,7 @@ PrintDialog::PrintDialog(weld::Window* i_pWindow, std::shared_ptr<PrinterControl
     , mbShowLayoutFrame( true )
     , mbHasCustomPaperEntry( false )
     , maUpdatePreviewIdle("Print Dialog Update Preview Idle")
+    , maPageRangeUpdateTimer("PageRangeUpdateTimer")
 {
     // Retrieve current page, it'll be used later in updatePageRange method
     PropertyValue* pPageRange = maPController->getValue(u"PageRange"_ustr);
@@ -662,6 +663,10 @@ PrintDialog::PrintDialog(weld::Window* i_pWindow, std::shared_ptr<PrinterControl
 
     maUpdatePreviewIdle.SetPriority(TaskPriority::POST_PAINT);
     maUpdatePreviewIdle.SetInvokeHandler(LINK( this, PrintDialog, updatePreviewIdle));
+
+    maPageRangeUpdateTimer.SetTimeout(EDIT_UPDATEDATA_TIMEOUT);
+    maPageRangeUpdateTimer.SetInvokeHandler(LINK(this, PrintDialog, PageRangeUpdateTimerHdl));
+
 
     initFromMultiPageSetup( maPController->getMultipage() );
 
@@ -1031,6 +1036,12 @@ IMPL_LINK_NOARG(PrintDialog, updatePreviewIdle, Timer*, void)
     preparePreview(std::exchange(mbUseCacheForPreview, true));
 }
 
+IMPL_LINK_NOARG(PrintDialog, PageRangeUpdateTimerHdl, Timer*, void)
+{
+    schedulePreviewUpdate(false);
+}
+
+
 void PrintDialog::preparePreview( bool i_bMayUseCache )
 {
     VclPtr<Printer> aPrt( maPController->getPrinter() );
@@ -1119,17 +1130,28 @@ void PrintDialog::preparePreview( bool i_bMayUseCache )
         if (!bUseCustomPreviewSize
             && mxOrientationBox->get_active() == ORIENTATION_AUTOMATIC)
         {
-            aCurPageSize = !maSelectedPaperSize.IsEmpty()
-                ? maSelectedPaperSize
-                : aPrt->PixelToLogic(aPrt->GetPaperSizePixel(), MapMode(MapUnit::Map100thMM));
-            // Swap to landscape if document requires it.
-            if (!maSelectedPaperSize.IsEmpty())
+            // tdf#173544: with N-up, getFilteredPageFile() has just composed
+            // the sheet and returns its size. Same condition getRealPaperSize()
+            // uses to pick the sheet.
+            const PrinterController::MultiPageSetup& rMPS = maPController->getMultipage();
+            if (rMPS.nRows * rMPS.nColumns > 1 && !aPageSize.aSize.IsEmpty())
             {
-                Size aDocPageSize = getJobPageSize();
-                bool bDocLandscape = !aDocPageSize.IsEmpty()
-                                   && aDocPageSize.getWidth() > aDocPageSize.getHeight();
-                if (bDocLandscape && aCurPageSize.Width() < aCurPageSize.Height())
-                    aCurPageSize = Size(aCurPageSize.Height(), aCurPageSize.Width());
+                aCurPageSize = aPageSize.aSize;
+            }
+            else
+            {
+                aCurPageSize = !maSelectedPaperSize.IsEmpty()
+                    ? maSelectedPaperSize
+                    : aPrt->PixelToLogic(aPrt->GetPaperSizePixel(), MapMode(MapUnit::Map100thMM));
+                // Swap to landscape if document requires it.
+                if (!maSelectedPaperSize.IsEmpty())
+                {
+                    Size aDocPageSize = getJobPageSize();
+                    bool bDocLandscape = !aDocPageSize.IsEmpty()
+                                       && aDocPageSize.getWidth() > aDocPageSize.getHeight();
+                    if (bDocLandscape && aCurPageSize.Width() < aCurPageSize.Height())
+                        aCurPageSize = Size(aCurPageSize.Height(), aCurPageSize.Width());
+                }
             }
         }
 
@@ -1169,17 +1191,7 @@ void PrintDialog::updatePageRange(sal_Int32 nPages)
         pContentVal->Value >>= nContent;
 
     if (nContent == 1)
-    {
-        OUString sRange;
-        if (nPages == 1)
-            sRange = u"1"_ustr;
-        else
-            sRange = u"1-"_ustr + OUString::number(nPages);
-
-        mxPageRangeEdit->set_text(sRange);
-        maPController->setValue(u"PageRange"_ustr, Any(sRange));
-        return;
-    }
+        return; // User-controlled page range
 
     OUString sRange;
 
@@ -1203,7 +1215,6 @@ void PrintDialog::updatePageRange(sal_Int32 nPages)
         return;
     }
 
-    mxPageRangeEdit->set_text(sRange);
     maPController->setValue(u"PageRange"_ustr, Any(sRange));
 }
 
@@ -1256,6 +1267,45 @@ void PrintDialog::updateOrientationBox( const bool bAutomatic )
     {
         mxOrientationBox->set_active( ORIENTATION_AUTOMATIC );
     }
+}
+
+void PrintDialog::updatePaperSizeBox()
+{
+    VclPtr<Printer> aPrt( maPController->getPrinter() );
+
+    // The custom entry lives beyond GetPaperInfoCount() and has no
+    // PaperInfo to match against, so leave it alone.
+    if (mbHasCustomPaperEntry && mxPaperSizeBox->get_active() == aPrt->GetPaperInfoCount())
+        return;
+
+    mePaper = aPrt->GetPaper();
+    const Size aCurPaperSize(aPrt->GetSizeOfPaper());
+    PaperInfo aCurInfo(aCurPaperSize.getWidth(), aCurPaperSize.getHeight());
+    aCurInfo.doSloppyFit(true);
+
+    // Dimensions first: a paper picked by document size may carry a Paper
+    // enum that matches some other entry, and matching on the enum would
+    // then select that wrong entry.
+    int nMatch = -1;
+    int nEnumMatch = -1;
+    for (int nPaper = 0; nPaper < aPrt->GetPaperInfoCount(); nPaper++)
+    {
+        PaperInfo aInfo = aPrt->GetPaperInfo(nPaper);
+        aInfo.doSloppyFit(true);
+
+        if (!aCurPaperSize.IsEmpty() && aInfo.sloppyEqual(aCurInfo))
+        {
+            nMatch = nPaper;
+            break;
+        }
+        if (nEnumMatch == -1 && mePaper != PAPER_USER && aInfo.getPaper() == mePaper)
+            nEnumMatch = nPaper;
+    }
+
+    if (nMatch == -1)
+        nMatch = nEnumMatch;
+    if (nMatch != -1)
+        mxPaperSizeBox->set_active(nMatch);
 }
 
 bool PrintDialog::hasOrientationChanged() const
@@ -1899,7 +1949,10 @@ void PrintDialog::setupOptionalUI()
             PropertyValue* pVal = maPController->getValue( aPropertyName );
             if( pVal && pVal->Value.hasValue() )
                 pVal->Value >>= aCurVal;
-            xField->set_text( aCurVal );
+            if (aPropertyName != "PageRange")
+            {
+                xField->set_text( aCurVal );
+            }
             xField->connect_changed( LINK( this, PrintDialog, UIOption_EntryModifyHdl ) );
             xField->show();
 
@@ -2141,7 +2194,6 @@ IMPL_LINK_NOARG(PrintDialog, ClickSetupHdl, weld::Button&, void)
 
     maPController->setupPrinter(m_xDialog.get());
 
-    VclPtr<Printer> aPrt(maPController->getPrinter());
     if (!isPrintToFile())
     {
         // Rebuild paper size list to restore custom entry if needed.
@@ -2154,6 +2206,10 @@ IMPL_LINK_NOARG(PrintDialog, ClickSetupHdl, weld::Button&, void)
             maFirstPageSize = aSavedCustomSize;
             setPaperSizes();
         }
+
+        // tdf#173642: setPaperSizes() selects the paper matching the document,
+        // which would discard a paper picked in the dropdown.
+        updatePaperSizeBox();
     }
 
     // Sync maSelectedPaperSize with current combobox selection.
@@ -2408,12 +2464,16 @@ IMPL_LINK( PrintDialog, UIOption_RadioHdl, weld::Toggleable&, i_rBtn, void )
     sal_Int32 nVal = it->second;
     pVal->Value <<= nVal;
 
-    if (pVal->Name == "PrintContent" && nVal == 3)
+    // Writer-specific handling
+    if (pVal->Name == "PrintContent")
     {
         PropertyValue* pPageRange = maPController->getValue(u"PageRange"_ustr);
         if (pPageRange)
         {
-            pPageRange->Value <<= OUString::number(mnInitialPage);
+            if (nVal == 1)
+                pPageRange->Value <<= mxPageRangeEdit->get_text();
+            else if (nVal == 3)
+                pPageRange->Value <<= OUString::number(mnInitialPage);
         }
     }
 
@@ -2495,8 +2555,11 @@ IMPL_LINK(PrintDialog, UIOption_EntryModifyHdl, weld::TextWidget&, i_rBox, void)
 
         checkOptionalControlDependencies();
 
-        // update preview and page settings
-        schedulePreviewUpdate(false);
+        if (pVal->Name == "PageRange")
+            maPageRangeUpdateTimer.Start();
+        else
+            schedulePreviewUpdate(false);
+
     }
 }
 

@@ -27,6 +27,7 @@
 #include <comphelper/diagnose_ex.hxx>
 #include <comphelper/flagguard.hxx>
 #include <comphelper/processfactory.hxx>
+#include <i18nlangtag/languagetag.hxx>
 #include <basegfx/polygon/b2dpolygonclipper.hxx>
 #include <basegfx/polygon/b2dpolypolygontools.hxx>
 #include <basegfx/polygon/b2dpolygontools.hxx>
@@ -221,6 +222,39 @@ tools::Rectangle getPDFGraphicRect(const basegfx::B2DVector& rTranslate,
         sal_Int32(ceil(aCurrentRange.getMaxX())), sal_Int32(ceil(aCurrentRange.getMaxY())));
 }
 
+// the one language a paragraph's text is in, false once its portions disagree
+bool getTextLanguage(const drawinglayer::primitive2d::Primitive2DContainer& rChildren,
+                     LanguageType& rLanguage)
+{
+    for (const auto& rCandidate : rChildren)
+    {
+        if (const auto* pText
+            = dynamic_cast<const drawinglayer::primitive2d::TextSimplePortionPrimitive2D*>(
+                rCandidate.get()))
+        {
+            // a bullet, a tab and an empty line carry no locale, and would read as the UI's
+            if (pText->getLocale().Language.isEmpty())
+                continue;
+
+            const LanguageType eLanguage(LanguageTag(pText->getLocale()).getLanguageType());
+            if (eLanguage == LANGUAGE_DONTKNOW)
+                continue;
+            if (rLanguage != LANGUAGE_DONTKNOW && rLanguage != eLanguage)
+                return false;
+            rLanguage = eLanguage;
+        }
+        else if (const auto* pGroup
+                 = dynamic_cast<const drawinglayer::primitive2d::GroupPrimitive2D*>(
+                     rCandidate.get()))
+        {
+            if (!getTextLanguage(pGroup->getChildren(), rLanguage))
+                return false;
+        }
+    }
+
+    return true;
+}
+
 } // end of anonymous namespace
 
 namespace drawinglayer::processor2d
@@ -334,7 +368,7 @@ double VclMetafileProcessor2D::getTransformedLineWidth(double fWidth) const
     // and also inside the SvtGraphicStroke and needs transforming into
     // the same space as its coordinates here cf. fdo#61789
     // This is a partial fix. When an object transformation is used which
-    // e.g. contains a scaleX != scaleY, an unproportional scaling will happen.
+    // e.g. contains a scaleX != scaleY, a non-proportional scaling will happen.
     const basegfx::B2DVector aDiscreteUnit(maCurrentTransformation
                                            * basegfx::B2DVector(fWidth, 0.0));
 
@@ -469,7 +503,7 @@ std::unique_ptr<SvtGraphicStroke> VclMetafileProcessor2D::impTryToCreateSvtGraph
 
         // #i101734# apply current object transformation to created geometry.
         // This is a partial fix. When an object transformation is used which
-        // e.g. contains a scaleX != scaleY, an unproportional scaling would
+        // e.g. contains a scaleX != scaleY, a non-proportional scaling would
         // have to be applied to the evtl. existing fat line. The current
         // concept of PDF export and SvtGraphicStroke usage does simply not
         // allow handling such definitions. The only clean way would be to
@@ -587,7 +621,7 @@ VclMetafileProcessor2D::~VclMetafileProcessor2D()
     is rendered by VCL (and thus fragmented to polygon color actions and others). On that base, e.g.
     the Metafile to SdrObject import creates its gradient objects.
     Best (and safest) way to support it here is to use PRIMITIVE2D_ID_POLYPOLYGONGRADIENTPRIMITIVE2D,
-    map it back to the corresponding tools tools::PolyPolygon and the Gradient and just call
+    map it back to the corresponding tools::PolyPolygon and the Gradient and just call
     OutputDevice::DrawGradient which creates the necessary compatible actions.
 
     XPATHFILL_SEQ_BEGIN, XPATHFILL_SEQ_END:
@@ -1599,6 +1633,15 @@ void VclMetafileProcessor2D::processTextHierarchyParagraphPrimitive2D(
         mpPDFExtOutDevData->WrapBeginStructureElement(vcl::pdf::StructElement::Paragraph);
     }
 
+    // a run in another language would need an element of its own, so name only one
+    LanguageType eLanguage(LANGUAGE_DONTKNOW);
+    if (getTextLanguage(rParagraphPrimitive.getChildren(), eLanguage)
+        && eLanguage != LANGUAGE_DONTKNOW && eLanguage != LANGUAGE_NONE)
+    {
+        mpPDFExtOutDevData->SetStructureAttributeNumerical(vcl::pdf::PDFWriter::Language,
+                                                           static_cast<sal_uInt16>(eLanguage));
+    }
+
     // Process recursively and add MetaFile comment
     process(rParagraphPrimitive);
     mpMetaFile->AddAction(new MetaCommentAction(aCommentString));
@@ -1623,6 +1666,8 @@ void VclMetafileProcessor2D::processTextHierarchyBlockPrimitive2D(
         {
             popList();
         }
+        // a list in the next text block opens its own L
+        mnCurrentOutlineLevel = -1;
     }
 
     mpMetaFile->AddAction(new MetaCommentAction("XTEXT_PAINTSHAPE_END"_ostr));
@@ -2774,6 +2819,18 @@ void VclMetafileProcessor2D::processStructureTagPrimitive2D(
                 mpPDFExtOutDevData->SetCurrentStructureElement(id);
             }
             mpPDFExtOutDevData->WrapBeginStructureElement(rTagElement);
+            // a title, a description and text that states no language are the document's
+            if (const css::lang::Locale& rLocale = mpPDFExtOutDevData->GetDocumentLocale();
+                rStructureTagCandidate.GetAnchorStructureElementKey() != nullptr
+                && !rLocale.Language.isEmpty())
+            {
+                const LanguageType eLanguage(LanguageTag(rLocale).getLanguageType());
+                if (eLanguage != LANGUAGE_DONTKNOW && eLanguage != LANGUAGE_NONE)
+                {
+                    mpPDFExtOutDevData->SetStructureAttributeNumerical(
+                        vcl::pdf::PDFWriter::Language, static_cast<sal_uInt16>(eLanguage));
+                }
+            }
             switch (rTagElement)
             {
                 case vcl::pdf::StructElement::H1:
@@ -2799,6 +2856,13 @@ void VclMetafileProcessor2D::processStructureTagPrimitive2D(
                 case vcl::pdf::StructElement::TableHeader:
                     mpPDFExtOutDevData->SetStructureAttribute(vcl::pdf::PDFWriter::Placement,
                                                               vcl::pdf::PDFWriter::Inline);
+                    // a merged cell spans the cells it covers
+                    if (rStructureTagCandidate.getColSpan() > 1)
+                        mpPDFExtOutDevData->SetStructureAttributeNumerical(
+                            vcl::pdf::PDFWriter::ColSpan, rStructureTagCandidate.getColSpan());
+                    if (rStructureTagCandidate.getRowSpan() > 1)
+                        mpPDFExtOutDevData->SetStructureAttributeNumerical(
+                            vcl::pdf::PDFWriter::RowSpan, rStructureTagCandidate.getRowSpan());
                     break;
                 default:
                     break;
@@ -2829,7 +2893,9 @@ void VclMetafileProcessor2D::processStructureTagPrimitive2D(
             if (rTagElement == vcl::pdf::StructElement::TableHeader)
             {
                 mpPDFExtOutDevData->SetStructureAttribute(vcl::pdf::PDFWriter::Scope,
-                                                          vcl::pdf::PDFWriter::Column);
+                                                          rStructureTagCandidate.isRowHeader()
+                                                              ? vcl::pdf::PDFWriter::Row
+                                                              : vcl::pdf::PDFWriter::Column);
             }
         }
         else

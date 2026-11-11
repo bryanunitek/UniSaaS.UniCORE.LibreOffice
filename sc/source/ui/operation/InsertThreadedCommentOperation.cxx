@@ -1,8 +1,6 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4; fill-column: 100 -*- */
 /*
- * Copyright the LibreOffice contributors.
- *
- * SPDX-License-Identifier: MPL-2.0
+ * This file is part of the LibreOffice project.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -131,7 +129,9 @@ bool InsertThreadedCommentOperation::runImplementation()
 
         auto pThreaded = std::make_unique<ScThreadedCommentData>();
         pThreaded->maRoot.maGuid = tools::Guid(tools::Guid::Generate).getOUString();
-        pThreaded->maRoot.maDateTime = utl::toISO8601(DateTime(DateTime::SYSTEM).GetUNODateTime());
+        // A threaded comment entry carries the moment it was written, in UTC. The note's own
+        // date beside it is the author's wall clock.
+        pThreaded->maRoot.maDateTime = utl::toISO8601(DateTime::CreateSystemUTC().GetUNODateTime());
         pThreaded->maRoot.maPersonId = aPersonId;
         pThreaded->maRoot.maText = maText;
 

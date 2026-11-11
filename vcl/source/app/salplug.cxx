@@ -17,7 +17,7 @@
  *   the License at http://www.apache.org/licenses/LICENSE-2.0 .
  */
 
-// Th current high-level preprocessor structure is:
+// The current high-level preprocessor structure is:
 //
 // if !HAVE_FEATURE_UI
 //   => STATIC_SAL_INSTANCE
@@ -42,7 +42,7 @@
 #include <vcl/svapp.hxx>
 
 #if HAVE_FEATURE_UI
-#if USING_X11
+#if USING_UNIX_DESKTOP
 #define UNIX_DESKTOP_DETECT 1
 #else
 #define UNIX_DESKTOP_DETECT 0

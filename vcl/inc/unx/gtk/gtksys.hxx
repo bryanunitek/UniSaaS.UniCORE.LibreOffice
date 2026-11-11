@@ -9,17 +9,16 @@
 
 #pragma once
 
+#include <salsys.hxx>
+
 #include <gtk/gtk.h>
-#include <unx/X11Helper.hxx>
-#include <unx/saltype.h>
-#include <deque>
 
 class GtkSalSystem final : public SalSystem
 {
     GdkDisplay *mpDisplay;
 #if !GTK_CHECK_VERSION(4,0,0)
-    // Number of monitors for every active screen.
-    std::deque<std::pair<GdkScreen*, int> > maScreenMonitors;
+    // Number of monitors for the default screen.
+    int m_nScreenMonitors;
 #endif
 public:
              GtkSalSystem();
@@ -30,14 +29,9 @@ public:
     virtual unsigned int  GetDisplayBuiltInScreen() override;
     virtual AbsoluteScreenPixelRectangle GetDisplayScreenPosSizePixel(unsigned int nScreen) override;
     virtual void ShowNativeMessageBox(const OUString& rTitle, const OUString& rMessage) override;
-    SalX11Screen      GetDisplayDefaultXScreen()
-            { return getXScreenFromDisplayScreen( GetDisplayBuiltInScreen() ); }
-    SalX11Screen      getXScreenFromDisplayScreen(unsigned int nDisplayScreen);
 #if !GTK_CHECK_VERSION(4,0,0)
     void              countScreenMonitors();
     // We have a 'screen' number that is combined from screen-idx + monitor-idx
-    int        getScreenIdxFromPtr     (GdkScreen *pScreen);
-    int        getScreenMonitorIdx     (GdkScreen *pScreen, int nX, int nY);
     GdkScreen *getScreenMonitorFromIdx (int nIdx, gint &nMonitor);
 #endif
 };

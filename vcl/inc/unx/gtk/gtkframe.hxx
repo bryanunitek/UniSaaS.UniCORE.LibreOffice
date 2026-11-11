@@ -19,10 +19,12 @@
 
 #pragma once
 
+#include <config_vclplug.h>
+
 #include <cairo.h>
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
-#if !GTK_CHECK_VERSION(4,0,0)
+#if !GTK_CHECK_VERSION(4,0,0) && defined(GDK_WINDOWING_X11) && USING_X11
 #include <gtk/gtkx.h>
 #endif
 #include <gdk/gdkkeysyms.h>
@@ -30,7 +32,6 @@
 #include <salframe.hxx>
 #include <vcl/idle.hxx>
 #include <vcl/sysdata.hxx>
-#include <unx/saltype.h>
 #include <unx/sessioninhibitor.hxx>
 
 #include <tools/link.hxx>
@@ -169,7 +170,6 @@ class GtkSalFrame final : public SalFrame
 
     friend class GtkSalObjectWidgetClip;
 
-    SalX11Screen                    m_nXScreen;
     GtkWidget*                      m_pWindow;
     GtkHeaderBar*                   m_pHeaderBar;
     GtkGrid*                        m_pTopLevelGrid;
@@ -189,7 +189,7 @@ class GtkSalFrame final : public SalFrame
     gulong                          m_nSessionClientSignalId;
     GDBusProxy*                     m_pSessionManager;
     GDBusProxy*                     m_pSessionClient;
-#if !GTK_CHECK_VERSION(4, 0, 0)
+#if !GTK_CHECK_VERSION(4, 0, 0) && defined(GDK_WINDOWING_X11) && USING_X11
     GdkWindow*                      m_pForeignParent;
     GdkNativeWindow                 m_aForeignParentWindow;
     GdkWindow*                      m_pForeignTopLevel;
@@ -375,7 +375,7 @@ class GtkSalFrame final : public SalFrame
                                    bool bSendRelease
                                    );
 
-#if !GTK_CHECK_VERSION(4, 0, 0)
+#if !GTK_CHECK_VERSION(4, 0, 0) && defined(GDK_WINDOWING_X11) && USING_X11
     static GdkNativeWindow findTopLevelSystemWindow( GdkNativeWindow aWindow );
 #endif
 
@@ -414,9 +414,9 @@ class GtkSalFrame final : public SalFrame
     //returns true if FrameSize changed
     bool AllocateFrame();
     void TriggerPaintEvent();
-
+#if defined(GDK_WINDOWING_X11) && USING_X11
     void updateWMClass();
-
+#endif
     enum class SetType { RetainSize, Fullscreen, UnFullscreen };
 
     void SetScreen( unsigned int nNewScreen, SetType eType, tools::Rectangle const *pSize = nullptr );
@@ -457,7 +457,6 @@ public:
     GtkFixed*   getFixedContainer() const { return GTK_FIXED(m_pFixedContainer); }
     GtkWidget*  getMouseEventWidget() const;
     GtkGrid*    getTopLevelGridWidget() const { return m_pTopLevelGrid; }
-    const SalX11Screen& getXScreenNumber() const { return m_nXScreen; }
     int GetDisplayScreen() const { return maGeometry.screen(); }
     void updateScreenNumber();
 

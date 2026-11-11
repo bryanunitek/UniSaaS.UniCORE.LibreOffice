@@ -26,6 +26,7 @@
 #include <tools/urlobj.hxx>
 #include <svl/urihelper.hxx>
 #include <unotools/pathoptions.hxx>
+#include <svtools/viewoptions.hxx>
 #include <view.hxx>
 #include <docsh.hxx>
 #include <IDocumentDeviceAccess.hxx>
@@ -197,12 +198,18 @@ SwMailMergeDlg::SwMailMergeDlg(weld::Window* pParent, SwWrtShell& rShell,
             if(xD.is()) {
                 Sequence<PropertyValue> aProperties
                 {
-                    comphelper::makePropertyValue(u"DataSourceName"_ustr, rSourceName),
+                    comphelper::makePropertyValue(
+                        u"DataSourceName"_ustr, m_rSh.GetDBManager()->ResolveDataSourceName(rSourceName)),
                     comphelper::makePropertyValue(u"Command"_ustr, rTableName),
                     comphelper::makePropertyValue(u"CommandType"_ustr, nCommandType),
                 };
                 xD->dispatch(aURL, aProperties);
                 m_xBeamerWin->show();
+
+                // tdf#47890 - remember last used position and size of the mail merge dialog
+                SvtViewOptions aDlgOpt(EViewType::Dialog, m_xDialog->get_help_id());
+                if (aDlgOpt.Exists())
+                    m_xDialog->set_window_state(aDlgOpt.GetWindowState());
             }
             uno::Reference<XController> xController = m_xFrame->getController();
             m_pImpl->xFController.set(xController, UNO_QUERY);
@@ -352,6 +359,10 @@ SwMailMergeDlg::SwMailMergeDlg(weld::Window* pParent, SwWrtShell& rShell,
 SwMailMergeDlg::~SwMailMergeDlg()
 {
     if(m_xFrame.is()) {
+        // tdf#47890 - remember last used position and size of the mail merge dialog
+        SvtViewOptions aDlgOpt(EViewType::Dialog, m_xDialog->get_help_id());
+        aDlgOpt.SetWindowState(m_xDialog->get_window_state(vcl::WindowDataMask::PosSize));
+
         m_xFrame->setComponent(nullptr, nullptr);
         m_xFrame->dispose();
     }

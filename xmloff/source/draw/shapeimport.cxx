@@ -42,6 +42,7 @@
 #include "ximp3dobject.hxx"
 #include "ximpgrp.hxx"
 #include "ximplink.hxx"
+#include "ximpdiagram.hxx"
 
 #include <unordered_map>
 #include <vector>
@@ -328,6 +329,11 @@ SvXMLShapeContext* XMLShapeImportHelper::CreateGroupChildContext(
             // draw:customshape
             pContext = new SdXMLCustomShapeContext( rImport, xAttrList, rShapes );
             break;
+        }
+        case XML_ELEMENT(LO_EXT, XML_DIAGRAM):
+        {
+            // import <loext:diagram>
+            return new SdXMLDiagramContext( rImport, xAttrList, rShapes );
         }
         case XML_ELEMENT(DRAW, XML_A):
             return new SdXMLShapeLinkContext( rImport, xAttrList, rShapes );

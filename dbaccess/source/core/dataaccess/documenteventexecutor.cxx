@@ -27,8 +27,10 @@
 #include <com/sun/star/frame/XDispatchProvider.hpp>
 
 #include <comphelper/namedvaluecollection.hxx>
+#include <cppuhelper/weak.hxx>
 #include <cppuhelper/weakref.hxx>
 #include <comphelper/diagnose_ex.hxx>
+#include <sfx2/objsh.hxx>
 #include <vcl/svapp.hxx>
 
 namespace dbaccess
@@ -166,6 +168,9 @@ namespace dbaccess
 
             if ( bDispatchScriptURL && bNonEmptyScript )
             {
+                if ( !SfxObjectShell::isDocumentScriptAllowed( sScript, cppu::getXWeak( xDocument.get() ) ) )
+                    return;
+
                 lcl_dispatchScriptURL_throw( mxDocument, mxURLTransformer, sScript, Event );
             }
         }

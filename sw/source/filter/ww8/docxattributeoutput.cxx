@@ -1128,7 +1128,8 @@ void DocxAttributeOutput::PopulateFrameProperties(const SwFrameFormat* pFrameFor
 
     const SwFormatHoriOrient& rHoriOrient = pFrameFormat->GetHoriOrient();
     const SwFormatVertOrient& rVertOrient = pFrameFormat->GetVertOrient();
-    awt::Point aPos(rHoriOrient.GetPos(), rVertOrient.GetPos());
+    awt::Point aPos(rHoriOrient.getPosition().as_twip<sal_Int32>(),
+                    rVertOrient.getPosition().as_twip<sal_Int32>());
 
     // A few assumptions need to be made here, because framePr is a confused mixture
     // of (multiple) paragraph's border properties being transferred to/from a frame.
@@ -6765,8 +6766,10 @@ OString DocxAttributeOutput::GetOLEStyle(const SwFlyFrameFormat& rFormat, const 
             bInsideFrame = pAnchorNode->FindFlyStartNode() != nullptr;
 
         aPos = (bInsideFrame ? OString() : "position:absolute;"_ostr) + "margin-left:"
-               + OString::number(double(rFormat.GetHoriOrient().GetPos()) / 20) + "pt;margin-top:"
-               + OString::number(double(rFormat.GetVertOrient().GetPos()) / 20) + "pt;";
+               + OString::number(rFormat.GetHoriOrient().getPosition().as_twip<sal_Int32>() / 20.0)
+               + "pt;margin-top:"
+               + OString::number(rFormat.GetVertOrient().getPosition().as_twip<sal_Int32>() / 20.0)
+               + "pt;";
     }
 
     OString sShapeStyle = "width:" + OString::number( double( rSize.Width() ) / 20 ) +
@@ -7106,10 +7109,10 @@ void DocxAttributeOutput::OutputFlyFrame_Impl(const ww8::Frame& rFrame, const Po
         {
             if (auto pParentFly = rFrame.GetContentNode()->GetFlyFormat())
             {
-                auto aHori(rFrame.GetFrameFormat().GetHoriOrient());
-                aHori.SetPos(aHori.GetPos() + pParentFly->GetHoriOrient().GetPos());
-                auto aVori(rFrame.GetFrameFormat().GetVertOrient());
-                aVori.SetPos(aVori.GetPos() + pParentFly->GetVertOrient().GetPos());
+                SwFormatHoriOrient aHori(rFrame.GetFrameFormat().GetHoriOrient());
+                aHori.adjustPosition(pParentFly->GetHoriOrient().getPosition());
+                SwFormatVertOrient aVori(rFrame.GetFrameFormat().GetVertOrient());
+                aVori.adjustPosition(pParentFly->GetVertOrient().getPosition());
 
                 const_cast<SwFrameFormat&>(rFrame.GetFrameFormat()).SetFormatAttr(aHori);
                 const_cast<SwFrameFormat&>(rFrame.GetFrameFormat()).SetFormatAttr(aVori);
@@ -9131,9 +9134,13 @@ DocxAttributeOutput::hasProperties DocxAttributeOutput::WritePostitFields()
         m_pSerializer->startElementNS( XML_w, XML_comment, pAttributeList );
 
         // Make sure to give parent/child fields a paraId
-        const bool bNeedParaId = f->GetResolved() || data.parentStatus != ParentStatus::None;
-        if (bNeedParaId)
+        const bool bNeedParaIdForExtended
+            = f->GetResolved() || data.parentStatus != ParentStatus::None;
+        if (bNeedParaIdForExtended)
             eResult = hasProperties::yes;
+        // The part carrying the moment the comment was written refers to it by paragraph id as
+        // well, so a comment with a moment needs one even when it is neither resolved nor a reply.
+        const bool bNeedParaId = bNeedParaIdForExtended || f->GetDateTimeUTC().has_value();
 
         if (f->GetTextObject() != nullptr)
         {
@@ -9194,6 +9201,41 @@ void DocxAttributeOutput::WritePostItFieldsResolved()
             FSNS(XML_w15, XML_paraId), idstr,
             FSNS(XML_w15, XML_done), sDone,
             FSNS(XML_w15, XML_paraIdParent), sParentId);
+    }
+}
+
+bool DocxAttributeOutput::HasPostitFieldsWithDateUTC() const
+{
+    return std::any_of(m_postitFields.begin(), m_postitFields.end(),
+                       [](const auto& rPair) { return bool(rPair.first->GetDateTimeUTC()); });
+}
+
+void DocxAttributeOutput::WritePostItFieldsIds()
+{
+    for (auto& [f, data] : m_postitFields)
+    {
+        if (!f->GetDateTimeUTC())
+            continue;
+        // The paragraph id is already unique per comment, so it serves as the durable id too.
+        // The two parts only have to agree with each other.
+        OUString idstr = NumberToHexBinary(data.lastParaId);
+        m_pSerializer->singleElementNS(XML_w16cid, XML_commentId,
+            FSNS(XML_w16cid, XML_paraId), idstr,
+            FSNS(XML_w16cid, XML_durableId), idstr);
+    }
+}
+
+void DocxAttributeOutput::WritePostItFieldsExtensible()
+{
+    for (auto& [f, data] : m_postitFields)
+    {
+        const std::optional<DateTime>& oDateTimeUTC = f->GetDateTimeUTC();
+        if (!oDateTimeUTC)
+            continue;
+        // The value is already in UTC, which is what DateTimeToOString marks it as.
+        m_pSerializer->singleElementNS(XML_w16cex, XML_commentExtensible,
+            FSNS(XML_w16cex, XML_durableId), NumberToHexBinary(data.lastParaId),
+            FSNS(XML_w16cex, XML_dateUtc), DateTimeToOString(*oDateTimeUTC));
     }
 }
 
@@ -9424,15 +9466,18 @@ void DocxAttributeOutput::FootnoteEndnoteReference()
 }
 
 static void WriteFootnoteSeparatorHeight(
-    ::sax_fastparser::FSHelperPtr const& pSerializer, SwTwips const nHeight)
+    ::sax_fastparser::FSHelperPtr const& pSerializer, gfx::Length const nHeight)
 {
     // try to get the height by setting font size of the paragraph
-    if (nHeight != 0)
+    if (nHeight != 0_emu)
     {
+        // The font size is in half-points, taken from the exact height so it
+        // is rounded only once.
+        const sal_Int32 nHalfPoints(std::round(nHeight.as_pt() * 2.0));
         pSerializer->startElementNS(XML_w, XML_pPr);
         pSerializer->startElementNS(XML_w, XML_rPr);
         pSerializer->singleElementNS(XML_w, XML_sz, FSNS(XML_w, XML_val),
-            OString::number((nHeight + 5) / 10));
+            OString::number(nHalfPoints));
         pSerializer->endElementNS(XML_w, XML_rPr);
         pSerializer->endElementNS(XML_w, XML_pPr);
     }
@@ -9457,7 +9502,7 @@ void DocxAttributeOutput::FootnotesEndnotes( bool bFootnotes )
     m_pSerializer->startElementNS(XML_w, XML_p);
 
     bool bSeparator = true;
-    SwTwips nHeight(0);
+    gfx::Length nHeight = 0_emu;
     if (bFootnotes)
     {
         const SwPageFootnoteInfo& rFootnoteInfo = m_rExport.m_rDoc.GetPageDesc(0).GetFootnoteInfo();
@@ -9472,7 +9517,7 @@ void DocxAttributeOutput::FootnotesEndnotes( bool bFootnotes )
         {
             // Don't request separator if this is a Word-style separator, which is handled at a
             // layout level.
-            nHeight = 0;
+            nHeight = 0_emu;
         }
     }
 
@@ -10425,7 +10470,9 @@ void DocxAttributeOutput::FormatVertOrientation( const SwFormatVertOrient& rFlyV
 
     if (m_rExport.SdrExporter().getTextFrameSyntax())
     {
-        m_rExport.SdrExporter().getTextFrameStyle().append(";margin-top:" + OString::number(double(rFlyVert.GetPos()) / 20) + "pt");
+        m_rExport.SdrExporter().getTextFrameStyle().append(
+            ";margin-top:" + OString::number(rFlyVert.getPosition().as_twip<sal_Int32>() / 20.0)
+            + "pt");
         if ( !sAlign.isEmpty() )
             m_rExport.SdrExporter().getTextFrameStyle().append(";mso-position-vertical:" + sAlign);
         m_rExport.SdrExporter().getTextFrameStyle().append(";mso-position-vertical-relative:" + sVAnchor);
@@ -10439,7 +10486,7 @@ void DocxAttributeOutput::FormatVertOrientation( const SwFormatVertOrient& rFlyV
             AddToAttrList( m_rExport.SdrExporter().getFlyAttrList(), FSNS( XML_w, XML_yAlign ), sAlign );
         else
             AddToAttrList( m_rExport.SdrExporter().getFlyAttrList(), FSNS( XML_w, XML_y ),
-                OString::number( rFlyVert.GetPos() ) );
+                OString::number(rFlyVert.getPosition().as_twip<sal_Int32>()));
         AddToAttrList( m_rExport.SdrExporter().getFlyAttrList(), FSNS( XML_w, XML_vAnchor ), sVAnchor );
     }
 }
@@ -10451,7 +10498,9 @@ void DocxAttributeOutput::FormatHorizOrientation( const SwFormatHoriOrient& rFly
 
     if (m_rExport.SdrExporter().getTextFrameSyntax())
     {
-        m_rExport.SdrExporter().getTextFrameStyle().append(";margin-left:" + OString::number(double(rFlyHori.GetPos()) / 20) + "pt");
+        m_rExport.SdrExporter().getTextFrameStyle().append(
+            ";margin-left:" + OString::number(rFlyHori.getPosition().as_twip<sal_Int32>() / 20.0)
+            + "pt");
         if ( !sAlign.isEmpty() )
             m_rExport.SdrExporter().getTextFrameStyle().append(";mso-position-horizontal:" + sAlign);
         m_rExport.SdrExporter().getTextFrameStyle().append(";mso-position-horizontal-relative:" + sHAnchor);
@@ -10465,7 +10514,7 @@ void DocxAttributeOutput::FormatHorizOrientation( const SwFormatHoriOrient& rFly
             AddToAttrList( m_rExport.SdrExporter().getFlyAttrList(), FSNS( XML_w, XML_xAlign ), sAlign );
         else
             AddToAttrList( m_rExport.SdrExporter().getFlyAttrList(), FSNS( XML_w, XML_x ),
-                OString::number( rFlyHori.GetPos() ) );
+                OString::number(rFlyHori.getPosition().as_twip<sal_Int32>()));
         AddToAttrList( m_rExport.SdrExporter().getFlyAttrList(), FSNS( XML_w, XML_hAnchor ), sHAnchor );
     }
 }

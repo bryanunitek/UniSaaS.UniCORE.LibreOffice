@@ -51,6 +51,7 @@
 
 #include <vcl/uitest/uiobject.hxx>
 
+#include <CanvasFactory.hxx>
 #include <ImplOutDevData.hxx>
 #include <impfontcache.hxx>
 #include <salframe.hxx>
@@ -73,7 +74,6 @@
 #include <com/sun/star/datatransfer/clipboard/XClipboard.hpp>
 #include <com/sun/star/datatransfer/dnd/XDragGestureRecognizer.hpp>
 #include <com/sun/star/datatransfer/dnd/XDropTarget.hpp>
-#include <com/sun/star/rendering/CanvasFactory.hpp>
 #include <com/sun/star/rendering/XSpriteCanvas.hpp>
 #include <comphelper/configuration.hxx>
 #include <comphelper/lok.hxx>
@@ -1365,22 +1365,25 @@ void Window::ImplInitResolutionSettings()
     }
 }
 
-void Window::ImplPointToLogic(vcl::RenderContext const & rRenderContext, vcl::Font& rFont,
-                            bool bUseRenderContextDPI) const
+void Window::ImplPointToLogic(vcl::RenderContext const& rRenderContext, vcl::Font& rFont) const
 {
     Size aSize = rFont.GetFontSize();
 
+    // On macOS the native toolkits express font sizes in Quartz points, which
+    // already are VCL's logical (device independent) pixels; the display
+    // scaling is handled by the window's backing store. Applying the screen DPI
+    // here would scale the text twice, so keep the point size as-is.
+#ifndef MACOSX
     if (aSize.Width())
     {
-        aSize.setWidth( aSize.Width() *
-            ( bUseRenderContextDPI ? rRenderContext.GetDPIX() : mpWindowImpl->mpFrameData->mnDPIX) );
+        aSize.setWidth(aSize.Width() * mpWindowImpl->mpFrameData->mnDPIX);
         aSize.AdjustWidth(72 / 2 );
         aSize.setWidth( aSize.Width() / 72 );
     }
-    aSize.setHeight( aSize.Height()
-        * ( bUseRenderContextDPI ? rRenderContext.GetDPIY() : mpWindowImpl->mpFrameData->mnDPIY) );
+    aSize.setHeight(aSize.Height() * mpWindowImpl->mpFrameData->mnDPIY);
     aSize.AdjustHeight(72/2 );
     aSize.setHeight( aSize.Height() / 72 );
+#endif
 
     aSize = rRenderContext.PixelToLogic(aSize);
 
@@ -1392,6 +1395,7 @@ void Window::ImplLogicToPoint(vcl::RenderContext const & rRenderContext, vcl::Fo
     Size aSize = rFont.GetFontSize();
     aSize = rRenderContext.LogicToPixel(aSize);
 
+#ifndef MACOSX
     if (aSize.Width())
     {
         aSize.setWidth( aSize.Width() * 72 );
@@ -1401,6 +1405,7 @@ void Window::ImplLogicToPoint(vcl::RenderContext const & rRenderContext, vcl::Fo
     aSize.setHeight( aSize.Height() * 72 );
     aSize.AdjustHeight(mpWindowImpl->mpFrameData->mnDPIY / 2 );
     aSize.setHeight( aSize.Height() / ( mpWindowImpl->mpFrameData->mnDPIY) );
+#endif
 
     rFont.SetFontSize(aSize);
 }
@@ -2162,11 +2167,10 @@ void Window::CollectChildren(::std::vector<vcl::Window *>& rAllChildren )
     }
 }
 
-void Window::SetPointFont(vcl::RenderContext& rRenderContext, const vcl::Font& rFont,
-                          bool bUseRenderContextDPI)
+void Window::SetPointFont(vcl::RenderContext& rRenderContext, const vcl::Font& rFont)
 {
     vcl::Font aFont = rFont;
-    ImplPointToLogic(rRenderContext, aFont, bUseRenderContextDPI);
+    ImplPointToLogic(rRenderContext, aFont);
     rRenderContext.SetFont(aFont);
 }
 
@@ -3475,16 +3479,13 @@ Reference< css::rendering::XCanvas > WindowOutputDevice::ImplGetCanvas( bool bSp
         GetSystemGfxDataAny()
     };
 
-    const Reference< XComponentContext >& xContext = comphelper::getProcessComponentContext();
-
     // Create canvas instance with window handle
 
-    static tools::DeleteUnoReferenceOnDeinit<XMultiComponentFactory> xStaticCanvasFactory(
-        css::rendering::CanvasFactory::create( xContext ) );
-    Reference<XMultiComponentFactory> xCanvasFactory(xStaticCanvasFactory.get());
+    static tools::DeleteRtlReferenceOnDeinit<CanvasFactory> pStaticCanvasFactory(new CanvasFactory);
+    rtl::Reference<CanvasFactory> pCanvasFactory(pStaticCanvasFactory.get());
     Reference< css::rendering::XCanvas > xCanvas;
 
-    if(xCanvasFactory.is())
+    if (pCanvasFactory.is())
     {
 #ifdef _WIN32
         // see #140456# - if we're running on a multiscreen setup,
@@ -3495,26 +3496,21 @@ Reference< css::rendering::XCanvas > WindowOutputDevice::ImplGetCanvas( bool bSp
         const sal_uInt32 nDisplay = static_cast< WinSalFrame* >( mxOwnerWindow->mpWindowImpl->mpFrame )->mnDisplay;
         if( nDisplay >= Application::GetScreenCount() )
         {
-            xCanvas.set( xCanvasFactory->createInstanceWithArgumentsAndContext(
-                                 bSpriteCanvas ?
-                                 OUString( "com.sun.star.rendering.SpriteCanvas.MultiScreen" ) :
-                                 OUString( "com.sun.star.rendering.Canvas.MultiScreen" ),
-                                 aArg,
-                                 xContext ),
-                             UNO_QUERY );
-
+            xCanvas.set(pCanvasFactory->createCanvas(
+                            bSpriteCanvas
+                                ? OUString("com.sun.star.rendering.SpriteCanvas.MultiScreen")
+                                : OUString("com.sun.star.rendering.Canvas.MultiScreen"),
+                            aArg),
+                        UNO_QUERY);
         }
         else
 #endif
         {
-            xCanvas.set( xCanvasFactory->createInstanceWithArgumentsAndContext(
-                             bSpriteCanvas ?
-                             u"com.sun.star.rendering.SpriteCanvas"_ustr :
-                             u"com.sun.star.rendering.Canvas"_ustr,
-                             aArg,
-                             xContext ),
-                         UNO_QUERY );
-
+            xCanvas.set(pCanvasFactory->createCanvas(
+                            bSpriteCanvas ? u"com.sun.star.rendering.SpriteCanvas"_ustr
+                                          : u"com.sun.star.rendering.Canvas"_ustr,
+                            aArg),
+                        UNO_QUERY);
         }
     }
 

@@ -60,13 +60,13 @@ public:
 
 class GraphicObject;
 class SdrGraphicLink;
+class SdrSvgPictureLink;
 
 /**
  * This class represents an embedded or linked bitmap graphic object.
  */
 class SVXCORE_DLLPUBLIC SdrGrafObj final : public SdrRectObj
 {
-private:
     // to allow sdr::properties::GraphicProperties access to SetXPolyDirty()
     friend class sdr::properties::GraphicProperties;
 
@@ -74,6 +74,7 @@ private:
     friend class sdr::contact::ViewObjectContactOfGraphic;
     friend class SdrExchangeView; // Only for a ForceSwapIn() call.
     friend class SdrGraphicLink;
+    friend class SdrSvgPictureLink;
 
     SAL_DLLPRIVATE virtual std::unique_ptr<sdr::contact::ViewContact> CreateObjectSpecificViewContact() override;
     SAL_DLLPRIVATE virtual std::unique_ptr<sdr::properties::BaseProperties> CreateObjectSpecificProperties() override;
@@ -83,6 +84,12 @@ private:
     std::unique_ptr<GraphicObject> mpGraphicObject; // In order to speed up output of bitmaps, especially rotated ones
     std::unique_ptr<GraphicObject> mpReplacementGraphicObject;
     SdrGraphicLink* m_pGraphicLink; // And here a pointer for linked graphics
+    // The location of an SVG opened as a document of its own, and the first picture outside the
+    // SVG that it refers to. Both are empty for any other graphic.
+    OUString maSvgLocation;
+    OUString maSvgFirstPictureUrl;
+    // owned by the link manager while registered, null otherwise
+    SdrSvgPictureLink* m_pSvgPictureLink;
     bool m_bMirrored:1; // True: the graphic is horizontal, which means it's mirrored along the y-axis
 
     // Flag for allowing text animation. Default is true.
@@ -102,12 +109,17 @@ private:
     std::unique_ptr<css::drawing::BarCode> mpBarCode;
     SAL_DLLPRIVATE void                    ImpRegisterLink();
     SAL_DLLPRIVATE void                    ImpDeregisterLink();
+    SAL_DLLPRIVATE void ImpRegisterSvgPictureLink();
+    SAL_DLLPRIVATE void ImpDeregisterSvgPictureLink();
+    SAL_DLLPRIVATE void ImpApplySvgLocation();
     SAL_DLLPRIVATE void                    ImpSetLinkedGraphic( const Graphic& rGraphic );
     SAL_DLLPRIVATE void onGraphicChanged();
     SAL_DLLPRIVATE GDIMetaFile             GetMetaFile(GraphicType &rGraphicType) const;
 
     // protected destructor
     SAL_DLLPRIVATE virtual ~SdrGrafObj() override;
+
+    virtual rtl::Reference<SdrObject> implCloneSdrObject(SdrModel& rTargetModel) const override;
 
 public:
     SdrGrafObj(SdrModel& rSdrModel);
@@ -156,6 +168,11 @@ public:
     void                    ReleaseGraphicLink();
     bool IsLinkedGraphic() const;
 
+    /// Set the location of an SVG opened as a document of its own, and the first picture outside
+    /// the SVG that it refers to. The SVG is shown with its location, and so with those pictures,
+    /// once link updates are allowed.
+    void SetSvgPictureLink(const OUString& rSvgLocation, const OUString& rFirstPictureUrl);
+
     const OUString& GetFileName() const { return m_aFileName;}
 
     void                    StartAnimation();
@@ -165,8 +182,6 @@ public:
 
     SAL_DLLPRIVATE virtual OUString        TakeObjNameSingul() const override;
     SAL_DLLPRIVATE virtual OUString        TakeObjNamePlural() const override;
-
-    virtual rtl::Reference<SdrObject> CloneSdrObject(SdrModel& rTargetModel) const override;
 
     SAL_DLLPRIVATE virtual sal_uInt32 GetHdlCount() const override;
     SAL_DLLPRIVATE virtual void AddToHdlList(SdrHdlList& rHdlList) const override;

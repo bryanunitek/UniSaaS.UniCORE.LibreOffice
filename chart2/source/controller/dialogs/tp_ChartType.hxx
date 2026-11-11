@@ -30,10 +30,10 @@
 namespace weld
 {
 class CustomWeld;
+class IconView;
 class ItemView;
+class TreeIter;
 }
-
-class ValueSet;
 
 namespace chart
 {
@@ -61,7 +61,7 @@ private:
     ChartTypeDialogController* getSelectedMainType();
     void showAllControls( ChartTypeDialogController& rTypeController );
     void fillAllControls( const ChartTypeParameter& rParameter, bool bAlsoResetSubTypeList=true );
-    ChartTypeParameter getCurrentParamter() const;
+    ChartTypeParameter getCurrentParameter() const;
 
     virtual void stateChanged() override;
 
@@ -69,7 +69,7 @@ private:
     void selectMainType();
 
     DECL_LINK(SelectMainTypeHdl, weld::ItemView&, void);
-    DECL_LINK(SelectSubTypeHdl, ValueSet*, void );
+    DECL_LINK(ActivateSubTypeHdl, const weld::TreeIter&, bool);
 
     std::unique_ptr<Dim3DLookResourceGroup>     m_pDim3DLookResourceGroup;
     std::unique_ptr<StackingResourceGroup>      m_pStackingResourceGroup;
@@ -88,8 +88,7 @@ private:
 
     std::unique_ptr<weld::Label>  m_xFT_ChooseType;
     std::unique_ptr<weld::TreeView> m_xMainTypeList;
-    std::unique_ptr<ValueSet> m_xSubTypeList;
-    std::unique_ptr<weld::CustomWeld> m_xSubTypeListWin;
+    std::unique_ptr<weld::IconView> m_xSubTypeList;
 };
 
 } //namespace chart

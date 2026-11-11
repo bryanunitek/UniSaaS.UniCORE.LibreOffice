@@ -1857,11 +1857,12 @@ void SwWW8ImplReader::MatchSdrItemsIntoFlySet( SdrObject const * pSdrObj,
     if (nOutside)
     {
         SwFormatHoriOrient aHori = rFlySet.Get(RES_HORI_ORIENT);
-        aHori.SetPos(MakeSafePositioningValue(aHori.GetPos()-nOutside));
+        aHori.setPosition(gfx::Length::twip(MakeSafePositioningValue(
+            aHori.getPosition().as_twip<sal_Int32>() - nOutside)));
         rFlySet.Put(aHori);
 
         SwFormatVertOrient aVert = rFlySet.Get(RES_VERT_ORIENT);
-        aVert.SetPos(aVert.GetPos()-nOutside);
+        aVert.adjustPosition(gfx::Length::twip(-nOutside));
         rFlySet.Put(aVert);
     }
 
@@ -2172,7 +2173,8 @@ static sal_Int32 lcl_ConvertCrop(sal_uInt32 const nCrop, sal_Int32 const nSize)
         SAL_INFO("sw.ww8", "ignoring suspiciously large crop: " << nIntegral);
         return 0;
     }
-    return (nIntegral * nSize) + (((nCrop & 0xffff) * nSize) >> 16);
+    // tdf#139998 - avoid wrong crop due to overflow with large image sizes
+    return (nIntegral * nSize) + ((sal_Int64(nCrop & 0xffff) * nSize) >> 16);
 }
 
 void SwWW8ImplReader::SetAttributesAtGrfNode(const SvxMSDffImportRec& rRecord,
