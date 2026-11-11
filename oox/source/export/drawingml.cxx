@@ -273,6 +273,7 @@ DrawingML::DrawingML(::sax_fastparser::FSHelperPtr pFS, ::oox::core::XmlFilterBa
     , mbDiagaramExport(false)
     , mbDiagaramReplacementExport(false)
     , mbDiagramModelTextExport(false)
+    , mnDiagramModelTextParagraph(-1)
 {
     uno::Reference<beans::XPropertySet> xSettings(pFB->getModelFactory()->createInstance(u"com.sun.star.document.Settings"_ustr), uno::UNO_QUERY);
     if (xSettings.is())
@@ -2066,12 +2067,15 @@ void DrawingML::WriteXGraphicStretch(uno::Reference<beans::XPropertySet> const &
         {
             Graphic aGraphic(rxGraphic);
             Size aOriginalSize(aGraphic.GetPrefSize());
-            mpFS->singleElementNS(XML_a, XML_fillRect,
-                XML_l, OString::number(((aGraphicCropStruct.Left)   * 100000) / aOriginalSize.Width()),
-                XML_t, OString::number(((aGraphicCropStruct.Top)    * 100000) / aOriginalSize.Height()),
-                XML_r, OString::number(((aGraphicCropStruct.Right)  * 100000) / aOriginalSize.Width()),
-                XML_b, OString::number(((aGraphicCropStruct.Bottom) * 100000) / aOriginalSize.Height()));
-            bCrop = true;
+            if (aOriginalSize.Width() != 0 && aOriginalSize.Height() != 0)
+            {
+                mpFS->singleElementNS(XML_a, XML_fillRect,
+                    XML_l, OString::number(static_cast<sal_Int64>(aGraphicCropStruct.Left)   * 100000 / aOriginalSize.Width()),
+                    XML_t, OString::number(static_cast<sal_Int64>(aGraphicCropStruct.Top)    * 100000 / aOriginalSize.Height()),
+                    XML_r, OString::number(static_cast<sal_Int64>(aGraphicCropStruct.Right)  * 100000 / aOriginalSize.Width()),
+                    XML_b, OString::number(static_cast<sal_Int64>(aGraphicCropStruct.Bottom) * 100000 / aOriginalSize.Height()));
+                bCrop = true;
+            }
         }
     }
 
@@ -4742,6 +4746,8 @@ void DrawingML::WriteText(const Reference<XInterface>& rXIface, bool bBodyPr, bo
         return;
     }
 
+    sal_Int32 nParagraphIndex(0);
+
     while( enumeration->hasMoreElements() )
     {
         Reference< XTextContent > paragraph;
@@ -4749,6 +4755,15 @@ void DrawingML::WriteText(const Reference<XInterface>& rXIface, bool bBodyPr, bo
 
         if( any >>= paragraph)
         {
+            // A shape of a Diagram can represent several Points, one paragraph of it each. Only
+            // the paragraph that represents the Point being written belongs in it.
+            const bool bOtherPoint(isDiagramModelTextExport() && mnDiagramModelTextParagraph >= 0
+                                   && nParagraphIndex != mnDiagramModelTextParagraph);
+            nParagraphIndex++;
+
+            if (bOtherPoint)
+                continue;
+
             if (bFirstParagraph && bWritePropertiesAsLstStyles)
                 WriteLstStyles(paragraph, bOverridingCharHeight, nCharHeight, rXPropSet);
 

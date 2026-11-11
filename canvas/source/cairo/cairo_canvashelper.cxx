@@ -35,7 +35,6 @@
 #include <com/sun/star/rendering/IntegerBitmapLayout.hpp>
 #include <com/sun/star/rendering/PathCapType.hpp>
 #include <com/sun/star/rendering/PathJoinType.hpp>
-#include <com/sun/star/rendering/RenderingIntent.hpp>
 #include <com/sun/star/rendering/TexturingMode.hpp>
 #include <com/sun/star/rendering/XIntegerBitmapColorSpace.hpp>
 #include <com/sun/star/util/Endianness.hpp>
@@ -952,36 +951,6 @@ uno::Reference<rendering::XCachedPrimitive> CanvasHelper::strokePolyPolygon(
     return uno::Reference<rendering::XCachedPrimitive>(nullptr);
 }
 
-uno::Reference<rendering::XCachedPrimitive> CanvasHelper::strokeTexturedPolyPolygon(
-    const rendering::XCanvas*, const uno::Reference<rendering::XPolyPolygon2D>& /*xPolyPolygon*/,
-    const rendering::ViewState& /*viewState*/, const rendering::RenderState& /*renderState*/,
-    const uno::Sequence<rendering::Texture>& /*textures*/,
-    const rendering::StrokeAttributes& /*strokeAttributes*/)
-{
-    // TODO
-    return uno::Reference<rendering::XCachedPrimitive>(nullptr);
-}
-
-uno::Reference<rendering::XCachedPrimitive> CanvasHelper::strokeTextureMappedPolyPolygon(
-    const rendering::XCanvas*, const uno::Reference<rendering::XPolyPolygon2D>& /*xPolyPolygon*/,
-    const rendering::ViewState& /*viewState*/, const rendering::RenderState& /*renderState*/,
-    const uno::Sequence<rendering::Texture>& /*textures*/,
-    const uno::Reference<geometry::XMapping2D>& /*xMapping*/,
-    const rendering::StrokeAttributes& /*strokeAttributes*/)
-{
-    // TODO
-    return uno::Reference<rendering::XCachedPrimitive>(nullptr);
-}
-
-uno::Reference<rendering::XPolyPolygon2D> CanvasHelper::queryStrokeShapes(
-    const rendering::XCanvas*, const uno::Reference<rendering::XPolyPolygon2D>& /*xPolyPolygon*/,
-    const rendering::ViewState& /*viewState*/, const rendering::RenderState& /*renderState*/,
-    const rendering::StrokeAttributes& /*strokeAttributes*/)
-{
-    // TODO
-    return uno::Reference<rendering::XPolyPolygon2D>(nullptr);
-}
-
 uno::Reference<rendering::XCachedPrimitive> CanvasHelper::fillPolyPolygon(
     const rendering::XCanvas*, const uno::Reference<rendering::XPolyPolygon2D>& xPolyPolygon,
     const rendering::ViewState& viewState, const rendering::RenderState& renderState)
@@ -1025,16 +994,6 @@ uno::Reference<rendering::XCachedPrimitive> CanvasHelper::fillTexturedPolyPolygo
         cairo_restore(mpCairo.get());
     }
 
-    return uno::Reference<rendering::XCachedPrimitive>(nullptr);
-}
-
-uno::Reference<rendering::XCachedPrimitive> CanvasHelper::fillTextureMappedPolyPolygon(
-    const rendering::XCanvas*, const uno::Reference<rendering::XPolyPolygon2D>& /*xPolyPolygon*/,
-    const rendering::ViewState& /*viewState*/, const rendering::RenderState& /*renderState*/,
-    const uno::Sequence<rendering::Texture>& /*textures*/,
-    const uno::Reference<geometry::XMapping2D>& /*xMapping*/)
-{
-    // TODO
     return uno::Reference<rendering::XCachedPrimitive>(nullptr);
 }
 
@@ -1300,14 +1259,6 @@ private:
     virtual uno::Sequence<::sal_Int8> SAL_CALL getComponentTags() override
     {
         return maComponentTags;
-    }
-    virtual ::sal_Int8 SAL_CALL getRenderingIntent() override
-    {
-        return rendering::RenderingIntent::PERCEPTUAL;
-    }
-    virtual uno::Sequence<beans::PropertyValue> SAL_CALL getProperties() override
-    {
-        return uno::Sequence<beans::PropertyValue>();
     }
     virtual uno::Sequence<double> SAL_CALL
     convertColorSpace(const uno::Sequence<double>& deviceColor,
@@ -1634,14 +1585,6 @@ private:
     virtual uno::Sequence<::sal_Int8> SAL_CALL getComponentTags() override
     {
         return maComponentTags;
-    }
-    virtual ::sal_Int8 SAL_CALL getRenderingIntent() override
-    {
-        return rendering::RenderingIntent::PERCEPTUAL;
-    }
-    virtual uno::Sequence<beans::PropertyValue> SAL_CALL getProperties() override
-    {
-        return uno::Sequence<beans::PropertyValue>();
     }
     virtual uno::Sequence<double> SAL_CALL
     convertColorSpace(const uno::Sequence<double>& deviceColor,

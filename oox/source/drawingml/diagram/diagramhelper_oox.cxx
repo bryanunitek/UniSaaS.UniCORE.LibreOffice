@@ -20,6 +20,8 @@
 #include <oox/drawingml/diagram/diagramhelper_oox.hxx>
 #include "diagram.hxx"
 #include <basegfx/matrix/b2dhommatrix.hxx>
+#include <basegfx/matrix/b2dhommatrixtools.hxx>
+#include <basegfx/numeric/ftools.hxx>
 #include <oox/shape/ShapeFilterBase.hxx>
 #include <oox/ppt/pptimport.hxx>
 #include <drawingml/fillproperties.hxx>
@@ -30,7 +32,6 @@
 #include <svx/svdundo.hxx>
 #include <svx/sdasitm.hxx>
 #include <editeng/outlobj.hxx>
-#include <unordered_map>
 #include <svx/svddef.hxx>
 #include <com/sun/star/drawing/TextFitToSizeType.hpp>
 #include <svx/sdooitm.hxx>
@@ -40,6 +41,7 @@
 #include <com/sun/star/xml/sax/XFastSAXSerializable.hpp>
 #include <com/sun/star/beans/XPropertySet.hpp>
 #include <com/sun/star/text/XText.hpp>
+#include <com/sun/star/container/XEnumerationAccess.hpp>
 #include <unotools/streamwrap.hxx>
 #include <tools/stream.hxx>
 #include <com/sun/star/xml/sax/XSAXSerializable.hpp>
@@ -56,6 +58,34 @@
 using namespace ::com::sun::star;
 using namespace svx::diagram;
 
+namespace
+{
+// The box the shapes cover, against the origin of the Diagram, in EMU. A shape stands at a place
+// relative to the shape above it, and a turned shape covers the box round it as it is turned.
+// A group of its own draws nothing, what it covers is what the shapes in it cover.
+void gatherCover(oox::drawingml::Shape& rShape, const basegfx::B2DPoint& rOrigin,
+                 basegfx::B2DRange& rCover)
+{
+    const basegfx::B2DPoint aAt(rOrigin.getX() + rShape.getPosition().X,
+                                rOrigin.getY() + rShape.getPosition().Y);
+    const double fWidth(rShape.getSize().Width);
+    const double fHeight(rShape.getSize().Height);
+    if (rShape.getChildren().empty() && fWidth > 0.0 && fHeight > 0.0)
+    {
+        const double fAngle(basegfx::deg2rad(rShape.getRotation() / 60000.0));
+        const double fAcross(std::abs(cos(fAngle)));
+        const double fAlong(std::abs(sin(fAngle)));
+        const double fHalfWidth((fAcross * fWidth + fAlong * fHeight) / 2.0);
+        const double fHalfHeight((fAlong * fWidth + fAcross * fHeight) / 2.0);
+        const basegfx::B2DPoint aMiddle(aAt.getX() + fWidth / 2.0, aAt.getY() + fHeight / 2.0);
+        rCover.expand(basegfx::B2DRange(aMiddle.getX() - fHalfWidth, aMiddle.getY() - fHalfHeight,
+                                        aMiddle.getX() + fHalfWidth, aMiddle.getY() + fHalfHeight));
+    }
+    for (const auto& rChild : rShape.getChildren())
+        gatherCover(*rChild, aAt, rCover);
+}
+}
+
 namespace oox::drawingml
 {
 bool DiagramHelper_oox::hasDiagramData() const { return mpDiagramPtr && mpDiagramPtr->getData(); }
@@ -64,6 +94,7 @@ DiagramHelper_oox::DiagramHelper_oox(std::shared_ptr<SmartArtDiagram> xDiagramPt
                                      std::shared_ptr<::oox::drawingml::Theme> xTheme)
     : mpDiagramPtr(std::move(xDiagramPtr))
     , mpDiagramThemePtr(std::move(xTheme))
+    , maFrameInGroup(0.0, 0.0, 1.0, 1.0)
     , msNewNodeId()
     , msNewNodeText()
     , msNewNodeTemplateId()
@@ -74,6 +105,7 @@ DiagramHelper_oox::DiagramHelper_oox(DiagramHelper_oox const& rSource)
     : DiagramHelper_svx(rSource)
     , mpDiagramPtr(rSource.mpDiagramPtr ? new SmartArtDiagram(*rSource.mpDiagramPtr) : nullptr)
     , mpDiagramThemePtr(rSource.mpDiagramThemePtr)
+    , maFrameInGroup(rSource.maFrameInGroup)
     , msNewNodeId()
     , msNewNodeText()
     , msNewNodeTemplateId()
@@ -85,6 +117,7 @@ DiagramHelper_oox::DiagramHelper_oox(std::u16string_view rLayout, std::u16string
     : DiagramHelper_svx()
     , mpDiagramPtr(new SmartArtDiagram(rLayout, rData, rColors, rQuickstyle))
     , mpDiagramThemePtr()
+    , maFrameInGroup(0.0, 0.0, 1.0, 1.0)
     , msNewNodeId()
     , msNewNodeText()
     , msNewNodeTemplateId()
@@ -93,9 +126,52 @@ DiagramHelper_oox::DiagramHelper_oox(std::u16string_view rLayout, std::u16string
 
 DiagramHelper_oox::~DiagramHelper_oox() {}
 
+namespace
+{
+// Hands the name, the title, the description and the decorative mark of rOldShape to rNewShape,
+// the new version of the same shape. They are laid on with the undo recording off: the
+// re-creation as a whole is the step that is undone, and undoing it runs the re-creation again.
+void moveNamingFromOldToNewShape(SdrObject& rOldShape, SdrObject& rNewShape)
+{
+    SdrModel& rModel(rNewShape.getSdrModelFromSdrObject());
+    const bool bUndoWasEnabled(rModel.IsUndoEnabled());
+    rModel.EnableUndo(false);
+
+    rNewShape.SetName(rOldShape.GetName());
+    rNewShape.SetTitle(rOldShape.GetTitle());
+    rNewShape.SetDescription(rOldShape.GetDescription());
+    rNewShape.SetDecorative(rOldShape.IsDecorative());
+
+    rModel.EnableUndo(bUndoWasEnabled);
+}
+}
+
+// The size of the first run of the text of xShape, in points, 0 where it has no text.
+static float firstRunHeightOf(const uno::Reference<drawing::XShape>& xShape)
+{
+    float fHeight(0.0);
+    uno::Reference<container::XEnumerationAccess> xParagraphs(xShape, uno::UNO_QUERY);
+    uno::Reference<container::XEnumeration> xEnumeration(
+        xParagraphs.is() ? xParagraphs->createEnumeration() : nullptr);
+    if (xEnumeration.is() && xEnumeration->hasMoreElements())
+    {
+        uno::Reference<container::XEnumerationAccess> xParagraph(xEnumeration->nextElement(),
+                                                                 uno::UNO_QUERY);
+        uno::Reference<container::XEnumeration> xPortions(
+            xParagraph.is() ? xParagraph->createEnumeration() : nullptr);
+        if (xPortions.is() && xPortions->hasMoreElements())
+        {
+            uno::Reference<beans::XPropertySet> xPortion(xPortions->nextElement(), uno::UNO_QUERY);
+            if (xPortion.is())
+                xPortion->getPropertyValue(u"CharHeight"_ustr) >>= fHeight;
+        }
+    }
+    return fHeight;
+}
+
 void DiagramHelper_oox::moveDiagramModelDataFromOldToNewXShape(
     const uno::Reference<drawing::XShape>& xOldShape,
-    const uno::Reference<drawing::XShape>& xNewShape, tools::Long nOldHeight)
+    const uno::Reference<drawing::XShape>& xNewShape)
 {
     SdrObject* pOldShape(SdrObject::getSdrObjectFromXShape(xOldShape));
     SdrObject* pNewShape(SdrObject::getSdrObjectFromXShape(xNewShape));
@@ -110,20 +186,36 @@ void DiagramHelper_oox::moveDiagramModelDataFromOldToNewXShape(
     aAttributes.ClearItem(SDRATTR_CUSTOMSHAPE_GEOMETRY);
     pNewShape->SetMergedItemSet(aAttributes, false, true);
 
-    // copy Text/OutlinerParaObject, with the sizes of the letters following the height that the
-    // shape around them ends up with
+    // copy Text/OutlinerParaObject. The old text keeps what the user did to it, and its sizes:
+    // the fit to the new box is the shape's own autofit, and the font sync over the nodes of
+    // one name. Where the layout fitted a font for the node's group, the text is scaled so
+    // that its first run has that font. A node with text of its own keeps its sizes.
     OutlinerParaObject* pParaObject(pOldShape->GetOutlinerParaObject());
 
     if (nullptr != pParaObject)
     {
+        std::optional<double> oFitted;
+        if (mpDiagramPtr && mpDiagramPtr->getData())
+        {
+            const rtl::Reference<svx::diagram::Point> xPoint(
+                mpDiagramPtr->getData()->getPointByModelID(pNewShape->getDiagramDataModelID()));
+            const rtl::Reference<svx::diagram::Point> xDataNode(
+                mpDiagramPtr->getData()->getDataNodeForModelID(pNewShape->getDiagramDataModelID()));
+            if (xPoint.is() && !(xDataNode.is() && xDataNode->mbCustomText))
+            {
+                const auto aFitted = mpDiagramPtr->getFittedFontSizes().find(
+                    xPoint->getPresentation().msPresentationLayoutName);
+                if (aFitted != mpDiagramPtr->getFittedFontSizes().end())
+                    oFitted = aFitted->second;
+            }
+        }
+        const float fOldHeight(firstRunHeightOf(xOldShape));
         pNewShape->SetOutlinerParaObject(*pParaObject);
-
-        const tools::Long nNewHeight(xNewShape->getSize().Height);
-
-        // Now scale the text sizes
-        if (nOldHeight > 0 && nNewHeight > 0)
-            pNewShape->scaleText(static_cast<double>(nNewHeight) / static_cast<double>(nOldHeight),
-                                 /*bUndo=*/false);
+        if (oFitted && fOldHeight > 0.0)
+        {
+            const double fScale(*oFitted / fOldHeight);
+            pNewShape->scaleText(fScale, /*bUndo=*/false);
+        }
     }
 
     // maybe copy more stuff...
@@ -154,12 +246,18 @@ void DiagramHelper_oox::reLayout()
     pShapePtr->setDiagramType();
 
     // set the Size, this is important to let the layout mechanism work
-    // correctly. Since we use the XShape/SdrObject hierarchy as part of
-    // the model data, get size from there.
-    // Create bounding range using unit coordinates and the object
-    // transformation
-    const basegfx::B2DRange aRootRange(aTransformation * basegfx::B2DPoint(0, 0), // top-left
-                                       aTransformation * basegfx::B2DPoint(1, 1)); // bottom-right
+    // correctly. The room the layout fills is the frame of the Diagram, which is kept as a
+    // part of the group: the group covers what the shapes drew the last time, and a shape may
+    // stick out of the frame, an arc round a list of nodes for one. Laying out into the whole
+    // group would let such a shape grow the room with every layout.
+    const basegfx::B2DHomMatrix aFrameTransformation(
+        aTransformation
+        * basegfx::utils::createScaleTranslateB2DHomMatrix(
+              maFrameInGroup.getWidth(), maFrameInGroup.getHeight(), maFrameInGroup.getMinX(),
+              maFrameInGroup.getMinY()));
+    const basegfx::B2DRange aRootRange(aFrameTransformation * basegfx::B2DPoint(0, 0), // top-left
+                                       aFrameTransformation
+                                           * basegfx::B2DPoint(1, 1)); // bottom-right
 
     // also need to convert to Emu used by mso and thus in oox::Shape stuff
     pShapePtr->setSize(
@@ -173,9 +271,6 @@ void DiagramHelper_oox::reLayout()
     // SdrObjects in the process of re-creation, but the XShapes will survive
     std::vector<uno::Reference<drawing::XShape>> xOldXShapes;
 
-    // Secure the height that each object covers to be able to later scale the text.
-    // Text is currently linear scaled to the size changes of the hosting frame.
-    std::unordered_map<OUString, tools::Long> aOldHeightForModelID;
     const bool bNewNodeMode(!msNewNodeId.isEmpty());
     uno::Reference<drawing::XShape> xNewShapeTemplate;
 
@@ -196,8 +291,6 @@ void DiagramHelper_oox::reLayout()
             {
                 uno::Reference<drawing::XShape> xCandidate(pCandidate->getUnoShape());
                 xOldXShapes.push_back(xCandidate);
-                aOldHeightForModelID[pCandidate->getDiagramDataModelID()]
-                    = xCandidate->getSize().Height;
 
                 if (bNewNodeMode)
                 {
@@ -236,6 +329,11 @@ void DiagramHelper_oox::reLayout()
     // also reset temporary buffered layout data - that might
     // still refer to changed oox::Shape data
     mpDiagramPtr->getLayout()->getPresPointShapeMap().clear();
+
+    // the text font of the theme, the layout measures the text with it
+    if (mpDiagramThemePtr && mpDiagramThemePtr->getTheme())
+        mpDiagramPtr->setTextFont(
+            mpDiagramThemePtr->getTheme()->getFontScheme().getMinorLatin().maTypeface);
 
     // Re-create the oox::Shapes for the diagram content
     mpDiagramPtr->createShapeHierarchyFromModel(pShapePtr, true);
@@ -289,8 +387,27 @@ void DiagramHelper_oox::reLayout()
                         pShapePtr->getFillProperties());
     }
 
-    // Re-apply remembered geometry
-    pTarget->TRSetBaseGeometry(aTransformation, aPolyPolygon);
+    // The shapes cover the room, or more where one sticks out of it, or less where the layout
+    // leaves a part of the room empty. The group takes what they cover, put where that lies
+    // against the frame, and the frame is remembered against the new group for the next time.
+    basegfx::B2DHomMatrix aCoverTransformation(aTransformation);
+    basegfx::B2DRange aCover;
+    gatherCover(*pShapePtr, basegfx::B2DPoint(0.0, 0.0), aCover);
+    const awt::Size& rRoom(pShapePtr->getSize());
+    if (!aCover.isEmpty() && aCover.getWidth() > 0.0 && aCover.getHeight() > 0.0 && rRoom.Width > 0
+        && rRoom.Height > 0)
+    {
+        aCoverTransformation
+            = aFrameTransformation
+              * basegfx::utils::createScaleTranslateB2DHomMatrix(
+                    aCover.getWidth() / rRoom.Width, aCover.getHeight() / rRoom.Height,
+                    aCover.getMinX() / rRoom.Width, aCover.getMinY() / rRoom.Height);
+        maFrameInGroup = basegfx::B2DRange(-aCover.getMinX() / aCover.getWidth(),
+                                           -aCover.getMinY() / aCover.getHeight(),
+                                           (rRoom.Width - aCover.getMinX()) / aCover.getWidth(),
+                                           (rRoom.Height - aCover.getMinY()) / aCover.getHeight());
+    }
+    pTarget->TRSetBaseGeometry(aCoverTransformation, aPolyPolygon);
 
     // new SdrObjects created, re-apply geometry change locks as needed
     // and reset SubSelection
@@ -323,7 +440,7 @@ void DiagramHelper_oox::reLayout()
     if (xOldBGShape && xNewBGShape)
     {
         // we have old and new BGShapes, copy necessary data
-        moveDiagramModelDataFromOldToNewXShape(xOldBGShape, xNewBGShape, 0);
+        moveDiagramModelDataFromOldToNewXShape(xOldBGShape, xNewBGShape);
     }
 
     for (const auto& rNewShape : xNewXShapes)
@@ -349,10 +466,11 @@ void DiagramHelper_oox::reLayout()
                     if (rNewModelID == pOldShape->getDiagramDataModelID())
                     {
                         // we have old and new version of this shape, copy necessary data
-                        const auto aOldHeight(aOldHeightForModelID.find(rNewModelID));
-                        moveDiagramModelDataFromOldToNewXShape(
-                            rOldShape, rNewShape,
-                            aOldHeightForModelID.end() == aOldHeight ? 0 : aOldHeight->second);
+                        moveDiagramModelDataFromOldToNewXShape(rOldShape, rNewShape);
+
+                        // A name belongs to one shape alone, so it goes from the old version
+                        // to the new one, and a new node made after a template takes none.
+                        moveNamingFromOldToNewShape(*pOldShape, *pNewShape);
                         break;
                     }
                 }
@@ -371,10 +489,7 @@ void DiagramHelper_oox::reLayout()
             if (nullptr != pOldShape)
             {
                 // take the look of the template, text included
-                const auto aTemplateHeight(aOldHeightForModelID.find(msNewNodeTemplateId));
-                moveDiagramModelDataFromOldToNewXShape(
-                    xNewShapeTemplate, xNewShape,
-                    aOldHeightForModelID.end() == aTemplateHeight ? 0 : aTemplateHeight->second);
+                moveDiagramModelDataFromOldToNewXShape(xNewShapeTemplate, xNewShape);
 
                 // the text that came with the template gives way to the text of the new node
                 if (nullptr != pOldShape->GetOutlinerParaObject())
@@ -449,8 +564,8 @@ OUString readShapeIdOfNode(const svx::diagram::DiagramData_svx& rData, std::u16s
             return rCxn->msDestId;
 
     for (const rtl::Reference<svx::diagram::Point>& rPoint : rData.getPoints())
-        if (!rPoint->msPresentationAssociationId.isEmpty()
-            && rPoint->msPresentationAssociationId == rNodeId)
+        if (!rPoint->getPresentation().msPresentationAssociationId.isEmpty()
+            && rPoint->getPresentation().msPresentationAssociationId == rNodeId)
             return rPoint->msModelId;
 
     return OUString();
@@ -704,7 +819,8 @@ void DiagramHelper_oox::applyTextFitToSizeToDiagramNodes(
     }
 }
 
-void DiagramHelper_oox::doAnchor(const uno::Reference<drawing::XShape>& rTarget)
+void DiagramHelper_oox::doAnchor(uno::Reference<drawing::XShape>& rTarget,
+                                 const awt::Point& rFramePosition, const awt::Size& rFrameSize)
 {
     if (!mpDiagramPtr || !rTarget)
     {
@@ -713,6 +829,34 @@ void DiagramHelper_oox::doAnchor(const uno::Reference<drawing::XShape>& rTarget)
 
     // sync FontHeights
     mpDiagramPtr->syncDiagramFontHeights();
+
+    // The group covers what the shapes drew, and the frame is the room the layout filled. The
+    // frame is kept in parts of the group, so it goes along when the group is moved or resized.
+    // Where the two do not go together at all the frame is taken to be the group.
+    maFrameInGroup = basegfx::B2DRange(0.0, 0.0, 1.0, 1.0);
+    SdrObject* pGroup(SdrObject::getSdrObjectFromXShape(rTarget));
+    if (pGroup && rFrameSize.Width > 0 && rFrameSize.Height > 0)
+    {
+        basegfx::B2DHomMatrix aGroupTransformation;
+        basegfx::B2DPolyPolygon aPolyPolygon;
+        pGroup->TRGetBaseGeometry(aGroupTransformation, aPolyPolygon);
+        if (aGroupTransformation.isInvertible())
+        {
+            aGroupTransformation.invert();
+            const basegfx::B2DRange aFrame(
+                aGroupTransformation
+                    * basegfx::B2DPoint(convertEmuToHmm(rFramePosition.X),
+                                        convertEmuToHmm(rFramePosition.Y)),
+                aGroupTransformation
+                    * basegfx::B2DPoint(convertEmuToHmm(rFramePosition.X + rFrameSize.Width),
+                                        convertEmuToHmm(rFramePosition.Y + rFrameSize.Height)));
+            const bool bFits(aFrame.getWidth() > 0.2 && aFrame.getWidth() < 5.0
+                             && aFrame.getHeight() > 0.2 && aFrame.getHeight() < 5.0
+                             && aFrame.overlaps(basegfx::B2DRange(0.0, 0.0, 1.0, 1.0)));
+            if (bFits)
+                maFrameInGroup = aFrame;
+        }
+    }
 
     // initialize connection to GroupObject
     connectToSdrObjGroup(rTarget, nullptr);
@@ -816,7 +960,7 @@ bool DiagramHelper_oox::isTextNodeModelID(const OUString& rModelID) const
          mpDiagramPtr->getData()->getPoints())
     {
         if (rCandidate->msModelId == rModelID
-            && rCandidate->msPresentationLayoutName == u"textNode"_ustr)
+            && rCandidate->getPresentation().msPresentationLayoutName == u"textNode"_ustr)
             return true;
     }
 

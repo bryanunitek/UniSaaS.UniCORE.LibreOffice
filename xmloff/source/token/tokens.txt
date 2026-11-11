@@ -1005,6 +1005,7 @@ hyphenation-zone-spread
 hyphenation-compound-remain-char-count
 hyphenation-compound-push-char-count
 hyphenation-level
+hyphenation-split-compound-word
 i
 icon
 icon-set
@@ -3384,4 +3385,5 @@ reflection-start-position
 reflection-end-transparency
 reflection-end-position
 airplane
+date-utc
 TOKEN_END_DUMMY

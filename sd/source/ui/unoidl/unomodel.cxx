@@ -117,6 +117,7 @@
 #include <editeng/eeitem.hxx>
 #include <i18nlangtag/languagetag.hxx>
 #include <unotools/datetime.hxx>
+#include <tools/datetimeutils.hxx>
 #include <sax/tools/converter.hxx>
 #include <xmloff/autolayout.hxx>
 #include <xmloff/xmltoken.hxx>
@@ -3317,19 +3318,19 @@ static void ImplPDFExportShapeInteraction( const uno::Reference< drawing::XShape
             awt::Size   aShapeSize( xShape->getSize() );
             ::tools::Rectangle   aLinkRect( Point( aShapePos.X, aShapePos.Y ), Size( aShapeSize.Width, aShapeSize.Height ) );
 
+            OUString title;
+            xShapePropSet->getPropertyValue(u"Title"_ustr) >>= title;
+            OUString description;
+            xShapePropSet->getPropertyValue(u"Description"_ustr) >>= description;
+            OUString const altText(title.isEmpty()
+                ? description
+                : description.isEmpty()
+                    ? title
+                    : OUString::Concat(title) + OUString::Concat("\n") + OUString::Concat(description));
+
             // Handle linked videos.
             if (xShape->getShapeType() == "com.sun.star.drawing.MediaShape" || xShape->getShapeType() == "com.sun.star.presentation.MediaShape")
             {
-                OUString title;
-                xShapePropSet->getPropertyValue(u"Title"_ustr) >>= title;
-                OUString description;
-                xShapePropSet->getPropertyValue(u"Description"_ustr) >>= description;
-                OUString const altText(title.isEmpty()
-                    ? description
-                    : description.isEmpty()
-                        ? title
-                        : OUString::Concat(title) + OUString::Concat("\n") + OUString::Concat(description));
-
                 OUString aMediaURL;
                 xShapePropSet->getPropertyValue(u"MediaURL"_ustr) >>= aMediaURL;
                 if (!aMediaURL.isEmpty())
@@ -3352,21 +3353,24 @@ static void ImplPDFExportShapeInteraction( const uno::Reference< drawing::XShape
             uno::Any aAny( xShapePropSet->getPropertyValue( u"OnClick"_ustr ) );
             if ( aAny >>= eCa )
             {
-                OUString const actionName(SdResId(SdTPAction::GetClickActionSdResId(eCa)));
+                // the link describes itself with the shape's alternative text, else with the action
+                OUString const linkText(altText.isEmpty()
+                    ? SdResId(SdTPAction::GetClickActionSdResId(eCa))
+                    : altText);
                 switch ( eCa )
                 {
                     case presentation::ClickAction_LASTPAGE :
                     {
                         sal_Int32 nCount = rDoc.GetSdPageCount( PageKind::Standard );
                         sal_Int32 nDestId = rPDFExtOutDevData.CreateDest( aPageRect, nCount - 1, vcl::pdf::PDFWriter::DestAreaType::FitRectangle );
-                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, actionName);
+                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, linkText);
                         rPDFExtOutDevData.SetLinkDest( nLinkId, nDestId );
                     }
                     break;
                     case presentation::ClickAction_FIRSTPAGE :
                     {
                         sal_Int32 nDestId = rPDFExtOutDevData.CreateDest( aPageRect, 0, vcl::pdf::PDFWriter::DestAreaType::FitRectangle );
-                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, actionName);
+                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, linkText);
                         rPDFExtOutDevData.SetLinkDest( nLinkId, nDestId );
                     }
                     break;
@@ -3376,7 +3380,7 @@ static void ImplPDFExportShapeInteraction( const uno::Reference< drawing::XShape
                         if ( nDestPage )
                             nDestPage--;
                         sal_Int32 nDestId = rPDFExtOutDevData.CreateDest( aPageRect, nDestPage, vcl::pdf::PDFWriter::DestAreaType::FitRectangle );
-                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, actionName);
+                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, linkText);
                         rPDFExtOutDevData.SetLinkDest( nLinkId, nDestId );
                     }
                     break;
@@ -3387,7 +3391,7 @@ static void ImplPDFExportShapeInteraction( const uno::Reference< drawing::XShape
                         if ( nDestPage > nLastPage )
                             nDestPage = nLastPage;
                         sal_Int32 nDestId = rPDFExtOutDevData.CreateDest( aPageRect, nDestPage, vcl::pdf::PDFWriter::DestAreaType::FitRectangle );
-                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, actionName);
+                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, linkText);
                         rPDFExtOutDevData.SetLinkDest( nLinkId, nDestId );
                     }
                     break;
@@ -3405,7 +3409,7 @@ static void ImplPDFExportShapeInteraction( const uno::Reference< drawing::XShape
                                 case presentation::ClickAction_DOCUMENT :
                                 case presentation::ClickAction_PROGRAM :
                                 {
-                                    sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, actionName);
+                                    sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, linkText);
                                     rPDFExtOutDevData.SetLinkURL( nLinkId, aBookmark );
                                 }
                                 break;
@@ -3415,7 +3419,7 @@ static void ImplPDFExportShapeInteraction( const uno::Reference< drawing::XShape
                                     if ( nPage != -1 )
                                     {
                                         sal_Int32 nDestId = rPDFExtOutDevData.CreateDest( aPageRect, nPage, vcl::pdf::PDFWriter::DestAreaType::FitRectangle );
-                                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, actionName);
+                                        sal_Int32 nLinkId = rPDFExtOutDevData.CreateLink(aLinkRect, linkText);
                                         rPDFExtOutDevData.SetLinkDest( nLinkId, nDestId );
                                     }
                                 }
@@ -4287,6 +4291,11 @@ void SdXImpressDocument::getPostIts(::tools::JsonWriter& rJsonWriter)
             rJsonWriter.put("id", nID);
             rJsonWriter.put("author", xAnnotation->getAuthor());
             rJsonWriter.put("dateTime", utl::toISO8601(xAnnotation->getDateTime()));
+            // The moment the annotation was written in UTC, when it is known. dateTime beside it
+            // is the author's wall clock with no zone.
+            const util::DateTime aDateTimeUTC = xAnnotation->getDateTimeUTC();
+            if (aDateTimeUTC.Year != 0)
+                rJsonWriter.put("dateTimeUtc", DateTimeToOString(DateTime(aDateTimeUTC)));
             uno::Reference<text::XText> xText(xAnnotation->getTextRange());
             rJsonWriter.put("text", xText->getString());
             rJsonWriter.put("parthash", pPage->GetUniqueID());

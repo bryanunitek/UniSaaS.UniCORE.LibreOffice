@@ -65,18 +65,12 @@ namespace cairocanvas
         css::uno::Reference< css::rendering::XBitmap > createCompatibleBitmap(
             const css::uno::Reference< css::rendering::XGraphicDevice >&  rDevice,
             const css::geometry::IntegerSize2D&                                        size );
-        css::uno::Reference< css::rendering::XVolatileBitmap > createVolatileBitmap(
-            const css::uno::Reference< css::rendering::XGraphicDevice >&  rDevice,
-            const css::geometry::IntegerSize2D&                                        size );
         css::uno::Reference< css::rendering::XBitmap > createCompatibleAlphaBitmap(
-            const css::uno::Reference< css::rendering::XGraphicDevice >&  rDevice,
-            const css::geometry::IntegerSize2D&                                        size );
-        css::uno::Reference< css::rendering::XVolatileBitmap > createVolatileAlphaBitmap(
             const css::uno::Reference< css::rendering::XGraphicDevice >&  rDevice,
             const css::geometry::IntegerSize2D&                                        size );
 
         css::uno::Any isAccelerated() const;
-        css::uno::Any getDeviceHandle() const;
+        const OutputDevice* getDeviceHandle() const;
         css::uno::Any getSurfaceHandle() const;
         css::uno::Reference<
             css::rendering::XColorSpace > const & getColorSpace() const;
@@ -92,17 +86,6 @@ namespace cairocanvas
         ::cairo::SurfaceSharedPtr createSurface( BitmapSystemData const & rData, const Size& rSize );
 
     protected:
-        /** init helper
-
-            @param rCanvas
-            Owning canvas.
-
-            @param rRefDevice
-            Reference output device. Needed for resolution
-            calculations etc.
-         */
-        void implInit( SurfaceProvider& rSurfaceProvider,
-                       OutputDevice&    rRefDevice );
         void setSize( const ::basegfx::B2ISize& rSize );
 
     private:

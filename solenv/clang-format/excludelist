@@ -419,7 +419,6 @@ bridges/source/jni_uno/jni_java2uno.cxx
 bridges/source/jni_uno/jni_uno2java.cxx
 bridges/source/jni_uno/jniunoenvironmentdata.hxx
 bridges/source/jni_uno/nativethreadpool.cxx
-canvas/inc/base/basemutexhelper.hxx
 canvas/inc/base/cachedprimitivebase.hxx
 canvas/inc/base/canvascustomspritebase.hxx
 canvas/inc/base/canvascustomspritehelper.hxx
@@ -510,7 +509,6 @@ canvas/source/directx/dx_textlayout_drawhelper.hxx
 canvas/source/directx/dx_vcltools.cxx
 canvas/source/directx/dx_vcltools.hxx
 canvas/source/directx/dx_winstuff.hxx
-canvas/source/factory/cf_service.cxx
 canvas/source/opengl/ogl_bitmapcanvashelper.cxx
 canvas/source/opengl/ogl_bitmapcanvashelper.hxx
 canvas/source/opengl/ogl_buffercontext.hxx
@@ -535,7 +533,6 @@ canvas/source/opengl/ogl_texturecache.hxx
 canvas/source/opengl/ogl_tools.hxx
 canvas/source/tools/cachedprimitivebase.cxx
 canvas/source/tools/canvascustomspritehelper.cxx
-canvas/source/tools/canvastools.cxx
 canvas/source/tools/elapsedtime.cxx
 canvas/source/tools/page.cxx
 canvas/source/tools/page.hxx
@@ -577,8 +574,6 @@ canvas/source/vcl/impltools.hxx
 canvas/source/vcl/outdevprovider.hxx
 canvas/source/vcl/repainttarget.hxx
 canvas/source/vcl/sprite.hxx
-canvas/source/vcl/spritecanvas.cxx
-canvas/source/vcl/spritecanvas.hxx
 canvas/source/vcl/spritecanvashelper.cxx
 canvas/source/vcl/spritecanvashelper.hxx
 canvas/source/vcl/spritedevicehelper.cxx
@@ -1286,7 +1281,6 @@ comphelper/source/streaming/seqstream.cxx
 comphelper/source/streaming/streamsection.cxx
 comphelper/source/windows/windows_process.cxx
 comphelper/source/xml/attributelist.cxx
-comphelper/source/xml/ofopxmlhelper.cxx
 comphelper/source/xml/xmltools.cxx
 compilerplugins/clang/automem.cxx
 compilerplugins/clang/badstatics.cxx
@@ -4583,7 +4577,6 @@ include/basic/sbxmeth.hxx
 include/basic/sbxobj.hxx
 include/basic/sbxvar.hxx
 include/basic/vbahelper.hxx
-include/canvas/canvastools.hxx
 include/canvas/elapsedtime.hxx
 include/codemaker/commoncpp.hxx
 include/codemaker/commonjava.hxx
@@ -6006,7 +5999,6 @@ include/vcl/bitmap.hxx
 include/vcl/builder.hxx
 include/vcl/builderfactory.hxx
 include/vcl/cairo.hxx
-include/vcl/canvastools.hxx
 include/vcl/checksum.hxx
 include/vcl/commandevent.hxx
 include/vcl/commandinfoprovider.hxx
@@ -12524,7 +12516,6 @@ sw/source/ui/chrdlg/numpara.cxx
 sw/source/ui/chrdlg/pardlg.cxx
 sw/source/ui/chrdlg/swuiccoll.cxx
 sw/source/ui/chrdlg/tblnumfm.cxx
-sw/source/ui/config/mailconfigpage.cxx
 sw/source/ui/config/optcomp.cxx
 sw/source/ui/config/optload.cxx
 sw/source/ui/config/optpage.cxx
@@ -12544,7 +12535,6 @@ sw/source/ui/dbui/mmdocselectpage.cxx
 sw/source/ui/dbui/mmgreetingspage.cxx
 sw/source/ui/dbui/mmlayoutpage.cxx
 sw/source/ui/dbui/mmlayoutpage.hxx
-sw/source/ui/dbui/mmoutputtypepage.cxx
 sw/source/ui/dbui/mmresultdialogs.cxx
 sw/source/ui/dbui/selectdbtabledialog.hxx
 sw/source/ui/dialog/ascfldlg.cxx
@@ -12775,7 +12765,6 @@ sw/source/uibase/dbui/dbmgr.cxx
 sw/source/uibase/dbui/dbtree.cxx
 sw/source/uibase/dbui/dbui.cxx
 sw/source/uibase/dbui/maildispatcher.cxx
-sw/source/uibase/dbui/mailmergehelper.cxx
 sw/source/uibase/dbui/mailmergetoolbarcontrols.cxx
 sw/source/uibase/dbui/mmconfigitem.cxx
 sw/source/uibase/dialog/SwSpellDialogChildWindow.cxx
@@ -13939,6 +13928,7 @@ vcl/source/accessibility/vclxaccessibletextcomponent.cxx
 vcl/source/accessibility/vclxaccessibletextfield.cxx
 vcl/source/accessibility/vclxaccessibletoolbox.cxx
 vcl/source/accessibility/vclxaccessibletoolboxitem.cxx
+vcl/source/canvas/CanvasFactory.cxx
 vcl/inc/accmgr.hxx
 vcl/inc/animate/AnimationRenderer.hxx
 vcl/inc/brdwin.hxx
@@ -14492,7 +14482,6 @@ vcl/source/graphic/UnoGraphicDescriptor.cxx
 vcl/source/graphic/UnoGraphicObject.cxx
 vcl/source/graphic/UnoGraphicProvider.cxx
 vcl/source/helper/canvasbitmap.cxx
-vcl/source/helper/canvastools.cxx
 vcl/source/helper/commandinfoprovider.cxx
 vcl/source/helper/displayconnectiondispatch.cxx
 vcl/source/helper/evntpost.cxx

@@ -1094,6 +1094,7 @@ namespace xmloff::token {
         XML_HYPHENATION_COMPOUND_REMAIN_CHAR_COUNT,
         XML_HYPHENATION_COMPOUND_PUSH_CHAR_COUNT,
         XML_HYPHENATION_LEVEL,
+        XML_HYPHENATION_SPLIT_COMPOUND_WORD,
         XML_I,
         XML_ICON,
         XML_ICON_SET,
@@ -3648,6 +3649,8 @@ namespace xmloff::token {
         XML_REFLECTION_END_POSITION,
 
         XML_AIRPLANE,
+
+        XML_DATE_UTC,
 
         XML_TOKEN_END
     };

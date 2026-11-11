@@ -42,6 +42,7 @@
 #include <svx/svdorect.hxx>
 #include <svx/svdotable.hxx>
 #include <svx/xlineit0.hxx>
+#include <svx/xlnclit.hxx>
 #include <svx/xfillit0.hxx>
 #include <svx/xflclit.hxx>
 #include <svx/xflgrit.hxx>
@@ -609,6 +610,38 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf169813_prevent_unintended_dashed_li
     CPPUNIT_ASSERT_EQUAL(drawing::LineStyle_NONE, rStyleItem.GetValue());
 }
 
+CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf126023_break_svg_clip)
+{
+    createSdImpressDoc();
+
+    auto pXImpressDocument = dynamic_cast<SdXImpressDocument*>(mxComponent.get());
+    sd::ViewShell* pViewShell = pXImpressDocument->GetDocShell()->GetViewShell();
+    CPPUNIT_ASSERT(pViewShell);
+
+    SdPage* pActualPage = pViewShell->GetActualPage();
+    CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(2), pActualPage->GetObjCount());
+
+    OUString aImageURL = createFileURL(u"tdf126023_break_svg_clip.svg");
+    uno::Sequence<beans::PropertyValue> aArgs(comphelper::InitPropertySequence({
+        { "FileName", uno::Any(aImageURL) },
+    }));
+    dispatchCommand(mxComponent, u".uno:InsertGraphic"_ustr, aArgs);
+    CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(3), pActualPage->GetObjCount());
+
+    // split the (auto-selected) svg
+    dispatchCommand(mxComponent, u".uno:Break"_ustr, {});
+
+    // Without the fix in place, this test would have failed with
+    // - Expected: 4
+    // - Actual  : 3
+    // i.e. the unclipped blue line was removed by the previous clip region
+    CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(4), pActualPage->GetObjCount());
+
+    SdrObject* pObject = pActualPage->GetObj(3);
+    const XLineColorItem& rColorItem = pObject->GetMergedItem(XATTR_LINECOLOR);
+    CPPUNIT_ASSERT_EQUAL(COL_LIGHTBLUE, rColorItem.GetColorValue());
+}
+
 CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf148629_disabled_demote_command)
 {
     createSdImpressDoc();
@@ -848,10 +881,10 @@ CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf96708)
 
     rSSController.GetClipboard().DoPaste();
 
+    // tdf#151802: pasting the pages back brought a master page along that was the same as one
+    // already there, so the count grew by one
     const sal_uInt16 nMasterPageCnt2 = pDoc->GetMasterSdPageCount(PageKind::Standard);
-    //FIXME: tdf#151802: Number of master pages should be 4, it's 5 instead
-    // CPPUNIT_ASSERT_EQUAL(nMasterPageCnt1, nMasterPageCnt2);
-    CPPUNIT_ASSERT_EQUAL(sal_uInt16(5), nMasterPageCnt2);
+    CPPUNIT_ASSERT_EQUAL(nMasterPageCnt1, nMasterPageCnt2);
 }
 
 CPPUNIT_TEST_FIXTURE(SdUiImpressTest, testTdf45617_default_master)

@@ -141,13 +141,6 @@ namespace dxcanvas
         return uno::Reference< rendering::XBitmap >(new CanvasBitmap(pBitmap,mpDevice));
     }
 
-    uno::Reference< rendering::XVolatileBitmap > DeviceHelper::createVolatileBitmap(
-        const uno::Reference< rendering::XGraphicDevice >&  /*rDevice*/,
-        const geometry::IntegerSize2D&                      /*size*/ )
-    {
-        return uno::Reference< rendering::XVolatileBitmap >();
-    }
-
     uno::Reference< rendering::XBitmap > DeviceHelper::createCompatibleAlphaBitmap(
         const uno::Reference< rendering::XGraphicDevice >&  /*rDevice*/,
         const geometry::IntegerSize2D&                      size )
@@ -163,22 +156,12 @@ namespace dxcanvas
         return uno::Reference< rendering::XBitmap >(new CanvasBitmap(pBitmap,mpDevice));
     }
 
-    uno::Reference< rendering::XVolatileBitmap > DeviceHelper::createVolatileAlphaBitmap(
-        const uno::Reference< rendering::XGraphicDevice >&  /*rDevice*/,
-        const geometry::IntegerSize2D&                      /*size*/ )
-    {
-        return uno::Reference< rendering::XVolatileBitmap >();
-    }
-
     uno::Any DeviceHelper::isAccelerated() const
     {
         return css::uno::Any(false);
     }
 
-    uno::Any DeviceHelper::getDeviceHandle() const
-    {
-        return uno::Any( reinterpret_cast< sal_Int64 >(mpOutDev.get()) );
-    }
+    const OutputDevice* DeviceHelper::getDeviceHandle() const { return mpOutDev.get(); }
 
     uno::Any DeviceHelper::getSurfaceHandle() const
     {

@@ -32,6 +32,7 @@
 
 #include <i18nutil/searchopt.hxx>
 #include <txtftn.hxx>
+#include <dbmgr.hxx>
 #include <IDocumentDrawModelAccess.hxx>
 #include <IDocumentFieldsAccess.hxx>
 #include <IDocumentRedlineAccess.hxx>
@@ -475,6 +476,33 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf131431)
 
     // a simple 'search' should also report the same number
     CPPUNIT_ASSERT_EQUAL(sal_Int32(9), xReplace->findAll(xReplaceDes)->getCount());
+}
+
+CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf164402_FindWhiteColor)
+{
+    // the goal of this test is to check if white color text is found by the search function
+    // load document with some text in different colors, including white
+    createSwDoc("tdf164402_FindWhiteColor.odt");
+
+    // setup search for a white text
+    uno::Sequence<beans::PropertyValue> aSearchAttribute(
+        comphelper::InitPropertySequence({ { "CharColor", uno::Any(sal_Int32(0xFFFFFF)) } }));
+
+    uno::Reference<util::XReplaceable> xReplace(mxComponent, uno::UNO_QUERY_THROW);
+    uno::Reference<util::XReplaceDescriptor> xReplaceDes = xReplace->createReplaceDescriptor();
+    uno::Reference<util::XPropertyReplace> xPropReplace(xReplaceDes, uno::UNO_QUERY_THROW);
+    xPropReplace->setSearchAttributes(aSearchAttribute);
+
+    // a simple search should report one occurrence in the document
+    uno::Reference<css::container::XIndexAccess> xIndex = xReplace->findAll(xReplaceDes);
+    CPPUNIT_ASSERT_EQUAL(sal_Int32(1), xIndex->getCount());
+
+    uno::Reference<text::XTextRange> xMatch(xIndex->getByIndex(0), uno::UNO_QUERY_THROW);
+
+    // Without the fix in place, this test would have failed with
+    // - Expected: white
+    // - Actual  : Black white black
+    CPPUNIT_ASSERT_EQUAL(u"white"_ustr, xMatch->getString());
 }
 
 CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testTdf147583_backwardSearch)
@@ -2276,14 +2304,23 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testEmbeddedDataSource)
         = sdb::DatabaseContext::create(xComponentContext);
     CPPUNIT_ASSERT(!xDatabaseContext->hasByName(u"calc-data-source"_ustr));
 
-    // Load: should have a component and a data source, too.
+    // The document reaches its embedded data source by its own name for it.
+    auto getEmbeddedDataSource = [this, &xDatabaseContext]() {
+        SwDBManager* pDBManager = getSwDoc()->GetDBManager();
+        return uno::Reference<sdbc::XDataSource>(
+            xDatabaseContext->getByName(
+                pDBManager->ResolveDataSourceName(u"calc-data-source"_ustr)),
+            uno::UNO_QUERY);
+    };
+
+    // Load: should have a component and a data source, too, which is private to the document and
+    // not among the registered data sources.
     // Path with "#" must not cause issues
     createSwDoc("hash%23path/embedded-data-source.odt");
-    CPPUNIT_ASSERT(xDatabaseContext->hasByName(u"calc-data-source"_ustr));
+    CPPUNIT_ASSERT(!xDatabaseContext->hasByName(u"calc-data-source"_ustr));
 
     // Data source has a table named Sheet1.
-    uno::Reference<sdbc::XDataSource> xDataSource(
-        xDatabaseContext->getByName(u"calc-data-source"_ustr), uno::UNO_QUERY);
+    uno::Reference<sdbc::XDataSource> xDataSource = getEmbeddedDataSource();
     CPPUNIT_ASSERT(xDataSource.is());
     auto xConnection = xDataSource->getConnection(u""_ustr, u""_ustr);
     uno::Reference<container::XNameAccess> xTables
@@ -2293,12 +2330,12 @@ CPPUNIT_TEST_FIXTURE(SwUiWriterTest7, testEmbeddedDataSource)
     CPPUNIT_ASSERT(xTables->hasByName(u"Sheet1"_ustr));
     xConnection->close();
 
-    // Reload: should still have a component and a data source, too.
+    // Reload: should still have a component and a data source, too, still not registered.
     saveAndReload(TestFilter::ODT);
-    CPPUNIT_ASSERT(xDatabaseContext->hasByName(u"calc-data-source"_ustr));
+    CPPUNIT_ASSERT(!xDatabaseContext->hasByName(u"calc-data-source"_ustr));
 
     // Data source has a table named Sheet1 after saving to a different directory.
-    xDataSource.set(xDatabaseContext->getByName(u"calc-data-source"_ustr), uno::UNO_QUERY);
+    xDataSource = getEmbeddedDataSource();
     CPPUNIT_ASSERT(xDataSource.is());
     xConnection = xDataSource->getConnection(u""_ustr, u""_ustr);
     xTables = css::uno::Reference<css::sdbcx::XTablesSupplier>(xConnection, uno::UNO_QUERY_THROW)

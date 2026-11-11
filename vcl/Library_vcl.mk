@@ -440,6 +440,7 @@ $(eval $(call gb_Library_add_exception_objects,vcl,\
     vcl/source/bitmap/BlendFrameCache \
     vcl/source/bitmap/Octree \
     vcl/source/bitmap/salbmp \
+    vcl/source/canvas/CanvasFactory \
     vcl/source/image/Image \
     vcl/source/image/ImageTree \
     vcl/source/image/ImageRepository \
@@ -688,7 +689,7 @@ $(eval $(call gb_Library_add_libs,vcl,\
 ))
 endif
 
-ifeq ($(USING_X11),TRUE)
+ifeq ($(USING_UNIX_DESKTOP),TRUE)
 $(eval $(call gb_Library_add_exception_objects,vcl,\
     vcl/unx/generic/desktopdetect/desktopdetector \
     $(if $(ENABLE_CPDB), \
@@ -700,7 +701,9 @@ $(eval $(call gb_Library_use_externals,vcl,\
     dbus \
     valgrind \
 ))
+endif # USING_UNIX_DESKTOP
 
+ifeq ($(USING_X11),TRUE)
 $(eval $(call gb_Library_add_libs,vcl,\
     -lX11 \
     -lXext \

@@ -1561,6 +1561,7 @@ static void lcl_LoadColorsFromTheme(StyleSettings& rStyleSet)
     rStyleSet.SetActiveTabColor(rThemeColors.GetWindowColor());
     rStyleSet.SetInactiveTabColor(rThemeColors.GetBaseColor());
     rStyleSet.SetDisableColor(rThemeColors.GetDisabledColor()); // tab outline
+    rStyleSet.SetDisableTextColor(rThemeColors.GetDisabledTextColor());
     // Highlight related colors
     rStyleSet.SetAccentColor(rThemeColors.GetAccentColor());
     rStyleSet.SetHighlightColor(rThemeColors.GetAccentColor());
@@ -1820,7 +1821,6 @@ SAL_WNODEPRECATED_DECLARATIONS_POP
         aStyleSettings.SetTabHighlightTextColor(aAlternateSelectedControlTextColor);
 
     aStyleSettings.SetCursorBlinkTime( mnBlinkCursorDelay );
-    aStyleSettings.SetCursorSize(1);
 
     // no mnemonics on macOS
     aStyleSettings.SetOptions( aStyleSettings.GetOptions() | StyleSettingsOptions::NoMnemonics );

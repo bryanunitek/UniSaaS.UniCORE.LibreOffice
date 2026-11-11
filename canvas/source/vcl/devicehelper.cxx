@@ -118,13 +118,6 @@ namespace vclcanvas
                               mpOutDev ) );
     }
 
-    uno::Reference< rendering::XVolatileBitmap > DeviceHelper::createVolatileBitmap(
-        const uno::Reference< rendering::XGraphicDevice >&  ,
-        const geometry::IntegerSize2D&                       )
-    {
-        return uno::Reference< rendering::XVolatileBitmap >();
-    }
-
     uno::Reference< rendering::XBitmap > DeviceHelper::createCompatibleAlphaBitmap(
         const uno::Reference< rendering::XGraphicDevice >& rDevice,
         const geometry::IntegerSize2D&                     size )
@@ -139,13 +132,6 @@ namespace vclcanvas
                               mpOutDev ) );
     }
 
-    uno::Reference< rendering::XVolatileBitmap > DeviceHelper::createVolatileAlphaBitmap(
-        const uno::Reference< rendering::XGraphicDevice >&  ,
-        const geometry::IntegerSize2D&                       )
-    {
-        return uno::Reference< rendering::XVolatileBitmap >();
-    }
-
     void DeviceHelper::disposing()
     {
         // release all references
@@ -157,39 +143,29 @@ namespace vclcanvas
         return css::uno::Any(false);
     }
 
-    uno::Any DeviceHelper::getDeviceHandle() const
+    const OutputDevice* DeviceHelper::getDeviceHandle() const
     {
         if( !mpOutDev )
-            return uno::Any();
+            return nullptr;
 
-        return uno::Any(
-            reinterpret_cast< sal_Int64 >(&mpOutDev->getOutDev()) );
+        return &mpOutDev->getOutDev();
     }
 
     uno::Any DeviceHelper::getSurfaceHandle() const
     {
-        return getDeviceHandle();
-    }
-
-    namespace
-    {
-        uno::Reference<rendering::XColorSpace>& GetDeviceColorSpace()
-        {
-            static uno::Reference<rendering::XColorSpace> xColorSpace =
-            []()
-            {
-                auto xTmp = canvastools::getStdColorSpace();
-                assert( xTmp.is() );
-                return xTmp;
-            }();
-            return xColorSpace;
-        };
+        return uno::Any(reinterpret_cast<sal_Int64>(getDeviceHandle()));
     }
 
     uno::Reference<rendering::XColorSpace> const & DeviceHelper::getColorSpace() const
     {
         // always the same
-        return GetDeviceColorSpace();
+        static uno::Reference<rendering::XColorSpace> xColorSpace = []()
+        {
+            auto xTmp = canvastools::getStdColorSpace();
+            assert(xTmp.is());
+            return xTmp;
+        }();
+        return xColorSpace;
     }
 
     void DeviceHelper::dumpScreenContent() const

@@ -24,6 +24,9 @@
 #include <oox/shape/ShapeFilterBase.hxx>
 #include <svx/svdogrp.hxx>
 #include <svx/diagram/DiagramHelper_svx.hxx>
+#include <basegfx/range/b2drange.hxx>
+#include <com/sun/star/awt/Point.hpp>
+#include <com/sun/star/awt/Size.hpp>
 
 namespace oox::drawingml {
 
@@ -48,6 +51,12 @@ class DiagramHelper_oox final : public svx::diagram::DiagramHelper_svx
     const std::shared_ptr< SmartArtDiagram >    mpDiagramPtr;
     std::shared_ptr<::oox::drawingml::Theme>    mpDiagramThemePtr;
 
+    // Where the frame of the Diagram lies within the group that draws it, in parts of the width
+    // and the height of the group. The frame is the room the layout fills, the group covers what
+    // the shapes drew, and that reaches outside the frame where a shape sticks out of it. The
+    // group itself runs from (0, 0) to (1, 1), so a frame the shapes cover exactly is that too.
+    basegfx::B2DRange maFrameInGroup;
+
     // data values set by addDiagramNode to be used by next reLayout call
     // when a new Node gets added
     OUString msNewNodeId;
@@ -57,11 +66,11 @@ class DiagramHelper_oox final : public svx::diagram::DiagramHelper_svx
     bool hasDiagramData() const;
 
     // Hands the fill, line and text attributes of xOldShape, and its text, to xNewShape. The
-    // shape geometry is not changed. nOldHeight is the height that xOldShapehad
-    // sizes alone.
-    static void moveDiagramModelDataFromOldToNewXShape(
+    // shape geometry is not changed; the text keeps its sizes, or takes the font the layout
+    // fitted for the node.
+    void moveDiagramModelDataFromOldToNewXShape(
         const css::uno::Reference<css::drawing::XShape>& xOldShape,
-        const css::uno::Reference<css::drawing::XShape>& xNewShape, tools::Long nOldHeight);
+        const css::uno::Reference<css::drawing::XShape>& xNewShape);
 
 protected:
     // access associated SdrObjGroup/XShape/RootShape
@@ -104,7 +113,10 @@ public:
     virtual std::shared_ptr< svx::diagram::DiagramDataState > extractDiagramDataState() const override;
     virtual void applyDiagramDataState(const std::shared_ptr< svx::diagram::DiagramDataState >& rState) override;
 
-    void doAnchor(const css::uno::Reference<css::drawing::XShape>& rTarget);
+    // rFramePosition and rFrameSize are the frame of the Diagram in EMU, in the coordinates the
+    // shapes of the group were placed in.
+    void doAnchor(css::uno::Reference<css::drawing::XShape>& rTarget,
+                  const css::awt::Point& rFramePosition, const css::awt::Size& rFrameSize);
 
     // make DiagramNodes use FitSize in edit mode
     void applyTextFitToSizeToDiagramNodes(const css::uno::Reference<css::drawing::XShape>& rTarget,

@@ -26,6 +26,7 @@
 #include <svx/sdtfsitm.hxx>
 #include <svx/sdooitm.hxx>
 #include <svx/sdtagitm.hxx>
+#include <comphelper/scopeguard.hxx>
 #include <comphelper/sequenceashashmap.hxx>
 #include <oox/drawingml/drawingmltypes.hxx>
 #include <svx/diagram/DiagramHelper_svx.hxx>
@@ -56,6 +57,16 @@ OUString getShapeGeometryType(const uno::Reference<beans::XPropertySet>& xShape)
     CPPUNIT_ASSERT(aGeometry[u"Type"_ustr].has<OUString>());
 
     return aGeometry[u"Type"_ustr].get<OUString>();
+}
+
+void collectDiagramTexts(const svx::diagram::DiagramHelper_svx& rHelper, const OUString& rParentId,
+                         std::vector<OUString>& rTexts)
+{
+    for (const std::pair<OUString, OUString>& rChild : rHelper.getDiagramChildren(rParentId))
+    {
+        rTexts.push_back(rChild.second);
+        collectDiagramTexts(rHelper, rChild.first, rTexts);
+    }
 }
 
 uno::Reference<drawing::XShape> findChildShapeByText(const uno::Reference<drawing::XShape>& xShape,
@@ -1032,8 +1043,9 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testPictureStrip)
     // Make sure that aspect ratio is not ignored, i.e. width is not larger than height 3 times.
     awt::Size aFirstPairSize = xFirstPair->getSize();
     // Without the accompanying fix in place, this test would have failed: bad width was 16932, good
-    // width is 12540, but let's accept 12541 as well.
-    CPPUNIT_ASSERT_LESSEQUAL(aFirstPairSize.Height * 3 + 1, aFirstPairSize.Width);
+    // width is 12540. The width and the height round to hundredths of a millimetre each on its
+    // own, so the width may be a hundredth over and three times the height three under.
+    CPPUNIT_ASSERT_LESSEQUAL(aFirstPairSize.Height * 3 + 4, aFirstPairSize.Width);
 }
 
 CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testInteropGrabBag)
@@ -1287,8 +1299,8 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testRecursion)
     CPPUNIT_ASSERT_EQUAL(u"A"_ustr, xTextA->getString());
 
     uno::Reference<drawing::XShapes> xGroupB(xGroup1->getByIndex(1), uno::UNO_QUERY);
-    // 5 connectors, B1 with children, B2 with children
-    CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(7), xGroupB->getCount());
+    // a connector before each of them, B1 with children, B2 with children
+    CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(4), xGroupB->getCount());
 
     uno::Reference<drawing::XShapes> xGroupB1(xGroupB->getByIndex(1), uno::UNO_QUERY);
 
@@ -1298,13 +1310,13 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testRecursion)
 
     uno::Reference<drawing::XShape> xGroupC12(xGroupB1->getByIndex(1), uno::UNO_QUERY);
     uno::Reference<text::XText> xTextC1(
-        getChildShape(getChildShape(getChildShape(xGroupC12, 0), 0), 0), uno::UNO_QUERY);
+        getChildShape(getChildShape(getChildShape(xGroupC12, 1), 0), 0), uno::UNO_QUERY);
     CPPUNIT_ASSERT_EQUAL(u"C1"_ustr, xTextC1->getString());
     uno::Reference<text::XText> xTextC2(
-        getChildShape(getChildShape(getChildShape(xGroupC12, 1), 0), 0), uno::UNO_QUERY);
+        getChildShape(getChildShape(getChildShape(xGroupC12, 3), 0), 0), uno::UNO_QUERY);
     CPPUNIT_ASSERT_EQUAL(u"C2"_ustr, xTextC2->getString());
 
-    uno::Reference<drawing::XShapes> xGroupB2(xGroupB->getByIndex(5), uno::UNO_QUERY);
+    uno::Reference<drawing::XShapes> xGroupB2(xGroupB->getByIndex(3), uno::UNO_QUERY);
 
     uno::Reference<drawing::XShapes> xGroupB2a(xGroupB2->getByIndex(0), uno::UNO_QUERY);
     uno::Reference<text::XText> xTextB2(xGroupB2a->getByIndex(0), uno::UNO_QUERY);
@@ -1312,7 +1324,7 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testRecursion)
 
     uno::Reference<drawing::XShape> xGroupC3(xGroupB2->getByIndex(1), uno::UNO_QUERY);
     uno::Reference<text::XText> xTextC3(
-        getChildShape(getChildShape(getChildShape(xGroupC3, 0), 0), 0), uno::UNO_QUERY);
+        getChildShape(getChildShape(getChildShape(xGroupC3, 1), 0), 0), uno::UNO_QUERY);
     CPPUNIT_ASSERT_EQUAL(u"C3"_ustr, xTextC3->getString());
 }
 
@@ -1344,11 +1356,11 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testDataFollow)
     uno::Reference<drawing::XShapes> xGroupRight(xGroup->getByIndex(2), uno::UNO_QUERY);
     uno::Reference<drawing::XShape> xGroupC(xGroupRight->getByIndex(1), uno::UNO_QUERY);
     uno::Reference<drawing::XShape> xShapeC1
-        = getChildShape(getChildShape(getChildShape(xGroupC, 3), 0), 0);
+        = getChildShape(getChildShape(getChildShape(xGroupC, 1), 0), 0);
     uno::Reference<text::XText> xTextC1(xShapeC1, uno::UNO_QUERY);
     CPPUNIT_ASSERT_EQUAL(u"C1"_ustr, xTextC1->getString());
     uno::Reference<drawing::XShape> xShapeC2
-        = getChildShape(getChildShape(getChildShape(xGroupC, 5), 0), 0);
+        = getChildShape(getChildShape(getChildShape(xGroupC, 3), 0), 0);
     uno::Reference<text::XText> xTextC2(xShapeC2, uno::UNO_QUERY);
     CPPUNIT_ASSERT_EQUAL(u"C2"_ustr, xTextC2->getString());
 
@@ -1502,8 +1514,69 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testLinearRuleVert)
     // - Expected: 2020
     // - Actual  : 10308
     // i.e. the first item on the vertical linear layout used ~all space, the other items were not
-    // visible.
-    CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(2020), xShape->getSize().Height);
+    // visible. The parent text is 0.82 of the font high, as millimetres; the child texts are
+    // empty and 0.7 of the font high.
+    CPPUNIT_ASSERT_EQUAL(static_cast<sal_Int32>(3033), xShape->getSize().Height);
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testHierarchyConnectorsStartAtTheMiddleOfTheTurnedRoot)
+{
+    // the roots are turned by their layout node and keep their text turned (grav); each
+    // elbow connector starts at the middle of its root, upwards or downwards
+    createSdImpressDoc("pptx/smartart-hierarchy-turned-root.pptx");
+    uno::Reference<drawing::XShape> xDiagram(reLayoutDiagram());
+
+    std::vector<sal_Int32> aRootMiddles;
+    std::vector<std::pair<awt::Rectangle, bool>> aConnectors;
+    std::function<void(const uno::Reference<drawing::XShape>&)> aCollect
+        = [&](const uno::Reference<drawing::XShape>& xShape) {
+              uno::Reference<container::XIndexAccess> xChildren(xShape, uno::UNO_QUERY);
+              if (xChildren.is())
+              {
+                  for (sal_Int32 n = 0; n < xChildren->getCount(); ++n)
+                      aCollect(uno::Reference<drawing::XShape>(xChildren->getByIndex(n),
+                                                               uno::UNO_QUERY));
+                  return;
+              }
+              uno::Reference<beans::XPropertySet> xProperties(xShape, uno::UNO_QUERY);
+              comphelper::SequenceAsHashMap aGeometry(
+                  xProperties->getPropertyValue(u"CustomShapeGeometry"_ustr));
+              const OUString aType(aGeometry[u"Type"_ustr].get<OUString>());
+              const awt::Point aAt(xShape->getPosition());
+              const awt::Size aSize(xShape->getSize());
+              if (aType == "ooxml-bentConnector3")
+              {
+                  bool bMirroredY(false);
+                  aGeometry[u"MirroredY"_ustr] >>= bMirroredY;
+                  aConnectors.emplace_back(awt::Rectangle(aAt.X, aAt.Y, aSize.Width, aSize.Height),
+                                           bMirroredY);
+                  return;
+              }
+              sal_Int32 nRotation(0);
+              xProperties->getPropertyValue(u"RotateAngle"_ustr) >>= nRotation;
+              if (nRotation == 0)
+                  return;
+              // the root's text runs along the turned shape
+              double fTextTurn(-1.0);
+              aGeometry[u"TextPreRotateAngle"_ustr] >>= fTextTurn;
+              CPPUNIT_ASSERT_EQUAL(0.0, fTextTurn);
+              // the middle of the root as it is drawn, turned
+              awt::Rectangle aDrawn;
+              xProperties->getPropertyValue(u"BoundRect"_ustr) >>= aDrawn;
+              aRootMiddles.push_back(aDrawn.Y + aDrawn.Height / 2);
+          };
+    aCollect(xDiagram);
+    CPPUNIT_ASSERT_EQUAL(size_t(4), aRootMiddles.size());
+    CPPUNIT_ASSERT_GREATER(size_t(4), aConnectors.size());
+
+    // upwards a connector starts at the bottom of its box, downwards at the top
+    for (const auto & [ rBox, bMirroredY ] : aConnectors)
+    {
+        const sal_Int32 nStart(bMirroredY ? rBox.Y + rBox.Height : rBox.Y);
+        CPPUNIT_ASSERT(
+            std::any_of(aRootMiddles.begin(), aRootMiddles.end(),
+                        [nStart](sal_Int32 nMiddle) { return std::abs(nStart - nMiddle) <= 5; }));
+    }
 }
 
 CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testAutofitSync)
@@ -1512,24 +1585,27 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testAutofitSync)
 
     uno::Reference<drawing::XShape> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY);
     uno::Reference<drawing::XShape> xMiddle = getChildShape(xDiagram, 2);
-    uno::Reference<beans::XPropertySet> xFirstInner(getChildShape(getChildShape(xMiddle, 0), 0),
-                                                    uno::UNO_QUERY);
-    double fFirstScale = 0;
-    CPPUNIT_ASSERT(xFirstInner->getPropertyValue(u"TextFitToSizeFontScale"_ustr) >>= fFirstScale);
-    CPPUNIT_ASSERT_GREATER(0.0, fFirstScale);
-    CPPUNIT_ASSERT_LESS(100.0, fFirstScale);
+    // the size a text is seen at: the size of its first run, scaled by the shape's autofit
+    const auto aShownSize = [](const uno::Reference<drawing::XShape>& xShape) {
+        uno::Reference<beans::XPropertySet> xShapeProperties(xShape, uno::UNO_QUERY);
+        double fScale = 0;
+        CPPUNIT_ASSERT(xShapeProperties->getPropertyValue(u"TextFitToSizeFontScale"_ustr)
+                       >>= fScale);
+        uno::Reference<text::XText> xText(xShape, uno::UNO_QUERY);
+        uno::Reference<container::XEnumerationAccess> xParagraphs(xText, uno::UNO_QUERY);
+        uno::Reference<container::XEnumerationAccess> xParagraph(
+            xParagraphs->createEnumeration()->nextElement(), uno::UNO_QUERY);
+        uno::Reference<beans::XPropertySet> xRun(xParagraph->createEnumeration()->nextElement(),
+                                                 uno::UNO_QUERY);
+        const double fHeight(xRun->getPropertyValue(u"CharHeight"_ustr).get<double>());
+        return fScale > 0 ? fHeight * fScale / 100.0 : fHeight;
+    };
+    const double fFirstSize(aShownSize(getChildShape(getChildShape(xMiddle, 0), 0)));
+    const double fSecondSize(aShownSize(getChildShape(getChildShape(xMiddle, 2), 0)));
 
-    uno::Reference<beans::XPropertySet> xSecondInner(getChildShape(getChildShape(xMiddle, 2), 0),
-                                                     uno::UNO_QUERY);
-    double fSecondScale = 0;
-    CPPUNIT_ASSERT(xSecondInner->getPropertyValue(u"TextFitToSizeFontScale"_ustr) >>= fSecondScale);
-
-    // Without the accompanying fix in place, this test would have failed with:
-    // - Expected: 56
-    // - Actual  : 100
-    // i.e. the left shape had no scale-down and the right shape was scaled down, even if it was
-    // requested that their scaling matches.
-    CPPUNIT_ASSERT_EQUAL(fSecondScale, fFirstScale);
+    // both texts share one font: one shown size, below the stated 65pt
+    CPPUNIT_ASSERT_LESS(65.0, fFirstSize);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(fSecondSize, fFirstSize, 0.01);
 
     // Without the accompanying fix in place, this test would have failed with:
     // - Expected: 0 (drawing::TextFitToSizeType_NONE)
@@ -1550,11 +1626,11 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testSnakeRows)
     createSdImpressDoc("pptx/smartart-snake-rows.pptx");
 
     uno::Reference<drawing::XShapes> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY);
-    // Collect position of the background and the real child shapes. First row and background has
-    // the same top position, unless some unexpected spacing happens, since this is a
-    // "left-to-right, then top-to-bottom" snake direction.
+    // Collect the top positions of the real child shapes, the first child being the background
+    // that covers the whole diagram. The rows stand in the middle of the background's height,
+    // so its top is not one of theirs.
     std::set<sal_Int32> aYPositions;
-    for (sal_Int32 nChild = 0; nChild < xDiagram->getCount(); ++nChild)
+    for (sal_Int32 nChild = 1; nChild < xDiagram->getCount(); ++nChild)
     {
         uno::Reference<drawing::XShape> xChild(xDiagram->getByIndex(nChild), uno::UNO_QUERY);
         aYPositions.insert(xChild->getPosition().Y);
@@ -2169,6 +2245,12 @@ BoxAndText readBoxAndText(const uno::Reference<drawing::XShape>& xDiagram, const
     aRetval.mnHeight = xShape->getSize().Height;
     xProperties->getPropertyValue(u"CharHeight"_ustr) >>= aRetval.mfCharHeight;
 
+    // The text is shown at its size scaled by the shape's own fit to its box.
+    double fFontScale(0.0);
+    xProperties->getPropertyValue(u"TextFitToSizeFontScale"_ustr) >>= fFontScale;
+    if (fFontScale > 0.0)
+        aRetval.mfCharHeight = static_cast<float>(aRetval.mfCharHeight * fFontScale / 100.0);
+
     return aRetval;
 }
 }
@@ -2262,6 +2344,140 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testNodeTextShrinksToItsBoxOnAFreshly
     }
 
     CPPUNIT_ASSERT_EQUAL(sal_Int32(6), nNodes);
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testEachNodeReadsBackTheTextItHolds)
+{
+    createSdImpressDoc("pptx/Bullet_Timeline_one_Event.pptx");
+
+    uno::Reference<drawing::XShape> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY);
+    SdrObject* pDiagram(SdrObject::getSdrObjectFromXShape(xDiagram));
+    CPPUNIT_ASSERT(nullptr != pDiagram);
+
+    const std::shared_ptr<svx::diagram::DiagramHelper_svx>& rHelper(pDiagram->getDiagramHelper());
+    CPPUNIT_ASSERT(rHelper);
+
+    // The layout of this file builds ten shapes for the node that holds "Birth" and gives every
+    // one of them that node as its association, so a node reads back the text it holds only when
+    // the shape showing it is the one the presOf connection names.
+    const std::vector<std::pair<OUString, OUString>> aTopLevel(
+        rHelper->getDiagramChildren(EMPTY_OUSTRING));
+    CPPUNIT_ASSERT_EQUAL(size_t(1), aTopLevel.size());
+    CPPUNIT_ASSERT_EQUAL(u"Birth"_ustr, aTopLevel[0].second);
+
+    // The node below it is named in no association at all.
+    const std::vector<std::pair<OUString, OUString>> aBelow(
+        rHelper->getDiagramChildren(aTopLevel[0].first));
+    CPPUNIT_ASSERT_EQUAL(size_t(1), aBelow.size());
+    CPPUNIT_ASSERT_EQUAL(u"coming to family"_ustr, aBelow[0].second);
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testNodeReadsItsTextWhenMoreThanOneShapeIsNamedForIt)
+{
+    createSdImpressDoc("pptx/Horizontal_Organization_Chart.pptx");
+
+    uno::Reference<drawing::XShape> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY);
+    SdrObject* pDiagram(SdrObject::getSdrObjectFromXShape(xDiagram));
+    CPPUNIT_ASSERT(nullptr != pDiagram);
+
+    const std::shared_ptr<svx::diagram::DiagramHelper_svx>& rHelper(pDiagram->getDiagramHelper());
+    CPPUNIT_ASSERT(rHelper);
+
+    std::vector<OUString> aTexts;
+    collectDiagramTexts(*rHelper, EMPTY_OUSTRING, aTexts);
+
+    // Two shapes are identified for every node here, one representing its text and one drawing
+    // the line to it, and the file writes the two in no fixed order. Every node still returns its
+    // own text, whichever of the two the file writes first.
+    CPPUNIT_ASSERT_EQUAL(size_t(6), aTexts.size());
+
+    for (const OUString& rExpected : { u"One"_ustr, u"Two"_ustr, u"Eleven"_ustr, u"Twelve"_ustr,
+                                       u"Assistent"_ustr, u"Sekret\u00e4rin"_ustr })
+    {
+        CPPUNIT_ASSERT_MESSAGE(OUStringToOString(rExpected, RTL_TEXTENCODING_UTF8).getStr(),
+                               std::find(aTexts.begin(), aTexts.end(), rExpected) != aTexts.end());
+    }
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testEachNodeGetsItsOwnParagraphOfASharedShape)
+{
+    createSdImpressDoc("pptx/Bar_List.pptx");
+
+    uno::Reference<drawing::XShape> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY);
+    SdrObject* pDiagram(SdrObject::getSdrObjectFromXShape(xDiagram));
+    CPPUNIT_ASSERT(nullptr != pDiagram);
+
+    const std::shared_ptr<svx::diagram::DiagramHelper_svx>& rHelper(pDiagram->getDiagramHelper());
+    CPPUNIT_ASSERT(rHelper);
+
+    std::vector<OUString> aTexts;
+    collectDiagramTexts(*rHelper, EMPTY_OUSTRING, aTexts);
+
+    // One shape represents four of these Points, one paragraph of it each, and two more shapes
+    // represent three each. A Point that reads the whole shape gets the text of its neighbours
+    // with it, so every Point gets the paragraph that mnDestOrder gives it. "Three" is
+    // represented by a shape of its own and keeps all of it.
+    const std::vector<OUString> aExpected{ u"One"_ustr,        u"Eleven"_ustr,   u"Twelve"_ustr,
+                                           u"Thirteen"_ustr,   u"Two"_ustr,      u"Twenty-one"_ustr,
+                                           u"Twenty-two"_ustr, u"Three"_ustr,    u"Four"_ustr,
+                                           u"Forty-one"_ustr,  u"Forty-two"_ustr };
+
+    CPPUNIT_ASSERT_EQUAL(aExpected.size(), aTexts.size());
+
+    for (size_t a(0); a < aExpected.size(); a++)
+        CPPUNIT_ASSERT_EQUAL(aExpected[a], aTexts[a]);
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testNodeTakesTheShapeThatHoldsTextWhenSeveralAreDrawn)
+{
+    createSdImpressDoc("pptx/Segmented_Cycle_oneColor.pptx");
+
+    uno::Reference<drawing::XShape> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY);
+    SdrObject* pDiagram(SdrObject::getSdrObjectFromXShape(xDiagram));
+    CPPUNIT_ASSERT(nullptr != pDiagram);
+
+    const std::shared_ptr<svx::diagram::DiagramHelper_svx>& rHelper(pDiagram->getDiagramHelper());
+    CPPUNIT_ASSERT(rHelper);
+
+    std::vector<OUString> aTexts;
+    collectDiagramTexts(*rHelper, EMPTY_OUSTRING, aTexts);
+
+    // Two shapes are drawn for every node of this file, one holding the text of it and its
+    // siblings and one drawing the segment around them, and the file names the two in no fixed
+    // order. Being drawn tells them apart in no way, so the shape that holds text is taken.
+    const std::vector<OUString> aExpected{
+        u"One"_ustr,  u"Eleven"_ustr,     u"Twelve"_ustr,     u"Thirteen"_ustr,
+        u"Two"_ustr,  u"Twenty-one"_ustr, u"Twenty-two"_ustr, u"Three"_ustr,
+        u"Four"_ustr, u"Forty-one"_ustr,  u"Forty-two"_ustr,  u"Five"_ustr
+    };
+
+    CPPUNIT_ASSERT_EQUAL(aExpected.size(), aTexts.size());
+
+    for (size_t a(0); a < aExpected.size(); a++)
+        CPPUNIT_ASSERT_EQUAL(aExpected[a], aTexts[a]);
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testNodeTextsAfterOdpRoundTrip)
+{
+    // The node texts the Diagram dialog lists come back from ODP too, where the Diagram is built
+    // from the data it saved.
+    osl_setEnvironment(u"ACTIVATE_ADVANCED_DIAGRAM_FEATURES"_ustr.pData, u"1"_ustr.pData);
+    comphelper::ScopeGuard aGuard(
+        [] { osl_clearEnvironment(u"ACTIVATE_ADVANCED_DIAGRAM_FEATURES"_ustr.pData); });
+    createSdImpressDoc("pptx/smartart-snake-rows.pptx");
+    saveAndReload(TestFilter::ODP);
+
+    uno::Reference<drawing::XShape> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY);
+    SdrObject* pDiagram(SdrObject::getSdrObjectFromXShape(xDiagram));
+    CPPUNIT_ASSERT(nullptr != pDiagram);
+    const std::shared_ptr<svx::diagram::DiagramHelper_svx>& rHelper(pDiagram->getDiagramHelper());
+    CPPUNIT_ASSERT(rHelper);
+
+    std::vector<OUString> aTexts;
+    collectDiagramTexts(*rHelper, OUString(), aTexts);
+    CPPUNIT_ASSERT_EQUAL(size_t(12), aTexts.size());
+    CPPUNIT_ASSERT_EQUAL(u"Parent 1"_ustr, aTexts[0]);
+    CPPUNIT_ASSERT_EQUAL(u"Child 6"_ustr, aTexts[11]);
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

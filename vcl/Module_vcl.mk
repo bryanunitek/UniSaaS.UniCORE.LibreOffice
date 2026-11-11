@@ -70,7 +70,7 @@ $(eval $(call gb_Module_add_l10n_targets,vcl,\
     AllLangMoTarget_vcl \
 ))
 
-ifeq ($(USING_X11),TRUE)
+ifeq ($(USING_UNIX_DESKTOP),TRUE)
 $(eval $(call gb_Module_add_targets,vcl,\
     $(if $(ENABLE_GEN),Library_vclplug_gen) \
     Package_fontunxppds \
@@ -199,6 +199,7 @@ $(eval $(call gb_Module_add_targets,vcl,\
     Executable_qpwfuzzer \
     Executable_slkfuzzer \
     Executable_fodtfuzzer \
+    Executable_odtfuzzer \
     Executable_fodt2pdffuzzer \
     Executable_fods2xlsfuzzer \
     Executable_fodsfuzzer \
@@ -267,7 +268,7 @@ $(eval $(call gb_Module_add_check_targets,vcl,\
     CppunitTest_vcl_idle_task \
 ))
 
-ifeq ($(USING_X11),TRUE)
+ifeq ($(USING_UNIX_DESKTOP),TRUE)
 $(eval $(call gb_Module_add_check_targets,vcl,\
     CppunitTest_vcl_timer \
 ))

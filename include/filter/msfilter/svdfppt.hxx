@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <memory>
 #include <vector>
@@ -77,6 +78,13 @@ struct MSFILTER_DLLPUBLIC PptCurrentUserAtom
 
 public:
 
+    bool IsEncrypted() const
+    {
+        // MS-PPT Spec 2.3.2 CurrentUserAtom headerToken
+        // 0xF3D1C4DF identifies an encrypted document
+        return nMagic == 0xF3D1C4DF;
+    }
+
     PptCurrentUserAtom() :  nMagic              ( 0 ),
                             nCurrentUserEdit    ( 0 ),
                             nDocFileVersion     ( 0 ),
@@ -86,11 +94,34 @@ public:
     MSFILTER_DLLPUBLIC friend SvStream& ReadPptCurrentUserAtom( SvStream& rIn, PptCurrentUserAtom& rAtom );
 };
 
+struct MSFILTER_DLLPUBLIC PptCryptoApiEncryptionInfo
+{
+    sal_uInt16 nMajorVersion = 0;
+    sal_uInt16 nMinorVersion = 0;
+
+    sal_uInt32 nFlags = 0;
+    sal_uInt32 nAlgID = 0;
+    sal_uInt32 nAlgIDHash = 0;
+    sal_uInt32 nKeySize = 0;
+    sal_uInt32 nProviderType = 0;
+
+    OUString aCSPName;
+
+    std::array<sal_uInt8, 16> aSalt{};
+    std::array<sal_uInt8, 16> aEncryptedVerifier{};
+
+    sal_uInt32 nVerifierHashSize = 0;
+    std::vector<sal_uInt8> aEncryptedVerifierHash;
+};
+
+
 struct MSFILTER_DLLPUBLIC PowerPointImportParam
 {
     SvStream&           rDocStream;
     sal_uInt32          nImportFlags;
     PptCurrentUserAtom  aCurrentUserAtom;
+    std::vector<sal_uInt8> aCryptSession10ContainerData;
+    std::optional<PptCryptoApiEncryptionInfo> oCryptoApiEncryptionInfo;
 
     PowerPointImportParam( SvStream& rDocStream );
 };
@@ -316,6 +347,7 @@ struct PptUserEditAtom
     sal_uInt32          nDocumentRef;
     sal_uInt32          nMaxPersistWritten;      // total number of Persist entries up to this point
     PptViewTypeEnum     eLastViewType;           // enum view type
+    std::optional<sal_uInt32>  nEncryptSessionPersistIdRef; // Persist ID of the CryptSession10Container, if present
 
 public:
     PptUserEditAtom()

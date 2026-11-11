@@ -59,7 +59,14 @@ public:
             {
                 const sal_Int32 nIndex(rAttribs.getInteger(XML_idx, 1));
                 const double fValue(rAttribs.getDouble(XML_val, 0.0));
-                const sal_Int32 nScaled(static_cast<sal_Int32>(fValue * 100000.0));
+                // An angle is stated in degrees, "adj idx 1 val 270" on Segmented_Cycle's pie,
+                // and the preset takes it in 60000ths of a degree, 16200000 there, as the
+                // drawing of the file writes it. A part of one is stated as such, 0.5, and the
+                // preset takes it in parts of a hundred thousand.
+                const bool bAngle(CustomShapeProperties::isAngleAdjustment(
+                    mpShape->getCustomShapeProperties()->getShapePresetType(), nIndex));
+                const sal_Int32 nScaled(
+                    static_cast<sal_Int32>(fValue * (bAngle ? 60000.0 : 100000.0)));
                 mpShape->getCustomShapeProperties()->getAdjustmentGuideList().push_back(
                     { "adj" + OUString::number(nIndex),
                                       OUString::number(nScaled) });
@@ -118,11 +125,23 @@ public:
                         case XML_ar:
                             mpNode->setAspectRatio(rAttribs.getDouble(XML_val, 0));
                             break;
-                        default:
-                            const sal_Int32 nValTok = rAttribs.getToken(XML_val, 0);
-                            mpNode->addParam(nType, nValTok > 0 ? nValTok
-                                                                : rAttribs.getInteger(XML_val, 0));
+                        case XML_srcNode:
+                        case XML_dstNode:
+                        case XML_pyraAcctBkgdNode:
+                        case XML_pyraAcctTxNode:
+                        case XML_pyraLvlNode:
+                            mpNode->addNamedParam(nType, rAttribs.getStringDefaulted(XML_val));
                             break;
+                        default:
+                        {
+                            // The value is a token where it is one, 1D is the token numbered 0,
+                            // and a number otherwise.
+                            const sal_Int32 nValTok = rAttribs.getToken(XML_val, XML_TOKEN_INVALID);
+                            mpNode->addParam(nType, nValTok != XML_TOKEN_INVALID
+                                                        ? nValTok
+                                                        : rAttribs.getInteger(XML_val, 0));
+                            break;
+                        }
                     }
                     break;
                 }

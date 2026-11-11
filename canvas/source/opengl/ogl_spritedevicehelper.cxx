@@ -215,13 +215,6 @@ namespace oglcanvas
                               *this ) );
     }
 
-    uno::Reference< rendering::XVolatileBitmap > SpriteDeviceHelper::createVolatileBitmap(
-        const uno::Reference< rendering::XGraphicDevice >&  /*rDevice*/,
-        const geometry::IntegerSize2D&                      /*size*/ )
-    {
-        return uno::Reference< rendering::XVolatileBitmap >();
-    }
-
     uno::Reference< rendering::XBitmap > SpriteDeviceHelper::createCompatibleAlphaBitmap(
         const uno::Reference< rendering::XGraphicDevice >&  /*rDevice*/,
         const geometry::IntegerSize2D&                      size )
@@ -234,13 +227,6 @@ namespace oglcanvas
             new CanvasBitmap( size,
                               mpSpriteCanvas,
                               *this ) );
-    }
-
-    uno::Reference< rendering::XVolatileBitmap > SpriteDeviceHelper::createVolatileAlphaBitmap(
-        const uno::Reference< rendering::XGraphicDevice >&  /*rDevice*/,
-        const geometry::IntegerSize2D&                      /*size*/ )
-    {
-        return uno::Reference< rendering::XVolatileBitmap >();
     }
 
     namespace
@@ -332,11 +318,11 @@ namespace oglcanvas
         return css::uno::Any(false);
     }
 
-    uno::Any SpriteDeviceHelper::getDeviceHandle() const
+    const OutputDevice* SpriteDeviceHelper::getDeviceHandle() const
     {
         const SystemChildWindow* pChildWindow = mxContext->getChildWindow();
         const OutputDevice* pDevice = pChildWindow ? pChildWindow->GetOutDev() : nullptr;
-        return uno::Any(reinterpret_cast<sal_Int64>(pDevice));
+        return pDevice;
     }
 
     uno::Any SpriteDeviceHelper::getSurfaceHandle() const

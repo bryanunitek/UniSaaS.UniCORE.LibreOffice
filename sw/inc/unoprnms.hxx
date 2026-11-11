@@ -91,6 +91,8 @@ inline constexpr OUString UNO_NAME_PARA_HYPHENATION_NO_LAST_WORD
 inline constexpr OUString UNO_NAME_PARA_HYPHENATION_KEEP = u"ParaHyphenationKeep"_ustr;
 inline constexpr OUString UNO_NAME_PARA_HYPHENATION_KEEP_TYPE = u"ParaHyphenationKeepType"_ustr;
 inline constexpr OUString UNO_NAME_PARA_HYPHENATION_KEEP_LINE = u"ParaHyphenationKeepLine"_ustr;
+inline constexpr OUString UNO_NAME_PARA_HYPHENATION_SPLIT_COMPOUND_WORD
+    = u"ParaHyphenationSplitCompoundWord"_ustr;
 inline constexpr OUString UNO_NAME_LEFT_MARGIN = u"LeftMargin"_ustr;
 inline constexpr OUString UNO_NAME_RIGHT_MARGIN = u"RightMargin"_ustr;
 inline constexpr OUString UNO_NAME_GUTTER_MARGIN = u"GutterMargin"_ustr;
@@ -594,6 +596,7 @@ inline constexpr OUString UNO_NAME_IS_SORT_ASCENDING = u"IsSortAscending"_ustr;
 inline constexpr OUString UNO_NAME_SORT_KEY = u"SortKey"_ustr;
 inline constexpr OUString UNO_NAME_FIELDS = u"Fields"_ustr;
 inline constexpr OUString UNO_NAME_DATE_TIME_VALUE = u"DateTimeValue"_ustr;
+inline constexpr OUString UNO_NAME_DATE_TIME_UTC = u"DateTimeUTC"_ustr;
 inline constexpr OUString UNO_NAME_IS_ON = u"IsOn"_ustr;
 inline constexpr OUString UNO_NAME_Z_ORDER = u"ZOrder"_ustr;
 inline constexpr OUString UNO_NAME_CONTENT_SECTION = u"ContentSection"_ustr;
