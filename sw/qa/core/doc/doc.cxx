@@ -91,6 +91,28 @@ public:
     {
     }
 
+    /// Writes to maTempFile a document whose XForms instance has inline data and also names
+    /// xforms-instance.xml. A document in the source tree cannot hold the file's absolute URL.
+    void writeDocumentWithXFormsInstanceURL()
+    {
+        const OString aInstanceURL
+            = OUStringToOString(createFileURL(u"xforms-instance.xml"), RTL_TEXTENCODING_UTF8);
+        SvFileStream aStream(maTempFile.GetURL(), StreamMode::WRITE | StreamMode::TRUNC);
+        aStream.WriteOString(Concat2View(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            "<office:document xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\""
+            " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\""
+            " xmlns:xforms=\"http://www.w3.org/2002/xforms\" office:version=\"1.4\""
+            " office:mimetype=\"application/vnd.oasis.opendocument.text\">"
+            "<office:body><office:text><office:forms>"
+            "<xforms:model id=\"Model\">"
+            "<xforms:instance src=\""
+            + aInstanceURL
+            + "\"><data xmlns=\"\"><name>inline</name></data></xforms:instance>"
+              "</xforms:model>"
+              "</office:forms><text:p/></office:text></office:body></office:document>"));
+    }
+
     /// Loads embedded-drawing-linked-image.fodt: a Writer document holding a Draw object whose page
     /// has a linked image. An embedded document has no base URL of its own, so the link is pointed
     /// at the image's full URL in a temporary copy.
@@ -110,6 +132,26 @@ public:
         loadFromURL(aDocument.GetURL(),
                     { comphelper::makePropertyValue(u"FilterName"_ustr,
                                                     u"OpenDocument Text Flat XML"_ustr) });
+    }
+
+    /// Compares the loaded document with an older version of it and shows the differences as
+    /// tracked changes.
+    void compareWith(std::u16string_view rOldFile)
+    {
+        uno::Sequence<beans::PropertyValue> aArgs = {
+            comphelper::makePropertyValue(u"URL"_ustr, createFileURL(rOldFile)),
+            comphelper::makePropertyValue(u"NoAcceptDialog"_ustr, true),
+        };
+        dispatchCommand(mxComponent, u".uno:CompareDocuments"_ustr, aArgs);
+    }
+
+    /// Counts the tracked changes of the document that have the type eType.
+    size_t countRedlines(RedlineType eType)
+    {
+        const SwRedlineTable& rRedlines = getSwDoc()->getIDocumentRedlineAccess().GetRedlineTable();
+        return std::count_if(
+            rRedlines.begin(), rRedlines.end(),
+            [eType](const SwRangeRedline* pRedline) { return pRedline->GetType() == eType; });
     }
 };
 
@@ -1497,26 +1539,8 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testTableAutoFormats)
 
 CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testXFormsInstanceURLLoadsOnlyAfterLinkUpdateAllowed)
 {
-    // Given a document whose XForms instance has inline data and also names a file. A document in
-    // the source tree cannot hold the file's absolute URL, so write one with it:
-    const OString aInstanceURL
-        = OUStringToOString(createFileURL(u"xforms-instance.xml"), RTL_TEXTENCODING_UTF8);
-    {
-        SvFileStream aStream(maTempFile.GetURL(), StreamMode::WRITE | StreamMode::TRUNC);
-        aStream.WriteOString(Concat2View(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-            "<office:document xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\""
-            " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\""
-            " xmlns:xforms=\"http://www.w3.org/2002/xforms\" office:version=\"1.4\""
-            " office:mimetype=\"application/vnd.oasis.opendocument.text\">"
-            "<office:body><office:text><office:forms>"
-            "<xforms:model id=\"Model\">"
-            "<xforms:instance src=\""
-            + aInstanceURL
-            + "\"><data xmlns=\"\"><name>inline</name></data></xforms:instance>"
-              "</xforms:model>"
-              "</office:forms><text:p/></office:text></office:body></office:document>"));
-    }
+    // Given a document whose XForms instance has inline data and also names a file:
+    writeDocumentWithXFormsInstanceURL();
 
     // When the document is loaded, the instance keeps its inline data:
     loadFromURL(maTempFile.GetURL());
@@ -1528,6 +1552,29 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testXFormsInstanceURLLoadsOnlyAfterLinkUpdat
     // When the user then allows link updates, the instance holds the data of the file it names.
     getSwDocShell()->AllowLinkUpdate();
     CPPUNIT_ASSERT_EQUAL(u"loaded"_ustr, getInstanceName(xModel));
+}
+
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testXFormsInstanceURLLoadsAtOnceWhenLinkUpdatesAllowed)
+{
+    // Given a document whose XForms instance has inline data and also names a file. A flat file
+    // is loaded by a filter that ignores the update mode asked for, so the test opens the zipped
+    // form:
+    writeDocumentWithXFormsInstanceURL();
+    loadFromURL(maTempFile.GetURL());
+
+    // When the document is loaded with links updated without asking:
+    uno::Sequence<beans::PropertyValue> aParams = {
+        comphelper::makePropertyValue(u"UpdateDocMode"_ustr,
+                                      sal_Int16(document::UpdateDocMode::QUIET_UPDATE)),
+    };
+    saveAndReload(TestFilter::ODT, aParams);
+
+    // Then the instance holds the data of the file it names, and nothing waits for the user:
+    uno::Reference<xforms::XFormsSupplier> xFormsSupplier(mxComponent, uno::UNO_QUERY);
+    uno::Reference<xforms::XModel> xModel(xFormsSupplier->getXForms()->getByName(u"Model"_ustr),
+                                          uno::UNO_QUERY);
+    CPPUNIT_ASSERT_EQUAL(u"loaded"_ustr, getInstanceName(xModel));
+    CPPUNIT_ASSERT(!getSwDocShell()->HasDeferredLinkLoads());
 }
 
 CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testCloseDocWithFillBitmapLinkTracker)
@@ -1713,6 +1760,39 @@ CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testRegisteredDatabaseFormLoadsOnlyAfterLink
     // and loads.
     pDocShell->AllowLinkUpdate();
     CPPUNIT_ASSERT(xLoadable->isLoaded());
+}
+
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testCompareDocumentsMovedParagraph)
+{
+    // Given a document with the paragraphs "A", "A", "A" and "B", where an older version has the
+    // paragraphs "B" and "A":
+    createSwDoc("compare-moved-para-new.fodt");
+
+    // When comparing it with the older version:
+    // Without the fix in place, this test would have failed with:
+    // - Assertion `value >= 0' failed
+    // i.e. the search for the shortest edit went one paragraph before the start of the document.
+    compareWith(u"compare-moved-para-old.fodt");
+
+    // Then the paragraphs that differ are shown as one insertion and one deletion:
+    CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1), countRedlines(RedlineType::Insert));
+    CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1), countRedlines(RedlineType::Delete));
+}
+
+CPPUNIT_TEST_FIXTURE(SwCoreDocTest, testCompareDocumentsOnlyParagraphRsid)
+{
+    // Given two versions of a document with the same RSID root and the same paragraph text, where
+    // the paragraph and its characters have different editing session identifiers:
+    createSwDoc("compare-para-rsid-new.fodt");
+
+    // When comparing it with the older version:
+    compareWith(u"compare-para-rsid-old.fodt");
+
+    // Then nothing is shown as changed:
+    // Without the fix in place, this test would have failed with:
+    // - Expression: getSwDoc()->getIDocumentRedlineAccess().GetRedlineTable().empty()
+    // i.e. the paragraph was shown as deleted and inserted again.
+    CPPUNIT_ASSERT(getSwDoc()->getIDocumentRedlineAccess().GetRedlineTable().empty());
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

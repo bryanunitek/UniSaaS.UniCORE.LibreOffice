@@ -27,6 +27,7 @@
 
 class SdDrawDocument;
 class SfxMedium;
+class SvMemoryStream;
 
 /*************************************************************************
 |*
@@ -44,6 +45,7 @@ typedef ::std::map < SdrObject*, Ppt97AnimationPtr > tAnimationMap;
 class ImplSdPPTImport : public SdrPowerPointImport
 {
     rtl::Reference<SotStorageStream> mxPicturesStream;
+    std::unique_ptr<SvMemoryStream> mxDecryptedPicturesStream;
     SfxMedium&      mrMed;
     SotStorage&      mrStorage;
     DffRecordHeader maDocHd;
@@ -66,8 +68,11 @@ class ImplSdPPTImport : public SdrPowerPointImport
 
 public:
 
-    OUString        ReadSound( sal_uInt32 nSoundRef ) const;
+    /// rEmbedded is true when the returned URL is the copy of sound data stored in the document.
+    OUString        ReadSound( sal_uInt32 nSoundRef, bool& rEmbedded ) const;
     OUString        ReadMedia( sal_uInt32 nMediaRef ) const;
+
+    SdDrawDocument& GetDoc() const { return mrDoc; }
 
     ImplSdPPTImport( SdDrawDocument& rDoc, SotStorage& rStorage, SfxMedium& rMed, PowerPointImportParam& );
     virtual ~ImplSdPPTImport() override;
@@ -78,7 +83,8 @@ public:
 
 class SdPPTImport
 {
-    PowerPointImportParam maParam;
+    std::unique_ptr<SvMemoryStream> mxDocStream;
+    std::unique_ptr<PowerPointImportParam> mxParam;
     std::unique_ptr<ImplSdPPTImport> pFilter;
 
 public:

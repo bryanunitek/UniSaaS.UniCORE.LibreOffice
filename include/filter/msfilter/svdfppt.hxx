@@ -21,7 +21,9 @@
 
 #include <array>
 #include <cstddef>
+#include <functional>
 #include <memory>
+#include <span>
 #include <vector>
 
 #include <optional>
@@ -122,6 +124,12 @@ struct MSFILTER_DLLPUBLIC PowerPointImportParam
     PptCurrentUserAtom  aCurrentUserAtom;
     std::vector<sal_uInt8> aCryptSession10ContainerData;
     std::optional<PptCryptoApiEncryptionInfo> oCryptoApiEncryptionInfo;
+    // Decrypted Pictures stream used for encrypted PPT files
+    std::optional<std::vector<sal_uInt8>> oDecryptedPicturesStream;
+
+    // Called after the persist directory has been reconstructed and
+    // CryptSession10Container has been parsed.
+    std::function<bool(SvStream&, std::span<const sal_uInt32>, sal_uInt32, sal_uInt32, const PptCryptoApiEncryptionInfo&)> aDecryptPersistObjects;
 
     PowerPointImportParam( SvStream& rDocStream );
 };
@@ -360,7 +368,7 @@ public:
         , eLastViewType( PptViewTypeEnum::NONE )
         {}
 
-    friend SvStream& ReadPptUserEditAtom( SvStream& rIn, PptUserEditAtom& rAtom );
+    MSFILTER_DLLPUBLIC friend SvStream& ReadPptUserEditAtom( SvStream& rIn, PptUserEditAtom& rAtom );
 };
 
 struct PptOEPlaceholderAtom

@@ -22,7 +22,6 @@
 #include <basegfx/range/b2irange.hxx>
 #include <basegfx/utils/canvastools.hxx>
 #include <com/sun/star/geometry/AffineMatrix2D.hpp>
-#include <com/sun/star/geometry/IntegerPoint2D.hpp>
 #include <com/sun/star/geometry/IntegerSize2D.hpp>
 #include <com/sun/star/geometry/Matrix2D.hpp>
 #include <com/sun/star/geometry/RealBezierSegment2D.hpp>
@@ -36,6 +35,7 @@
 #include <com/sun/star/rendering/PathCapType.hpp>
 #include <com/sun/star/rendering/PathJoinType.hpp>
 #include <com/sun/star/rendering/RenderState.hpp>
+#include <com/sun/star/rendering/StrokeAttributes.hpp>
 #include <com/sun/star/rendering/Texture.hpp>
 #include <com/sun/star/rendering/TexturingMode.hpp>
 #include <com/sun/star/rendering/ViewState.hpp>
@@ -334,18 +334,6 @@ namespace canvastools
 #endif
             }
 
-            if( texture.NumberOfHatchPolygons < 0 )
-            {
-#if OSL_DEBUG_LEVEL > 0
-                throw lang::IllegalArgumentException(
-                    OUString::createFromAscii(pStr) +
-                    ": verifyInput(): textures' NumberOfHatchPolygons is negative",
-                    xIf, nArgPos );
-#else
-                throw lang::IllegalArgumentException();
-#endif
-            }
-
             if( texture.RepeatModeX < rendering::TexturingMode::NONE ||
                 texture.RepeatModeX > rendering::TexturingMode::REPEAT )
             {
@@ -444,9 +432,6 @@ namespace canvastools
 
             VerifyDashValue aVerifyDashValue( pStr, xIf, nArgPos );
             for (auto const& aStrokeAttribute : strokeAttributes.DashArray)
-                aVerifyDashValue( aStrokeAttribute );
-
-            for (auto const& aStrokeAttribute : strokeAttributes.LineArray)
                 aVerifyDashValue( aStrokeAttribute );
 
             if( strokeAttributes.StartCapType < rendering::PathCapType::BUTT ||
@@ -583,31 +568,6 @@ namespace canvastools
                 throw lang::IllegalArgumentException();
 #endif
             }
-
-            if( !std::isfinite( fontRequest.ReferenceAdvancement ) )
-            {
-#if OSL_DEBUG_LEVEL > 0
-                throw lang::IllegalArgumentException(
-                    OUString::createFromAscii(pStr) +
-                    ": verifyInput(): font request's ReferenceAdvancement value contains infinite or NAN",
-                    xIf, nArgPos );
-#else
-                throw lang::IllegalArgumentException();
-#endif
-            }
-
-            if( fontRequest.CellSize != 0.0 &&
-                fontRequest.ReferenceAdvancement != 0.0 )
-            {
-#if OSL_DEBUG_LEVEL > 0
-                throw lang::IllegalArgumentException(
-                    OUString::createFromAscii(pStr) +
-                    ": verifyInput(): font request's CellSize and ReferenceAdvancement are mutually exclusive, one of them must be 0.0",
-                    xIf, nArgPos );
-#else
-                throw lang::IllegalArgumentException();
-#endif
-            }
         }
 
         void verifyIndexRange( const geometry::IntegerRectangle2D&  rect,
@@ -621,18 +581,6 @@ namespace canvastools
                 aRect.getMaxX() > size.Width ||
                 aRect.getMinY() < 0 ||
                 aRect.getMaxY() > size.Height )
-            {
-                throw css::lang::IndexOutOfBoundsException();
-            }
-        }
-
-        void verifyIndexRange( const geometry::IntegerPoint2D& pos,
-                               const geometry::IntegerSize2D&  size )
-        {
-            if( pos.X < 0 ||
-                pos.X > size.Width ||
-                pos.Y < 0 ||
-                pos.Y > size.Height )
             {
                 throw css::lang::IndexOutOfBoundsException();
             }

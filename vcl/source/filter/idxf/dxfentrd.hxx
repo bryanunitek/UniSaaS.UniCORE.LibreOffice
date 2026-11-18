@@ -21,6 +21,8 @@
 
 #include "dxfgrprd.hxx"
 #include "dxfvec.hxx"
+#include "dxfgeom.hxx"
+#include <rtl/strbuf.hxx>
 #include <tools/long.hxx>
 
 #include <memory>
@@ -44,10 +46,20 @@ enum DXFEntityType {
     DXF_3DFACE,
     DXF_DIMENSION,
     DXF_LWPOLYLINE,
-    DXF_HATCH
+    DXF_HATCH,
+    DXF_ELLIPSE,
+    DXF_SPLINE,
+    DXF_MTEXT,
+    DXF_LEADER,
+    DXF_IMAGE
 };
 
 // base class of an entity
+
+// special line weights
+constexpr tools::Long DXF_LINEWEIGHT_BYLAYER = -1;
+constexpr tools::Long DXF_LINEWEIGHT_BYBLOCK = -2;
+constexpr tools::Long DXF_LINEWEIGHT_DEFAULT = -3;
 
 class DXFBasicEntity {
 
@@ -65,6 +77,10 @@ public:
     OString m_sLineType;                  //  6
     double fThickness;                    // 39
     tools::Long nColor;                          // 62
+    tools::Long nTrueColor;                      // 420, 0xRRGGBB or -1
+    bool bInvisible;                             // 60
+    double fLineTypeScale;                       // 48
+    tools::Long nLineWeight;                     // 370, 1/100 mm or one of the DXF_LINEWEIGHT_* values
     tools::Long nSpace;                          // 67
     DXFVector aExtrusion;                 // 210,220,230
 
@@ -76,7 +92,7 @@ protected:
 public:
 
     virtual ~DXFBasicEntity();
-    void Read(DXFGroupReader & rDGR);
+    virtual void Read(DXFGroupReader & rDGR);
         // Reads a parameter till the next 0-group
 
 protected:
@@ -196,6 +212,7 @@ public:
     tools::Long nHorzJust;                    // 72
     tools::Long nVertJust;                    // 73
     DXFVector aAlign;                  // 11,21,31
+    bool bHasAlign;
 
     DXFTextEntity();
 
@@ -262,6 +279,8 @@ class DXFAttDefEntity : public DXFBasicEntity {
     tools::Long nHorzJust;                     // 72
     tools::Long nVertJust;                     // 74
     DXFVector aAlign;                   // 11,21,31
+    // the groups after 101 describe the embedded multiline text, not the attribute
+    bool bInEmbeddedObject;
 
 public:
 
@@ -290,18 +309,24 @@ public:
     tools::Long nHorzJust;                     // 72
     tools::Long nVertJust;                     // 74
     DXFVector aAlign;                   // 11,21,31
+    bool bHasAlign;
 
     DXFAttribEntity();
 
 protected:
 
     virtual void EvaluateGroup(DXFGroupReader & rDGR) override;
+
+private:
+    // the groups after 101 describe the embedded multiline text, not the attribute
+    bool bInEmbeddedObject;
 };
 
 class DXFPolyLineEntity : public DXFBasicEntity {
 
 public:
 
+    double fElevation; // 30
     tools::Long nFlags;       // 70
     double fSWidth;    // 40
     double fEWidth;    // 41
@@ -320,17 +345,19 @@ protected:
 
 class DXFLWPolyLineEntity : public DXFBasicEntity
 {
-        sal_Int32   nIndex;
         sal_Int32   nCount;         // 90
+        // the groups of a vertex beyond the count are ignored
+        bool        bVertexAccepted;
 
     public:
 
         sal_Int32   nFlags;         // 70   1 = closed, 128 = plinegen
-        double      fConstantWidth; // 43   (optional - default: 0, not used if fStartWidth and/or fEndWidth is used)
-        double      fStartWidth;    // 40
-        double      fEndWidth;      // 41
+        double      fConstantWidth; // 43   used by the vertices without their own widths
+        double      fElevation;     // 38
 
-        std::vector<DXFVector>  aP;
+        // 10, 20, and the 40, 41 widths (-1 if not given) and 42 bulge of the segment
+        // starting there
+        std::vector<DXFPathVertex> aVertices;
 
         DXFLWPolyLineEntity();
 
@@ -340,112 +367,33 @@ class DXFLWPolyLineEntity : public DXFBasicEntity
 
 };
 
-struct DXFEdgeType
+// a line family of a hatch pattern, already rotated and scaled
+struct DXFHatchPatternLine
 {
-    sal_Int32 nEdgeType;
-
-    virtual ~DXFEdgeType(){};
-    virtual bool EvaluateGroup( DXFGroupReader & /*rDGR*/ ){ return true; };
-
-    protected:
-
-        DXFEdgeType( sal_Int32 EdgeType ):nEdgeType(EdgeType){};
-};
-
-struct DXFEdgeTypeLine : public DXFEdgeType
-{
-    DXFVector aStartPoint;              // 10,20
-    DXFVector aEndPoint;                // 11,21
-    DXFEdgeTypeLine();
-    virtual bool EvaluateGroup( DXFGroupReader & rDGR ) override;
-};
-
-class DXFEdgeTypeCircularArc : public DXFEdgeType
-{
-    DXFVector aCenter;                  // 10,20
-    double    fRadius;                  // 40
-    double    fStartAngle;              // 50
-    double    fEndAngle;                // 51
-    sal_Int32 nIsCounterClockwiseFlag;  // 73
-public:
-    DXFEdgeTypeCircularArc();
-    virtual bool EvaluateGroup( DXFGroupReader & rDGR ) override;
-};
-
-class DXFEdgeTypeEllipticalArc : public DXFEdgeType
-{
-    DXFVector aCenter;                  // 10,20
-    DXFVector aEndPoint;                // 11,21
-    double    fLength;                  // 40
-    double    fStartAngle;              // 50
-    double    fEndAngle;                // 51
-    sal_Int32 nIsCounterClockwiseFlag;  // 73
-public:
-    DXFEdgeTypeEllipticalArc();
-    virtual bool EvaluateGroup( DXFGroupReader & rDGR ) override;
-};
-
-class DXFEdgeTypeSpline : public DXFEdgeType
-{
-    sal_Int32 nDegree;                  // 94
-    sal_Int32 nRational;                // 73
-    sal_Int32 nPeriodic;                // 74
-    sal_Int32 nKnotCount;               // 75
-    sal_Int32 nControlCount;            // 76
-public:
-    DXFEdgeTypeSpline();
-    virtual bool EvaluateGroup( DXFGroupReader & rDGR ) override;
-};
-
-struct DXFBoundaryPathData
-{
-private:
-    sal_Int32           nPointCount;            // 93
-public:
-    sal_Int32           nFlags;                 // 92
-    sal_Int32           nHasBulgeFlag;          // 72
-    sal_Int32           nIsClosedFlag;          // 73
-    double              fBulge;                 // 42
-    sal_Int32           nSourceBoundaryObjects; // 97
-    sal_Int32           nEdgeCount;             // 93
-
-    bool                bIsPolyLine;
-    sal_Int32           nPointIndex;
-
-    std::vector<DXFVector> aP;
-    std::vector<std::unique_ptr<DXFEdgeType>> aEdges;
-
-    DXFBoundaryPathData();
-
-    bool EvaluateGroup( DXFGroupReader & rDGR );
+    double fAngle = 0.0;                // 53, degrees
+    basegfx::B2DPoint aBase;            // 43, 44
+    basegfx::B2DVector aOffset;         // 45, 46, from one line to the next
+    std::vector<double> aDashes;        // 49, positive for dashes, negative for gaps
 };
 
 class DXFHatchEntity : public DXFBasicEntity
 {
-        bool    bIsInBoundaryPathContext;
-        sal_Int32   nCurrentBoundaryPathIndex;
-
     public:
 
-        sal_Int32   nFlags;                         // 70 (solid fill = 1, pattern fill = 0)
-        sal_Int32   nAssociativityFlag;             // 71 (associative = 1, non-associative = 0)
-        sal_Int32   nMaxBoundaryPathCount;          // 91
-        sal_Int32   nHatchStyle;                    // 75 (odd parity = 0, outmost area = 1, entire area = 2 )
-        sal_Int32   nHatchPatternType;              // 76 (user defined = 0, predefined = 1, custom = 2)
-        double      fHatchPatternAngle;             // 52 (pattern fill only)
-        double      fHatchPatternScale;             // 41 (pattern fill only:scale or spacing)
-        sal_Int32   nHatchDoubleFlag;               // 77 (pattern fill only:double = 1, not double = 0)
-        sal_Int32   nHatchPatternDefinitionLines;   // 78
-        double      fPixelSize;                     // 47
-        sal_Int32   nNumberOfSeedPoints;            // 98
-
-        std::vector<DXFBoundaryPathData> aBoundaryPathData;
+        double      fElevation;         // 30
+        bool        bSolid;             // 70
+        // the boundary paths in the entity coordinate system, filled with the even-odd rule
+        basegfx::B2DPolyPolygon aBoundaries;
+        std::vector<DXFHatchPatternLine> aPatternLines;
+        bool        bGradient;          // 450
+        double      fGradientAngle;     // 460, radians
+        std::vector<sal_Int32> aGradientColors; // 421, 0xRRGGBB
 
         DXFHatchEntity();
 
-    protected:
-
-        virtual void EvaluateGroup( DXFGroupReader & rDGR ) override;
+        // the groups use the same codes for different values in their sections, read them
+        // in their order
+        virtual void Read(DXFGroupReader & rDGR) override;
 };
 
 class DXFVertexEntity : public DXFBasicEntity {
@@ -458,6 +406,7 @@ public:
     double fBulge;     // 42
     tools::Long nFlags;       // 70
     double fCFTDir;    // 50
+    tools::Long nFaceIndex[4]; // 71-74, polyface mesh faces
 
     DXFVertexEntity();
 
@@ -484,6 +433,108 @@ public:
     tools::Long nIEFlags; // 70
 
     DXF3DFaceEntity();
+
+protected:
+
+    virtual void EvaluateGroup(DXFGroupReader & rDGR) override;
+};
+
+//--------------------------Ellipse---------------------------------------------
+
+// in world coordinates, the extrusion only orients the minor axis
+class DXFEllipseEntity : public DXFBasicEntity {
+public:
+    DXFVector aCenter;   // 10,20,30
+    DXFVector aMajor;    // 11,21,31, end of the major axis relative to the centre
+    double fRatio;       // 40, minor to major axis
+    double fStart;       // 41, parameter in radians
+    double fEnd;         // 42
+
+    DXFEllipseEntity();
+
+protected:
+
+    virtual void EvaluateGroup(DXFGroupReader & rDGR) override;
+};
+
+//--------------------------Spline----------------------------------------------
+
+// in world coordinates
+class DXFSplineEntity : public DXFBasicEntity {
+public:
+    tools::Long nFlags;                  // 70, 1 = closed
+    tools::Long nDegree;                 // 71
+    std::vector<double> aKnots;          // 40
+    std::vector<double> aWeights;        // 41
+    std::vector<DXFVector> aControlPoints; // 10,20,30
+    std::vector<DXFVector> aFitPoints;     // 11,21,31
+
+    DXFSplineEntity();
+
+protected:
+
+    virtual void EvaluateGroup(DXFGroupReader & rDGR) override;
+};
+
+//--------------------------MText-----------------------------------------------
+
+// multiline text with inline formatting, the insertion point is in world coordinates
+class DXFMTextEntity : public DXFBasicEntity {
+public:
+    DXFVector aP0;                 // 10,20,30
+    DXFVector aXDirection;         // 11,21,31, wins over the rotation
+    bool bHasXDirection;
+    double fHeight;                // 40
+    double fReferenceWidth;        // 41, for word wrapping
+    double fLineSpacing;           // 44
+    double fRotAngle;              // 50, degrees
+    tools::Long nAttachment;       // 71, 1-9: top/middle/bottom x left/center/right
+    OStringBuffer m_sText;         // 3 chunks then 1
+    OString m_sStyle;              // 7
+
+    DXFMTextEntity();
+
+protected:
+
+    virtual void EvaluateGroup(DXFGroupReader & rDGR) override;
+
+private:
+    // the groups after 101 describe an embedded object, not the text
+    bool bInEmbeddedObject;
+};
+
+//--------------------------Leader----------------------------------------------
+
+// in world coordinates
+class DXFLeaderEntity : public DXFBasicEntity {
+public:
+    OString m_sDimStyle;               // 3
+    bool bArrow;                       // 71
+    bool bSpline;                      // 72
+    std::vector<DXFVector> aVertices;  // 10,20,30
+
+    DXFLeaderEntity();
+
+protected:
+
+    virtual void EvaluateGroup(DXFGroupReader & rDGR) override;
+};
+
+//--------------------------Image and Wipeout-----------------------------------
+
+// A raster image is drawn as its frame, a wipeout covers what is below it. In world coordinates.
+class DXFImageEntity : public DXFBasicEntity {
+public:
+    bool bWipeout;
+    DXFVector aInsert;                 // 10,20,30, the outer corner of the first pixel
+    DXFVector aU;                      // 11,21,31, one pixel along the width
+    DXFVector aV;                      // 12,22,32, one pixel along the height
+    double fWidth;                     // 13, in pixels
+    double fHeight;                    // 23
+    tools::Long nClipType;             // 71, 1 rectangle, 2 polygon
+    std::vector<basegfx::B2DPoint> aClipVertices; // 14,24, in pixels from the top left
+
+    explicit DXFImageEntity(bool bIsWipeout);
 
 protected:
 

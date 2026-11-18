@@ -75,8 +75,28 @@ LIBCMIS_TARBALL := libcmis-0.6.3.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-COINMP_SHA256SUM := 3459fb0ccbdd39342744684338984ac4cc153fb0434f4cae8cf74bd67490a38d
-COINMP_TARBALL := CoinMP-1.8.4.tgz
+COINOR_CBC_SHA256SUM := 62fde44dcf6f3d05c5cd291d7435cdd1b7e8acd3c78ec481dd39fe49cbc40399
+COINOR_CBC_TARBALL := Cbc-releases-2.10.13.tar.gz
+# three static lines
+# so that git cherry-pick
+# will not run into conflicts
+COINOR_CGL_SHA256SUM := 41b7ac9402db883d9c487eb7101e59eb513cefd726e6e7a669dc94664d9385e6
+COINOR_CGL_TARBALL := Cgl-releases-0.60.10.tar.gz
+# three static lines
+# so that git cherry-pick
+# will not run into conflicts
+COINOR_CLP_SHA256SUM := 2c078e174dc1a7a308e091b6256fb34b4017897fc140ea707ba207b2913ea46d
+COINOR_CLP_TARBALL := Clp-releases-1.17.11.tar.gz
+# three static lines
+# so that git cherry-pick
+# will not run into conflicts
+COINOR_COINUTILS_SHA256SUM := ddfea48e10209215748bc9f90a8c04abbb912b662c1aefaf280018d0a181ef79
+COINOR_COINUTILS_TARBALL := CoinUtils-releases-2.11.13.tar.gz
+# three static lines
+# so that git cherry-pick
+# will not run into conflicts
+COINOR_OSI_SHA256SUM := 1d80d0b4275f2e1ceefc6dda66b8616e3a8c8b07a926ef4456db4a0d55249333
+COINOR_OSI_TARBALL := Osi-releases-0.108.12.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -105,8 +125,8 @@ EPM_TARBALL := 3ade8cfe7e59ca8e65052644fed9fca4-epm-3.7.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-EPUBGEN_SHA256SUM := 03e084b994cbeffc8c3dd13303b2cb805f44d8f2c3b79f7690d7e3fc7f6215ad
-EPUBGEN_TARBALL := libepubgen-0.1.1.tar.xz
+EPUBGEN_SHA256SUM := 196c4bf9380463a3b40eb82c7dbf8a8b6a954987b4abbefe55467c215996eb7e
+EPUBGEN_TARBALL := libepubgen-0.1.2.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -380,8 +400,8 @@ LIBATOMIC_OPS_TARBALL := libatomic_ops-7.10.0.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-LIBEOT_SHA256SUM := cf5091fa8e7dcdbe667335eb90a2cfdd0a3fe8f8c7c8d1ece44d9d055736a06a
-LIBEOT_TARBALL := libeot-0.01.tar.bz2
+LIBEOT_SHA256SUM := 2cb904cbe291019b928dbc2231620bcf273be0298f596c2494348e7be1d7051a
+LIBEOT_TARBALL := libeot-0.0.3.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -390,8 +410,8 @@ LIBEXTTEXTCAT_TARBALL := libexttextcat-3.4.9.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-LIBFFI_SHA256SUM := 7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4
-LIBFFI_TARBALL := libffi-3.8.0.tar.gz
+LIBFFI_SHA256SUM := 81e879c094cc5ec3186c48510c6385ac6b3e866192e8bc71a35245703757ee40
+LIBFFI_TARBALL := libffi-3.8.1.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -400,8 +420,9 @@ LIBGPGERROR_TARBALL := libgpg-error-1.61.tar.bz2
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-LIBJXL_SHA256SUM := ab38928f7f6248e2a98cc184956021acb927b16a0dee71b4d260dc040a4320ea
-LIBJXL_TARBALL := libjxl-0.11.2.tar.gz
+# Also update external/libjxl/version.h
+LIBJXL_SHA256SUM := 24d18c9af2d1f5a17730b3f8d3f70a5c16e5ac303f5d9d5fe9dc00cf7ca82af2
+LIBJXL_TARBALL := libjxl-0.13.0.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -493,8 +514,8 @@ NSS_TARBALL := nss-3.133-with-nspr-4.39.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-ODFGEN_SHA256SUM := 55200027fd46623b9bdddd38d275e7452d1b0ff8aeddcad6f9ae6dc25f610625
-ODFGEN_VERSION_MICRO := 8
+ODFGEN_SHA256SUM := b68ec10c23b8ac7abed8dfeb181b8592714c1e5bd33997ced0ee8bd6c4612bc5
+ODFGEN_VERSION_MICRO := 9
 ODFGEN_TARBALL := libodfgen-0.1.$(ODFGEN_VERSION_MICRO).tar.xz
 # three static lines
 # so that git cherry-pick
@@ -576,8 +597,8 @@ POPPLER_DATA_TARBALL := poppler-data-0.4.12.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-POSTGRESQL_SHA256SUM := e1a64a87a46b825b88c082e4518161a47aab53c45694964f8ba1df28f7859f89
-POSTGRESQL_TARBALL := postgresql-15.19.tar.bz2
+POSTGRESQL_SHA256SUM := 30e65cbbb771a39b553ed2df7e65622e65647aed55dbc19bd0fe853ff0a08442
+POSTGRESQL_TARBALL := postgresql-15.20.tar.bz2
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -653,8 +674,8 @@ TWAIN_DSM_TARBALL := twaindsm_2.4.1.orig.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-VISIO_SHA256SUM := 2a6efd40b6d9dbcb70fba3be53112366882ba97b57151df3698dfa478c8d8dd3
-VISIO_TARBALL := libvisio-0.1.11.tar.xz
+VISIO_SHA256SUM := f59fa2e3baf95475256fe84ea0aa1214f43940bae94424f4026b2d633933df01
+VISIO_TARBALL := libvisio-0.1.12.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts

@@ -90,6 +90,21 @@ uno::Reference<drawing::XShape> findChildShapeByText(const uno::Reference<drawin
 
     return uno::Reference<drawing::XShape>();
 }
+/// the size the first run of xShape is shown at, with the shape's autofit scale
+double shownTextSize(const uno::Reference<drawing::XShape>& xShape)
+{
+    uno::Reference<beans::XPropertySet> xShapeProperties(xShape, uno::UNO_QUERY);
+    double fScale = 0;
+    CPPUNIT_ASSERT(xShapeProperties->getPropertyValue(u"TextFitToSizeFontScale"_ustr) >>= fScale);
+    uno::Reference<text::XText> xText(xShape, uno::UNO_QUERY);
+    uno::Reference<container::XEnumerationAccess> xParagraphs(xText, uno::UNO_QUERY);
+    uno::Reference<container::XEnumerationAccess> xParagraph(
+        xParagraphs->createEnumeration()->nextElement(), uno::UNO_QUERY);
+    uno::Reference<beans::XPropertySet> xRun(xParagraph->createEnumeration()->nextElement(),
+                                             uno::UNO_QUERY);
+    const double fHeight(xRun->getPropertyValue(u"CharHeight"_ustr).get<double>());
+    return fScale > 0 ? fHeight * fScale / 100.0 : fHeight;
+}
 }
 
 class SdImportTestSmartArt : public SdModelTestBase
@@ -1586,22 +1601,8 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testAutofitSync)
     uno::Reference<drawing::XShape> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY);
     uno::Reference<drawing::XShape> xMiddle = getChildShape(xDiagram, 2);
     // the size a text is seen at: the size of its first run, scaled by the shape's autofit
-    const auto aShownSize = [](const uno::Reference<drawing::XShape>& xShape) {
-        uno::Reference<beans::XPropertySet> xShapeProperties(xShape, uno::UNO_QUERY);
-        double fScale = 0;
-        CPPUNIT_ASSERT(xShapeProperties->getPropertyValue(u"TextFitToSizeFontScale"_ustr)
-                       >>= fScale);
-        uno::Reference<text::XText> xText(xShape, uno::UNO_QUERY);
-        uno::Reference<container::XEnumerationAccess> xParagraphs(xText, uno::UNO_QUERY);
-        uno::Reference<container::XEnumerationAccess> xParagraph(
-            xParagraphs->createEnumeration()->nextElement(), uno::UNO_QUERY);
-        uno::Reference<beans::XPropertySet> xRun(xParagraph->createEnumeration()->nextElement(),
-                                                 uno::UNO_QUERY);
-        const double fHeight(xRun->getPropertyValue(u"CharHeight"_ustr).get<double>());
-        return fScale > 0 ? fHeight * fScale / 100.0 : fHeight;
-    };
-    const double fFirstSize(aShownSize(getChildShape(getChildShape(xMiddle, 0), 0)));
-    const double fSecondSize(aShownSize(getChildShape(getChildShape(xMiddle, 2), 0)));
+    const double fFirstSize(shownTextSize(getChildShape(getChildShape(xMiddle, 0), 0)));
+    const double fSecondSize(shownTextSize(getChildShape(getChildShape(xMiddle, 2), 0)));
 
     // both texts share one font: one shown size, below the stated 65pt
     CPPUNIT_ASSERT_LESS(65.0, fFirstSize);
@@ -1689,20 +1690,20 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testTdf149551Pyramid)
     // The file contains a diagram of type "Basic Pyramid".
     createSdImpressDoc("pptx/tdf149551_SmartArt_Pyramid.pptx");
     uno::Reference<drawing::XShape> xGroup(getShapeFromPage(0, 0), uno::UNO_QUERY);
-    // shape at index 0 is the background shape
-    uno::Reference<drawing::XShape> xShape = getChildShape(xGroup, 1);
+    // index 0 is the background shape, the middle trapezoid has a txXfrm narrower than
+    // its box
+    uno::Reference<drawing::XShape> xShape = getChildShape(xGroup, 2);
     CPPUNIT_ASSERT(xShape.is());
     auto pCustomShape = dynamic_cast<SdrObjCustomShape*>(SdrObject::getSdrObjectFromXShape(xShape));
     CPPUNIT_ASSERT(pCustomShape);
     tools::Rectangle aTextRect;
     pCustomShape->TakeTextAnchorRect(aTextRect);
-    // without fix the text area rectangle had LT [9369,2700] and RB[14632,6185]. The values from
-    // txXfrm were ignored.
+    // the text area is the txXfrm less the insets
     // The used tolerance is estimated.
-    CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(9368), sal_Int32(aTextRect.Left()), 4);
-    CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(2699), sal_Int32(aTextRect.Top()), 4);
-    CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(14632), sal_Int32(aTextRect.Right()), 4);
-    CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(7370), sal_Int32(aTextRect.Bottom()), 4);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(8568), sal_Int32(aTextRect.Left()), 4);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(6254), sal_Int32(aTextRect.Top()), 4);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(15432), sal_Int32(aTextRect.Right()), 4);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(sal_Int32(9741), sal_Int32(aTextRect.Bottom()), 4);
 }
 
 CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testTdf149551Venn)
@@ -1753,9 +1754,10 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testTdf145528Matrix)
     // 'round1Rect'.
     createSdImpressDoc("pptx/tdf145528_SmartArt_Matrix.pptx");
     uno::Reference<drawing::XShape> xGroup(getShapeFromPage(0, 0), uno::UNO_QUERY);
-    // expected values
-    sal_Int32 nLeft[]{ 4001, 12001, 12001, 18501 };
-    sal_Int32 nTop[]{ 9999, 1999, 12499, 5999 };
+    // expected values; for turned text the corner inset of round1Rect is in the turned
+    // text area, so the turned shapes are off by half of it
+    sal_Int32 nLeft[]{ 3854, 12001, 12294, 18355 };
+    sal_Int32 nTop[]{ 10145, 1999, 12499, 5852 };
     // nWidth = 10292, nHeight = 4499
     // Without the fix in place the values were
     // nLeft {2001, 12001, 12001, 22001}
@@ -2478,6 +2480,32 @@ CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testNodeTextsAfterOdpRoundTrip)
     CPPUNIT_ASSERT_EQUAL(size_t(12), aTexts.size());
     CPPUNIT_ASSERT_EQUAL(u"Parent 1"_ustr, aTexts[0]);
     CPPUNIT_ASSERT_EQUAL(u"Child 6"_ustr, aTexts[11]);
+}
+
+CPPUNIT_TEST_FIXTURE(SdImportTestSmartArt, testArrowMarginsAndTheFontOfTheTextsBelow)
+{
+    // the arrows state rMarg in points and bMarg as part of their height, the texts
+    // below an arrow are at most as large as its text
+    createSdImpressDoc("pptx/smartart-increasing-arrows-margins.pptx");
+    uno::Reference<drawing::XShape> xDiagram(getShapeFromPage(0, 0), uno::UNO_QUERY);
+
+    uno::Reference<drawing::XShape> xArrow(findChildShapeByText(xDiagram, u"One"_ustr));
+    CPPUNIT_ASSERT(xArrow.is());
+    uno::Reference<beans::XPropertySet> xArrowProperties(xArrow, uno::UNO_QUERY_THROW);
+    // "rMarg val=20" is 20 points
+    CPPUNIT_ASSERT_EQUAL(
+        sal_Int32(705),
+        xArrowProperties->getPropertyValue(u"TextRightDistance"_ustr).get<sal_Int32>());
+    // "bMarg refType=h fact=0.45" is 0.45 of the height in millimetres, as points
+    const double fBottom(0.45 * xArrow->getSize().Height / 100.0 * 2540.0 / 72.0);
+    CPPUNIT_ASSERT_DOUBLES_EQUAL(
+        fBottom, xArrowProperties->getPropertyValue(u"TextLowerDistance"_ustr).get<sal_Int32>(),
+        2.0);
+
+    uno::Reference<drawing::XShape> xBelow(
+        findChildShapeByText(xDiagram, u"Eleven\nTwelve\nThirteen"_ustr));
+    CPPUNIT_ASSERT(xBelow.is());
+    CPPUNIT_ASSERT_LESSEQUAL(shownTextSize(xArrow), shownTextSize(xBelow));
 }
 
 CPPUNIT_PLUGIN_IMPLEMENT();

@@ -22,35 +22,13 @@
 #include <string_view>
 
 #include "dxfreprd.hxx"
+#include "dxfmtext.hxx"
+#include <o3tl/string_view.hxx>
 #include <osl/nlsupport.h>
 #include <rtl/character.hxx>
+#include <rtl/tencinfo.h>
 #include <unotools/defaultencoding.hxx>
 #include <unotools/wincodepage.hxx>
-
-//------------------DXFBoundingBox--------------------------------------------
-
-
-void DXFBoundingBox::Union(const DXFVector & rVector)
-{
-    if (bEmpty) {
-        fMinX=rVector.fx;
-        fMinY=rVector.fy;
-        fMinZ=rVector.fz;
-        fMaxX=rVector.fx;
-        fMaxY=rVector.fy;
-        fMaxZ=rVector.fz;
-        bEmpty=false;
-    }
-    else {
-        if (fMinX>rVector.fx) fMinX=rVector.fx;
-        if (fMinY>rVector.fy) fMinY=rVector.fy;
-        if (fMinZ>rVector.fz) fMinZ=rVector.fz;
-        if (fMaxX<rVector.fx) fMaxX=rVector.fx;
-        if (fMaxY<rVector.fy) fMaxY=rVector.fy;
-        if (fMaxZ<rVector.fz) fMaxZ=rVector.fz;
-    }
-}
-
 
 //------------------DXFPalette------------------------------------------------
 
@@ -119,12 +97,61 @@ void DXFPalette::SetColor(sal_uInt8 nIndex, sal_uInt8 nRed, sal_uInt8 nGreen, sa
 
 //------------------DXFRepresentation-----------------------------------------
 
+namespace
+{
+bool startsWithIgnoreAsciiCase(std::string_view aText, std::string_view aPrefix)
+{
+    return aText.size() >= aPrefix.size()
+           && o3tl::equalsIgnoreAsciiCase(aText.substr(0, aPrefix.size()), aPrefix);
+}
+
+// The encoding of a $DWGCODEPAGE value like ANSI_1252, DOS850, ISO8859-2 or BIG5
+rtl_TextEncoding codePageToEncoding(std::string_view aCodePage)
+{
+    static constexpr std::pair<std::string_view, rtl_TextEncoding> aNamed[] = {
+        { "BIG5", RTL_TEXTENCODING_MS_950 },
+        { "GB2312", RTL_TEXTENCODING_MS_936 },
+        { "KSC5601", RTL_TEXTENCODING_MS_949 },
+        { "JOHAB", RTL_TEXTENCODING_MS_1361 },
+        { "MACINTOSH", RTL_TEXTENCODING_APPLE_ROMAN },
+        { "UTF8", RTL_TEXTENCODING_UTF8 },
+        { "UTF-8", RTL_TEXTENCODING_UTF8 },
+    };
+    for (const std::pair<std::string_view, rtl_TextEncoding>& rNamed : aNamed)
+        if (o3tl::equalsIgnoreAsciiCase(aCodePage, rNamed.first))
+            return rNamed.second;
+
+    // the Windows code page number after the prefix
+    sal_uInt32 nOffset = 0;
+    std::string_view aNumber;
+    if (startsWithIgnoreAsciiCase(aCodePage, "ANSI_"))
+        aNumber = aCodePage.substr(5);
+    else if (startsWithIgnoreAsciiCase(aCodePage, "DOS"))
+        aNumber = aCodePage.substr(3);
+    else if (startsWithIgnoreAsciiCase(aCodePage, "ISO8859-"))
+    {
+        aNumber = aCodePage.substr(8);
+        nOffset = 28590;
+    }
+    if (aNumber.empty() || !rtl::isAsciiDigit(static_cast<unsigned char>(aNumber[0])))
+        return RTL_TEXTENCODING_DONTKNOW;
+    return rtl_getTextEncodingFromWindowsCodePage(o3tl::toUInt32(aNumber) + nOffset);
+}
+}
+
+
 
 DXFRepresentation::DXFRepresentation()
     : mEnc(RTL_TEXTENCODING_DONTKNOW)
-    , mbInCalc(false)
+    , meCodePage(RTL_TEXTENCODING_DONTKNOW)
+    , mbWithoutVersion(false)
+    , mfGlobalLineTypeScale(1.0)
+    , mbLineWeightDisplay(false)
+    , mfDimArrowSize(0.18)
+    , mfDimScale(1.0)
+    , mnPointMode(0)
+    , mfPointSize(0.0)
 {
-    setGlobalLineTypeScale(1.0);
 }
 
 DXFRepresentation::~DXFRepresentation()
@@ -166,8 +193,14 @@ bool DXFRepresentation::Read( SvStream & rIStream )
 
     bRes=DGR.GetStatus();
 
-    if (bRes && aBoundingBox.bEmpty)
-        CalcBoundingBox(aEntities,aBoundingBox);
+    // Without $ACADVER and $DWGCODEPAGE this is a drawing of the DOS versions, or one written
+    // by a program that writes only the entities, possibly in UTF-8
+    if (!isTextEncodingSet())
+    {
+        mbWithoutVersion = true;
+        setTextEncoding(utl_getWinTextEncodingFromLangStr(
+            utl_getLocaleForGlobalDefaultEncoding(), true));
+    }
 
     return bRes;
 }
@@ -177,20 +210,7 @@ void DXFRepresentation::ReadHeader(DXFGroupReader & rDGR)
     while (rDGR.GetG()!=0 || (rDGR.GetS() != "EOF" && rDGR.GetS() != "ENDSEC") )
     {
         if (rDGR.GetG()==9) {
-            if (rDGR.GetS() == "$EXTMIN" ||
-                rDGR.GetS() == "$EXTMAX")
-            {
-                DXFVector aVector;
-                while (rDGR.Read()!=9 && rDGR.GetG()!=0) {
-                    switch (rDGR.GetG()) {
-                    case 10: aVector.fx = rDGR.GetF(); break;
-                    case 20: aVector.fy = rDGR.GetF(); break;
-                    case 30: aVector.fz = rDGR.GetF(); break;
-                    }
-                }
-                aBoundingBox.Union(aVector);
-            }
-            else if (rDGR.GetS() == "$ACADVER")
+            if (rDGR.GetS() == "$ACADVER")
             {
                 if (!rDGR.Read(1))
                     continue;
@@ -231,32 +251,14 @@ void DXFRepresentation::ReadHeader(DXFGroupReader & rDGR)
                 if (!rDGR.Read(3))
                     continue;
 
+                const rtl_TextEncoding eEncoding = codePageToEncoding(rDGR.GetS());
+                if (eEncoding != RTL_TEXTENCODING_UTF8)
+                    meCodePage = eEncoding;
                 // If we already use UTF8, then don't update encoding anymore
                 if (mEnc == RTL_TEXTENCODING_UTF8)
                     continue;
-                // FIXME: we really need a whole table of
-                // $DWGCODEPAGE to encodings mappings
-                else if ( (rDGR.GetS().equalsIgnoreAsciiCase("ANSI_932")) ||
-                          (rDGR.GetS().equalsIgnoreAsciiCase("DOS932")) )
-                {
-                    setTextEncoding(RTL_TEXTENCODING_MS_932);
-                }
-                else if (rDGR.GetS().equalsIgnoreAsciiCase("ANSI_936"))
-                {
-                    setTextEncoding(RTL_TEXTENCODING_MS_936);
-                }
-                else if (rDGR.GetS().equalsIgnoreAsciiCase("ANSI_949"))
-                {
-                    setTextEncoding(RTL_TEXTENCODING_MS_949);
-                }
-                else if (rDGR.GetS().equalsIgnoreAsciiCase("ANSI_950"))
-                {
-                    setTextEncoding(RTL_TEXTENCODING_MS_950);
-                }
-                else if (rDGR.GetS().equalsIgnoreAsciiCase("ANSI_1251"))
-                {
-                    setTextEncoding(RTL_TEXTENCODING_MS_1251);
-                }
+                if (eEncoding != RTL_TEXTENCODING_DONTKNOW)
+                    setTextEncoding(eEncoding);
             }
             else if (rDGR.GetS() == "$LTSCALE")
             {
@@ -264,207 +266,77 @@ void DXFRepresentation::ReadHeader(DXFGroupReader & rDGR)
                     continue;
                 setGlobalLineTypeScale(getGlobalLineTypeScale() * rDGR.GetF());
             }
+            else if (rDGR.GetS() == "$DIMASZ")
+            {
+                if (!rDGR.Read(40))
+                    continue;
+                mfDimArrowSize = rDGR.GetF();
+            }
+            else if (rDGR.GetS() == "$DIMSCALE")
+            {
+                if (!rDGR.Read(40))
+                    continue;
+                mfDimScale = rDGR.GetF();
+            }
+            else if (rDGR.GetS() == "$PDMODE")
+            {
+                if (!rDGR.Read(70))
+                    continue;
+                mnPointMode = rDGR.GetI();
+            }
+            else if (rDGR.GetS() == "$PDSIZE")
+            {
+                if (!rDGR.Read(40))
+                    continue;
+                mfPointSize = rDGR.GetF();
+            }
+            else if (rDGR.GetS() == "$LWDISPLAY")
+            {
+                if (!rDGR.Read(290))
+                    continue;
+                mbLineWeightDisplay = rDGR.GetI() != 0;
+            }
             else rDGR.Read();
         }
         else rDGR.Read();
     }
 }
 
-void DXFRepresentation::CalcBoundingBox(const DXFEntities & rEntities,
-                                        DXFBoundingBox & rBox)
+rtl_TextEncoding DXFRepresentation::getSingleByteEncoding() const
 {
-    if (mbInCalc)
-        return;
-    mbInCalc = true;
-
-    DXFBasicEntity * pBE=rEntities.pFirst;
-    while (pBE!=nullptr) {
-        switch (pBE->eType) {
-            case DXF_LINE: {
-                const DXFLineEntity * pE = static_cast<const DXFLineEntity*>(pBE);
-                rBox.Union(pE->aP0);
-                rBox.Union(pE->aP1);
-                break;
-            }
-            case DXF_POINT: {
-                const DXFPointEntity * pE = static_cast<const DXFPointEntity*>(pBE);
-                rBox.Union(pE->aP0);
-                break;
-            }
-            case DXF_CIRCLE: {
-                const DXFCircleEntity * pE = static_cast<const DXFCircleEntity*>(pBE);
-                DXFVector aP;
-                aP=pE->aP0;
-                aP.fx-=pE->fRadius;
-                aP.fy-=pE->fRadius;
-                rBox.Union(aP);
-                aP=pE->aP0;
-                aP.fx+=pE->fRadius;
-                aP.fy+=pE->fRadius;
-                rBox.Union(aP);
-                break;
-            }
-            case DXF_ARC: {
-                const DXFArcEntity * pE = static_cast<const DXFArcEntity*>(pBE);
-                DXFVector aP;
-                aP=pE->aP0;
-                aP.fx-=pE->fRadius;
-                aP.fy-=pE->fRadius;
-                rBox.Union(aP);
-                aP=pE->aP0;
-                aP.fx+=pE->fRadius;
-                aP.fy+=pE->fRadius;
-                rBox.Union(aP);
-                break;
-            }
-            case DXF_TRACE: {
-                const DXFTraceEntity * pE = static_cast<const DXFTraceEntity*>(pBE);
-                rBox.Union(pE->aP0);
-                rBox.Union(pE->aP1);
-                rBox.Union(pE->aP2);
-                rBox.Union(pE->aP3);
-                break;
-            }
-            case DXF_SOLID: {
-                const DXFSolidEntity * pE = static_cast<const DXFSolidEntity*>(pBE);
-                rBox.Union(pE->aP0);
-                rBox.Union(pE->aP1);
-                rBox.Union(pE->aP2);
-                rBox.Union(pE->aP3);
-                break;
-            }
-            case DXF_TEXT: {
-                //const DXFTextEntity * pE = (DXFTextEntity*)pBE;
-                //???
-                break;
-            }
-            case DXF_SHAPE: {
-                //const DXFShapeEntity * pE = (DXFShapeEntity*)pBE;
-                //???
-                break;
-            }
-            case DXF_INSERT: {
-                const DXFInsertEntity * pE = static_cast<const DXFInsertEntity*>(pBE);
-                DXFBlock * pB;
-                DXFBoundingBox aBox;
-                DXFVector aP;
-                pB=aBlocks.Search(pE->m_sName);
-                if (pB==nullptr) break;
-                CalcBoundingBox(*pB,aBox);
-                if (aBox.bEmpty) break;
-                aP.fx=(aBox.fMinX-pB->aBasePoint.fx)*pE->fXScale+pE->aP0.fx;
-                aP.fy=(aBox.fMinY-pB->aBasePoint.fy)*pE->fYScale+pE->aP0.fy;
-                aP.fz=(aBox.fMinZ-pB->aBasePoint.fz)*pE->fZScale+pE->aP0.fz;
-                rBox.Union(aP);
-                aP.fx=(aBox.fMaxX-pB->aBasePoint.fx)*pE->fXScale+pE->aP0.fx;
-                aP.fy=(aBox.fMaxY-pB->aBasePoint.fy)*pE->fYScale+pE->aP0.fy;
-                aP.fz=(aBox.fMaxZ-pB->aBasePoint.fz)*pE->fZScale+pE->aP0.fz;
-                rBox.Union(aP);
-                break;
-            }
-            case DXF_ATTDEF: {
-                //const DXFAttDefEntity * pE = (DXFAttDefEntity*)pBE;
-                //???
-                break;
-            }
-            case DXF_ATTRIB: {
-                //const DXFAttribEntity * pE = (DXFAttribEntity*)pBE;
-                //???
-                break;
-            }
-            case DXF_VERTEX: {
-                const DXFVertexEntity * pE = static_cast<const DXFVertexEntity*>(pBE);
-                rBox.Union(pE->aP0);
-                break;
-            }
-            case DXF_3DFACE: {
-                const DXF3DFaceEntity * pE = static_cast<const DXF3DFaceEntity*>(pBE);
-                rBox.Union(pE->aP0);
-                rBox.Union(pE->aP1);
-                rBox.Union(pE->aP2);
-                rBox.Union(pE->aP3);
-                break;
-            }
-            case DXF_DIMENSION: {
-                const DXFDimensionEntity * pE = static_cast<const DXFDimensionEntity*>(pBE);
-                DXFBlock * pB;
-                DXFBoundingBox aBox;
-                DXFVector aP;
-                pB = aBlocks.Search(pE->m_sPseudoBlock);
-                if (pB==nullptr) break;
-                CalcBoundingBox(*pB,aBox);
-                if (aBox.bEmpty) break;
-                aP.fx=aBox.fMinX-pB->aBasePoint.fx;
-                aP.fy=aBox.fMinY-pB->aBasePoint.fy;
-                aP.fz=aBox.fMinZ-pB->aBasePoint.fz;
-                rBox.Union(aP);
-                aP.fx=aBox.fMaxX-pB->aBasePoint.fx;
-                aP.fy=aBox.fMaxY-pB->aBasePoint.fy;
-                aP.fz=aBox.fMaxZ-pB->aBasePoint.fz;
-                rBox.Union(aP);
-                break;
-            }
-            case DXF_POLYLINE: {
-                //const DXFAttribEntity * pE = (DXFAttribEntity*)pBE;
-                //???
-                break;
-            }
-            case DXF_SEQEND: {
-                //const DXFAttribEntity * pE = (DXFAttribEntity*)pBE;
-                //???
-                break;
-            }
-            case DXF_HATCH :
-                break;
-            case DXF_LWPOLYLINE :
-                break;
-        }
-        pBE=pBE->pSucc;
-    }
-    mbInCalc = false;
+    if (mEnc != RTL_TEXTENCODING_UTF8)
+        return getTextEncoding();
+    if (meCodePage != RTL_TEXTENCODING_DONTKNOW)
+        return meCodePage;
+    return RTL_TEXTENCODING_MS_1252;
 }
 
-OUString DXFRepresentation::ToOUString(std::string_view s) const
+OUString DXFRepresentation::ToOUString(std::string_view s, bool bSpecialCharacters) const
 {
-    OUString result = OStringToOUString(s, getTextEncoding(),
-                                           RTL_TEXTTOUNICODE_FLAGS_UNDEFINED_ERROR
-                                         | RTL_TEXTTOUNICODE_FLAGS_MBUNDEFINED_ERROR
-                                         | RTL_TEXTTOUNICODE_FLAGS_INVALID_ERROR);
-    result = result.replaceAll("%%o", "")                     // Overscore - simply remove
-                   .replaceAll("%%u", "")                     // Underscore - simply remove
-                   .replaceAll("%%d", u"\u00B0") // Degrees symbol (°)
-                   .replaceAll("%%p", u"\u00B1") // Tolerance symbol (±)
-                   .replaceAll("%%c", u"\u2205") // Diameter symbol
-                   .replaceAll("%%%", "%");                   // Percent symbol
-
-    sal_Int32 pos = result.indexOf("%%"); // %%nnn, where nnn - 3-digit decimal ASCII code
-    while (pos != -1 && pos <= result.getLength() - 5) {
-        OUString asciiNum = result.copy(pos + 2, 3);
-        if (rtl::isAsciiDigit(asciiNum[0]) &&
-            rtl::isAsciiDigit(asciiNum[1]) &&
-            rtl::isAsciiDigit(asciiNum[2]))
-        {
-            char ch = static_cast<char>(asciiNum.toUInt32());
-            OUString codePt(&ch, 1, mEnc);
-            result = result.replaceAll(result.subView(pos, 5), codePt, pos);
-        }
-        pos = result.indexOf("%%", pos + 1);
+    const sal_uInt32 nStrict = RTL_TEXTTOUNICODE_FLAGS_UNDEFINED_ERROR
+                               | RTL_TEXTTOUNICODE_FLAGS_MBUNDEFINED_ERROR
+                               | RTL_TEXTTOUNICODE_FLAGS_INVALID_ERROR;
+    const rtl_TextEncoding eEncoding = getTextEncoding();
+    OUString aText;
+    // text that is valid UTF-8 in a drawing without version is hardly in a DOS code page
+    if (!(mbWithoutVersion
+          && rtl_convertStringToUString(&aText.pData, s.data(), s.size(), RTL_TEXTENCODING_UTF8,
+                                        nStrict))
+        && !rtl_convertStringToUString(&aText.pData, s.data(), s.size(), eEncoding, nStrict))
+    {
+        // Some programs write their ANSI code page even in the UTF-8 versions: the one they
+        // declare, or else the one of the locale. Otherwise keep what can be decoded.
+        rtl_TextEncoding eFallback = eEncoding;
+        if (eEncoding == RTL_TEXTENCODING_UTF8)
+            eFallback = meCodePage != RTL_TEXTENCODING_DONTKNOW
+                            ? meCodePage
+                            : utl_getWinTextEncodingFromLangStr(
+                                  utl_getLocaleForGlobalDefaultEncoding());
+        aText = OStringToOUString(s, eFallback);
     }
-
-    pos = result.indexOf("\\U+"); // \U+XXXX, where XXXX - 4-digit hex unicode
-    while (pos != -1 && pos <= result.getLength() - 7) {
-        OUString codePtNum = result.copy(pos + 3, 4);
-        if (rtl::isAsciiHexDigit(codePtNum[0]) &&
-            rtl::isAsciiHexDigit(codePtNum[1]) &&
-            rtl::isAsciiHexDigit(codePtNum[2]) &&
-            rtl::isAsciiHexDigit(codePtNum[3]))
-        {
-            OUString codePt(static_cast<sal_Unicode>(codePtNum.toUInt32(16)));
-            result = result.replaceAll(result.subView(pos, 7), codePt, pos);
-        }
-        pos = result.indexOf("\\U+", pos + 1);
-    }
-    return result;
+    if (!bSpecialCharacters)
+        return aText;
+    return dxf::decodeSpecialCharacters(aText, getSingleByteEncoding(), true);
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

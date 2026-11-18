@@ -362,6 +362,19 @@ PlotAreaConverter::~PlotAreaConverter()
 {
 }
 
+/** Removes each id from rAxisIds that names no axis in rAxisMap, or names an axis that is neither
+    a category axis nor a value axis (it has no cx:catScaling or cx:valScaling element). */
+static void lclRemoveAxisIdsWithoutScaling(std::vector<sal_Int32>& rAxisIds,
+                                    const AxesSetModel::AxisMap& rAxisMap)
+{
+    std::erase_if(rAxisIds,
+                  [&rAxisMap](sal_Int32 nAxisId)
+                  {
+                      const auto xAxis = rAxisMap.get(nAxisId);
+                      return !xAxis || !xAxis->mobCatNotVal.has_value();
+                  });
+}
+
 void PlotAreaConverter::convertFromModel( View3DModel& rView3DModel,
         DataSourceCxModel& rDataCxModel )
 {
@@ -428,6 +441,7 @@ void PlotAreaConverter::convertFromModel( View3DModel& rView3DModel,
                     case CX_TOKEN(paretoLine):
                     case CX_TOKEN(waterfall):
                     {
+                        lclRemoveAxisIdsWithoutScaling(elemSeries->maAxisIds, aAxisMap);
                         bool bNeedCat = false, bNeedVal = false;
                         // Should have two axes, one category and one value
                         // (though they may be hidden)
@@ -481,6 +495,7 @@ void PlotAreaConverter::convertFromModel( View3DModel& rView3DModel,
                     }
                     case CX_TOKEN(funnel):
                     {
+                        lclRemoveAxisIdsWithoutScaling(elemSeries->maAxisIds, aAxisMap);
                         bool bNeedCat = false;
                         // Should have one category axis (though it may be hidden)
                         // Funnel never seems to have a value axis
@@ -574,7 +589,7 @@ void PlotAreaConverter::convertFromModel( View3DModel& rView3DModel,
         mrModel.maTypeGroups[0]->mnTypeId != mrModel.maTypeGroups[1]->mnTypeId;
 
     // convert all axes sets, and check which axis is attached to the first maTypeGroups
-    sal_Int32 nStartAxesSetIdx = bIsCombinedChart ? ((rValAxisIds.size() > 1 && aAxesSets.size() > 0 && aAxesSets[0]->maAxes.count( API_Y_AXIS )
+    sal_Int32 nStartAxesSetIdx = bIsCombinedChart ? ((rValAxisIds.size() > 1 && aAxesSets.size() > 0 && aAxesSets[0]->maAxes.has( API_Y_AXIS )
             && aAxesSets[0]->maAxes[ API_Y_AXIS ]->mnAxisId != rValAxisIds[0] ) ? 1 : 0)
             : 0;
     sal_Int32 nAxesSetIdx = nStartAxesSetIdx;
