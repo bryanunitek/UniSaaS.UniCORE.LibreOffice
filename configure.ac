@@ -18,7 +18,7 @@ dnl cspell:ignoreRegExp / -isystem /
 # several non-alphanumeric characters, those are split off and used only for the
 # ABOUTBOXPRODUCTVERSIONSUFFIX in openoffice.lst. Why that is necessary, no idea.
 
-AC_INIT([LibreOffice],[27.2.0.0.alpha0+],[],[],[http://documentfoundation.org/])
+AC_INIT([LibreOffice],[27.2.0.0.alpha1+],[],[],[http://documentfoundation.org/])
 
 dnl libnumbertext needs autoconf 2.68, but that can pick up autoconf268 just fine if it is installed
 dnl whereas aclocal (as run by autogen.sh) insists on using autoconf and fails hard
@@ -11522,7 +11522,7 @@ dnl ===================================================================
 dnl Check for system mdds
 dnl ===================================================================
 MDDS_CFLAGS_internal="-I${WORKDIR}/UnpackedTarball/mdds/include"
-libo_CHECK_SYSTEM_MODULE([mdds],[MDDS],[mdds-3.0 >= 3.0.0])
+libo_CHECK_SYSTEM_MODULE([mdds],[MDDS],[mdds-4.0 >= 4.0.0])
 
 dnl ===================================================================
 dnl Check for system dragonbox
@@ -11870,7 +11870,7 @@ fi
 dnl ===================================================================
 dnl Orcus
 dnl ===================================================================
-libo_CHECK_SYSTEM_MODULE([orcus],[ORCUS],[liborcus-0.21 >= 0.21.0])
+libo_CHECK_SYSTEM_MODULE([orcus],[ORCUS],[liborcus-0.22 >= 0.22.0])
 
 dnl FIXME by renaming SYSTEM_LIBORCUS to SYSTEM_ORCUS in the build system world
 SYSTEM_LIBORCUS=$SYSTEM_ORCUS

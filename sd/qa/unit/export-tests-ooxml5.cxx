@@ -1383,6 +1383,38 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest5, testTdf166401_textGivenToAPicturePlaceh
                        u"Given to a picture placeholder");
 }
 
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest5, testPresentationKeepsAttributes)
+{
+    // The presentation has showSpecialPlsOnTitleSld="0", strictFirstAndLastChars="0"
+    // and saveSubsetFonts="1" set, and autoCompressPictures isn't set
+    createSdImpressDoc("pptx/tdf128684.pptx");
+
+    save(TestFilter::PPTX);
+
+    // Ensure the same attributes are kept
+    xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/presentation.xml"_ustr);
+    assertXPath(pXmlDoc, "/p:presentation", "showSpecialPlsOnTitleSld", u"0");
+    assertXPath(pXmlDoc, "/p:presentation", "strictFirstAndLastChars", u"0");
+    assertXPath(pXmlDoc, "/p:presentation", "saveSubsetFonts", u"1");
+    assertXPathNoAttribute(pXmlDoc, "/p:presentation", "autoCompressPictures");
+}
+
+CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest5, testChartAltTextPPTX)
+{
+    // a slide with a chart
+    createSdImpressDoc("odp/tdf169952.odp");
+    uno::Reference<beans::XPropertySet> xChart(getShapeFromPage(0, 0));
+    xChart->setPropertyValue(u"Description"_ustr, uno::Any(u"Sales rise in L2"_ustr));
+    xChart->setPropertyValue(u"Title"_ustr, uno::Any(u"Sales chart"_ustr));
+
+    save(TestFilter::PPTX);
+    xmlDocUniquePtr pXmlDoc = parseExport(u"ppt/slides/slide1.xml"_ustr);
+    // Without the fix the chart frame had neither
+    assertXPath(pXmlDoc, "//p:graphicFrame/p:nvGraphicFramePr/p:cNvPr", "descr",
+                u"Sales rise in L2");
+    assertXPath(pXmlDoc, "//p:graphicFrame/p:nvGraphicFramePr/p:cNvPr", "title", u"Sales chart");
+}
+
 CPPUNIT_PLUGIN_IMPLEMENT();
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

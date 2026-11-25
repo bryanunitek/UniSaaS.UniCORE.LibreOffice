@@ -237,7 +237,7 @@ public:
 
     virtual SalFrame*           CreateFrame( SalFrame* pParent, SalFrameStyleFlags nStyle ) override;
     virtual SalFrame*           CreateChildFrame( SystemParentData* pParent, SalFrameStyleFlags nStyle ) override;
-    virtual SalObject*          CreateObject( SalFrame* pParent, SystemWindowData* pWindowData, bool bShow ) override;
+    virtual SalObject* CreateObject(SalFrame* pParent, SystemWindowData* pWindowData) override;
     virtual SalSystem*          CreateSalSystem() override;
     virtual SalInfoPrinter* CreateInfoPrinter(SalPrinterQueueInfo& rPrinterQueueInfo,
                                               ImplJobSetup& rJobSetup) override;
@@ -268,8 +268,8 @@ public:
     bool hasNativeColorChooserDialog() const override { return true; }
     virtual bool hasNativeFileSelection() const override { return true; }
 
-    virtual css::uno::Reference< css::ui::dialogs::XFilePicker2 >
-        createFilePicker( const css::uno::Reference< css::uno::XComponentContext >& ) override;
+    virtual css::uno::Reference<css::ui::dialogs::XFilePicker3>
+    createFilePicker(const css::uno::Reference<css::uno::XComponentContext>&) override;
     virtual css::uno::Reference< css::ui::dialogs::XFolderPicker2 >
         createFolderPicker( const css::uno::Reference< css::uno::XComponentContext >& ) override;
 

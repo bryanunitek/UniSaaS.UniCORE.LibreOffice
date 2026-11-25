@@ -282,8 +282,6 @@ public:
     cairo::SurfaceSharedPtr     CreateSurface(const cairo::CairoSurfaceSharedPtr& rSurface) const;
     /// Create surface with given dimensions
     cairo::SurfaceSharedPtr     CreateSurface(int x, int y, int width, int height) const;
-    /// Create Surface for given bitmap data
-    cairo::SurfaceSharedPtr     CreateBitmapSurface(const BitmapSystemData& rData, const Size& rSize) const;
     /// Return native handle for underlying surface
     css::uno::Any               GetNativeSurfaceHandle(cairo::SurfaceSharedPtr& rSurface, const basegfx::B2ISize& rSize) const;
     SAL_DLLPRIVATE css::uno::Any GetSystemGfxDataAny() const;
@@ -1820,9 +1818,6 @@ private:
      @returns vcl::Region based on device pixel coordinates and units.
      */
     SAL_DLLPRIVATE vcl::Region       ImplPixelToDevicePixel( const vcl::Region& rRegion ) const;
-
-    SAL_DLLPRIVATE double ImplDevicePixelToLogicWidthDouble(double nWidth) const;
-    SAL_DLLPRIVATE double ImplDevicePixelToLogicHeightDouble(double nHeight) const;
 
     /** @name Native Widget Rendering functions
 

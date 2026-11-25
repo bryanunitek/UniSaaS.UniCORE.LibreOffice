@@ -16,6 +16,19 @@
 #include <osl/endian.h>
 #include <font/TTFStructure.hxx>
 #include <font/TTFReader.hxx>
+#include <config_eot.h>
+#include <o3tl/temporary.hxx>
+
+#include <memory>
+
+#if ENABLE_EOT
+extern "C" {
+namespace libeot
+{
+#include <libeot/libeot.h>
+} // namespace libeot
+} // extern "C"
+#endif
 
 namespace font
 {
@@ -161,12 +174,42 @@ bool EOTConverter::convert(std::vector<sal_uInt8>& rEotOutput)
     return true;
 }
 
+#if ENABLE_EOT
+bool decodeEOT(const void* pData, sal_uInt32 nSize, std::vector<char>& rFontData,
+               bool& rEditingAllowed)
+{
+    unsigned nDecodedSize = 0;
+    unsigned char* pDecoded = nullptr;
+    libeot::EOTMetadata aMetadata;
+    libeot::EOTError eError = libeot::EOT2ttf_buffer(static_cast<const unsigned char*>(pData),
+                                                     nSize, &aMetadata, &pDecoded, &nDecodedSize);
+    std::unique_ptr<unsigned char, decltype(&libeot::EOTfreeBuffer)> xDecoded(
+        pDecoded, libeot::EOTfreeBuffer);
+    if (eError != libeot::EOT_SUCCESS)
+    {
+        libeot::EOTfreeMetadata(&aMetadata);
+        return false;
+    }
+    rFontData.assign(reinterpret_cast<char*>(pDecoded),
+                     reinterpret_cast<char*>(pDecoded + nDecodedSize));
+    rEditingAllowed = libeot::EOTcanLegallyEdit(&aMetadata);
+    libeot::EOTfreeMetadata(&aMetadata);
+    return true;
+}
+#endif
+
 } // end font namespace
 
 int TestEOT(const void* data, sal_uInt32 size)
 {
     const sal_uInt8* bytes = static_cast<const sal_uInt8*>(data);
     std::vector<sal_uInt8> input(bytes, bytes + size);
+#if ENABLE_EOT
+    // An input that decodes as EOT goes on to the writer as the font it holds.
+    std::vector<char> aDecoded;
+    if (font::decodeEOT(data, size, aDecoded, o3tl::temporary(bool())))
+        input.assign(aDecoded.begin(), aDecoded.end());
+#endif
 
     std::vector<sal_uInt8> aEOT;
     font::FontDataContainer aContainer(input);

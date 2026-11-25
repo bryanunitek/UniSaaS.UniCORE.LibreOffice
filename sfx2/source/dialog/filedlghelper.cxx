@@ -156,9 +156,12 @@ static std::optional<OUString> GetLastFilterConfigId( FileDialogHelper::Context 
 
     switch( _eContext )
     {
-        case FileDialogHelper::DrawExport: return aSD_EXPORT_IDENTIFIER;
-        case FileDialogHelper::ImpressExport: return aSI_EXPORT_IDENTIFIER;
-        case FileDialogHelper::WriterExport: return aSW_EXPORT_IDENTIFIER;
+        case FileDialogHelper::Context::DrawExport:
+            return aSD_EXPORT_IDENTIFIER;
+        case FileDialogHelper::Context::ImpressExport:
+            return aSI_EXPORT_IDENTIFIER;
+        case FileDialogHelper::Context::WriterExport:
+            return aSW_EXPORT_IDENTIFIER;
         default: break;
     }
 
@@ -174,19 +177,19 @@ static OUString DecodeSpaces_Impl( const OUString& rSource );
 void SAL_CALL FileDialogHelper_Impl::fileSelectionChanged( const FilePickerEvent& )
 {
     SolarMutexGuard aGuard;
-    mpAntiImpl->FileSelectionChanged();
+    handleFileSelectionChanged();
 }
 
 void SAL_CALL FileDialogHelper_Impl::directoryChanged( const FilePickerEvent& )
 {
     SolarMutexGuard aGuard;
-    mpAntiImpl->DirectoryChanged();
+    handleDirectoryChanged();
 }
 
 OUString SAL_CALL FileDialogHelper_Impl::helpRequested( const FilePickerEvent& aEvent )
 {
     SolarMutexGuard aGuard;
-    return sfx2::FileDialogHelper::HelpRequested( aEvent );
+    return handleHelpRequested(aEvent);
 }
 
 void SAL_CALL FileDialogHelper_Impl::controlStateChanged( const FilePickerEvent& aEvent )
@@ -198,7 +201,7 @@ void SAL_CALL FileDialogHelper_Impl::controlStateChanged( const FilePickerEvent&
 void SAL_CALL FileDialogHelper_Impl::dialogSizeChanged()
 {
     SolarMutexGuard aGuard;
-    mpAntiImpl->DialogSizeChanged();
+    handleDialogSizeChanged();
 }
 
 // XDialogClosedListener Methods
@@ -468,8 +471,7 @@ void FileDialogHelper_Impl::updateFilterOptionsBox()
     {
         if (auto xCtrlAccess = mxFileDlg.query<XFilePickerControlAccess>())
         {
-            OUString filter;
-            getRealFilter(filter);
+            OUString filter = getRealFilter();
             bool bChecked = bFilterOptionsEnabled && utl::isShowFilterOptionsDialog(filter);
             xCtrlAccess->setValue(ExtendedFilePickerElementIds::CHECKBOX_FILTEROPTIONS, 0,
                                   Any(bChecked));
@@ -929,7 +931,7 @@ FileDialogHelper_Impl::FileDialogHelper_Impl(
     FileDialogHelper* _pAntiImpl,
     sal_Int16 nDialogType,
     FileDialogFlags nFlags,
-    sal_Int16 nDialog,
+    FileDialogType eDialog,
     weld::Window* pFrameWeld,
     const OUString& sPreselectedDir,
     const css::uno::Sequence< OUString >& rDenyList
@@ -937,24 +939,21 @@ FileDialogHelper_Impl::FileDialogHelper_Impl(
     :msPreselectedDir( sPreselectedDir )
     ,maPreviewIdle("sfx2 FileDialogHelper_Impl maPreviewIdle")
     ,m_nDialogType          ( nDialogType )
-    ,meContext              ( FileDialogHelper::UnknownContext )
+    , meContext(FileDialogHelper::Context::UnknownContext)
 {
-    const char* pServiceName=nullptr;
-    switch (nDialog)
+    OUString sServiceName;
+    switch (eDialog)
     {
-        case SFX2_IMPL_DIALOG_SYSTEM:
-        case SFX2_IMPL_DIALOG_OOO:
-            pServiceName = "com.sun.star.ui.dialogs.OfficeFilePicker";
+        case FileDialogType::System:
+            sServiceName = u"com.sun.star.ui.dialogs.OfficeFilePicker"_ustr;
             break;
-        case SFX2_IMPL_DIALOG_REMOTE:
-            pServiceName = "com.sun.star.ui.dialogs.RemoteFilePicker";
+        case FileDialogType::Remote:
+            sServiceName = u"com.sun.star.ui.dialogs.RemoteFilePicker"_ustr;
             break;
         default:
-            pServiceName = "com.sun.star.ui.dialogs.FilePicker";
+            sServiceName = u"com.sun.star.ui.dialogs.FilePicker"_ustr;
             break;
     }
-
-    OUString aService = OUString::createFromAscii( pServiceName );
 
     uno::Reference< XMultiServiceFactory > xFactory( ::comphelper::getProcessServiceFactory() );
 
@@ -997,7 +996,7 @@ FileDialogHelper_Impl::FileDialogHelper_Impl(
     mpGraphicFilter = nullptr;
 
     // create the picker component
-    mxFileDlg.set(xFactory->createInstance( aService ), css::uno::UNO_QUERY);
+    mxFileDlg.set(xFactory->createInstance(sServiceName), css::uno::UNO_QUERY);
     mbSystemPicker = lcl_isSystemFilePicker( mxFileDlg );
     mbAsyncPicker = lcl_isAsyncFilePicker(mxFileDlg);
 
@@ -1532,7 +1531,7 @@ ErrCode FileDialogHelper_Impl::execute( css::uno::Sequence<OUString>& rpURLList,
     }
 
     // set the filter
-    getRealFilter( rFilter );
+    rFilter = getRealFilter();
 
     std::shared_ptr<const SfxFilter> pCurrentFilter = getCurrentSfxFilter();
 
@@ -1677,19 +1676,21 @@ OUString FileDialogHelper_Impl::getFilter() const
     return aFilter;
 }
 
-void FileDialogHelper_Impl::getRealFilter( OUString& _rFilter ) const
+OUString FileDialogHelper_Impl::getRealFilter() const
 {
-    _rFilter = getCurrentFilterUIName();
+    OUString sFilter = getCurrentFilterUIName();
 
-    if ( _rFilter.isEmpty() )
-        _rFilter = maCurFilter;
+    if (sFilter.isEmpty())
+        sFilter = maCurFilter;
 
-    if ( !_rFilter.isEmpty() && mpMatcher )
+    if (!sFilter.isEmpty() && mpMatcher)
     {
-        std::shared_ptr<const SfxFilter> pFilter =
-            mpMatcher->GetFilter4UIName( _rFilter, m_nMustFlags, m_nDontFlags );
-        _rFilter = pFilter ? pFilter->GetFilterName() : OUString();
+        std::shared_ptr<const SfxFilter> pFilter
+            = mpMatcher->GetFilter4UIName(sFilter, m_nMustFlags, m_nDontFlags);
+        sFilter = pFilter ? pFilter->GetFilterName() : OUString();
     }
+
+    return sFilter;
 }
 
 void FileDialogHelper_Impl::verifyPath()
@@ -2169,7 +2170,7 @@ void FileDialogHelper_Impl::saveConfig()
     }
 
     // Store to config, if explicit context is set (and default directory is not given)
-    if (meContext != FileDialogHelper::UnknownContext && msPreselectedDir.isEmpty())
+    if (meContext != FileDialogHelper::Context::UnknownContext && msPreselectedDir.isEmpty())
     {
         SaveLastDirectory(FileDialogHelper::contextToString(meContext), getPath());
     }
@@ -2180,7 +2181,7 @@ OUString FileDialogHelper_Impl::getInitPath(std::u16string_view _rFallback,
 {
     OUString sPath;
     // Load from config, if explicit context is set. Otherwise load from (global) runtime var.
-    if (meContext == FileDialogHelper::UnknownContext || !msPreselectedDir.isEmpty())
+    if (meContext == FileDialogHelper::Context::UnknownContext || !msPreselectedDir.isEmpty())
     {
         // For export, the default directory is passed on
         sPath = msPreselectedDir;
@@ -2276,9 +2277,6 @@ void FileDialogHelper_Impl::loadConfig()
             }
             catch( const IllegalArgumentException& ){}
         }
-
-        if ( maPath.isEmpty() )
-            displayFolder( SvtPathOptions().GetWorkPath() );
     }
     else
     {
@@ -2320,10 +2318,10 @@ void FileDialogHelper_Impl::loadConfig()
             }
             catch( const IllegalArgumentException& ){}
         }
-
-        if ( maPath.isEmpty() )
-            displayFolder( SvtPathOptions().GetWorkPath() );
     }
+
+    if (maPath.isEmpty())
+        displayFolder(SvtPathOptions().GetWorkPath());
 }
 
 void FileDialogHelper_Impl::setDefaultValues()
@@ -2413,7 +2411,7 @@ FileDialogHelper::FileDialogHelper(
     SfxFilterFlags nDont,
     weld::Window* pPreferredParent)
     :   m_nError(0),
-        mpImpl(new FileDialogHelper_Impl(this, nDialogType, nFlags, SFX2_IMPL_DIALOG_CONFIG, pPreferredParent))
+        mpImpl(new FileDialogHelper_Impl(this, nDialogType, nFlags, FileDialogType::Config, pPreferredParent))
 {
 
     // create the list of filters
@@ -2425,14 +2423,14 @@ FileDialogHelper::FileDialogHelper(
     sal_Int16 nDialogType,
     FileDialogFlags nFlags,
     const OUString& rFact,
-    sal_Int16 nDialog,
+    FileDialogType eDialog,
     SfxFilterFlags nMust,
     SfxFilterFlags nDont,
     const OUString& rPreselectedDir,
     const css::uno::Sequence< OUString >& rDenyList,
     weld::Window* pPreferredParent)
     :   m_nError(0),
-        mpImpl( new FileDialogHelper_Impl( this, nDialogType, nFlags, nDialog, pPreferredParent, rPreselectedDir, rDenyList ) )
+        mpImpl( new FileDialogHelper_Impl( this, nDialogType, nFlags, eDialog, pPreferredParent, rPreselectedDir, rDenyList ) )
 {
     // create the list of filters
     mpImpl->addFilters(
@@ -2441,7 +2439,7 @@ FileDialogHelper::FileDialogHelper(
 
 FileDialogHelper::FileDialogHelper(sal_Int16 nDialogType, FileDialogFlags nFlags, weld::Window* pPreferredParent)
     :   m_nError(0),
-        mpImpl( new FileDialogHelper_Impl( this, nDialogType, nFlags, SFX2_IMPL_DIALOG_CONFIG, pPreferredParent ) )
+        mpImpl( new FileDialogHelper_Impl( this, nDialogType, nFlags, FileDialogType::Config, pPreferredParent ) )
 {
 }
 
@@ -2454,7 +2452,7 @@ FileDialogHelper::FileDialogHelper(
     const css::uno::Sequence< OUString >& rDenyList,
     weld::Window* pPreferredParent )
     :   m_nError(0),
-        mpImpl( new FileDialogHelper_Impl( this, nDialogType, nFlags, SFX2_IMPL_DIALOG_CONFIG, pPreferredParent, rPreselectedDir, rDenyList ) )
+        mpImpl( new FileDialogHelper_Impl( this, nDialogType, nFlags, FileDialogType::Config, pPreferredParent, rPreselectedDir, rDenyList ) )
 {
     // the wildcard here is expected in form "*.extension"
     OUString aWildcard;
@@ -2498,115 +2496,115 @@ OUString FileDialogHelper::contextToString(Context context)
     // These strings are used in the configuration, to store the last used directory for each context.
     // Please don't change them.
     switch(context) {
-        case AcceleratorConfig:
+        case Context::AcceleratorConfig:
             return u"AcceleratorConfig"_ustr;
-        case AutoRedact:
+        case Context::AutoRedact:
             return u"AutoRedact"_ustr;
-        case BaseDataSource:
+        case Context::BaseDataSource:
             return u"BaseDataSource"_ustr;
-        case BaseSaveAs:
+        case Context::BaseSaveAs:
             return u"BaseSaveAs"_ustr;
-        case BasicExportDialog:
+        case Context::BasicExportDialog:
             return u"BasicExportDialog"_ustr;
-        case BasicExportPackage:
+        case Context::BasicExportPackage:
             return u"BasicExportPackage"_ustr;
-        case BasicExportSource:
+        case Context::BasicExportSource:
             return u"BasicExportSource"_ustr;
-        case BasicImportDialog:
+        case Context::BasicImportDialog:
             return u"BasicImportDialog"_ustr;
-        case BasicImportSource:
+        case Context::BasicImportSource:
             return u"BasicImportSource"_ustr;
-        case BasicInsertLib:
+        case Context::BasicInsertLib:
             return u"BasicInsertLib"_ustr;
-        case BulletsAddImage:
+        case Context::BulletsAddImage:
             return u"BulletsAddImage"_ustr;
-        case CalcDataProvider:
+        case Context::CalcDataProvider:
             return u"CalcDataProvider"_ustr;
-        case CalcDataStream:
+        case Context::CalcDataStream:
             return u"CalcDataStream"_ustr;
-        case CalcExport:
+        case Context::CalcExport:
             return u"CalcExport"_ustr;
-        case CalcSaveAs:
+        case Context::CalcSaveAs:
             return u"CalcSaveAs"_ustr;
-        case CalcXMLSource:
+        case Context::CalcXMLSource:
             return u"CalcXMLSource"_ustr;
-        case ExportImage:
+        case Context::ExportImage:
             return u"ExportImage"_ustr;
-        case ExtensionManager:
+        case Context::ExtensionManager:
             return u"ExtensionManager"_ustr;
-        case FormsAddInstance:
+        case Context::FormsAddInstance:
             return u"FormsAddInstance"_ustr;
-        case FormsInsertImage:
+        case Context::FormsInsertImage:
             return u"FormsInsertImage"_ustr;
-        case LinkClientOLE:
+        case Context::LinkClientOLE:
             return u"LinkClientOLE"_ustr;
-        case LinkClientFile:
+        case Context::LinkClientFile:
             return u"LinkClientFile"_ustr;
-        case DrawImpressInsertFile:
+        case Context::DrawImpressInsertFile:
             return u"DrawImpressInsertFile"_ustr;
-        case DrawImpressOpenSound:
+        case Context::DrawImpressOpenSound:
             return u"DrawImpressOpenSound"_ustr;
-        case DrawExport:
+        case Context::DrawExport:
             return u"DrawExport"_ustr;
-        case DrawSaveAs:
+        case Context::DrawSaveAs:
             return u"DrawSaveAs"_ustr;
-        case IconImport:
+        case Context::IconImport:
             return u"IconImport"_ustr;
-        case ImpressClickAction:
+        case Context::ImpressClickAction:
             return u"ImpressClickAction"_ustr;
-        case ImpressExport:
+        case Context::ImpressExport:
             return u"ImpressExport"_ustr;
-        case ImpressPhotoDialog:
+        case Context::ImpressPhotoDialog:
             return u"ImpressPhotoDialog"_ustr;
-        case ImpressSaveAs:
+        case Context::ImpressSaveAs:
             return u"ImpressSaveAs"_ustr;
-        case ImageMap:
+        case Context::ImageMap:
             return u"ImageMap"_ustr;
-        case InsertDoc:
+        case Context::InsertDoc:
             return u"InsertDoc"_ustr;
-        case InsertImage:
+        case Context::InsertImage:
             return u"InsertImage"_ustr;
-        case InsertOLE:
+        case Context::InsertOLE:
             return u"InsertOLE"_ustr;
-        case InsertMedia:
+        case Context::InsertMedia:
             return u"InsertMedia"_ustr;
-        case JavaClassPath:
+        case Context::JavaClassPath:
             return u"JavaClassPath"_ustr;
-        case ReportInsertImage:
+        case Context::ReportInsertImage:
             return u"ReportInsertImage"_ustr;
-        case ScreenshotAnnotation:
+        case Context::ScreenshotAnnotation:
             return u"ScreenshotAnnotation"_ustr;
-        case SignatureLine:
+        case Context::SignatureLine:
             return u"SignatureLine"_ustr;
-        case TemplateImport:
+        case Context::TemplateImport:
             return u"TemplateImport"_ustr;
-        case WriterCreateAddressList:
+        case Context::WriterCreateAddressList:
             return u"WriterCreateAddressList"_ustr;
-        case WriterExport:
+        case Context::WriterExport:
             return u"WriterExport"_ustr;
-        case WriterImportAutotext:
+        case Context::WriterImportAutotext:
             return u"WriterImportAutotext"_ustr;
-        case WriterInsertImage:
+        case Context::WriterInsertImage:
             return u"WriterInsertImage"_ustr;
-        case WriterInsertScript:
+        case Context::WriterInsertScript:
             return u"WriterInsertScript"_ustr;
-        case WriterLoadTemplate:
+        case Context::WriterLoadTemplate:
             return u"WriterLoadTemplate"_ustr;
-        case WriterMailMerge:
+        case Context::WriterMailMerge:
             return u"WriterMailMerge"_ustr;
-        case WriterMailMergeSaveAs:
+        case Context::WriterMailMergeSaveAs:
             return u"WriterMailMergeSaveAs"_ustr;
-        case WriterNewHTMLGlobalDoc:
+        case Context::WriterNewHTMLGlobalDoc:
             return u"WriterNewHTMLGlobalDoc"_ustr;
-        case WriterRegisterDataSource:
+        case Context::WriterRegisterDataSource:
             return u"WriterRegisterDataSource"_ustr;
-        case WriterSaveAs:
+        case Context::WriterSaveAs:
             return u"WriterSaveAs"_ustr;
-        case WriterSaveHTML:
+        case Context::WriterSaveHTML:
             return u"WriterSaveHTML"_ustr;
-        case XMLFilterSettings:
+        case Context::XMLFilterSettings:
             return u"XMLFilterSettings"_ustr;
-        case UnknownContext:
+        case Context::UnknownContext:
         default:
             return u""_ustr;
     }
@@ -2663,10 +2661,9 @@ bool FileDialogHelper::IsPasswordEnabled() const
 
 OUString FileDialogHelper::GetRealFilter() const
 {
-    OUString sFilter;
     if (mpImpl)
-        mpImpl->getRealFilter( sFilter );
-    return sFilter;
+        return mpImpl->getRealFilter();
+    return {};
 }
 
 bool FileDialogHelper::CheckCurrentFilterOptionsCapability() const
@@ -2795,29 +2792,10 @@ const uno::Reference < XFilePicker3 >& FileDialogHelper::GetFilePicker() const
 }
 
 // XFilePickerListener Methods
-void FileDialogHelper::FileSelectionChanged()
-{
-    mpImpl->handleFileSelectionChanged();
-}
-
-void FileDialogHelper::DirectoryChanged()
-{
-    mpImpl->handleDirectoryChanged();
-}
-
-OUString FileDialogHelper::HelpRequested( const FilePickerEvent& aEvent )
-{
-    return sfx2::FileDialogHelper_Impl::handleHelpRequested( aEvent );
-}
 
 void FileDialogHelper::ControlStateChanged( const FilePickerEvent& aEvent )
 {
     mpImpl->handleControlStateChanged( aEvent );
-}
-
-void FileDialogHelper::DialogSizeChanged()
-{
-    mpImpl->handleDialogSizeChanged();
 }
 
 void FileDialogHelper::DialogClosed( const DialogClosedEvent& _rEvent )
@@ -2833,7 +2811,7 @@ ErrCode FileOpenDialog_Impl( weld::Window* pParent,
                              OUString& rFilter,
                              std::optional<SfxAllItemSet>& rpSet,
                              const OUString* pPath,
-                             sal_Int16 nDialog,
+                             FileDialogType eDialog,
                              const css::uno::Sequence< OUString >& rDenyList,
                              std::optional<bool>& rShowFilterDialog )
 {
@@ -2845,7 +2823,7 @@ ErrCode FileOpenDialog_Impl( weld::Window* pParent,
     if (nFlags & FileDialogFlags::SignPDF)
         pDialog.reset(new FileDialogHelper(nDialogType, nFlags, SfxResId(STR_SFX_FILTERNAME_PDF), u"pdf", u""_ustr, rDenyList, pParent));
     else
-        pDialog.reset(new FileDialogHelper(nDialogType, nFlags, OUString(), nDialog, SfxFilterFlags::NONE, SfxFilterFlags::NONE, u""_ustr, rDenyList, pParent));
+        pDialog.reset(new FileDialogHelper(nDialogType, nFlags, OUString(), eDialog, SfxFilterFlags::NONE, SfxFilterFlags::NONE, u""_ustr, rDenyList, pParent));
 
     OUString aPath;
     if ( pPath )

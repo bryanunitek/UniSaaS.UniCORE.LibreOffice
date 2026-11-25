@@ -20,6 +20,7 @@
 #pragma once
 
 #include <sal/config.h>
+#include <config_vclplug.h>
 
 #include <vcl/BitmapColor.hxx>
 #include <basegfx/numeric/ftools.hxx>
@@ -30,7 +31,9 @@
 #include <vcl/dllapi.h>
 #include <vcl/mapmod.hxx>
 #include <vcl/bitmap/BitmapTypes.hxx>
-#include <config_vclplug.h>
+#if USE_HEADLESS_CODE
+#include <vcl/cairo.hxx>
+#endif
 
 #include <o3tl/typed_flags_set.hxx>
 
@@ -102,25 +105,12 @@ class   SalBitmap;
 
 namespace basegfx { class SystemDependentDataHolder; }
 
-#if USE_HEADLESS_CODE
-typedef struct _cairo_surface cairo_surface_t;
-namespace cairo {
-    typedef std::shared_ptr<cairo_surface_t> CairoSurfaceSharedPtr;
-}
-#endif
-
+#if defined(_WIN32)
 struct BitmapSystemData
 {
-    #if defined(_WIN32)
     void* pDIB; // device independent byte buffer
-    #elif defined( MACOSX ) || defined( IOS )
-    // Nothing needed, apparently
-    #else
-    void* aPixmap;
-    #endif
-    int mnWidth;
-    int mnHeight;
 };
+#endif
 
 class SAL_WARN_UNUSED VCL_DLLPUBLIC Bitmap final
 {
@@ -165,6 +155,7 @@ public:
     /** return the color data, copied into a new Bitmap. If this Bitmap does not have alpha, will return a copy of itself. */
     Bitmap                  CreateColorBitmap() const;
 
+#if defined(_WIN32)
     /** get system dependent bitmap data
 
         @param rData
@@ -173,6 +164,7 @@ public:
         @return true if the bitmap has a valid system object (e.g. not empty)
     */
     bool                    GetSystemData( BitmapSystemData& rData ) const;
+#endif
 
     BitmapChecksum          GetChecksum() const;
 

@@ -341,7 +341,7 @@ public:
                                 OUString& aSuggestedName,
                                 bool bPreselectPassword,
                                 OUString& aSuggestedDir,
-                                sal_Int16 nDialog,
+                                sfx2::FileDialogType eDialog,
                                 const css::uno::Sequence<OUString>& rDenyList,
                                 SignatureState const nScriptingSignatureState
                                 );
@@ -896,7 +896,7 @@ bool ModelData_Impl::OutputFileDialog( sal_Int16 nStoreMode,
                                             OUString& aSuggestedName,
                                             bool bPreselectPassword,
                                             OUString& aSuggestedDir,
-                                            sal_Int16 nDialog,
+                                            sfx2::FileDialogType eDialog,
                                             const css::uno::Sequence<OUString>& rDenyList,
                                             SignatureState const nScriptingSignatureState)
 {
@@ -996,20 +996,20 @@ bool ModelData_Impl::OutputFileDialog( sal_Int16 nStoreMode,
         else
         {
             // This is the normal dialog
-            pFileDlg.reset(new sfx2::FileDialogHelper( aDialogMode, aDialogFlags, aDocServiceName, nDialog, nMust, nDont, sPreselectedDir, rDenyList, pFrameWin ));
+            pFileDlg.reset(new sfx2::FileDialogHelper( aDialogMode, aDialogFlags, aDocServiceName, eDialog, nMust, nDont, sPreselectedDir, rDenyList, pFrameWin ));
         }
 
-        sfx2::FileDialogHelper::Context eCtxt = sfx2::FileDialogHelper::UnknownContext;
+        sfx2::FileDialogHelper::Context eCtxt = sfx2::FileDialogHelper::Context::UnknownContext;
         if ( aDocServiceName == "com.sun.star.drawing.DrawingDocument" )
-            eCtxt = sfx2::FileDialogHelper::DrawExport;
+            eCtxt = sfx2::FileDialogHelper::Context::DrawExport;
         else if ( aDocServiceName == "com.sun.star.presentation.PresentationDocument" )
-            eCtxt = sfx2::FileDialogHelper::ImpressExport;
+            eCtxt = sfx2::FileDialogHelper::Context::ImpressExport;
         else if ( aDocServiceName == "com.sun.star.text.TextDocument" )
-            eCtxt = sfx2::FileDialogHelper::WriterExport;
+            eCtxt = sfx2::FileDialogHelper::Context::WriterExport;
         else if ( aDocServiceName == "com.sun.star.sheet.SpreadsheetDocument" )
-            eCtxt = sfx2::FileDialogHelper::CalcExport;
-        if ( eCtxt != sfx2::FileDialogHelper::UnknownContext )
-               pFileDlg->SetContext( eCtxt );
+            eCtxt = sfx2::FileDialogHelper::Context::CalcExport;
+        if (eCtxt != sfx2::FileDialogHelper::Context::UnknownContext)
+            pFileDlg->SetContext(eCtxt);
 
         pFileDlg->CreateMatcher( aDocServiceName );
 
@@ -1025,22 +1025,23 @@ bool ModelData_Impl::OutputFileDialog( sal_Int16 nStoreMode,
     else
     {
         // This is the normal save as dialog
-        pFileDlg.reset(new sfx2::FileDialogHelper( aDialogMode, aDialogFlags, aDocServiceName, nDialog,
-            nMust, nDont, sPreselectedDir, rDenyList, pFrameWin ));
+        pFileDlg.reset(new sfx2::FileDialogHelper(aDialogMode, aDialogFlags, aDocServiceName,
+                                                  eDialog, nMust, nDont, sPreselectedDir, rDenyList,
+                                                  pFrameWin));
         pFileDlg->CreateMatcher( aDocServiceName );
 
-        sfx2::FileDialogHelper::Context eCtxt = sfx2::FileDialogHelper::UnknownContext;
+        sfx2::FileDialogHelper::Context eCtxt = sfx2::FileDialogHelper::Context::UnknownContext;
         if ( aDocServiceName == "com.sun.star.drawing.DrawingDocument" )
-            eCtxt = sfx2::FileDialogHelper::DrawSaveAs;
+            eCtxt = sfx2::FileDialogHelper::Context::DrawSaveAs;
         else if ( aDocServiceName == "com.sun.star.presentation.PresentationDocument" )
-            eCtxt = sfx2::FileDialogHelper::ImpressSaveAs;
+            eCtxt = sfx2::FileDialogHelper::Context::ImpressSaveAs;
         else if ( aDocServiceName == "com.sun.star.text.TextDocument" )
-            eCtxt = sfx2::FileDialogHelper::WriterSaveAs;
+            eCtxt = sfx2::FileDialogHelper::Context::WriterSaveAs;
         else if ( aDocServiceName == "com.sun.star.sheet.SpreadsheetDocument" )
-            eCtxt = sfx2::FileDialogHelper::CalcSaveAs;
+            eCtxt = sfx2::FileDialogHelper::Context::CalcSaveAs;
 
-        if ( eCtxt != sfx2::FileDialogHelper::UnknownContext )
-               pFileDlg->SetContext( eCtxt );
+        if (eCtxt != sfx2::FileDialogHelper::Context::UnknownContext)
+            pFileDlg->SetContext(eCtxt);
     }
 
     OUString aAdjustToType;
@@ -1626,11 +1627,11 @@ bool SfxStoringHelper::FinishGUIStoreModel(::comphelper::SequenceAsHashMap::cons
 
     if ( aFileNameIter == aModelData.GetMediaDescr().end() )
     {
-        sal_Int16 nDialog = SFX2_IMPL_DIALOG_CONFIG;
+        sfx2::FileDialogType eDialog = sfx2::FileDialogType::Config;
 
         if( bRemote )
         {
-            nDialog = SFX2_IMPL_DIALOG_REMOTE;
+            eDialog = sfx2::FileDialogType::Remote;
         }
         else
         {
@@ -1641,10 +1642,7 @@ bool SfxStoringHelper::FinishGUIStoreModel(::comphelper::SequenceAsHashMap::cons
                 bool bUseSystemDialog = true;
                 if ( aDlgIter->second >>= bUseSystemDialog )
                 {
-                    if ( bUseSystemDialog )
-                        nDialog = SFX2_IMPL_DIALOG_SYSTEM;
-                    else
-                        nDialog = SFX2_IMPL_DIALOG_OOO;
+                    eDialog = sfx2::FileDialogType::System;
                 }
             }
         }
@@ -1672,7 +1670,7 @@ bool SfxStoringHelper::FinishGUIStoreModel(::comphelper::SequenceAsHashMap::cons
         for (;;)
         {
             // in case the dialog is opened a second time the folder should be the same as previously navigated to by the user, not what was handed over by initial parameters
-            bUseFilterOptions = aModelData.OutputFileDialog( nStoreMode, aFilterProps, bSetStandardName, aSuggestedName, bPreselectPassword, aSuggestedDir, nDialog, aDenyList, nScriptingSignatureState );
+            bUseFilterOptions = aModelData.OutputFileDialog( nStoreMode, aFilterProps, bSetStandardName, aSuggestedName, bPreselectPassword, aSuggestedDir, eDialog, aDenyList, nScriptingSignatureState );
             if ( nStoreMode == SAVEAS_REQUESTED )
             {
                 // in case of saving check filter for possible alien warning

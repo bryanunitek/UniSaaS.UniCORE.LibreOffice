@@ -1076,6 +1076,77 @@ CPPUNIT_TEST_FIXTURE(Test, testSelectionFunction)
     m_pDoc->DeleteTab(0);
 }
 
+CPPUNIT_TEST_FIXTURE(Test, testTdf68448_SelectionFunctionQuickSumAve)
+{
+    // tdf#68448 - the status bar sum/average must match SUM() and AVERAGE()
+    // cell functions for values that sum up to exactly 0 in decimal
+    m_pDoc->InsertTab(0, u"Test"_ustr);
+
+    m_pDoc->SetValue(ScAddress(0, 0, 0), -170.87);
+    m_pDoc->SetValue(ScAddress(0, 1, 0), -223.73);
+    m_pDoc->SetValue(ScAddress(0, 2, 0), -12.58);
+    m_pDoc->SetValue(ScAddress(0, 3, 0), 234.98);
+    m_pDoc->SetValue(ScAddress(0, 4, 0), 172.2);
+
+    ScMarkData aMark(m_pDoc->GetSheetLimits());
+    aMark.SetMarkArea(ScRange(0, 0, 0, 0, 4, 0));
+
+    // Summation
+    {
+        double fRes = 0.0;
+        bool bRes = m_pDoc->GetSelectionFunction(SUBTOTAL_FUNC_SUM, ScAddress(), aMark, fRes);
+        CPPUNIT_ASSERT_MESSAGE("Failed to fetch selection function result.", bRes);
+        // Without the fix in place, this test would have failed with
+        // - Expected: 0
+        // - Actual  : -2.8421709430404e-14
+        CPPUNIT_ASSERT_EQUAL(0.0, fRes);
+    }
+
+    // Average
+    {
+        double fRes = 0.0;
+        bool bRes = m_pDoc->GetSelectionFunction(SUBTOTAL_FUNC_AVE, ScAddress(), aMark, fRes);
+        CPPUNIT_ASSERT_MESSAGE("Failed to fetch selection function result.", bRes);
+        // Without the fix in place, this test would have failed with
+        // - Expected: 0
+        // - Actual  : -5.6843418860808e-15
+        CPPUNIT_ASSERT_EQUAL(0.0, fRes);
+    }
+
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf68448_SelectionFunctionOverflow)
+{
+    // tdf#68448 - check final result since Kahan summation does not check for overflow
+    m_pDoc->InsertTab(0, u"Test"_ustr);
+
+    const double fDblMax = std::numeric_limits<double>::max();
+    m_pDoc->SetValue(ScAddress(0, 0, 0), fDblMax);
+    m_pDoc->SetValue(ScAddress(0, 1, 0), fDblMax);
+
+    ScMarkData aMark(m_pDoc->GetSheetLimits());
+    aMark.SetMarkArea(ScRange(0, 0, 0, 0, 1, 0));
+
+    // Summation
+    {
+        double fRes = 1.0;
+        bool bRes = m_pDoc->GetSelectionFunction(SUBTOTAL_FUNC_SUM, ScAddress(), aMark, fRes);
+        CPPUNIT_ASSERT_MESSAGE("Overflow must be reported as error.", !bRes);
+        CPPUNIT_ASSERT_EQUAL(0.0, fRes);
+    }
+
+    // Average
+    {
+        double fRes = 1.0;
+        bool bRes = m_pDoc->GetSelectionFunction(SUBTOTAL_FUNC_AVE, ScAddress(), aMark, fRes);
+        CPPUNIT_ASSERT_MESSAGE("Overflow must be reported as error.", !bRes);
+        CPPUNIT_ASSERT_EQUAL(0.0, fRes);
+    }
+
+    m_pDoc->DeleteTab(0);
+}
+
 CPPUNIT_TEST_FIXTURE(Test, testMarkedCellIteration)
 {
     m_pDoc->InsertTab(0, u"Test"_ustr);
@@ -6981,6 +7052,59 @@ CPPUNIT_TEST_FIXTURE(Test, testSetFormula)
 
         CPPUNIT_ASSERT_EQUAL_MESSAGE("Failed to set formula", OUString::createFromAscii(rTest.aFormula2), aBuffer);
     }
+
+    m_pDoc->DeleteTab(0);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testForecastLinearArrayOrientations)
+{
+    m_pDoc->InsertTab(0, u"Test"_ustr);
+
+    // Known x and y values arranged in vertical, horizontal and mixed shapes.
+    for (SCROW i = 0; i < 4; ++i)
+    {
+        m_pDoc->SetValue(ScAddress(0, i, 0), 100.0 * (i + 1));
+        m_pDoc->SetValue(ScAddress(1, i, 0), i + 1.0);
+        m_pDoc->SetValue(ScAddress(10, i, 0), 100.0 * (i + 1));
+    }
+    for (SCCOL i = 0; i < 4; ++i)
+    {
+        m_pDoc->SetValue(ScAddress(2 + i, 0, 0), 100.0 * (i + 1));
+        m_pDoc->SetValue(ScAddress(6 + i, 0, 0), i + 1.0);
+        m_pDoc->SetValue(ScAddress(11 + i, 0, 0), i + 1.0);
+    }
+    m_pDoc->SetString(ScAddress(12, 0, 0), u"skip"_ustr);
+
+    const char* aFormulas[] = {
+        "=FORECAST.LINEAR(150, B1:B4, A1:A4)",
+        "=FORECAST.LINEAR(150, G1:J1, C1:F1)",
+        "=FORECAST.LINEAR(150, G1:J1, A1:A4)",
+        "=FORECAST.LINEAR(150, B1:B4, C1:F1)",
+        // Non-numeric pairs remain aligned after transposing the y vector.
+        "=FORECAST.LINEAR(150, L1:O1, K1:K4)",
+    };
+
+    for (size_t i = 0; i < std::size(aFormulas); ++i)
+    {
+        ScAddress aPos(0, 10 + i, 0);
+        m_pDoc->SetFormula(aPos, OUString::createFromAscii(aFormulas[i]),
+                           formula::FormulaGrammar::GRAM_ENGLISH_XL_A1);
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(aFormulas[i], FormulaError::NONE, m_pDoc->GetErrCode(aPos));
+        CPPUNIT_ASSERT_DOUBLES_EQUAL_MESSAGE(aFormulas[i], 1.5, m_pDoc->GetValue(aPos), 1e-12);
+    }
+
+    // ODF FORECAST requires the known_x and known_y arrays to have the same
+    // dimensions.  The Excel extension above accepts a transposed vector.
+    ScAddress aOdfPos(0, std::size(aFormulas) + 10, 0);
+    m_pDoc->SetFormula(aOdfPos, u"=FORECAST(150, G1:J1, A1:A4)"_ustr,
+                       formula::FormulaGrammar::GRAM_ENGLISH_XL_A1);
+    CPPUNIT_ASSERT_EQUAL(FormulaError::IllegalArgument, m_pDoc->GetErrCode(aOdfPos));
+
+    // Transposition must not make vectors of different lengths compatible.
+    ScAddress aUnequalPos(0, std::size(aFormulas) + 11, 0);
+    m_pDoc->SetFormula(aUnequalPos, u"=FORECAST.LINEAR(150, G1:J1, A1:A3)"_ustr,
+                       formula::FormulaGrammar::GRAM_ENGLISH_XL_A1);
+    CPPUNIT_ASSERT_EQUAL(FormulaError::IllegalArgument, m_pDoc->GetErrCode(aUnequalPos));
 
     m_pDoc->DeleteTab(0);
 }

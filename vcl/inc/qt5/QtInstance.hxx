@@ -171,8 +171,7 @@ public:
                                        SalFrameStyleFlags nStyle) override;
     virtual void DestroyFrame(SalFrame* pFrame) override;
 
-    virtual SalObject* CreateObject(SalFrame* pParent, SystemWindowData* pWindowData,
-                                    bool bShow) override;
+    virtual SalObject* CreateObject(SalFrame* pParent, SystemWindowData* pWindowData) override;
     virtual void DestroyObject(SalObject* pObject) override;
 
     virtual std::unique_ptr<SalMenu> CreateMenu(bool, Menu*) override;
@@ -211,7 +210,7 @@ public:
 
     bool hasNativeColorChooserDialog() const override { return true; }
     bool hasNativeFileSelection() const override { return true; }
-    css::uno::Reference<css::ui::dialogs::XFilePicker2>
+    css::uno::Reference<css::ui::dialogs::XFilePicker3>
     createFilePicker(const css::uno::Reference<css::uno::XComponentContext>&) override;
     css::uno::Reference<css::ui::dialogs::XFolderPicker2>
     createFolderPicker(const css::uno::Reference<css::uno::XComponentContext>&) override;
